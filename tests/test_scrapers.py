@@ -1616,7 +1616,7 @@ def test_smartrecruiters_location_collapses_blank_region_comma_segment():
         },
         SCRAPED_AT,
     )
-    assert jobs[0].location == "Singapore, Singapore"
+    assert jobs[0].location == "Singapore"
 
 
 def test_smartrecruiters_location_with_region_is_unaffected():
@@ -3222,7 +3222,7 @@ def test_freshteam_parse():
     # branch is Singapore, but preferred_remote_job_locations names India + Vietnam: the wrong
     # branch country must NOT ride along next to the real ones (that's the false-positive/
     # false-negative bug), and multiple places join with "; " like workday's multi-location strings.
-    assert platform.location == "India, India; Vietnam, Viet Nam"
+    assert platform.location == "India; Vietnam, Viet Nam"
     assert "Singapore" not in platform.location
     assert platform.remote is True
     assert platform.employment_type == "Fixed Term Contract"  # job_type 8

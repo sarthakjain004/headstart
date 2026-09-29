@@ -25,6 +25,7 @@ import re
 from headstart.boards import eightfold_backing
 from headstart.embedding_conventions import DOC_PREFIX
 from headstart.ingest.derived_meta import derive
+from headstart.jobs.location import from_description
 
 _MD_LINK = re.compile(r"\[([^\]]+)\]\([^)]+\)")  # [text](url) -> text
 # Emphasis / heading / quote markers (keep `_`: tech terms). A `#` right after a letter is kept
@@ -92,8 +93,16 @@ def stored_facts(job: dict) -> dict:
     ever match on it, and a new value in the store rewrites the served row, vector and all, so
     stamping every row of the ATSes that state one (six when measured on v654) would rewrite
     ~216k rows on the first run for no dedup. Widen it by adding pairs, or by dropping this check.
+
+    ``location`` is the scrape's, and where the ATS stated none, the place an explicit ``Location:``
+    line in the Job's description states (:func:`headstart.jobs.location.from_description`, ADR-0345).
+    It lives here rather than in ``Job`` because a held Job's scrape carries no description
+    (ADR-0208): ``update_descriptions`` writes the stored text back into the corpus row, which is
+    what this reads. A fact, not a derivation: it is read off the corpus row every run, so it needs
+    no ``DERIVATIONS_VERSION`` bump.
     """
     facts = {field: job.get(field) for field in META_FIELDS}
+    facts["location"] = facts["location"] or from_description(job.get("description"))
     if facts["requisition"] and not eightfold_backing.in_scope(job["id"]):
         facts["requisition"] = None
     return facts
@@ -483,5 +492,6 @@ def to_meta(job: dict) -> dict:
     # Planner-only too: the text this vector encodes, so an edit can be told from a re-read of
     # the same posting and re-embedded (ADR-0285).
     meta["doc_hash"] = doc_hash(job)
-    meta.update(derive(job))
+    # `country` reads the location the row serves, the description's when the ATS stated none.
+    meta.update(derive({**job, "location": meta["location"]}))
     return meta

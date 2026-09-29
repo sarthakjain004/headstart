@@ -65,6 +65,7 @@ from headstart.scrapers.job_posting_jsonld import (
     find_job_posting,
     has_unparseable_jsonld,
     hiring_organization,
+    job_location_text,
 )
 
 #: At the measured knee: one site served 1.2 page GETs a second at one in flight, 3.1 at four and
@@ -279,7 +280,10 @@ def page_fields(page: str) -> dict[str, Any] | None:
             place.get("address")
             for place in (places if isinstance(places, list) else [places])
             if isinstance(place, dict) and isinstance(place.get("address"), str)
-        ),
+        )
+        # An SEO plugin's own JobPosting states a PostalAddress object, which is no string
+        # (websenor.com: 100 of its 139 served rows read no location on 2026-09-29).
+        or job_location_text(places),
         "company": hiring_organization(node.get("hiringOrganization")),
         "specs": specs,
     }

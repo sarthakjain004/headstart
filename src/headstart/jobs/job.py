@@ -8,6 +8,8 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+from headstart.jobs.location import tidy
+
 
 @dataclass(frozen=True, slots=True)
 class Job:
@@ -41,6 +43,8 @@ class Job:
         # titles (smartrecruiters, zwayam) and a company (pyjamahr), 3,851 companies with edge
         # whitespace, and locations carrying markup (teamtailor's own feed) or one place per
         # line (50 icims rows, one workday). `object.__setattr__` because the dataclass is frozen.
+        # A location also loses its BLANK template tokens, a place listed twice and a country
+        # named twice at the end of a place (`tidy`, ADR-0345; 4,347 rows served on 2026-09-29).
         # UTF-8 read once as Latin-1 is repaired here too (`repaired_mojibake`): zoho serves its
         # locations that way at source ("San JosÃ©", "FÃ¨s-Boulemane").
         object.__setattr__(self, "title", _unescaped(self.title))
@@ -104,11 +108,12 @@ def _location_text(value: str | None) -> str | None:
     Tags go before entities are decoded, so an escaped ``&lt;Remote&gt;`` survives as text. A line
     break separates places (all 50 icims rows served with one on 2026-09-24), so it becomes the
     ``"; "`` the scrapers already join places with, not a space that runs two places into one.
+    The template token ``BLANK`` and a place said twice go last, in :func:`tidy`.
     """
     if not value:
         return None
     text = _LINE_BREAKS.sub("; ", _TAGS.sub(" ", value).strip())
-    return repaired_mojibake(_WS.sub(" ", html.unescape(text)).strip()) or None
+    return tidy(repaired_mojibake(_WS.sub(" ", html.unescape(text)).strip()) or None)
 
 
 def host_of(url: str | None) -> str:
