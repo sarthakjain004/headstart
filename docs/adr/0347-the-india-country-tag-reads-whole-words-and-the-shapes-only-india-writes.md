@@ -30,7 +30,9 @@ India beside an Indiana or British Indian Ocean word that used to veto the whole
 
 **A guard can sit on a state name.** `EXCLUDE` already vetoes a city alias where a specific other place
 carries it; it now also takes a state, so `bihar` no longer claims Hungary's Hajdú-Bihar (17 rows).
-The other vetoes, each read against the posting: Delhi, New York and Delhi, Louisiana (8 rows), Inashiki
+The other vetoes, each read against the posting: Delhi, New York (7 rows) and the one Louisiana plant string
+"Delhi, LA (Delhi Plant)" (1 row; the veto carries its "(" so "Delhi, Laxmi Nagar" survives, which means a
+plain "Delhi, LA" is not vetoed), Inashiki
 in Japan against `nashik` (5), Madras, Oregon against `chennai`, Kagithane in Istanbul against `thane`,
 Maladzyechna in Belarus against `malad`, and the typo "Cananda" against `anand`. "Little India, Singapore"
 (2 rows) is the `INDIA_EXCLUDE` entry.
@@ -54,11 +56,15 @@ Maladzyechna in Belarus against `malad`, and the typo "Cananda" against `anand`.
 24 rows, Sahnewal 9, Siliguri 8, Dadra 7, Pantnagar 6, Korba 5) and checked against the posting or the
 employer's other rows. They match as whole words, unlike the substring city aliases, so a short name
 cannot hide inside another place ("Korbach", Germany). A town enters only if it recovers a row no other
-rule does. A name that is also a place, a person or a word elsewhere stays out: `kota` (Kota Kinabalu,
+rule does, bar the canonical spelling of a town that did (`kutch`, `hubli`, `dombivli`, `pantnagar`, which
+match no row today). A name that is also a place, a person or a word elsewhere stays out: `kota` (Kota Kinabalu,
 Kota Bharu, Kota Cilegon), `parsa` (Nepal), `shalimar` (Florida), `patan` (Nepal), `mirzapur`
 (Bangladesh), `hassan`, `kalina` (a Polish village) and `blore` (an English village). Eleven typos of
 cities already held, and the new spelling "Sambhajinagar" of Aurangabad, join those cities' aliases
-("gurugarm", "gaziabad", "Bengalore"), since a typo that long cannot collide.
+("gurugarm", "gaziabad", "Bengalore"), since a typo that long cannot collide. Two typos short enough to
+collide with a word ("nodia" for Noida, "coachin" for Cochin, the latter inside "coaching") are `TOWNS`
+names instead, so the Noida and Delhi NCR filters do not reach them. Two state names join `STATES`
+("arunachal pradesh", 2 rows, and the misspelling "kerela", 1 row).
 
 **A bare "IN" stays India.** 230 rows read exactly "IN". 228 come from feeds that write a bare ISO
 country code as the whole location (SuccessFactors 175, iCIMS 29, ADP 20, Cornerstone 4), the same feeds
@@ -117,7 +123,15 @@ world gazetteer's India guard and `TOWNS` and the state guard do not. That file 
 
 `scripts/eval/location_filter_audit.py` models `where("india")` clause by clause and stops when the model
 disagrees with the SQL. It already omitted the whole-string `IN` (ADR-0086's amendment) and so did not
-reproduce the clause before this change; it is left as it was.
+reproduce the clause before this change, and its docstring still calls the country term a substring; it
+is left as it was. `scripts/eval/verify_filters.py`'s `_india_ok` pools only "india", the city aliases and
+the state names, so on the live Space it reads a row tagged through a town, a shape or the bare "IN" as a
+violation (bare "IN" rows already did); it too is left, for the combined review.
+
+The plant-tail rule has no Indiana veto: it is safe on the 1,425 rows that carry the shape because an Indiana
+row's middle part is a state, but "Muncie, Delaware, IN" (a county in the middle) would tag India if a
+tenant wrote it. The measurement is the guard, not a list, and a tenant that writes Indiana that way is the
+signal to add a veto.
 
 ## Alternatives
 

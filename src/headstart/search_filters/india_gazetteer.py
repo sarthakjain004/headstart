@@ -223,7 +223,8 @@ EXCLUDE: dict[str, tuple[str, ...]] = {
     "bihar": ("hajdu", "hajdú"),
 }
 
-# Unambiguous state/UT names — country-level match only (catches "Karnataka, IN" residue).
+# State/UT names that are unambiguous, bar "bihar" (it carries an EXCLUDE guard) — country-level match
+# only (catches "Karnataka, IN" residue).
 # Diacritic variants are the ones actually observed in workday strings. "punjab" is
 # deliberately absent (Pakistan). "goa" is already a city entry.
 STATES: tuple[str, ...] = (
@@ -353,7 +354,7 @@ SUBDIVISIONS: tuple[str, ...] = (
 INDIA_EXCLUDE: tuple[str, ...] = ("little india",)
 
 # Indian towns and plants that appear on country-less rows and that no city alias covers. Each was
-# read off a location no gazetteer rule reached (ADR-0347, 2026-09-29 table: 176 rows on these
+# read off a location no gazetteer rule reached (ADR-0347, 2026-09-29 table: 172 rows on these
 # names beyond the shapes above) and checked against the posting or its employer's other rows.
 # Matched as whole words (:func:`_towns_pattern`), unlike the substring city aliases: a short name
 # must not hide inside another place ("Korbach", Germany). Country-level only — a town is not a
@@ -602,13 +603,6 @@ _SUBDIVISION_RX = re.compile(_subdivision_pattern())
 _PLANT_TAIL_RX = re.compile(_PLANT_TAIL_PATTERN)
 
 
-def _city_where(city: str) -> str | None:
-    aliases = CITIES.get(city)
-    if not aliases:
-        return None
-    return f"({_any(aliases)}{_none(EXCLUDE.get(city, ()))})"
-
-
 def _state_where(state: str) -> str:
     """A state name that carries a guard of its own, like a guarded city."""
     return f"({_any((state,))}{_none(EXCLUDE[state])})"
@@ -638,6 +632,7 @@ def _plant_tail_where() -> str:
 
 
 def _towns_where() -> str:
+    """Every :data:`TOWNS` name as a whole word (:func:`_towns_pattern`)."""
     return _regexp_like(_sql(_towns_pattern()))
 
 
@@ -667,8 +662,9 @@ def where(place: str) -> str | None:
         ]
         # Every city and state whose aliases carry no collision guard shares ONE alternation,
         # because a guard is the only reason an alias needs a term of its own — and only a few
-        # of the 68 cities and 20 states have one. That is where the predicate count actually
-        # falls: 267 LIKEs become a dozen `regexp_like`s, of which this is the largest by far.
+        # cities and states have one. That is where the predicate count actually falls: 267
+        # LIKEs became one alternation per guarded city or state plus a handful of rules, and
+        # this shared one is the largest by far.
         plain: list[str] = []
         for city, aliases in CITIES.items():
             if EXCLUDE.get(city):

@@ -442,7 +442,8 @@ def build_doc(job: dict) -> str:
 # v24 (ADR-0347): `search_filters/india_gazetteer.py` reads "india" as a whole word, guards Hungary's
 # Hajdú-Bihar, Delhi's namesakes in New York and Louisiana and four city aliases hidden mid-word,
 # reads the ISO country code beside an Indian subdivision code, PIN or plant name, and adds 75
-# whole-word `TOWNS`, 12 aliases on cities already held and "Remote, IN" as a whole string.
+# whole-word `TOWNS`, 12 aliases on cities already held, two state names and "Remote, IN" as a
+# whole string.
 # The range since the v23 bump at `4e3291c7` is `git log 4e3291c7..<the squash-merged change> --
 # src/headstart/search_filters/india_gazetteer.py`: this change alone (ADR-0322's Pakistan guard,
 # `78a77a6f`, precedes v23). `location` is unchanged on every row it moves, so `refresh_row`'s
