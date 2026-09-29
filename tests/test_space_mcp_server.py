@@ -2610,6 +2610,53 @@ def test_an_unverified_operator_is_flagged_and_listed_last_on_every_lens():
         )
 
 
+def test_a_row_whose_opened_was_mostly_found_late_is_flagged_and_listed_last_on_every_lens():
+    """P1-1 of the round-4 critique: Starbucks stood #3 on the default Lens on 50 opened, 28 of
+    its postings first seen that week posted more than 14 days before (ADR-0351)."""
+    rows = [
+        _hot_row(1, opened_fresh=80, opened_found_late=10),
+        _hot_row(
+            2,
+            company="Starbucks",
+            opened=50,
+            closed=0,
+            opened_fresh=22,
+            opened_found_late=28,
+        ),
+        _hot_row(3),  # its postings went unread: nothing to flag
+    ]
+    for lens in ("opened_less_closed", "expansion", "volume", "rate"):
+        text = server.call(FakeSpace(hot=_hot(rows)), "hiring_now", {"lens": lens})
+        listed = _listed(text)
+        assert listed[-1].split('"')[1] == "Starbucks", lens
+        assert listed[-1].endswith(
+            "FLAG opened mostly found late, not newly posted: of its postings first seen "
+            "since turnover began, 28 were posted more than 14 days before HeadStart saw "
+            "them and 22 since"
+        )
+        assert "FLAG" not in "".join(listed[:-1])
+        assert (
+            "1 of these rows opened mostly postings HeadStart found late, posted weeks "
+            "before it first saw them" in text
+        )
+
+
+@pytest.mark.parametrize(
+    ("opened", "fresh", "late", "flagged"),
+    [
+        (50, 22, 28, True),
+        (50, 25, 25, False),  # half its opened could be newly posted
+        (50, 0, 24, False),  # too few served postings found late to say so
+        (9, 0, 9, False),  # too few opened
+        (10, 4, 5, True),
+    ],
+)
+def test_found_late_needs_both_halves(opened, fresh, late, flagged):
+    row = _hot_row(1, opened=opened, opened_fresh=fresh, opened_found_late=late)
+    text = server.call(FakeSpace(hot=_hot([row])), "hiring_now", {})
+    assert ("FLAG opened mostly found late" in text) is flagged
+
+
 def test_the_sites_order_is_kept_and_unnumbered_when_no_flagged_row_leads():
     rows = [_hot_row(1), _hot_row(2), _hot_row(3, net=435, opened=20, closed=32)]
     text = server.call(FakeSpace(hot=_hot(rows)), "hiring_now", {"lens": "expansion"})

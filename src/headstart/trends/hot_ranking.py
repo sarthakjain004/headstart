@@ -50,6 +50,20 @@ never otherwise find.
 A found Board inside the window needs no rule here: its backlog is a step the history nets out
 of the company's change, as the trend does.
 
+## Opened that was posted long before HeadStart saw it (ADR-0351)
+
+A company's jobs **Opened** are ids new on a Board already counted, and some of them were posted
+weeks earlier: a Board read again after a gap, postings listed again under new ids, a scraper or
+filter change that let old postings in. Starbucks stood third on Opened less closed on 2026-09-29
+on 50 opened; 28 of its postings first seen that week were posted more than 14 days before
+HeadStart first saw them. So each row also says, from the served postings first seen since its
+turnover began, how many were posted within ``FOUND_LATE_DAYS`` of first sight
+(``opened_fresh``, undated ones included) and how many longer before (``opened_found_late``).
+Both are None where the Space could not read the postings. They count postings still served, so
+a posting opened and closed inside the window is in neither; the reader judges them against
+``opened``. Opened itself is unchanged: redefining it by posted date belongs to the restated
+Trends (ADR-0330, step 5).
+
 Staffing firms and job boards are ranked like any company, and the payload's
 ``hidden_by_default`` (``HIDDEN_BY_DEFAULT``) names them as the Operators the tab hides unless
 asked (ADR-0238), never IT services, which employ the people they post for. The page, and any
@@ -60,13 +74,14 @@ employer only because no list names it, while its name reads like an agency's
 
 from __future__ import annotations
 
-from collections import Counter
-from collections.abc import Mapping
-from datetime import datetime, timedelta
+from collections import Counter, defaultdict
+from collections.abc import Iterable, Mapping
+from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from headstart.boards import board_operator
-from headstart.boards.board_identity import ats_of
+from headstart.boards.board_identity import ats_of, board_end, lower_key
+from headstart.search_filters import posted_date_guard
 from headstart.trends import line_reading
 
 if TYPE_CHECKING:
@@ -87,9 +102,17 @@ MIN_COUNTED_DAYS = 3
 #: The Operators the tab hides unless asked, in the order its "hidden" note names them (ADR-0238).
 HIDDEN_BY_DEFAULT: tuple[Operator, ...] = ("staffing", "aggregator")
 
+#: A posting first seen more than this many days after its posted date was found late, not newly
+#: posted (ADR-0351). Of Workday's postings first seen since 2026-09-01 on a Board already served
+#: 3 days before, 74% were first seen within 2 days of posting, 81% within 14, and 13% over 30:
+#: a gap of weeks is a posting found late, not a slow read.
+FOUND_LATE_DAYS = 14
+
 
 def rank(
-    history: TrendHistory, directory: Mapping[str, Mapping[str, Any]]
+    history: TrendHistory,
+    directory: Mapping[str, Mapping[str, Any]],
+    first_seen: Iterable[tuple[str, str | None, str | None]] | None = None,
 ) -> dict[str, Any]:
     """The ``/hot`` payload: ``{window, lenses, counts, hidden_by_default}``, or ``{}`` when
     there is no measured window yet, which keeps the tab dark rather than ranking nothing.
@@ -98,7 +121,9 @@ def rank(
     :meth:`~headstart.trends.trend_history.TrendHistory.openings`,
     :meth:`~headstart.trends.trend_history.TrendHistory.trailing_week` and
     :func:`headstart.trends.line_reading.read_company_moves`. ``directory`` is the Company
-    directory, ``{company key: {name, boards, operator}}``.
+    directory, ``{company key: {name, boards, operator}}``. ``first_seen`` is the served
+    postings first seen since the window's ``turnover_from``, as ``(id, first_seen,
+    posted_at)``, or None where they could not be read (``_posted_ages``).
 
     Every candidate company is scored once and every lens sorts the same rows, so a company
     cannot appear as an employer on one lens and a services firm on another.
@@ -119,6 +144,11 @@ def rank(
     too_new_since = (
         datetime.fromisoformat(newest) - timedelta(days=MIN_COUNTED_DAYS)
     ).isoformat(timespec="seconds")
+    posted_ages = (
+        None
+        if first_seen is None or not window["turnover_from"]
+        else _posted_ages(directory, first_seen, window["turnover_from"], newest)
+    )
     candidates, too_new = [], 0
     for key, open_now in ranked.items():
         company = moves.get(key)
@@ -133,6 +163,12 @@ def rank(
         # measured.
         opened = move.turnover.opened if move.turnover else None
         closed = move.turnover.closed if move.turnover else None
+        # None where either the turnover or the postings went unread (ADR-0351).
+        fresh, found_late = (
+            (None, None)
+            if opened is None or posted_ages is None
+            else posted_ages.get(key, (0, 0))
+        )
         candidates.append(
             {
                 "key": key,
@@ -162,6 +198,10 @@ def rank(
                 "opened_less_closed": None
                 if closed is None or company.closures_uncounted_boards
                 else opened - closed,
+                # Of its served postings first seen since turnover began, those posted within
+                # FOUND_LATE_DAYS of first sight (or undated), and those posted longer before.
+                "opened_fresh": fresh,
+                "opened_found_late": found_late,
             }
         )
     # Ties break on the key, so the same history always ranks the same list.
@@ -182,6 +222,8 @@ def rank(
         # roles", and with N hardcoded there, changing MIN_STOCK would leave that sentence
         # quietly stating a number the ranking no longer uses.
         "min_stock": MIN_STOCK,
+        # Likewise the days `opened_found_late` counts past (ADR-0351).
+        "found_late_days": FOUND_LATE_DAYS,
         "unnamed": sum(
             1
             for board, n in openings.items()
@@ -211,6 +253,44 @@ def rank(
         "counts": counts,
         "hidden_by_default": list(HIDDEN_BY_DEFAULT),
     }
+
+
+def _posted_ages(
+    directory: Mapping[str, Mapping[str, Any]],
+    first_seen: Iterable[tuple[str, str | None, str | None]],
+    since: str,
+    to: str,
+) -> dict[str, tuple[int, int]]:
+    """Per company key, ``(fresh, found late)`` among the postings first seen after ``since`` and
+    by ``to`` on its Boards: posted within ``FOUND_LATE_DAYS`` of first sight, or with no
+    readable posted date, against posted longer before. An id is matched to its Board among the
+    directory's own keys, so a native id holding a colon names its real Board (ADR-0049)."""
+    company_of = {
+        lower_key(board): key
+        for key, entry in directory.items()
+        for board in entry["boards"]
+    }
+    counts: dict[str, list[int]] = defaultdict(lambda: [0, 0])
+    for job_id, seen, posted in first_seen:
+        if not seen or not since < seen <= to:
+            continue
+        end = board_end(job_id, company_of)
+        if end is None:
+            continue
+        counts[company_of[lower_key(job_id[:end])]][_found_late(seen, posted)] += 1
+    return {key: (fresh, late) for key, (fresh, late) in counts.items()}
+
+
+def _found_late(seen: str, posted: str | None) -> bool:
+    """Whether a posting first seen at ``seen`` was posted more than ``FOUND_LATE_DAYS`` before;
+    False where its posted date cannot be read, so an undated posting counts as fresh."""
+    if not posted_date_guard.is_comparable(posted):
+        return False
+    try:
+        age = date.fromisoformat(seen[:10]) - date.fromisoformat(posted[:10])
+    except ValueError:
+        return False
+    return age.days > FOUND_LATE_DAYS
 
 
 def _top(candidates: list[dict[str, Any]], figure: str) -> list[dict[str, Any]]:
