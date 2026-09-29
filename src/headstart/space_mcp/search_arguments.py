@@ -118,7 +118,10 @@ PROPERTIES: dict[str, dict[str, Any]] = {
     "location": {
         "type": "string",
         "maxLength": 60,
-        "description": "Text the job's location contains, any country.",
+        "description": (
+            "Text the job's location contains, any country. Accents and a city's other "
+            "spellings read alike: Zurich finds Zürich, Bangalore finds Bengaluru."
+        ),
     },
     "max_age_days": {
         "type": "integer",
