@@ -675,7 +675,9 @@ def _keep_static_for_the_boot(response):
 # `closures_partly_uncounted` (ADR-0321).
 # 9: `family=` without `board=` (a category across the whole index), `max_age_days`,
 # `required_years_at_least` and `exclude_company` on /search and /facets (ADR-0322).
-_AGENT_API_VERSION = 9
+# 10: /companies/locations lists each country's cities, a place's first city merged across its
+# spellings ("Dublin" and "Dublin, Ireland"), not its places as written (ADR-0323).
+_AGENT_API_VERSION = 10
 
 
 @app.after_request
@@ -829,7 +831,7 @@ def read_jobs():
     search field plus the description (cut at ``description_limit``), department, the raw stated
     experience and ``unconfirmed`` — whether the latest scrape of its Board missed it, or null
     where this deployment does not know. An id the table does not hold is listed in ``missing``,
-    not refused: it has closed, or was never an id, and either is an answer."""
+    not refused: why one may be (`job_absence.WHY_NOT_SERVED`) is an answer."""
     ids = list(
         dict.fromkeys(i.strip() for i in request.args.getlist("id") if i.strip())
     )

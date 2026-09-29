@@ -7,8 +7,10 @@ served job once, in the band the Trends Level view puts it in (`trends.role_taxo
 internship by its title or type, else by the served `min_years`: 0–1, 2–4, 5–7, 8+, or not
 stated), so a profile's levels read as the site's Level view does.
 
-One scan of the Boards' rows, as :mod:`headstart.serving.location_counts` makes, reading the three
-columns the band needs.
+One scan of the Boards' rows (`location_counts.scoped_rows`), reading the three columns the band
+needs. The internship band is beyond the 0–1, 2–4, 5–7, 8+ and not-stated bands the round-2
+critique named; it is kept because the critique asked for the Trends level bands, and Trends has
+it.
 """
 
 from __future__ import annotations
@@ -16,7 +18,7 @@ from __future__ import annotations
 from collections import Counter
 from typing import Any
 
-from headstart.serving.location_counts import MAX_ROWS
+from headstart.serving import location_counts
 from headstart.trends.role_taxonomy import BAND_LABELS, band
 
 _COLUMNS = ["min_years", "title", "employment_type"]
@@ -26,20 +28,14 @@ def bands(table: Any, where: str) -> dict[str, Any]:
     """Every Trends level band's count of the rows ``where`` selects, in the Level view's order,
     with its label. ``jobs`` is how many rows were counted; ``capped`` says the scan reached
     :data:`~headstart.serving.location_counts.MAX_ROWS`."""
-    rows = (
-        table.search()
-        .where(where, prefilter=True)
-        .select(_COLUMNS)
-        .limit(MAX_ROWS)
-        .to_list()
-    )
+    rows = location_counts.scoped_rows(table, where, _COLUMNS)
     counted = Counter(
         band(row.get("min_years"), row.get("title"), row.get("employment_type"))
         for row in rows
     )
     return {
         "jobs": len(rows),
-        "capped": len(rows) >= MAX_ROWS,
+        "capped": len(rows) >= location_counts.MAX_ROWS,
         "bands": [
             {"band": name, "label": label, "count": counted.get(name, 0)}
             for name, label in BAND_LABELS.items()

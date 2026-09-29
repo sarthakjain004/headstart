@@ -386,6 +386,46 @@
         }
       },
       "why": "Round-2 critique P2, the risk ADR-0277 names (ADR-0322): jobs like one posting are often that employer's own; similar_to ranks by the posting and exclude_company leaves its employer out."
+    },
+    {
+      "id": "t32",
+      "prompt": "Find IT Associate Software Engineer jobs in the United States. Does any one job appear twice?",
+      "verifier": "mentions",
+      "expect": {
+        "all": [["Eversource"]],
+        "tool_results_all": ["another spelling of the company"]
+      },
+      "why": "Round-2 critique st05b (ADR-0323): one Eversource requisition is served from its Radancy front ('EVERSOURCE') and its Workday Board ('Eversource Energy'). search_jobs lists the second under the first as 'also #N' and says why. Data-dependent: the pair was posted 2026-09-28; retire the task when it closes."
+    },
+    {
+      "id": "t33",
+      "prompt": "Which company is behind the job board oracle:hcbt.fa.em2.oraclecloud.com, and what tech roles does it have open?",
+      "verifier": "mentions",
+      "expect": {
+        "all": ["Kotak"],
+        "tool_results_all": ["(directory name)"]
+      },
+      "why": "Round-2 critique js08b (ADR-0323): that Oracle pod serves its jobs with no company name, so search_jobs shows the Company directory's name for it, marked '(directory name)'. The answer must name Kotak, not the pod's host."
+    },
+    {
+      "id": "t34",
+      "prompt": "How senior are Stripe's open tech roles? Give the split by level.",
+      "verifier": "mentions",
+      "expect": {
+        "all": [["senior"], ["entry", "0–1", "0-1"]],
+        "tool_results_all": ["Trends Level view's bands"]
+      },
+      "why": "Round-2 critique P1-9 (ADR-0323): company_profile counts each job once in the Trends level bands, not the Search rail's ceilings where a job stating no experience counts at every level. The answer must give the senior and entry-level bands from that line."
+    },
+    {
+      "id": "t35",
+      "prompt": "Show me as much as you can of the full descriptions of these two postings: ashby:caremessage:c6ef6788-c2d3-4668-8361-8ffd9ce92c1b and clearcompany:firefly:3816581.",
+      "verifier": "mentions",
+      "expect": {
+        "all": [["CareMessage"]],
+        "tool_results_all": ["ask for this id alone"]
+      },
+      "why": "Round-2 critique inj03 (ADR-0323): two ids share get_job's 18,000-character budget, so the 9,699-character CareMessage description is cut at its 9,000 share, and the answer says to read that id alone, not to raise max_chars_per_job past what the share allows. Data-dependent: both were open on 2026-09-29."
     }
   ],
   "heldout_sha256": "801e7149bc71c42e7b346dcf089ea20f87d1e0035d989b3dba8ffb50fe055e4d"

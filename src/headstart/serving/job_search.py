@@ -49,6 +49,7 @@ from headstart.search_filters.compiler import (
 )
 from headstart.serving import (
     facets,
+    job_absence,
     level_counts,
     location_counts,
     requirement_counts,
@@ -304,6 +305,15 @@ def scoped_boards_clause(args) -> str | None:
     if len(boards) > MAX_SCOPED_BOARDS:
         raise ValueError(f"at most {MAX_SCOPED_BOARDS} boards")
     return board_clause(boards, exclude=False)
+
+
+def _named_boards_clause(args) -> str:
+    """:func:`scoped_boards_clause` for a route that reads a company's own rows: naming no Board
+    is a :class:`ValueError`, since the scan would then read every row."""
+    where = scoped_boards_clause(args)
+    if where is None:
+        raise ValueError("name at least one Board with board=")
+    return where
 
 
 def load_family_ids(path: Path) -> dict[str, list[str]] | None:
@@ -1636,8 +1646,7 @@ class JobSearch:
         )
         if not rows:
             raise ValueError(
-                f"no job with id {job_id!r} is in the index now: it has closed, or was never an "
-                "id. HeadStart removes a posting once two consecutive scrapes of its Board miss it"
+                f"no job with id {job_id!r} is in the index now. {job_absence.WHY_NOT_SERVED}"
             )
         return rows[0]["vector"]
 
@@ -1664,9 +1673,7 @@ class JobSearch:
         :mod:`headstart.serving.location_counts`. A request naming no Board, too many, or a
         ``limit`` outside 1 to :data:`MAX_LOCATIONS` is a :class:`ValueError`: without Boards it
         would read every row's location."""
-        where = scoped_boards_clause(args)
-        if where is None:
-            raise ValueError("name at least one Board with board=")
+        where = _named_boards_clause(args)
         limit = _int_arg(args)("limit")
         limit = LOCATIONS_SHOWN if limit is None else limit
         if not 1 <= limit <= MAX_LOCATIONS:
@@ -1677,10 +1684,7 @@ class JobSearch:
         """The Trends level bands of the served jobs on ``board=`` (repeatable, required) — see
         :mod:`headstart.serving.level_counts`. A request naming no Board, or too many, is a
         :class:`ValueError`, as :meth:`locations` refuses one."""
-        where = scoped_boards_clause(args)
-        if where is None:
-            raise ValueError("name at least one Board with board=")
-        return level_counts.bands(self._table, where)
+        return level_counts.bands(self._table, _named_boards_clause(args))
 
     def requirements(
         self,
