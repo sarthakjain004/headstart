@@ -51,8 +51,8 @@ string and scope line) live in `space_mcp/search_arguments.py`; the cache is `jo
 `serving/count_ranking.most_first`, which `location_counts` also uses; each family's ids and the
 current families travel as one `RoleAssignments`.
 
-**Agent contract 9**: the JSON change is contract, so `_AGENT_API_VERSION` and `AGENT_API` rise
-together (ADR-0324's route was 7, ADR-0323 having taken 6 and ADR-0321 8).
+**Agent contract 10**: the JSON change is contract, so `_AGENT_API_VERSION` and `AGENT_API` rise
+together (ADR-0324's route was 7, ADR-0323 having taken 6, ADR-0321 8 and ADR-0322 9).
 
 ## Measurement
 
