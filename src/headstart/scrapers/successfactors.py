@@ -28,7 +28,8 @@ field from its markup: schema.org microdata (``itemprop="title"`` / ``"descripti
 ``og:title``, a ``<title>`` of the form "{Job Title} Job Details | {Co}", and per-tenant
 ``joblayouttoken`` label/value spans (City / State/Province / Posting Start Date, and the
 department and employment-type labels in :data:`_DEPARTMENT_LABELS` /
-:data:`_EMPLOYMENT_TYPE_LABELS`) — each field falls back independently, since tenants mix the
+:data:`_EMPLOYMENT_TYPE_LABELS`; an employment type a tenant types into the description instead is
+read by :func:`_typed_employment_type`) — each field falls back independently, since tenants mix the
 shapes. The reader tries a JSON-LD ``JobPosting``
 first, and this docstring used to say classic RMK pages embed one; no page measured does today:
 none of 50 pages from the 10 largest Boards nor the probe pages of 195 more (ADR-0196), and none of
@@ -80,7 +81,6 @@ import re
 from collections.abc import Mapping
 from datetime import datetime
 from html import unescape
-from re import Pattern
 from types import MappingProxyType
 from typing import Any
 from urllib.parse import unquote
@@ -989,7 +989,7 @@ def _page_fields(page: str, url: str | None = None) -> dict[str, Any]:
         fields["posted_at"] = _csb_posted_at(page)
     if not fields.get("employment_type"):
         fields["employment_type"] = _label_value(
-            page, *_EMPLOYMENT_TYPE_LABELS, accept=_LETTER
+            page, *_EMPLOYMENT_TYPE_LABELS, accept=_HAS_LETTER
         ) or _typed_employment_type(fields.get("description"))
     fields["department"] = _label_value(page, *_DEPARTMENT_LABELS)
     requisition = _INTERNAL_ID.search(page)
@@ -1127,13 +1127,13 @@ _EMPLOYMENT_TYPE_VALUE = re.compile(
 )
 # A token value with no letter is a code or a figure ("2997" under "Employment type:" on
 # careers.technipfmc.com, "100%" under "Workload:" on jobs.wingd.com), never a type.
-_LETTER = re.compile(r"[^\W\d_]")
+_HAS_LETTER = re.compile(r"[^\W\d_]")
 _BLOCK_END = re.compile(r"<br\s*/?>|</(?:p|li|div|tr|h\d)>", re.IGNORECASE)
 _TAG = re.compile(r"<[^>]*>")
 
 
 def _label_value(
-    page: str, *labels: str, accept: Pattern[str] | None = None
+    page: str, *labels: str, accept: re.Pattern[str] | None = None
 ) -> str | None:
     """The value span following the first present ``joblayouttoken`` label, whose value
     ``accept`` (when given) must match."""

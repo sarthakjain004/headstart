@@ -5645,8 +5645,8 @@ def _sf_label_span(label: str, value: str, lang: str = "en-US") -> str:
 @pytest.mark.parametrize(
     ("label", "value"),
     [
-        # jobs.dlr.de, join.cnh.com (2026-09-29, verbatim); the Type of Contract span is the
-        # borealisgroup-shaped one, its value as the probe read it.
+        # jobs.dlr.de, join.cnh.com (2026-09-29, verbatim); the Type of Contract span is
+        # constructed, its value as the probe read it on jobs.servier.com.
         ("Type of employment:", "Part time, Full-time"),
         ("Job Type for Job Posting:", "Full Time"),
         ("Type of Contract:", "Full-time Employment / Unlimited"),
