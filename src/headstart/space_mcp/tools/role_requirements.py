@@ -246,10 +246,16 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
         scope = company_scope.for_search(client, company, needs_boards=False)
     counted = client.read(SpaceRoute.REQUIREMENTS, _params(arguments, scope))
     lines = _lead(arguments, counted)
-    if any(arguments.get(name) not in (None, "", False) for name in _FILTERS):
+    if any(
+        arguments.get(name) not in (None, "", False) for name in _FILTERS
+    ) or search_arguments.operators_kept(arguments):
         # The category is the lead's own subject, so the scope line leaves it out.
         filters = {k: v for k, v in arguments.items() if k != "category"}
-        lines.append(search_arguments.scope_line(filters, scope))
+        lines.append(
+            search_arguments.scope_line(
+                filters, scope, counted.get("operators_left_out")
+            )
+        )
     if note := search_arguments.query_constraints_note(arguments.get("query") or ""):
         lines.append(note)
     if not counted["distinct"]:
@@ -309,6 +315,7 @@ TOOL = SpaceTool(
                 "closest within it."
             ),
             **{name: search_arguments.PROPERTIES[name] for name in _FILTERS},
+            "operators": search_arguments.PROPERTIES["operators"],
         },
         "additionalProperties": False,
     },

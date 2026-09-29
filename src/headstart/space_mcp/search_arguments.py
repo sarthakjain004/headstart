@@ -8,8 +8,10 @@ holds what only a filter narrows by (ADR-0338).
 from __future__ import annotations
 
 import re
-from typing import Any
+from typing import Any, get_args
 
+from headstart.boards.board_operator import Operator
+from headstart.mcp_protocol.messages import ToolFailure
 from headstart.search_filters import (
     country_filter,
     country_gazetteer,
@@ -17,6 +19,7 @@ from headstart.search_filters import (
     india_gazetteer,
 )
 from headstart.space_mcp import company_scope, role_families, scraped_text
+from headstart.trends.hot_ranking import HIDDEN_BY_DEFAULT
 
 #: Every filter argument as the tools name it -> as the Space does: the query-string name
 #: `JobSearch.parse_filters` reads, which is also the `SearchFilters` field `/facets` names a
@@ -50,6 +53,22 @@ _SENT_ELSEWHERE = (*FLAGS, "company", "keyword", "keyword_in")
 #: `max_age_days` when the caller sends none (ADR-0322): a relevance search led with Jobs posted
 #: in 2022 (round-2 critique P1-6). 0 is any age, and is not sent.
 DEFAULT_MAX_AGE_DAYS = 365
+
+#: Who posts a job, as the Hiring now tab labels its companies (ADR-0335).
+OPERATORS: tuple[str, ...] = get_args(Operator)
+
+#: The Operators a search keeps when the caller names none: those the Hiring now tab shows
+#: unless asked (ADR-0238), so a search and the tab leave out the same staffing firms and job
+#: boards.
+DEFAULT_OPERATORS = [op for op in OPERATORS if op not in HIDDEN_BY_DEFAULT]
+
+#: Each Operator as a sentence names the companies it labels.
+_OPERATOR_WORDS = {
+    "employer": "employers",
+    "services": "IT services firms",
+    "staffing": "staffing firms",
+    "aggregator": "job boards",
+}
 
 #: Every place the Space's India filter names: the whole country, its region, its cities.
 INDIA_PLACES = [
@@ -107,6 +126,20 @@ PROPERTIES: dict[str, dict[str, Any]] = {
         "description": (
             "Leaves out postings older than this many days: the posted date, else "
             "the day HeadStart first saw the job. 365 unless sent; 0 for any age."
+        ),
+    },
+    "operators": {
+        "type": "array",
+        "items": {"type": "string", "enum": list(OPERATORS)},
+        "maxItems": len(OPERATORS),
+        "default": DEFAULT_OPERATORS,
+        "description": (
+            "Who may post the jobs, as hiring_now labels companies: employer, services (an "
+            "IT services firm), staffing (an agency posting clients' contracts) or aggregator "
+            "(a job board re-posting others' jobs). Staffing and aggregator are left out "
+            "unless named, as on the site's Hiring now tab, or a `company` is named; the "
+            "answer says how many jobs that left out. Labels come from a curated list: an "
+            "unlisted company counts as an employer."
         ),
     },
 }
@@ -173,13 +206,54 @@ def filter_params(arguments: dict[str, Any]) -> list[tuple[str, str]]:
         sent = value not in (None, "") and (argument != "max_age_days" or value)
         if argument not in _SENT_ELSEWHERE and sent:
             params.append((name, str(value)))
+    if (kept := operators_kept(arguments)) is not None:
+        params.append(("operators", ",".join(kept)))
     return params
 
 
+def operators_kept(arguments: dict[str, Any]) -> list[str] | None:
+    """The Operators ``arguments`` keep, in :data:`OPERATORS`' order, or None for all of them,
+    which leaves nothing out and so is not sent. The Space's default is every row, so the tool's
+    default is sent like any other list (ADR-0335)."""
+    asked = arguments.get("operators")
+    if asked is None:
+        return None
+    if (arguments.get("company") or "").strip() and list(asked) == DEFAULT_OPERATORS:
+        # A company named is the caller's own choice of who posts: Jobgether's jobs, asked for
+        # by name, are not left out as a job board's.
+        return None
+    if not asked:
+        raise ToolFailure(
+            "operators names who may post the jobs; send at least one of: "
+            + ", ".join(OPERATORS)
+            + "."
+        )
+    kept = [op for op in OPERATORS if op in asked]
+    return None if len(kept) == len(OPERATORS) else kept
+
+
+def _operators_said(arguments: dict[str, Any], left_out: int | None) -> str | None:
+    """What ``operators`` left out, in words, with how many jobs where the Space counted them."""
+    kept = operators_kept(arguments)
+    if kept is None:
+        return None
+    dropped = " and ".join(_OPERATOR_WORDS[op] for op in OPERATORS if op not in kept)
+    counted = "" if left_out is None else f": {left_out:,} jobs"
+    if kept == DEFAULT_OPERATORS:
+        return (
+            f"{dropped} left out, as the site's Hiring now tab hides them{counted} (name "
+            "them in operators to include them)"
+        )
+    return f"{dropped} left out{counted}"
+
+
 def scope_line(
-    arguments: dict[str, Any], scope: company_scope.CompanyScope | None
+    arguments: dict[str, Any],
+    scope: company_scope.CompanyScope | None,
+    operators_left_out: int | None = None,
 ) -> str:
-    """What the filters in ``arguments`` scoped the answer to, as the tools name them."""
+    """What the filters in ``arguments`` scoped the answer to, as the tools name them, with how
+    many jobs ``operators`` left out where the Space counted them (``operators_left_out``)."""
     said = []
     if scope is not None:
         if scope.company is not None:
@@ -260,4 +334,6 @@ def scope_line(
         said.append(
             f"keyword {scraped_text.quoted(keyword)} in {arguments.get('keyword_in') or 'title'}"
         )
+    if operators := _operators_said(arguments, operators_left_out):
+        said.append(operators)
     return "Scope: " + (" · ".join(said) if said else "the whole index") + "."

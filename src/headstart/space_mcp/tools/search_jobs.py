@@ -337,6 +337,11 @@ def _nothing_matched(
     scope: company_scope.CompanyScope | None,
     arguments,
 ) -> str:
+    if left_out := facets.get("operators_left_out"):
+        return (
+            f"0 jobs: the {left_out:,} that match are all posted by companies `operators` "
+            "leaves out; name them in operators to see them."
+        )
     blocking = facets.get("blocking")
     if blocking == "company" and scope is not None and scope.substring is not None:
         return (
@@ -435,7 +440,9 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
     rows = shown_company.named(client, rows)
     total = int(facets.get("total") or 0)
     k, page = int(arguments["limit"]), int(arguments["page"])
-    lines = [search_arguments.scope_line(arguments, scope)]
+    lines = [
+        search_arguments.scope_line(arguments, scope, facets.get("operators_left_out"))
+    ]
     if note := search_arguments.query_constraints_note(arguments.get("query") or ""):
         lines.append(note)
     if coverage := _coverage_line(arguments, facets):
@@ -595,6 +602,7 @@ TOOL = SpaceTool(
                 "description": "New to HeadStart within this many hours.",
             },
             "max_age_days": search_arguments.PROPERTIES["max_age_days"],
+            "operators": search_arguments.PROPERTIES["operators"],
             "exclude_company": {
                 "type": "string",
                 "maxLength": 100,

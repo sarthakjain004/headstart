@@ -2143,3 +2143,84 @@ def test_exclude_company_drops_every_name_containing_it_and_keeps_nameless_rows(
     assert sorted(_ids(rows)) == ["lever:acme:1", "lever:acme:2", "lever:gamma:5"]
     blocked = families_served.facets({"family": "ai-ml", "exclude_company": "e"})
     assert blocked["total"] == 0 and blocked["blocking"] == "exclude_company"
+
+
+# ---- operators= (ADR-0335) ----
+
+#: Beta's Board is a staffing firm's and Gamma's a job board's, spelt as a directory may spell
+#: them; Acme is an employer, as every Board no Operator names is.
+_OPERATOR_BOARDS = {"staffing": ("lever:beta",), "aggregator": ("LEVER:Gamma",)}
+
+
+@pytest.fixture
+def operated(families_served, monkeypatch):
+    monkeypatch.setattr(families_served, "operator_boards", _OPERATOR_BOARDS)
+    return families_served
+
+
+def test_operators_keep_only_the_boards_of_the_operators_named(operated):
+    kept = operated.run({"operators": "employer,services"})
+    assert sorted(_ids(kept)) == ["lever:acme:1", "lever:acme:2"]
+    # A list without employers names the Boards it keeps.
+    staffing = operated.run({"operators": "staffing"})
+    assert sorted(_ids(staffing)) == ["lever:beta:3", "lever:beta:4"]
+    assert operated.run({"operators": "services"}) == []
+    every = "employer,services,staffing,aggregator"
+    assert len(operated.run({"operators": every})) == 5
+    ranked = operated.run({"like": "lever:acme:1", "operators": "employer"})
+    assert _ids(ranked) == ["lever:acme:2"]
+
+
+def test_the_counts_say_how_many_rows_operators_left_out(operated):
+    counted = operated.facets({"operators": "employer,services", "counts": "total"})
+    assert (counted["total"], counted["operators_left_out"]) == (2, 3)
+    full = operated.facets({"operators": "Employer , services"})
+    assert (full["total"], full["operators_left_out"]) == (2, 3)
+    # A category counts its family table; a description keyword its matched rows.
+    family = operated.facets({"family": "ai-ml", "operators": "employer"})
+    assert (family["total"], family["operators_left_out"]) == (2, 1)
+    keyword = {"kw": "sponsor", "kw_in": "description", "operators": "employer"}
+    assert sorted(_ids(operated.run(keyword))) == ["lever:acme:1", "lever:acme:2"]
+    described = operated.facets(keyword)
+    assert (described["total"], described["operators_left_out"]) == (2, 1)
+    # Nothing left out is 0; no list, or every Operator, is no figure at all.
+    none_out = operated.facets({"operators": "employer,staffing,aggregator"})
+    assert none_out["operators_left_out"] == 0
+    assert "operators_left_out" not in operated.facets({})
+
+
+def test_only_the_boards_the_table_serves_are_kept_case_folded(
+    families_served, monkeypatch
+):
+    """Every Board named is one more alternative each id is matched against, and a directory
+    names Boards long since empty (ADR-0335)."""
+    boards = {**_OPERATOR_BOARDS, "services": ("lever:ghost", "lever:be")}
+    monkeypatch.setattr(families_served, "operator_boards", boards)
+    assert families_served.operator_boards == {
+        "staffing": ("lever:beta",),
+        "aggregator": ("lever:gamma",),
+        "services": (),
+    }
+
+
+def test_an_unknown_operator_is_refused_even_without_strict(operated):
+    with pytest.raises(ValueError, match="operators recruiter not known"):
+        operated.run({"operators": "employer,recruiter"})
+
+
+def test_operators_without_a_directory_is_the_deployments_state(families_served):
+    assert families_served.operator_boards is None
+    with pytest.raises(ScopeUnavailable, match="company directory"):
+        families_served.facets({"operators": "employer", "strict": "1"})
+    # Not strict: widened, as a category without its tables is.
+    assert len(families_served.run({"operators": "employer"})) == 5
+
+
+def test_a_requirements_sample_leaves_out_the_operators_not_named(sampled, monkeypatch):
+    monkeypatch.setattr(sampled, "operator_boards", {"staffing": ("lever:acme",)})
+    counted = _requirements(sampled, q="data engineer", operators="employer,services")
+    assert (counted["matching"], counted["operators_left_out"]) == (2, 3)
+    assert counted["distinct"] == 2
+    family = _requirements(sampled, family="data-engineering", operators="employer")
+    assert (family["matching"], family["operators_left_out"]) == (1, 2)
+    assert _requirements(sampled, q="data engineer")["operators_left_out"] is None

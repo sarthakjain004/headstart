@@ -1009,7 +1009,7 @@ def test_a_caller_cannot_claim_the_in_process_mark_with_a_header(auth_app, monke
 
 # ---- the app's own mark on every reply (ADR-0253) ----
 
-_OWN_REPLY = "app; agent-api=14"
+_OWN_REPLY = "app; agent-api=15"
 
 
 def test_a_routes_own_answer_is_marked(auth_app):
@@ -4688,8 +4688,31 @@ def test_boot_derives_its_company_boards_and_hot_through_the_one_function(
         assert module._HISTORY is history
         company_boards, hot = module._derive_from_history(history)
         assert (module._COMPANY_BOARDS, module._HOT) == (company_boards, hot)
+        # The Operators' Boards reach search from the same directory (ADR-0335).
+        assert module._searcher.operator_boards == module._operator_boards(history)
         assert company_boards["workday:hpe/b"] == ("workday:hpe/a", "workday:hpe/b")
         assert hot["window"]["to"] == history.ticks[-1]
+
+
+def test_operators_on_search_read_the_directorys_operators(
+    trends_app, monkeypatch, tmp_path
+):
+    """ADR-0335: each Operator's Boards come from the directory Hot ranks, decided again as it
+    loads (Randstad is staffing whatever the file said); employers are every other Board."""
+    companies = {
+        **_COMPANY_DIRECTORY,
+        "lever:beta": {"name": "Randstad", "boards": ["lever:beta"]},
+        "lever:jobgether": {"name": "Jobgether", "boards": ["lever:jobgether"]},
+    }
+    history = _company_history(trends_app, monkeypatch, tmp_path, companies=companies)
+    boards = trends_app._operator_boards(history)
+    assert boards == {"staffing": ("lever:beta",), "aggregator": ("lever:jobgether",)}
+    monkeypatch.setattr(trends_app._searcher, "operator_boards", boards)
+    client = trends_app.app.test_client()
+    counted = client.get("/facets?operators=employer,services&counts=total&strict=1")
+    assert counted.status_code == 200 and "operators_left_out" in counted.get_json()
+    refused = client.get("/search?operators=recruiter")
+    assert refused.status_code == 400 and "recruiter" in refused.get_json()["detail"]
 
 
 def test_a_hot_ranking_that_fails_darkens_hot_only(trends_app, monkeypatch, tmp_path):
