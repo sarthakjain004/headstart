@@ -425,7 +425,7 @@ def build_doc(job: dict) -> str:
 # growth,"), reads "Engineering <level>" titles on `_LEVEL`'s ladder, and tries the entry tier
 # before the associate tier; `jobs/salary.py` keeps both ends of a range whose ceiling repeats its
 # currency glued to the "$" ("USD$225.00 - USD$275.00 per hour") or follows "--"/"-to-". The range
-# since the v22 bump at `08f81f0e` is `git log 08f81f0e..<the squash-merged #PR> --
+# since the v22 bump at `08f81f0e` is `git log 08f81f0e..<the squash-merged #948> --
 # src/headstart/jobs/experience.py src/headstart/jobs/salary.py`: #920 (`876194a1`, moving 0 served
 # rows, left unbumped by ADR-0293) and this change. Measured old vs new `extract()` on all 500,134
 # rows of served version 41 read off HF on 2026-09-29, with the description store pulled the same
