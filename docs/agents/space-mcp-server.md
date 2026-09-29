@@ -224,19 +224,20 @@ the filter costing the most.
   flags one over a year old; its employment type as the employer wrote it, beside the
   `employment_type` values it counts as (`type "FULL_TIME" (full-time)`); and every scraped field,
   the id included, quoted.
-- **Copies of one posting are listed once** (ADR-0323). A row repeating one above it on the page
+- **Copies of one posting are listed once** (ADR-0323, ADR-0331). A row repeating one above it on the page
   is listed under it as `also #N`, giving only what differs; every id and link stays, and paging is
   the Space's. A copy is the same company and title, brackets aside (one posting copied per
   country; rows naming no company only on one Board), or the same title, first city and countries
   under another spelling of the company, as one posting on two of its Boards: Eversource's Radancy
   front says "EVERSOURCE" and its Workday Board "Eversource Energy". Two spellings are one company
-  only when they are the same words once legal and a few generic words ("Inc", "Energy",
-  "Technologies", "Group") drop, so "GE" and "GE HealthCare" stay apart. On 16 live pages of 40
+  only when they are the same words once legal forms ("Inc", "LLC") and three generic words
+  ("Group", "Technologies", "Energy") drop, so "GE" and "GE HealthCare" stay apart; "Siemens" and
+  "Siemens Energy" do not, if they post one title in one city. On 16 live pages of 40
   rows (2026-09-29) that second rule grouped two pairs, both true copies.
 - **A company named only by its Board's host** ("aah.wd5.myworkdayjobs.com/external", an Oracle
   pod, or nothing) is shown by the Company directory's name for its Board, marked
   `(directory name)`; a Board the directory holds and does not name reads "no company name". When
-  the directory cannot be asked, the served name stays (ADR-0323).
+  the directory cannot be asked, the served name stays (ADR-0323, ADR-0331).
 - **Postings over a year old are left out by default.** `max_age_days` (365 unless sent) keeps a
   job posted within that many days, reading the day HeadStart first saw it where the posted date is
   missing or unreadable; a job with neither is left out. `max_age_days: 0` is any age. The scope
@@ -279,7 +280,8 @@ it, salary, posted and first-seen dates, the link, and the description.
   its own id (ADR-0023), when its Board went dormant (ADR-0250) or is no longer read, or when the
   tech filter no longer counts it as tech; or it was never an id. An id not shaped as
   `ats:board:posting`, or on a Board neither the Company directory nor the index holds, is said
-  to be no HeadStart id (ADR-0323).
+  to be no HeadStart id (ADR-0331). A native id can hold a colon ("REQ: 228", ADR-0049), so
+  each shorter `ats:slug` prefix is tried before an id is called none.
 - A company named only by its Board's host is shown by its directory name, as in `search_jobs`.
 
 **`read_trends`** — how tech hiring changed over a window. **Hiring is postings opened and closed,
@@ -381,10 +383,11 @@ company, its Boards and any other directory company the name may mean. It gives:
   counting began), then the change in openings with its re-counting part named;
 - its job categories now, largest first, each with the postings opened and closed in it;
 - where its served jobs are, by country, up to eight countries, each with its three commonest
-  cities: "Dublin" and "Dublin, Ireland" are one Dublin in Ireland. A place is read as
+  places, a place merged with the others that begin with its first part: "Dublin" and "Dublin,
+  Ireland" are one Dublin in Ireland. A string naming several places counts under its first. A place is read as
   `search_jobs`' `country` reads it, so a country's figure is what that filter would count; a job
   naming two countries counts in both, and the jobs whose place names no country ("N/A",
-  "Remote") are counted apart (`/companies/locations`, ADR-0275, ADR-0323);
+  "Remote") are counted apart (`/companies/locations`, ADR-0275, ADR-0323, ADR-0331);
 - its levels, in the Trends Level view's bands (internships, 0–1, 2–4, 5–7 and 8+ years, not
   stated), each job counted once (`/companies/levels`, ADR-0323);
 - how many of its served jobs are remote, of each employment type, state a salary, were posted in

@@ -13,7 +13,7 @@ is never clipped, so one longer than an id's bound takes its excess out of the d
 budget.
 
 An id the Space does not hold is explained by `job_absence.WHY_NOT_SERVED`, the sentence the
-Space's own refusal uses (ADR-0323). Where HeadStart holds no Board the id names — neither the
+Space's own refusal uses (ADR-0331). Where HeadStart holds no Board the id names — neither the
 Company directory nor the index — or the id is not shaped as one, it was not a HeadStart id, and
 the answer says so. A company the posting names only by its Board's host is shown by the Company
 directory's name (`shown_company`).
@@ -91,7 +91,7 @@ def _salary(job: dict[str, Any]) -> str | None:
     return f"Salary: {'; '.join(said)}." if said else None
 
 
-class _Share(NamedTuple):
+class _DescriptionShare(NamedTuple):
     """How much of one description an answer shows: ``asked`` is `max_chars_per_job`,
     ``shared`` the job's share of :data:`DESCRIPTIONS_BUDGET`."""
 
@@ -116,16 +116,18 @@ class _Share(NamedTuple):
         return f"raise max_chars_per_job up to {SPACE_DESCRIPTION_LIMIT:,} to read more"
 
 
-def _share(asked: int, jobs: list[dict[str, Any]]) -> _Share:
+def _share(asked: int, jobs: list[dict[str, Any]]) -> _DescriptionShare:
     """Each job's share of the descriptions' budget, less what its links run past an id's bound:
     a link is never clipped, and the tool's own bound counts on none running longer."""
     overflow = sum(
         max(0, len(scraped_text.link(job.get("url"))) - ID_MAX_CHARS) for job in jobs
     )
-    return _Share(asked, max(0, DESCRIPTIONS_BUDGET - overflow) // max(1, len(jobs)))
+    return _DescriptionShare(
+        asked, max(0, DESCRIPTIONS_BUDGET - overflow) // max(1, len(jobs))
+    )
 
 
-def _description(job: dict[str, Any], share: _Share) -> list[str]:
+def _description(job: dict[str, Any], share: _DescriptionShare) -> list[str]:
     text, whole = job.get("description"), int(job.get("description_chars") or 0)
     if not text:
         return ["   No description is stored for this posting; read it at the link."]
@@ -135,7 +137,7 @@ def _description(job: dict[str, Any], share: _Share) -> list[str]:
     else:
         # A cut paragraph ends in an ellipsis of this answer's own, not of the description.
         count = sum(len(json.loads(line)) for line in lines) - (
-            1 if cut and lines else 0
+            len(scraped_text.CUT_MARK) if cut and lines else 0
         )
         shown = f"the first {count:,} shown; " + (
             share.read_more() if cut else "read the rest at the link"
@@ -147,7 +149,7 @@ def _description(job: dict[str, Any], share: _Share) -> list[str]:
     ]
 
 
-def _job(number: int, job: dict[str, Any], share: _Share) -> list[str]:
+def _job(number: int, job: dict[str, Any], share: _DescriptionShare) -> list[str]:
     place = [scraped_text.quoted(job.get("location"), SHORT_FIELD)]
     if job.get("remote"):
         place.append("remote")
@@ -215,16 +217,38 @@ def _id_shaped(job_id: str) -> bool:
     return job_id.count(":") >= 2
 
 
+#: The most Board keys one id is read as: a native id can hold colons of its own ("REQ: 228",
+#: ADR-0049), so `board_of`'s guess is tried first and shorter prefixes after it.
+_BOARDS_PER_ID = 3
+
+
+def _boards_named(job_id: str) -> list[str]:
+    """The Board keys ``job_id`` may name, longest first: every ``ats:slug…`` prefix of it."""
+    parts = job_id.split(":")
+    return [":".join(parts[:k]) for k in range(len(parts) - 1, 1, -1)][:_BOARDS_PER_ID]
+
+
+def _id_held(job_id: str, held: dict[str, bool | None]) -> bool | None:
+    """Whether HeadStart holds a Board ``job_id`` names: True if it holds any, False if it holds
+    none, None when the Space could not say for some and held none of the rest."""
+    said = [held[board] for board in _boards_named(job_id)]
+    if True in said:
+        return True
+    return None if None in said else False
+
+
 def _missing(client: SpaceClient, missing: list[str]) -> list[str]:
     """What the answer says of the ids the Space does not hold: why an id may be missing, and,
-    of one not shaped as an id or naming a Board HeadStart does not hold, that it was not one."""
-    boards = list(dict.fromkeys(board_of(i) for i in missing if _id_shaped(i)))
+    of one not shaped as an id or naming no Board HeadStart holds, that it was not one."""
+    boards = list(
+        dict.fromkeys(b for i in missing if _id_shaped(i) for b in _boards_named(i))
+    )
     held: dict[str, bool | None] = {}
     if boards:
         with ThreadPoolExecutor(max_workers=len(boards)) as pool:
             held = dict(zip(boards, pool.map(lambda b: _held(client, b), boards)))
     lines = []
-    if gone := [i for i in missing if _id_shaped(i) and held[board_of(i)] is not False]:
+    if gone := [i for i in missing if _id_shaped(i) and _id_held(i, held) is not False]:
         quoted = ", ".join(scraped_text.quoted(i, ID_MAX_CHARS) for i in gone)
         lines.append(f"Not in the index now: {quoted}. {WHY_NOT_SERVED}")
     for job_id in missing:
@@ -234,7 +258,7 @@ def _missing(client: SpaceClient, missing: list[str]) -> list[str]:
                 f"Not a HeadStart id: {said}. An id is ats:board:posting, as search_jobs "
                 "prints it after 'id'."
             )
-        elif held[board_of(job_id)] is False:
+        elif _id_held(job_id, held) is False:
             lines.append(
                 f"Not a HeadStart id: {said}. HeadStart holds no Board "
                 f"{scraped_text.quoted(board_of(job_id), ID_MAX_CHARS)}: neither its Company "

@@ -1,5 +1,5 @@
 """The company a job is shown under: its served name, or its Board's Company directory name when
-the served one names nothing but the Board (ADR-0323).
+the served one names nothing but the Board (ADR-0323, ADR-0331).
 
 A Board that states no company name is served under its own key or host, or under nothing:
 "aah.wd5.myworkdayjobs.com/external", "egud.fa.us2.oraclecloud.com",

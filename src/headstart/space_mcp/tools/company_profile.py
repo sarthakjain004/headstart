@@ -13,8 +13,8 @@ suggestions. Then, at once (ADR-0275):
   opened and closed. Those lead: the change in openings also moves when HeadStart re-counts, so
   it follows them with its re-counted part named;
 - `/companies/locations` over its Boards, for the countries its served jobs name, each with its
-  top cities (a place's first city, its spellings merged), by the `country` filter's own
-  gazetteer (ADR-0323);
+  top places (a place's first part, its spellings merged), by the `country` filter's own
+  gazetteer (ADR-0323, ADR-0331);
 - `/companies/levels` over its Boards, for how many of its served jobs are in each Trends level
   band, each counted once (ADR-0323) — not the Search rail's experience ceilings, where a job
   stating no experience counts at every one;
@@ -67,16 +67,18 @@ def _options(facets: dict[str, Any], dimension: str) -> dict[Any, int]:
     }
 
 
-def _counts_line(title: str, counts: dict[str, int], note: str = "") -> str | None:
-    """One breakdown line, or None when every count on it is 0: a Board that states no
-    employment type would otherwise read as hiring no full-time staff."""
+def _counts_line(
+    title: str, counts: int | dict[str, int], note: str = ""
+) -> str | None:
+    """One breakdown line — one count, or a count per label — or None when every count on it is
+    0: a Board that states no employment type would otherwise read as hiring no full-time
+    staff."""
+    if isinstance(counts, int):
+        return f"  {title}: {counts:,}{note}" if counts else None
     if not any(counts.values()):
         return None
-    return (
-        f"  {title}: "
-        + " · ".join(f"{label} {count:,}".strip() for label, count in counts.items())
-        + note
-    )
+    said = " · ".join(f"{label} {count:,}" for label, count in counts.items())
+    return f"  {title}: {said}{note}"
 
 
 def _breakdown(facets: dict[str, Any], levels: dict[str, Any]) -> list[str]:
@@ -84,7 +86,7 @@ def _breakdown(facets: dict[str, Any], levels: dict[str, Any]) -> list[str]:
     posted = _options(facets, "posted_within")
     seen = _options(facets, "seen_within")
     lines = [
-        _counts_line("remote", {"": _options(facets, "remote").get(True, 0)}),
+        _counts_line("remote", _options(facets, "remote").get(True, 0)),
         _counts_line(
             "employment type",
             {str(value): count for value, count in _options(facets, "etype").items()},
@@ -95,9 +97,7 @@ def _breakdown(facets: dict[str, Any], levels: dict[str, Any]) -> list[str]:
             + (" (the first rows only)" if levels.get("capped") else ""),
             {band["label"]: band["count"] for band in levels.get("bands") or []},
         ),
-        _counts_line(
-            "salary stated", {"": _options(facets, "has_salary").get(True, 0)}
-        ),
+        _counts_line("salary stated", _options(facets, "has_salary").get(True, 0)),
         _counts_line(
             "posted by the employer in the last",
             {
@@ -215,7 +215,7 @@ def _locations(answer: dict[str, Any]) -> str:
         more = len(countries) - len(shown)
         said += (
             ", by country as search_jobs' `country` reads each place (a job naming two "
-            "countries counts in both), with its top cities"
+            "countries counts in both), with its top places, a first place's spellings merged"
             + (" (the first rows only)" if answer.get("capped") else "")
             + ": "
             + " · ".join(
@@ -314,7 +314,7 @@ TOOL = SpaceTool(
     description=(
         "One company's hiring profile: its tech openings now; postings opened and closed "
         "recently; its job-category mix; the countries its jobs are in, with their top "
-        "cities; and how many of its jobs are remote, of each employment type, at each "
+        "places; and how many of its jobs are remote, of each employment type, at each "
         "level, show a salary, and were posted recently. `company` is a directory company: a "
         "key from find_company (such as 'greenhouse:stripe') or its exact name, read as the "
         "site's Trends picker reads it. Tell the user which company and Boards it was read "

@@ -1,5 +1,5 @@
 """Where a set of Boards' served jobs are: the `location` values they carry most (ADR-0275), and
-the countries those name (ADR-0323).
+the countries those name (ADR-0323, ADR-0331).
 
 The Search rail has no location facet, and :mod:`headstart.serving.facets` cannot give one: it
 counts a filter's fixed options, and `location` is free text that each employer writes, with no
@@ -22,6 +22,7 @@ each place is read once per process (:data:`_COUNTRIES_CACHED`) and at most
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from functools import lru_cache
 from typing import Any
@@ -61,11 +62,15 @@ def scoped_rows(table: Any, where: str, columns: list[str]) -> list[dict[str, An
     )
 
 
+#: What separates two places in one location string: "Berlin, CT; Westwood, MA".
+_PLACES_SEPARATOR = re.compile(r"[;|]")
+
+
 def _city(place: str, code: str) -> str:
     """The city ``place`` names first — before its first comma — when that names no country but
     ``code``: "Dublin" of "Dublin, Ireland" under IE. A first part naming another country
     ("London" of "London, Dublin" under IE) leaves the whole place, as written."""
-    head = place.split(";", 1)[0].split(",", 1)[0].strip()
+    head = _PLACES_SEPARATOR.split(place, maxsplit=1)[0].split(",", 1)[0].strip()
     return head if head and _countries_of(head) <= {code} else place
 
 

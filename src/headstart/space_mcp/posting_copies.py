@@ -1,18 +1,18 @@
-"""Which rows of one search page are copies of one requisition, so the page lists each once
-(ADR-0274, widened by ADR-0323).
+"""Which rows of one search page are copies of one posting, so the page lists each once
+(ADR-0274, widened by ADR-0323 and ADR-0331).
 
 Two kinds of copy reach a page:
 
-- **One requisition per country** on one employer's Boards: the same company and title, brackets
-  aside — "Backend Developer (Peru)", "Backend Developer (Chile)" at "Anyone AI" — placed apart.
-  Rows naming no company are copies only on one Board: two unnamed Boards are not one company.
-- **One requisition on two Boards** of its employer, such as a Radancy career front and the Workday
+- **One posting per country**: the same company and title, brackets aside — "Backend Developer
+  (Peru)", "Backend Developer (Chile)" at "Anyone AI" — placed apart. Rows naming no company are
+  copies only on one Board: two unnamed Boards are not one company.
+- **One posting on two Boards** of its employer, such as a Radancy career front and the Workday
   Board behind it, under two spellings of the company: "EVERSOURCE" and "Eversource Energy" (the
   round-2 critique, 2026-09-29). Two spellings are one company when they are the same words once
-  legal suffixes and a few generic trailing words ("Energy", "Technologies", "Group") are dropped.
-  That is looser than one spelling, so it also needs the same title stem, the same first place
-  (the city a location string names first) and the same countries, as the `country` filter's
-  gazetteer reads the whole location.
+  legal forms and three generic words ("Group", "Technologies", "Energy") drop. That is looser
+  than one spelling, so it also needs the same title stem, the same first place (the city a
+  location string names first) and the same countries, as the `country` filter's gazetteer reads
+  the whole location.
 
 Grouping only lists a copy under the row it repeats: every row keeps its number, id and link, and
 paging is the Space's.
@@ -26,14 +26,35 @@ from typing import Any
 from headstart.boards.board_identity import board_of
 from headstart.search_filters import country_gazetteer
 
-#: Words that tell no two companies apart: legal forms, and generic words a company's name
-#: carries on one Board and drops on another ("Eversource Energy", "L3Harris Technologies").
+#: Words that tell no two companies apart: legal forms, and the three generic words measured
+#: dropping between two Boards of one employer ("Rakuten Group", "L3Harris Technologies",
+#: "Eversource Energy"). Each generic word also joins a different company to its namesake
+#: ("Siemens Energy" to "Siemens"), which the same title, city and countries must then all
+#: match too (ADR-0331).
 _GENERIC_WORDS = frozenset(
     {
-        *("the", "inc", "incorporated", "llc", "ltd", "limited", "co", "corp"),
-        *("corporation", "company", "companies", "plc", "gmbh", "ag", "sa", "bv"),
-        *("nv", "pvt", "lp", "llp", "group", "holdings", "holding", "international"),
-        *("global", "technologies", "technology", "systems", "solutions", "services"),
+        "the",
+        "inc",
+        "incorporated",
+        "llc",
+        "ltd",
+        "limited",
+        "co",
+        "corp",
+        "corporation",
+        "company",
+        "companies",
+        "plc",
+        "gmbh",
+        "ag",
+        "sa",
+        "bv",
+        "nv",
+        "pvt",
+        "lp",
+        "llp",
+        "group",
+        "technologies",
         "energy",
     }
 )

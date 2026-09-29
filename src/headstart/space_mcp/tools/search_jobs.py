@@ -10,7 +10,7 @@ total alone (``counts=total``, ADR-0274); only ``detail=full`` pays for every op
 A row carries its posting's age, flagged past a year, and its employment type as scraped beside
 the `employment_type` values it counts as, and its company as the Company directory names it when
 the served name is only its Board's host (`shown_company`). Rows on one page that copy one
-requisition — per country, or on two Boards of its employer (`posting_copies`) — are listed
+posting — per country, or on two Boards of its employer (`posting_copies`) — are listed
 under the first of them, with only what differs; every id and link stays.
 """
 
@@ -313,7 +313,7 @@ def _page_lines(
     first: int, rows: list[dict[str, Any]], experience_filtered: bool
 ) -> tuple[list[str], bool]:
     """One page's rows numbered from ``first``, and whether any went under another: a row copying
-    an earlier row's requisition (`posting_copies`) is listed under it as "also #N". Only within
+    an earlier row's posting (`posting_copies`) is listed under it as "also #N". Only within
     the page, so paging and the header's row numbers are the Space's."""
     today = _today()
     facts = [_facts(row, today, experience_filtered) for row in rows]
@@ -564,9 +564,9 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
         if grouped:
             lines.append(
                 "A row repeating one above it is listed under it as 'also #N', with only what "
-                "differs: the same company and title (brackets aside), or the same title and "
-                "place under another spelling of the company, as one posting on two of its "
-                "Boards is."
+                "differs: the same company and title (brackets aside), or the same title, first "
+                "city and countries under another spelling of the company, as one posting on two "
+                "of its Boards is."
             )
         lines += page_lines
         shown_to = first + len(rows) - 1

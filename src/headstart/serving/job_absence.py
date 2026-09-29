@@ -1,5 +1,5 @@
 """Why a Job id is not in the served table now: the one account every reader of a missing id
-gives — `/search?like=` and the MCP's `get_job` (ADR-0323).
+gives — `/search?like=` and the MCP's `get_job` (ADR-0331).
 
 A served row leaves the table in more ways than its posting closing, and some of them keep no
 grace period:

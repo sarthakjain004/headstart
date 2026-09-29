@@ -676,7 +676,7 @@ def _keep_static_for_the_boot(response):
 # 9: `family=` without `board=` (a category across the whole index), `max_age_days`,
 # `required_years_at_least` and `exclude_company` on /search and /facets (ADR-0322).
 # 10: /companies/locations lists each country's cities, a place's first city merged across its
-# spellings ("Dublin" and "Dublin, Ireland"), not its places as written (ADR-0323).
+# spellings ("Dublin" and "Dublin, Ireland"), not its places as written (ADR-0331).
 _AGENT_API_VERSION = 10
 
 

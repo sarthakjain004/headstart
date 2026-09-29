@@ -1,4 +1,4 @@
-"""Which rows of one search page copy one requisition — `headstart.space_mcp.posting_copies`
+"""Which rows of one search page copy one posting — `headstart.space_mcp.posting_copies`
 (ADR-0274, ADR-0323).
 
 Contracts: the same company and title stem, brackets aside, anywhere; rows naming no company only
@@ -33,7 +33,7 @@ def _row(
     }
 
 
-def test_one_company_and_title_stem_is_one_requisition_wherever_it_is_placed():
+def test_one_company_and_title_stem_is_one_posting_wherever_it_is_placed():
     rows = [
         _row(1, "Backend Developer (Peru)", "Anyone AI", "Lima"),
         _row(2, "Python Developer", "GoML"),
@@ -43,7 +43,7 @@ def test_one_company_and_title_stem_is_one_requisition_wherever_it_is_placed():
     assert groups(rows) == [[0, 2, 3], [1]]
 
 
-def test_one_requisition_on_two_boards_under_two_spellings_is_one_group():
+def test_one_posting_on_two_boards_under_two_spellings_is_one_group():
     """The round-2 critique's Eversource page: its Radancy front and its Workday Board."""
     rows = [
         _row(

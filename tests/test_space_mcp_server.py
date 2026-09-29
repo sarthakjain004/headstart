@@ -705,7 +705,7 @@ def test_one_posting_on_two_boards_under_two_spellings_is_listed_once():
         ),
     ]
     text = server.call(_search_space(rows), "search_jobs", {"query": "x"})
-    assert "or the same title and place under another spelling of the company" in text
+    assert "first city and countries under another spelling of the company" in text
     assert 'also #2: 0.88 "Eversource Energy" · "Berlin, CT; Westwood, MA;' in text
     # Another place under the other spelling is not the same posting.
     assert ' 3. 0.87 "IT Associate Software Engineer" · "Eversource Energy"' in text
@@ -949,6 +949,16 @@ def test_an_id_on_a_board_headstart_holds_nowhere_was_not_a_headstart_id():
         '"greenhouse:nonexistentco": neither its Company directory nor its index names it. '
         "Copy ids whole from search_jobs."
     ) in text
+
+
+def test_a_native_id_holding_a_colon_is_read_on_its_real_board():
+    """ADR-0049: Workday native ids include "REQ: 228", so `board_of` guesses a Board that does
+    not exist; a shorter prefix is the real one."""
+    job_id = "workday:acme/External:REQ: 228"
+    space = _job_space([], directory={"workday:acme/External"})
+    text = server.call(space, "get_job", {"ids": [job_id]})
+    assert f'Not in the index now: "{job_id}".' in text
+    assert "Not a HeadStart id" not in text
 
 
 def test_an_id_not_shaped_as_one_is_said_so_and_not_looked_up():
@@ -2602,7 +2612,7 @@ def test_a_profile_rolls_its_places_up_by_country_quoting_each_as_written():
     )
     assert (
         "Where its 224 served jobs are, by country as search_jobs' `country` reads each "
-        "place (a job naming two countries counts in both), with its top cities: "
+        "place (a job naming two countries counts in both), with its top places, a first place's spellings merged: "
         'United States 100 ("US place 0" 30 · "US place 1" 29 · "US place 2" 28) · '
         'Ireland 99 ("IE place 0" 30 ·' in text
     )

@@ -59,7 +59,7 @@ SPACE_URL = "https://imposeidon-headstart-search.hf.space"
 #: (ADR-0323); since 7, `/requirements` (ADR-0324); since 8, `/hot`'s `opened_less_closed`
 #: lens (ADR-0321); since 9, `family=` without `board=`, `max_age_days`,
 #: `required_years_at_least` and `exclude_company` (ADR-0322); since 10, each country's cities
-#: on `/companies/locations` (ADR-0323). The app states the one it serves on every reply.
+#: on `/companies/locations` (ADR-0331). The app states the one it serves on every reply.
 AGENT_API = 10
 
 #: The measured boot, said when a call gives up waiting for one.
