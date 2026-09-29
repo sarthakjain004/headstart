@@ -6,9 +6,19 @@
 
 The 2026-09-29 audit of the served table (v18, 500,167 rows) found 8,482 rows (1.70%) with no
 `location`: Zoho 3,514, Avature 1,551, wp_job_openings 803, Keka 733, then iCIMS 378, Workday 345, ADP
-241, Jobvite 227, Radancy 207, Teamtailor 173 and Taleo BE 151. It found 15,849 rows whose location
-says a token twice (`Mumbai, Mumbai, India`, `Singapore, Singapore, Singapore`), or lists the same place
-twice, and 17 Greenhouse rows carrying the template token (`BLANK,BLANK,Multiple Locations`).
+241, Jobvite 227, Radancy 207, Teamtailor 173 and Taleo BE 151. It found 15,371 rows whose location
+says a token next to itself (`Mumbai, Mumbai, India`, `Singapore, Singapore, Singapore`), 268 that list
+the same place twice, and 17 Greenhouse rows carrying the template token
+(`BLANK,BLANK,Multiple Locations`).
+
+The repeats are two different things. 11,572 of the 15,371 rows are a city and the region of its name
+(`New York, New York, United States`, `Delhi, Delhi, India`, `Berlin, Berlin, Germany`): the source states
+a city and a region field, and a filter for `New York, New York` matches 3,335 served rows. The others
+are a country said twice at the end of a place (`Singapore, Singapore`, 2,094 rows; `London, United Kingdom,
+United Kingdom`, `Aguadilla, PR, PR`). Where a source states a real region of a city-state it spells it
+otherwise (`Singapore, Central Singapore`, `Luxembourg, Luxembourg District, Luxembourg`, `Panama City,
+Panamá Province, Panama`), so `Hong Kong, Hong Kong`, `Luxembourg, Luxembourg` and `Panama City, Panama,
+Panama` are the country name twice, not a region.
 
 Each null bucket was classified by reading its source (60 requests, one a second per host, all
 answered 200) and its descriptions:
@@ -59,10 +69,12 @@ refused; a list that stops at a name the gazetteers do not know is refused, not 
 `Hybrid` and a workplace type never become a place, and nothing is invented.
 
 **A stated location is tidied where every Job is built.** `location.tidy`, called from
-`Job.__post_init__`, drops `BLANK`, a token repeated next to itself and a place listed twice, and
-writes what stays exactly as it was stated (separators and spacing are kept: 4,000 served rows have no
-space after the comma and are not rewritten for it). A country shared by two places of a list and a
-token that recurs without touching itself are kept, so no place is lost.
+`Job.__post_init__`, drops `BLANK` and empty tokens (`Mohali,, PB, India`), lists a place once when it
+is listed twice, and says a **country** once when it closes a place twice: the last two tokens are equal
+and name a country (its name or ISO code in the country gazetteer). It keeps a city and the region of its
+name, wherever it sits, and a country shared by two places of a list. What stays is written exactly as it
+was stated (separators and spacing are kept: 4,000 served rows have no space after the comma and are not
+rewritten for it).
 
 ## Alternatives considered
 
@@ -82,8 +94,17 @@ token that recurs without touching itself are kept, so no place is lost.
   scraper reads serve them.
 - **Dropping a placeholder location (`N/A`, `NA`).** 67 rows, but SuccessFactors writes ISO codes and `NA` is
   Namibia (23 rows). Not touched.
-- **Collapsing a repeat wherever it sits.** `Bengaluru, Karnataka, India, Pune, Maharashtra, India` and
+- **Collapsing every neighbouring repeat (the first version of this change).** It rewrote about four times
+  as many rows and dropped the region of `New York, New York, United States` (3,171 rows): a filter for `New York, New
+  York` would have fallen from 3,335 matches to about 170. The region is a level of its own, so only a
+  country said twice is a stutter.
+- **Collapsing a repeat that does not touch.** `Bengaluru, Karnataka, India, Pune, Maharashtra, India` and
   `Boston, Massachusetts, USA; Irvine, California, USA` state each country for its own place.
+- **Keeping `Hong Kong, Hong Kong`, `Luxembourg, Luxembourg` and `Panama, Panama` as city and region
+  pairs.** No row states a region for them under that name (see Context), and the rule would then need a
+  list of names instead of the gazetteer's countries. A literal `hong kong, hong kong` filter falls from
+  302 matches to 82, `luxembourg, luxembourg` from 122 to 39, `singapore, singapore` from 2,385 to 297;
+  `hong kong`, `luxembourg` and `singapore` alone match the same rows as before.
 
 ## Consequences
 
@@ -103,11 +124,20 @@ per-tenant page probes:
   (0.6%), and the served one resolves to no country on 119. The disagreements read as a description naming
   another office or a remote-eligible region (`US or Canada` against `Atlanta, GA`), not as a misread, which
   bounds the wrong-place rate on the null rows, where there is no field to conflict with.
-- **`country`.** The reader's places give 316 rows `country = "IN"`; `tidy` moves none of the 15,849 rows it
-  changes.
-- **Rows rewritten once.** 15,849 rows by `tidy` (15,832 repeats, 17 `BLANK`, 1 to no place) and 1,540
-  newly located, 17,389 in all, about 103 MB at 5.9 KB a row, each when its Board is next scraped. A
-  location that changes is a raw-field change, so `job_facts` records the same rows as `changed` once.
+- **`country`.** The reader's places give 316 rows `country = "IN"`; `tidy` moves `country` on none of
+  the rows it changes.
+- **Tidy.** 4,347 rows of the 491,685 that have a location change (3,885 a country said twice, 267 a place
+  listed twice, 178 an empty token, 17 `BLANK`; one becomes no place: `,; ,; ,; ,`). `New York, New York`
+  still matches 3,335 rows, `Delhi, Delhi` 439, `Berlin, Berlin` 251, `Dubai, Dubai` 443; 11,572 rows keep a
+  city and its same-named region.
+- **Rows rewritten once.** 4,347 by `tidy` and 1,540 newly located, 5,887 in all, about 35 MB at 5.9 KB a
+  row, each when its Board is next scraped. A location that changes is a raw-field change, so `job_facts`
+  records the same rows as `changed` once.
+- **With #954 (India towns) and #958 (33 countries) merged**, measured on a scratch merge of the two
+  heads: `tidy` changes 4,367 rows (the 33 countries add 20 country repeats) and still moves `country` on
+  none of them; the reader resolves 584 null rows (12 more, all read as correct: `Dahej, Gujarat`,
+  `Algiers, Algeria`, `Kurla, Mumbai`), 326 of them `country = "IN"`, and null location ends at 6,886; the
+  control on the 19,912 located rows reads 19,674 agree (98.8%), 120 disagree, 118 served unresolved.
 - **Known incomplete readings**, all true and none wrong: a list cut at a name the gazetteers do not
   know keeps the places before it; a multi-office posting reads its first office; a bare
   ambiguous city with no country is not read (273 country-only rows whose description names a more
