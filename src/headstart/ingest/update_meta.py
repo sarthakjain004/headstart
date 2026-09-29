@@ -444,8 +444,9 @@ class _ChunkArgs(NamedTuple):
     sweep: bool
     pending: set[str]
     detail_pass: frozenset[str]
-    #: This chunk's ids on the one-off stale-vector list (ADR-0285).
-    stale: frozenset[str] = frozenset()
+    #: This chunk's ids known to encode text they no longer carry: those on the one-off
+    #: stale-vector list and in ADR-0207's change ledger (ADR-0285).
+    stale: frozenset[str]
 
 
 def _row_batches(meta_path: Path, size: int) -> Iterator[list[dict]]:
@@ -514,7 +515,12 @@ class _ChunkResult(NamedTuple):
     #: ``{"experience" | "salary": [Job id]}`` for every "lost" row.
     lost: dict[str, list[str]]
     #: Rows given the ``doc_hash`` they never had (ADR-0285).
-    fingerprinted: int = 0
+    fingerprinted: int
+
+
+def _title(row: dict) -> str:
+    """A row's title as `doc_hash` reads it, stripped."""
+    return (row.get("title") or "").strip()
 
 
 def _refresh_chunk(args: _ChunkArgs) -> _ChunkResult:
@@ -574,14 +580,17 @@ def _refresh_chunk(args: _ChunkArgs) -> _ChunkResult:
         # The same once-only rule for `doc_hash` (ADR-0285), on rows embedded before it existed:
         # what the vector encodes is only known at embed time, so the text this run scraped is
         # the best stand-in, and from here an edit shows as a changed fingerprint. A row known to
-        # encode another posting's text is stamped "stale", which no real fingerprint equals, so
-        # `embed_plan` re-embeds it when its Board is next read. A row carrying one keeps it:
-        # only a re-embed may change it.
+        # encode text it no longer carries is stamped "stale", which no real fingerprint equals,
+        # so `embed_plan` re-embeds it when its Board is next read: one on the stale list, and
+        # one whose title this run changed, since a stamp of the new title would hide the edit
+        # for good. A row carrying one keeps it: only a re-embed may change it.
         if row.get("doc_hash") is None:
-            if meta["id"] in args.stale:
+            fact = args.facts.get(meta["id"])
+            retitled = fact is not None and _title(fact) != _title(meta)
+            if meta["id"] in args.stale or retitled:
                 row["doc_hash"] = STALE_DOC_HASH
                 fingerprinted += 1
-            elif (fact := args.facts.get(meta["id"])) is not None:
+            elif fact is not None:
                 row["doc_hash"] = fact["doc_hash"]
                 fingerprinted += 1
         out_rows.append(row)

@@ -16,6 +16,9 @@ data/embeddings/jobs/meta.jsonl       # one row per vector: id + typed Job metad
 data/embeddings/jobs/manifest.json    # dtype/dim/count
 data/lancedb/jobs.lance/…             # the production `jobs` table LanceDB reads
 data/descriptions/{ats}/…             # the ADR-0050 description store, append-only
+data/facts/job_facts/{stamp}.parquet  # what each scrape saw of every Job, tech or not (ADR-0330)
+data/facts/board_reads/{stamp}.parquet # every Board each run read, and its outcome (ADR-0330)
+data/facts/listed_jobs.parquet        # the Listed set the next run's facts are diffed against
 data/state/board_priority.csv         # sticky per-board tech-priority EWMA (ADR-0022)
 data/state/published_dirs.json        # which roots were last published (ADR-0095)
 ```
@@ -54,7 +57,9 @@ The run is a **download → mutate → upload cycle** over the dataset, parallel
    runner per shard = one IP at the monolith's worker count, so per-host load is unchanged (ADR-0026).
    `fail-fast: false`; a timed-out shard banks its partial fragment.
 3. **`join`** (1 job) — download all scrape fragments and **union them per ATS** into `data/jobs/`
-   (`ingest.scrape_join`) so eviction sees the full scraped-Board set (ADR-0014); then **tech-filter**
+   (`ingest.scrape_join`) so eviction sees the full scraped-Board set (ADR-0014), recording the run's
+   Job facts and Board reads against the fetched Listed set as it goes (`ingest.job_facts`, ADR-0330);
+   then **tech-filter**
    (`ingest.filter_tech` → `data/jobs/tech/`), **update the board-priority ledger** (`ingest.update_ledgers priority`
    — EWMA-blend each scraped board's tech count into `data/state/board_priority.csv`), and **plan the embed
    fan-out** (`ingest.embed_plan`: download the prior `meta.jsonl`, diff the new ids — this diff *is* the "only new
@@ -76,9 +81,10 @@ The run is a **download → mutate → upload cycle** over the dataset, parallel
    ADR-0190), append the trends/Hot ledgers, bank the embedding store, then **refresh** all Search
    indexes over the final rows (`index refresh-indexes`, ADR-0174) — `index compact` is **not** in
    this run, it moved to `cleanup-index` — then **upload** the remaining dirs back —
-   `data/embeddings/jobs`, `data/lancedb`, `data/descriptions`, then `data/state` **last** because
+   `data/embeddings/jobs`, `data/lancedb`, `data/descriptions`, `data/facts` (the run's Job facts and
+   the Listed set in one commit, ADR-0330), then `data/state` **last** because
    it carries the ADR-0095 witness — with retry/backoff, and **restart the Space** to pick up the
-   new table. None of the four passes `--delete` any more; the daily `cleanup-index` run is what
+   new table. None of the five passes `--delete` any more; the daily `cleanup-index` run is what
    compacts and re-uploads *with* it (ADR-0091).
 
 The two `scrape`/`embed` fan-outs run `max-parallel: 15` (leaving 5 of the free tier's 20 concurrent jobs

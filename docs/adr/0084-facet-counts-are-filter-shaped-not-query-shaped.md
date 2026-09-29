@@ -3,6 +3,7 @@
 **Status:** Accepted · **Date:** 2026-08-25 · **Extends ADR-0031's filter vocabulary and ADR-0074's addressable window; scoped by ADR-0082's no-FX rule — narrowed to storage only by [ADR-0117](0117-the-salary-bracket-compares-across-currencies.md), which converts the bracket's bounds across currencies**
 
 **Amended by:** [ADR-0178](0178-salary-sort-is-stated-in-one-currency.md) — the salary sort is stated in one currency, converted on a ranked page and currency-first on a browse.
+[ADR-0308](0308-facet-counts-under-a-keyword-run-over-its-rows-read-once-into-memory.md) — under a keyword, its rows are read once into memory and every count that keeps it runs there, so §Cost holds only without a keyword.
 
 ## Context
 

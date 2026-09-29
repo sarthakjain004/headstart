@@ -1,6 +1,7 @@
 import html
 import json
 import logging
+import re
 import xml.etree.ElementTree as ET
 from copy import deepcopy
 from pathlib import Path
@@ -634,6 +635,32 @@ def test_ashby_parse_skips_unlisted():
     assert j.salary is None
     # the board URL must request compensation or the block is absent
     assert "includeCompensation=true" in get_scraper("ashby", "ramp", "Ramp").url()
+
+
+@pytest.mark.parametrize(
+    ("text", "slug"),
+    [
+        # 30 Live rows hold a space, which a link writes %20
+        ("https://jobs.ashbyhq.com/Blackpoint%20Cyber/0af6c47b", "Blackpoint Cyber"),
+        # 130 Live rows are a Company's domain; `ambient` alone answers 404
+        ("https://jobs.ashbyhq.com/ambient.ai", "ambient.ai"),
+        ("https://jobs.ashbyhq.com/careers.azx.io?utm_source=x", "careers.azx.io"),
+        # `elveo%20` answers 404 where `elveo` lists, and a full stop ends the sentence
+        ('<a href="https://jobs.ashbyhq.com/Elveo%20">', "Elveo"),
+        ("Apply at https://jobs.ashbyhq.com/elveo.", "elveo"),
+        # Ashby reads `+` as itself (`Blackpoint+Cyber` answers 404), and a prefix would name
+        # another Board, so a link this cannot read whole names none
+        ("https://jobs.ashbyhq.com/Blackpoint+Cyber", None),
+        ("https://jobs.ashbyhq.com/acme%2Fjobs", None),
+    ],
+)
+def test_ashby_reads_a_slug_as_a_link_writes_it(text, slug):
+    """Every discovery script builds its Ashby regex from `slug_in_link` and decodes the capture
+    with `slug_from_link` (ADR-0280), so this is the one place the spelling is pinned."""
+    from headstart.scrapers.ashby import AshbyScraper
+
+    m = re.search(r"jobs\.ashbyhq\.com/(" + AshbyScraper.slug_in_link + ")", text)
+    assert (AshbyScraper.slug_from_link(m.group(1)) if m else None) == slug
 
 
 @pytest.mark.parametrize(
@@ -1985,7 +2012,7 @@ def test_ripplehire_maps_department_posted_at_employment_type_salary_from_detail
     )
     j = jobs[0]
     assert j.department == "Technology"
-    assert j.posted_at == "23-Jun-2020"
+    assert j.posted_at == "2020-06-23"  # `jobPostingDate` "23-Jun-2020", as ISO
     assert j.employment_type == "Full time"  # jobTypeCustom3, not the coded jobType "R"
     assert j.salary == "Compensation range: $ 46,417.00 to 77,864.00 per year"
 
@@ -1997,7 +2024,7 @@ def test_ripplehire_maps_department_posted_at_employment_type_salary_from_detail
 
     j3 = jobs[2]
     assert j3.department == "Finance"
-    assert j3.posted_at == "01-Jan-2021"
+    assert j3.posted_at == "2021-01-01"
     assert j3.salary == "10-15 LPA"
 
 
@@ -10829,9 +10856,9 @@ def test_ripplehire_marks_its_page_cap_but_not_a_board_that_ended():
     assert capped.truncated and f"{rh._MAX_PAGES}-page cap" in capped.truncated
 
 
-def _ripple_landings(*landed: str):
-    """A RippleHire Board whose careers GETs land on ``landed`` in turn; the search answers one
-    Job (with its jobDesc, so no detail pass). Returns the scraper and the GETs it made."""
+def _ripple_landings(landed: str):
+    """A RippleHire Board whose careers GET lands on ``landed``; the search answers one Job (with
+    its jobDesc, so no detail pass). Returns the scraper and the GETs it made."""
     from headstart.scrapers import ripplehire as rh
 
     gets: list[str] = []
@@ -10840,37 +10867,68 @@ def _ripple_landings(*landed: str):
     def route(method, url, kwargs):
         if method == "GET":
             gets.append(url)
-            return FakeResponse(url=landed[len(gets) - 1])
+            return FakeResponse(url=landed)
         return _RippleResp(page, 1)
 
     return rh.RippleHireScraper("acme", fetcher=FakeFetcher(route)), gets
 
 
-def test_ripplehire_a_careers_page_with_no_token_is_unread_not_empty():
-    """#702: CI read live Boards whose careers GET landed on /candidate/careers with no token,
-    and the old `[]` evicted their rows after the grace period. Twice token-less must raise, so
-    the Board is Unauthoritative (ADR-0053) and keeps what it serves."""
+def test_ripplehire_a_careers_url_that_lands_without_a_token_is_unread_not_empty():
+    """#702: CI read Scrapable Boards whose careers GET landed on /candidate/careers with no
+    token, and the old `[]` evicted their rows after the grace period. A token-less landing must
+    raise, so the Board is Unauthoritative (ADR-0053) and keeps what it serves. Once: a second GET
+    0.23-0.41 s later reached no tokened page in any of the 42 cases CI logged (#839 follow-up)."""
     from headstart.ingest import board_failures
     from headstart.scrapers.base import BoardUnreadable
 
     careers = "https://acme.ripplehire.com/candidate/careers"
-    scraper, gets = _ripple_landings(careers, careers)
+    scraper, gets = _ripple_landings(careers)
     with pytest.raises(BoardUnreadable, match="unread, not empty") as raised:
         scraper.fetch_raw()
-    assert len(gets) == 2
+    assert len(gets) == 1
+    assert careers in str(raised.value)
     # Recorded as harvest records it, it is no gone strike: an unread Board is not a 404.
     reason = f"{type(raised.value).__name__}: {raised.value}"
     assert not board_failures.is_gone(reason)
 
 
-def test_ripplehire_a_second_careers_get_that_lands_on_a_token_reads_the_board():
-    scraper, gets = _ripple_landings(
-        "https://acme.ripplehire.com/candidate/careers",
-        "https://acme.ripplehire.com/candidate/?token=TOK",
+def _ripple_search_answers(search: FakeResponse):
+    """A RippleHire Board whose careers GET lands on a token and whose search answers `search`."""
+    from headstart.scrapers import ripplehire as rh
+
+    def route(method, url, kwargs):
+        if method == "GET":
+            return FakeResponse(url="https://acme.ripplehire.com/candidate/?token=TOK")
+        return search
+
+    return rh.RippleHireScraper("acme", fetcher=FakeFetcher(route))
+
+
+def test_ripplehire_a_first_search_page_with_no_joblist_is_unread_not_empty():
+    """A Board with nothing open answers `jobVoList: []` (19 of 19 held at 0 jobs, 2026-09-29), so
+    a first page without the key is a page this scraper could not read. It used to return `[]`,
+    which is in eviction scope (ADR-0200)."""
+    from headstart.ingest import board_failures
+    from headstart.scrapers.base import BoardUnreadable
+
+    scraper = _ripple_search_answers(FakeResponse(200, '{"message": "busy"}'))
+    with pytest.raises(BoardUnreadable, match="unread, not empty") as raised:
+        scraper.fetch_raw()
+    assert not board_failures.is_gone(f"{type(raised.value).__name__}: {raised.value}")
+
+
+def test_ripplehire_a_json_error_body_on_the_first_search_page_raises_its_status():
+    """A JSON body was parsed before `raise_for_status`, so a JSON 503 read as an empty Board."""
+    scraper = _ripple_search_answers(FakeResponse(503, '{"error": "unavailable"}'))
+    with pytest.raises(http.RequestsError, match="HTTP 503"):
+        scraper.fetch_raw()
+
+
+def test_ripplehire_an_empty_joblist_is_still_an_empty_board():
+    scraper = _ripple_search_answers(
+        FakeResponse(200, '{"jobVoList": [], "totalJobCount": 0}')
     )
-    rows = scraper.fetch_raw()
-    assert len(gets) == 2
-    assert [r["jobSeq"] for r in rows] == [1]
+    assert scraper.fetch_raw() == []
 
 
 # --- oracle: the requisition list is paged, not one shot -------------------------------------

@@ -87,7 +87,7 @@ import zlib
 from collections import Counter
 from collections.abc import Iterator
 from collections.abc import Set as AbstractSet
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -120,6 +120,7 @@ from headstart.ingest import (
 from headstart.ingest.corpus import iter_jobs
 from headstart.ingest.doc_prep import PLANNER_ONLY_FIELDS
 from headstart.ingest.index_plan import (
+    MIN_KEEP_BOARDS,
     alias_rules,
     aliased_boards,
     apply_sync,
@@ -132,6 +133,7 @@ from headstart.ingest.index_plan import (
     read_unauthoritative_boards,
     resolve_board,
     scraped_boards,
+    unauthoritative_among,
     workday_site_jobs,
 )
 from headstart.ingest.update_descriptions import read_store
@@ -166,8 +168,6 @@ _ADD_CHUNK = 2048  # rows per add batch — bounds peak memory and streams progr
 _TOP_UNCONFIRMED_BOARDS = (
     10  # Boards named per run; enough to show concentration, not enough to bury the log
 )
-# a healthy ledger holds tens of thousands of Scrapable Boards; refuse to prune below this
-_MIN_KEEP_BOARDS = 1000
 # When *we* first indexed the Job, as an ISO-8601 UTC string — not `posted_at`, which is the
 # company's posting date and says nothing about when we found it (ADR-0031). Held as a module
 # constant because both `_schema` (new tables) and `sync`'s migration (the live table) need it.
@@ -260,20 +260,24 @@ def _schema(dim: int) -> pa.Schema:
 
 
 def _served_posted_at(posted_at: str | None, first_seen: str | None) -> str | None:
-    """The posting date a row serves: the ATS's own, but never after the day we first saw it
-    and never a pre-2000 sentinel (ADR-0268).
+    """The posting date a row serves: the ATS's own, but never more than a day after the day we
+    first saw it and never a pre-2000 sentinel (ADR-0268).
 
     SuccessFactors, Workday and others move ``posted_at`` forward on a repost or refresh, and a
     few ATSes put a closing date or a null sentinel (``0001-01-01``) there. We held the posting
-    on ``first_seen``, so it was posted on or before that day. Only ISO-shaped dates are
-    touched; a non-ISO string is already kept out of the date filters by its guard.
+    on ``first_seen``, so it was posted on or before that day, and a later date is served as that
+    day. One day later is kept as written: ``first_seen`` is our UTC stamp, and a company east of
+    UTC dates the same day one later in its own zone. Only ISO-shaped dates are touched; a
+    non-ISO string is already kept out of the date filters by its guard.
     """
     if not posted_date_guard.is_comparable(posted_at):
         return posted_at
     if posted_at[:4] < "2000":
         return None
-    if first_seen and posted_at[:10] > first_seen[:10]:
-        return first_seen[:10]
+    if first_seen:
+        latest = date.fromisoformat(first_seen[:10]) + timedelta(days=1)
+        if posted_at[:10] > latest.isoformat():
+            return first_seen[:10]
     return posted_at
 
 
@@ -529,8 +533,11 @@ def _refresh_metadata(
     writes nothing.
 
     Deliberately unconditional rather than gated on a version watermark: the invariant is "the
-    table's metadata equals the store's", so this also self-heals drift from any other cause. Rows
-    added moments ago in this same sync are skipped — they were built from these very dicts.
+    table's metadata is what :func:`_served_meta` makes of the store's", so this also self-heals
+    drift from any other cause. That is the store's metadata as written, except ``posted_at``,
+    which the row's own ``first_seen`` bounds (ADR-0268, superseding ADR-0061's plain equality in
+    part). Rows added moments ago in this same sync are skipped — they were built from these very
+    dicts.
 
     ``first_seen`` is carried across (re-stamping would resurface every refreshed Job as a new
     listing to the alerts watermark, ADR-0031), and the vector is taken from the store, which is
@@ -750,7 +757,7 @@ def sync(args: argparse.Namespace) -> int:
             f"unauthoritative-Board record missing at {args.unauthoritative_boards} — "
             "scrape_join always writes it; no Board is protected from eviction this run"
         )
-    excluded = {b for b in boards if lower_key(b) in unauthoritative}
+    excluded = unauthoritative_among(boards, unauthoritative)
     if excluded:
         boards -= excluded
         # One warning for the whole set, naming a sample of it, then every Board and its reason
@@ -1186,16 +1193,13 @@ def prune(args: argparse.Namespace) -> int:
     # verdict parole re-earned leaves the keep-set — a first-time quarantine can be one provider
     # outage (ADR-0170, ADR-0206). No ledger given, or a missing one, evicts nothing.
     failures = board_failures.load(args.board_failures) if args.board_failures else {}
-    gone_keys = {
-        board_failures.key_for(b) for b in board_failures.reconfirmed(failures)
-    }
-    evicted = {board for board in keep if board_failures.key_for(board) in gone_keys}
+    evicted = board_failures.reconfirmed_among(keep, failures)
     # Said every run, apart from the pinned keep-set line: without it a missing ledger and a run
     # where no Board was re-confirmed gone read the same.
     if args.board_failures and Path(args.board_failures).exists():
         _log.info(
             f"board failures: {len(failures)} entries from {args.board_failures}, "
-            f"{len(gone_keys)} re-confirmed gone"
+            f"{len(board_failures.reconfirmed_keys(failures))} re-confirmed gone"
         )
     else:
         where = (
@@ -1210,9 +1214,9 @@ def prune(args: argparse.Namespace) -> int:
             f"keep-set: {len(evicted)} Board(s) re-confirmed gone after parole leave it, "
             f"{len(keep)} remain"
         )
-    if len(keep) < _MIN_KEEP_BOARDS:
+    if len(keep) < MIN_KEEP_BOARDS:
         _log.error(
-            f"ABORT: keep-set has only {len(keep)} Boards (< {_MIN_KEEP_BOARDS}) — the ledger "
+            f"ABORT: keep-set has only {len(keep)} Boards (< {MIN_KEEP_BOARDS}) — the ledger "
             "looks broken/empty; refusing to prune so a bad ledger can't evict the index."
         )
         return 1

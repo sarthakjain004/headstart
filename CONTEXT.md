@@ -262,7 +262,7 @@ A **Job** absent from its **Board**'s most recent scrape but not yet from a seco
 _Avoid_: confusing it with the ADR-0046 collapse guard's per-**Board** cap, which ADR-0101 removed — it ran *after* this one, so everything it withheld had already been absent twice, and no `held` figure exists in a log written since. _Avoid_: reading it as a deletion queue — most Unconfirmed ids reappear on the next scrape and are never evicted at all.
 
 **Doc**:
-The one string built per **Job** for embedding — its `title` + cleaned `description`, prefixed `search_document:` (ADR-0005) — encoded into a single vector. A Doc is a transient in-memory string assembled at embed time, not a file; the Job's other fields still ride alongside the vector as **Search index** metadata (ADR-0006).
+The one string built per **Job** for embedding — its `title` + cleaned `description`, prefixed `search_document:` (ADR-0005) — encoded into a single vector. A Doc is a transient in-memory string assembled at embed time, not a file; the Job's other fields still ride alongside the vector as **Search index** metadata (ADR-0006). The `doc_hash` each stored row carries (ADR-0285) is not a hash of its Doc: it fingerprints the raw `title` and `description` the Doc was built from, so a change to how Docs are assembled re-embeds nothing.
 _Avoid_: document — reads as a file; the embedding code's own vocabulary (`build_doc`, `docs`) already settled on "doc".
 
 **Bucket**:
@@ -340,6 +340,18 @@ _Avoid_: calling the aggregate `role_trends.parquet` the history — it was a su
 **Found Board**:
 A **Board** whose first **Board delta** lands its whole existing backlog at once, because the index started counting it, not because it hired. Its arrival is **Recounted**, never **Opened**, and a Trends line leaves it out of the net change.
 _Avoid_: reading a found Board's first tick as growth.
+
+**Job fact** (ADR-0330):
+A row recording what a scrape saw of one **Job**, tech or not, kept in `data/facts/job_facts/`, one file per run: `listed` when it is first listed (or listed again), `changed` when a raw field a rule reads moved, `unlisted` when an authoritative read of its **Board** no longer lists it, and `off_board` when its Board left the keep-set `index prune` sweeps against (the Scrapable Boards less those re-confirmed gone). A listed or changed fact carries the raw fields as the scrape emitted them, every `Job` field but its id, ATS, fetch time and description, and whether the line carried a description. Facts are what a rule reads, never what it decided, so a later rule can be run over them and past Trends recomputed under it. The description's text is in the **Description store**, and only for tech Jobs.
+_Avoid_: reading `listed` as **Opened** — a **Found Board**'s backlog is listed too; reading `unlisted` as **Closed** — it is one absence on one authoritative read, where Closed follows the grace period and the tech subset; and reading a Board no fact names as quiet, since a Board this run did not read writes nothing.
+
+**Board read** (ADR-0330):
+One **Board** a run's scrape read, kept in `data/facts/board_reads/`: whether the read was authoritative, truncated (and why) or an error, whether its absences counted (`in_scope`), the lines it returned, the total it stated where its scraper reports one, and its seconds. With the **Job facts** it tells a Board that was read and had nothing from a Board nobody read.
+_Avoid_: **Scraped Board** — that is a Board read at least once, ever; a Board read is one read, in one run.
+
+**Listed set** (ADR-0330):
+Every currently listed Job id with its **Board** and a hash of its raw fields, in `data/facts/listed_jobs.parquet`. State, not history: `scrape_join` diffs each run against it to write the run's **Job facts** and rewrites it, all or nothing, and `merge` uploads both in one commit.
+_Avoid_: reading it as the tech stock — it holds every listed Job, tech or not.
 
 **Methodology** (ADR-0164, ADR-0230):
 What decides what a count means: the family list, the classifier head, the tech filter, the derivations and the dedup rules, each with its own version stamp. It travels in every tick's delta file (ADR-0230); `trends_epochs.csv`, which recorded a row only where a stamp moved, retired with step 6.

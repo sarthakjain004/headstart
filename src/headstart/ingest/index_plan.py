@@ -37,7 +37,7 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
-from collections.abc import Iterable, Mapping
+from collections.abc import Collection, Iterable, Mapping
 from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
 from pathlib import Path
@@ -531,6 +531,12 @@ def apply_sync(
         table.add(add_rows)
 
 
+#: A healthy ledger holds tens of thousands of Scrapable Boards. Below this the ledger looks broken or
+#: empty, so ``index prune`` refuses to act on it, and the Job facts shed no Board's Jobs as
+#: off-Board (ADR-0330).
+MIN_KEEP_BOARDS = 1000
+
+
 def live_keep_set(ledger_dir: str | Path) -> set[str]:
     """Board keys that should survive: every live ledger Board on an enabled ATS, each key exactly
     as its scraper's ``board_key()`` builds it — the real keys ids carry, which is what makes
@@ -644,6 +650,15 @@ def boards_by_canon(keep: Iterable[str]) -> dict[str, str]:
     for board in sorted(keep):  # sorted so a caller's set order can't change the plan
         live.setdefault(lower_key(board), board)
     return live
+
+
+def unauthoritative_among(
+    boards: Iterable[str], unauthoritative: Collection[str]
+) -> set[str]:
+    """The Boards of ``boards`` whose read this run was not authoritative (ADR-0053), matched
+    case-folded against ``unauthoritative`` (lower-cased keys). ``index sync`` takes them out of
+    its eviction scope and the Job facts out of theirs (ADR-0330), so the two share this rule."""
+    return {board for board in boards if lower_key(board) in unauthoritative}
 
 
 def read_unauthoritative_boards(path: str | Path) -> dict[str, str]:

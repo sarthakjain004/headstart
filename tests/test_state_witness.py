@@ -37,7 +37,7 @@ def test_publish_names_the_roots_it_left_out(tmp_path: Path, caplog) -> None:
     with caplog.at_level("INFO", logger=sw.__name__):
         sw.publish(tmp_path)
     assert caplog.messages[-1].endswith(
-        "; omitted: data/descriptions data/embeddings/jobs data/lancedb"
+        "; omitted: data/descriptions data/embeddings/jobs data/facts data/lancedb"
     )
 
 

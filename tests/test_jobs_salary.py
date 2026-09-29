@@ -2305,6 +2305,30 @@ def test_zoho_reads_a_figure_below_its_currencys_floor_as_monthly_pay():
     assert from_field("30000-40000 INR", "bamboohr") is None
 
 
+def test_zoho_reads_a_k_rupee_figure_as_monthly_only_as_far_as_the_evidence_goes():
+    # The floor admits these figures, so only `_declines_k_figure` refused them. Every "k" rupee
+    # figure that states a period says a month, up to 270K; none says a year, and none above
+    # states a period at all. "800K INR" read by the month was 9.6M a year (#859 review).
+    assert from_field("250K INR", "zoho") == SalarySpan(3_000_000, None, "INR", "field")
+    assert from_field("300K INR", "zoho") is None
+    assert from_field("800K INR", "zoho") is None
+    assert from_field("600K - 900K INR", "zoho") is None
+    assert from_field("200K - 400K INR", "zoho") is None
+
+
+def test_a_k_rupee_figure_stated_by_the_month_is_read_on_every_ats():
+    # `_declines_k_figure` refuses a "k" rupee figure only when it would be read as annual: a
+    # stated month is what it is (#859 made the refusal skip `mult` 12 for zoho's reading, and
+    # with it for every ATS on `_field_generic`).
+    assert from_field("50K INR per month", "bamboohr") == SalarySpan(
+        600_000, None, "INR", "field"
+    )
+    assert from_field("40K - 60K INR monthly", "some-new-ats") == SalarySpan(
+        480_000, 720_000, "INR", "field"
+    )
+    assert from_field("50K INR", "bamboohr") is None
+
+
 def test_zoho_serves_no_currencyless_figure_for_a_field_naming_a_code():
     # zoho.py appends "Salary: … Currency: …" to the description, so Tier 2 read the refused
     # field again without its currency or floor (swan.zohorecruit.com, v277).

@@ -1,6 +1,9 @@
 # ADR-0061: Stored metadata is refreshable — facts reconcile from the corpus, derivations re-derive on a version bump
 
 **Status:** accepted, amended by [ADR-0062](0062-drain-the-description-gap.md) · **Date:** 2026-08-18
+· **Superseded in part by:** [ADR-0268](0268-a-served-posting-date-is-never-later-than-first-seen.md)
+(the table's `posted_at` is derived from the store's date and the row's own `first_seen`, so
+"the table's metadata always equals the store's" no longer holds for that column)
 · **Relates to:**
 [ADR-0007](0007-search-metadata-canonical-typed.md), [ADR-0025](0025-parallelize-nightly-pipeline.md),
 [ADR-0048](0048-skip-details-we-already-hold.md), [ADR-0050](0050-persist-descriptions-across-runs.md)

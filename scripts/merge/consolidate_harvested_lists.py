@@ -15,8 +15,9 @@ per ATS provider, the company slugs found via two complementary strategies:
 Writes ``by-provider/<ats>.csv`` (slug,url,n_sources,sources) plus
 ``by-provider/_summary.csv`` and a combined ``by-provider/_all.csv``.
 
-Stdlib only. Idempotent - overwrites by-provider/ each run, so it can be re-run
-as more sources are added.
+Stdlib only, but for Ashby's slug spelling (``AshbyScraper``, ADR-0280).
+Idempotent - overwrites by-provider/ each run, so it can be re-run as more
+sources are added.
 """
 
 from __future__ import annotations
@@ -28,6 +29,8 @@ import re
 import sys
 from collections import defaultdict
 from pathlib import Path
+
+from headstart.scrapers.ashby import AshbyScraper
 
 ROOT = Path(__file__).resolve().parents[2]
 SRC = ROOT / "data" / "ats-company-lists" / "sources"
@@ -74,7 +77,10 @@ HOST_PATTERNS = [
     ),
     (
         "ashby",
-        re.compile(r"(?:jobs|api)\.ashbyhq\.com/([A-Za-z0-9_.-]+)", re.IGNORECASE),
+        re.compile(
+            r"(?:jobs|api)\.ashbyhq\.com/(" + AshbyScraper.slug_in_link + ")",
+            re.IGNORECASE,
+        ),
     ),
     (
         "smartrecruiters",
@@ -270,15 +276,17 @@ SKIP_NAMES = {
 }
 
 SLUG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+# An Ashby slug may hold a space ("Blackpoint Cyber"); no other ATS's does (ADR-0280).
+ASHBY_SLUG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._ -]*$")
 
 
-def valid_slug(s: str) -> bool:
+def valid_slug(s: str, ats: str = "") -> bool:
     s = s.strip().strip("/").strip()
     if not s or len(s) > 80:
         return False
     if s.lower() in STOP:
         return False
-    if not SLUG_RE.match(s):
+    if not (ASHBY_SLUG_RE if ats == "ashby" else SLUG_RE).match(s):
         return False
     if s.isdigit() and len(s) > 4:  # drop bare numeric junk ids  # noqa: SIM103
         return False
@@ -352,7 +360,9 @@ def url_scan(text: str):
     for ats, rx in HOST_PATTERNS:
         for m in rx.finditer(text):
             slug = m.group(1)
-            if not valid_slug(slug):
+            if ats == "ashby":  # `Blackpoint%20Cyber` is "Blackpoint Cyber"
+                slug = AshbyScraper.slug_from_link(slug)
+            if not valid_slug(slug, ats):
                 continue
             yield ats, slug, m.group(0)
     # Workday: keep the full board (host + optional site path) as the slug, since

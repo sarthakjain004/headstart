@@ -89,7 +89,7 @@ supersedes it and note the supersession in both.
 | [0079](0079-smallest-stated-experience-requirement-wins.md) | The smallest stated experience requirement wins | 2026-08-20 |
 | [0080](0080-trends-chart-redesign.md) | Trends chart redesign — validated palette, Other bucket, hover layer, radiogroup ARIA | 2026-08-20 |
 | [0081](0081-the-spare-egress-pool-is-deep-not-1-3-addresses.md) | The spare-egress pool is deep, not 1–3 addresses | 2026-08-21 |
-| [0082](0082-salary-extraction-a-two-tier-cascade-no-estimate.md) | Salary extraction — a two-tier cascade, period-normalized, no estimate tier | 2026-08-21 |
+| [0082](0082-salary-extraction-a-two-tier-cascade-no-estimate.md) | Salary extraction — a two-tier cascade, period-normalized, no estimate tier (period-less figures amended by 0293) | 2026-08-21 |
 | [0083](0083-evict-only-on-a-second-consecutive-absence.md) | Evict only on a second consecutive absence | 2026-08-23 |
 | [0084](0084-facet-counts-are-filter-shaped-not-query-shaped.md) | Facet counts are filter-shaped, not query-shaped | 2026-08-25 |
 | [0085](0085-pull-hf-data-over-raw-ranged-http.md) | Pull HF data over raw, ranged HTTP — not snapshot_download | 2026-08-25 |
@@ -274,10 +274,12 @@ supersedes it and note the supersession in both.
 | [0276](0276-a-hosted-mcp-call-ends-at-its-deadline-and-no-caller-holds-every-place.md) | A hosted MCP call ends at its deadline, and no caller holds every place (places amended by 0325, its "still finishing" sentence by 0320) | 2026-09-29 |
 | [0277](0277-an-agent-reads-a-posting-by-id-and-finds-jobs-like-one.md) | An agent reads a posting by id, and finds jobs like one | 2026-09-29 |
 | [0279](0279-the-space-serves-through-waitress-one-process-sixteen-threads.md) | The Space serves through waitress, in one process with sixteen threads | 2026-09-29 |
+| [0280](0280-ashby-declares-how-a-link-writes-its-slug.md) | Ashby declares how a link writes its slug | 2026-09-29 |
 | [0281](0281-a-lever-board-whose-hosted-pages-are-off-serves-nothing.md) | A Lever Board whose hosted pages are off serves nothing | 2026-09-29 |
 | [0285](0285-a-vector-is-rebuilt-when-its-postings-text-changes.md) | A vector is rebuilt when its posting's text changes | 2026-09-29 |
 | [0290](0290-a-merge-deploys-the-space-only-when-it-changes-what-the-space-loads.md) | A merge deploys the Space only when it changes what the Space loads | 2026-09-29 |
 | [0292](0292-the-description-store-is-not-reaped-until-a-last-listed-signal-exists.md) | The description store is not reaped until a "last listed" signal exists | 2026-09-29 |
+| [0293](0293-a-period-less-salary-figure-is-read-by-its-size-only-as-far-as-the-evidence-goes.md) | A period-less salary figure is read by its size only as far as the evidence goes | 2026-09-29 |
 | [0298](0298-the-space-runs-only-its-own-scripts-and-google-sign-in.md) | The Space runs only its own scripts and Google's sign-in | 2026-09-29 |
 | [0299](0299-a-keyword-word-matches-where-a-word-starts-and-quotes-keep-a-phrase.md) | A keyword word matches where a word starts, and quotes keep a phrase together | 2026-09-29 |
 | [0301](0301-a-recruitee-label-that-redirects-to-another-is-an-alias.md) | A Recruitee label that redirects to another is an alias | 2026-09-29 |
@@ -287,12 +289,14 @@ supersedes it and note the supersession in both.
 | [0305](0305-an-abstained-row-whose-title-names-a-developer-is-software-engineering.md) | An abstained row whose title names a developer is software engineering | 2026-09-29 |
 | [0306](0306-a-hidden-family-is-counted-and-folded-into-other-never-listed.md) | A hidden family is counted and folded into Other, never listed | 2026-09-29 |
 | [0307](0307-a-taleo-section-its-twin-host-mirrors-is-buried-onto-the-linked-host.md) | A Taleo section its twin host mirrors is buried onto the linked host | 2026-09-29 |
+| [0308](0308-facet-counts-under-a-keyword-run-over-its-rows-read-once-into-memory.md) | Facet counts under a keyword run over its rows, read once into memory | 2026-09-29 |
 | [0320](0320-a-description-keywords-rows-are-found-once-literal-first-and-named-by-row-id.md) | A description keyword's rows are found once, literal first, and named by row id | 2026-09-29 |
 | [0321](0321-an-agent-reads-hiring-now-by-opened-less-closed-and-every-trend-says-its-turnover-span.md) | An agent reads Hiring now by opened less closed, and every trend view states its turnover span first | 2026-09-29 |
 | [0322](0322-a-category-spans-the-index-and-an-agent-filters-by-age-experience-and-employer.md) | A category spans the whole index, and an agent filters by age, required experience and employer | 2026-09-29 |
 | [0323](0323-an-agent-sees-one-posting-once-under-a-company-name.md) | An agent sees one posting once, under a company's name, and a company's places by country | 2026-09-29 |
 | [0324](0324-an-agent-reads-what-a-roles-postings-ask-for-counted-over-a-sample.md) | An agent reads what a role's postings ask for, counted over a sample | 2026-09-29 |
 | [0325](0325-the-model-retries-an-edge-failure-and-a-description-scan-runs-alone.md) | The model retries an edge failure, a description scan runs alone, and the hosted eval waits for its server | 2026-09-29 |
+| [0330](0330-trends-are-recomputed-from-recorded-job-facts-whenever-a-rule-changes.md) | Trends are recomputed from recorded Job facts whenever a rule changes | 2026-09-29 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*

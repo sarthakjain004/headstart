@@ -63,9 +63,11 @@ def requisition_of(value: Any) -> str | None:
 _TAGS = re.compile(r"<[^>]+>")
 #: Blocks whose content is never posting text. A `<style>` block's rules otherwise survive tag
 #: stripping as words: 756 served descriptions opened with CSS on 2026-09-29 (successfactors,
-#: cornerstone, wp_job_openings, radancy, avature, zoho; #876).
+#: cornerstone, wp_job_openings, radancy, avature, zoho; #876). A block holds no opener of its own
+#: kind, so an unclosed `<style>` cannot run on to a later block's close and take the posting text
+#: between them.
 _NON_TEXT_BLOCKS = re.compile(
-    r"<(style|script)\b[^>]*>.*?</\1\s*>", re.IGNORECASE | re.DOTALL
+    r"<(style|script)\b[^>]*>(?:(?!<\1\b).)*?</\1\s*>", re.IGNORECASE | re.DOTALL
 )
 #: A UTF-8 two-byte sequence read as Latin-1: its lead byte shows as "Ã" or "Â", its continuation
 #: byte as one character in U+0080-U+00BF ("é" -> "Ã©", "°" -> "Â°").
@@ -140,11 +142,19 @@ def html_to_text(value: str | None) -> str | None:
 
     Unescapes twice because some sources (e.g. Darwinbox) entity-encode their HTML, so one
     pass leaves the tags as text and the second clears entities inside the stripped content.
+
+    `<style>` and `<script>` blocks go with their content (:data:`_NON_TEXT_BLOCKS`). In markup
+    they go before any entity is decoded, so a posting's escaped code sample
+    (`&lt;script&gt;init()&lt;/script&gt;`) keeps its text. HTML that is entity-encoded whole
+    has no real tag, so it is decoded first and its own blocks go too.
     """
     if not value:
         return None
-    text = _TAGS.sub(" ", _NON_TEXT_BLOCKS.sub(" ", html.unescape(value)))
-    return _WS.sub(" ", html.unescape(text)).strip() or None
+    if _TAGS.search(value):
+        text = html.unescape(_NON_TEXT_BLOCKS.sub(" ", value))
+    else:
+        text = _NON_TEXT_BLOCKS.sub(" ", html.unescape(value))
+    return _WS.sub(" ", html.unescape(_TAGS.sub(" ", text))).strip() or None
 
 
 def is_remote(location: str | None) -> bool | None:

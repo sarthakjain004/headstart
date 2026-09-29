@@ -998,6 +998,24 @@ def test_a_row_on_the_stale_list_is_stamped_stale_without_being_scraped(tmp_path
     assert _only_meta(store)["doc_hash"] == um.STALE_DOC_HASH
 
 
+def test_a_row_retitled_before_its_first_stamp_is_stamped_stale(tmp_path):
+    """Its vector encodes the title the store held, at best; a fingerprint of the new title would
+    hide that edit for good, and no ledger records a title change."""
+    store, jobs = _one_row_store(tmp_path, title="Backend Engineer")
+    job = {"id": "greenhouse:acme:1", "title": "Staff Engineer", "description": "x"}
+    (jobs / "greenhouse.jsonl").write_text(json.dumps(job) + "\n", encoding="utf-8")
+    um.refresh(store, jobs, tmp_path / "none", tmp_path / "wm.json")
+    assert _only_meta(store)["doc_hash"] == um.STALE_DOC_HASH
+
+
+def test_title_padding_alone_is_not_a_retitle(tmp_path):
+    store, jobs = _one_row_store(tmp_path, title="Backend Engineer")
+    job = {"id": "greenhouse:acme:1", "title": " Backend Engineer ", "description": "x"}
+    (jobs / "greenhouse.jsonl").write_text(json.dumps(job) + "\n", encoding="utf-8")
+    um.refresh(store, jobs, tmp_path / "none", tmp_path / "wm.json")
+    assert _only_meta(store)["doc_hash"] == um.doc_hash(job)
+
+
 def test_a_row_outside_this_run_and_off_the_list_stays_unstamped(tmp_path):
     store, jobs = _one_row_store(tmp_path)
     um.refresh(store, jobs, tmp_path / "none", tmp_path / "wm.json")

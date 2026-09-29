@@ -101,3 +101,31 @@ bar of ~2 MB.
 - The budget is per IP and shared by every Avature Board in a shard, so a slice heavy in Avature
   spends it; the spare egress and the per-shard cap (ADR-0047) are what absorb that, and a run's
   `406` rotations are the number to watch.
+
+## Amendment, 2026-09-29: an empty sitemap body, the English alternate and a slugless URL
+
+Three things the scraper learned after this ADR (#860, #880, and their code-review follow-up).
+The measurements are in `docs/avature/2026-09-29_empty-sitemaps-english-alternates-slugless-urls.md`.
+
+**An empty sitemap body is not an empty listing.** Avature answers a sitemap request with an
+empty `200` body at random, and a utility portal (`CalendarInvitation`, `timeslots`) answers one
+every run. A portal's locale sitemaps each list all its postings, so one that answered covers the
+portal. A public portal whose every read came back empty is settled by its `SearchJobs` page:
+gone (`400`, `404`, `410`) or landing on a login (`/Login/`, or the tenant's SSO host) means it
+lists nothing. Any other answer leaves the listing unread: a page linking postings, one stating
+results it renders client-side, one handing off to the employer's own site, and one that did not
+answer (`406`, `429`, `5xx`, `202`). An unread listing that found no posting raises
+`BoardUnreadable`; one that found some is truncated. Either way the run evicts nothing (ADR-0053).
+Checking only for a linked posting on a `200`, as #880 first did, read emiratesjobs (215 served
+rows) as an empty Board on 2026-09-29, and missed a Board whose other portals still listed rows
+(deloitteus).
+
+**A posting is read at its English URL.** Each locale sitemap lists every posting under its own
+locale and names the other locales' URLs as `xhtml:link` alternates. Whichever locale answered
+first used to name the posting. A `<loc>` that names no locale or an English one is kept.
+Otherwise the posting's first alternate whose URL names an English locale is taken, and a
+non-English `<loc>` stays only when no English alternate exists (#860).
+
+**A URL can carry no title slug.** A title with no Latin letter mints none: 28 of tsmc's 801
+postings are `…/JobDetail/{id}`. They are listed now. Their empty slug title fails the tech gate,
+as their titles fail the English tech filter.

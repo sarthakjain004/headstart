@@ -9,6 +9,8 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location(
     "fingerprint_careers", ROOT / "scripts/discover/fingerprint_careers.py"
@@ -1181,7 +1183,7 @@ def test_a_lever_link_keeps_its_slugs_casing():
 
 
 def test_a_pyjamahr_link_is_lower_cased_to_the_slug_the_api_answers():
-    """PyjamaHR reads a slug case-sensitively, and every slug it has is lower-case: 3 of 3 tenants
+    """PyjamaHR reads a slug case-sensitively, and every slug it has is lower-case: 3 of 3 slugs
     re-cased (`8Byte`, `1-Percent-Group`, `7th-Sky-Technologies-LLC`) answer `count: 0`, and none
     of the 676 slugs in its jobs sitemap carries a capital (2026-09-29). A kept capital names no
     Board (ADR-0271)."""
@@ -1310,14 +1312,30 @@ def test_filtered_scan_equals_the_scan_that_runs_every_pattern(monkeypatch):
     assert {ats for ats, *_rest in unfiltered["long-s"]} == {"smartrecruiters"}
 
 
-def test_an_ashby_board_name_with_a_space_is_kept_whole():
-    """#864: `Blackpoint%20Cyber` was cut to `blackpoint`, a Board that 404s; `+` is a space too."""
-    for link in ("Blackpoint%20Cyber", "Blackpoint+Cyber"):
-        found = {
-            (ats, tenant)
-            for ats, _kind, tenant, _n in fp.scan(
-                f'<a href="https://jobs.ashbyhq.com/{link}">Jobs</a>',
-                "blackpointcyber.com",
-            )
-        }
-        assert ("ashby", "blackpoint cyber") in found, link
+@pytest.mark.parametrize(
+    ("link", "slug"),
+    [
+        # #864: `Blackpoint%20Cyber` was cut to `blackpoint`, a Board that 404s
+        ("https://jobs.ashbyhq.com/Blackpoint%20Cyber", "blackpoint cyber"),
+        # A Company's domain as its slug, 130 Live rows, was dropped whole
+        ("https://jobs.ashbyhq.com/ambient.ai/0af6c47b", "ambient.ai"),
+        (
+            "https://api.ashbyhq.com/posting-api/job-board/careers.azx.io",
+            "careers.azx.io",
+        ),
+        # a trailing `%20` is not part of the slug: `elveo%20` answers 404
+        ("https://jobs.ashbyhq.com/Elveo%20", "elveo"),
+        # Ashby reads `+` as itself (`Blackpoint+Cyber` answers 404), so this names no Board
+        ("https://jobs.ashbyhq.com/Blackpoint+Cyber", None),
+    ],
+)
+def test_an_ashby_slug_is_read_as_the_scraper_says_a_link_writes_it(link, slug):
+    """Both fingerprinters read an Ashby link through `AshbyScraper` (ADR-0280)."""
+    found = {
+        tenant
+        for ats, _kind, tenant, _n in fp.scan(
+            f'<a href="{link}">Jobs</a>', "example.org"
+        )
+        if ats == "ashby"
+    }
+    assert found == ({slug} if slug else set())

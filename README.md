@@ -353,7 +353,7 @@ fails if this table drifts from it.
 | `department` | string | raw ATS text, served by `/job` (ADR-0277). Not read from this table by any filter, sort, or downstream logic — the tech filter reads it off the *raw scrape record*, before a row ever reaches this table |
 | `url` | string | the job-detail link |
 | `requisition` | string | the ATS's own requisition id, kept only on rows whose Board `data/validate/eightfold_backing.csv` names — an Eightfold career site, or a Board behind one (any site of a Workday tenant). On an Eightfold row it is the id its backing Board states (`atsJobId`, or `displayJobId` over Oracle); on a backing row, that Board's own. **Nullable**: null everywhere else and on rows not re-scraped since the column arrived, and null never matches. Not served to the API; `index sync`/`prune` read it to serve a posting once when an Eightfold career site and its backing Board both list it (ADR-0210) |
-| `posted_at` | string | **the company's** posting date as the ATS states it — inconsistent in shape across ATSes (`2026-01-09T00:46:44.672+00:00`, `03-Jul-2026`) and null on a meaningful share of rows. An ISO date is never served later than the row's `first_seen` day (a repost or closing date becomes that day), and a pre-2000 sentinel is served as null (ADR-0268) |
+| `posted_at` | string | **the company's** posting date as the ATS states it — inconsistent in shape across ATSes (`2026-01-09T00:46:44.672+00:00`, `2026-07-03`; a RippleHire row not re-read since 2026-09-29 may still carry `03-Jul-2026`) and null on a meaningful share of rows. An ISO date more than one day after the row's `first_seen` day is served as that day (a repost or closing date), and a pre-2000 sentinel is served as null (ADR-0268) |
 | `posted_at_comparable` | bool | whether `posted_at` has the `____-__-__` prefix the date filters can compare; materialized and bitmap-indexed (ADR-0173) |
 | `first_seen` | string | **ours** — ISO-8601 UTC, stamped when `index sync` first adds the row. Write-once, and null on rows added before the column existed (ADR-0031) |
 | `vector` | list\<float32\>[768] | `title + cleaned description`, L2-normalized |
@@ -387,7 +387,7 @@ Two rows, fetched live from the index:
   "ats": "smartrecruiters", "company": "Xplor",
   "title": "Backend Engineer",
   "location": "Kuala Lumpur, Federal Territory of Kuala Lumpur, Malaysia",
-  "remote": false, "employment_type": "Full-time",
+  "remote": null, "employment_type": "Full-time",
   "is_full_time": true, "is_part_time": false,
   "is_contract": false, "is_internship": false,
   "description_stored": true,
@@ -395,7 +395,7 @@ Two rows, fetched live from the index:
   "experience_at_most_0": false, "experience_at_most_2": false,
   "experience_at_most_5": true, "experience_at_most_10": true,
   "salary": "108000-125000 MYR 1 YEAR",
-  "min_salary_annual": 108000, "max_salary_annual": 125000, "salary_currency": null,
+  "min_salary_annual": 108000, "max_salary_annual": 125000, "salary_currency": "MYR",
   "salary_known": true,
   "url": "https://jobs.smartrecruiters.com/xplor/744000140844907",
   "requisition": null,                                    // null off the paired Boards
@@ -405,7 +405,7 @@ Two rows, fetched live from the index:
 }
 ```
 
-`posted_at`'s inconsistent shape (some ATSes emit a bare `DD-Mon-YYYY`, not ISO) is why
+`posted_at`'s inconsistent shape (RippleHire emitted a bare `DD-Mon-YYYY`, not ISO, until 2026-09-29) is why
 `posted_at` and `first_seen` are separate columns rather than one "date": a non-ISO string can sort
 lexicographically above a real ISO cutoff, so the recency filter guards `posted_at`'s shape before
 comparing it, and needs no such guard on `first_seen`, which the pipeline writes itself.
@@ -477,14 +477,14 @@ Note the raw corpus files under `data/jobs/` carry a few fields the served table
   subcommand of the same module but belongs to `cleanup-index`, not this run. Its pipeline-only helpers live here too:
   `binpack.py` (LPT packing), `corpus.py`, `doc_prep.py`, `index_plan.py`, `shard_plan.py`, `shard_speedup.py`,
   `derived_meta.py`, `board_failures.py` (ADR-0058), `board_freshness.py`, `role_assignments.py`
-  (ADR-0057), `job_turnover.py` (ADR-0227), `observability.py`, `state_fetch.py`, `state_guard.py`, `state_witness.py`.
+  (ADR-0057), `job_facts.py` (ADR-0330), `job_turnover.py` (ADR-0227), `observability.py`, `state_fetch.py`, `state_guard.py`, `state_witness.py`.
 - `scripts/` — tooling *outside* the run: `discover/`, `merge/`, `validate/`, `resolve/`,
   `scrape/` (one-off pulls), `filter/` (recall verification), `fetch/` (pull HF data down),
   `runlog/` (post-hoc analysis of a fan-out run's logs), plus `alerts/`, `bench/` (performance
   measurement), and the AI layer in `embed/` (local index tools), `enrich/`, `eval/`, `ui/`.
 - `data/` — `validate/liveness/` is git-tracked and authoritative. **Everything else under `data/`
   is gitignored and lives in the HF dataset**, not in the repo: `state/`, `embeddings/`,
-  `lancedb/`, `jobs/`. Pull them from HF before trusting any local copy.
+  `lancedb/`, `facts/`, `jobs/`. Pull them from HF before trusting any local copy.
 - `deploy/hf-space/` — the Space app; `deploy-space.yml` pushes it on change, so the repo stays
   the single source of truth for what runs there.
 - `docs/` — `index.html` dashboard + generated `jobs.json` (local; Pages publishing is off), `adr/`,

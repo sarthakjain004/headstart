@@ -1,6 +1,9 @@
 # ADR-0268: A served posting date is never later than the day we first saw the Job
 
-**Status:** accepted · **Date:** 2026-09-29 · **Relates to:**
+**Status:** accepted · **Date:** 2026-09-29 · **Supersedes in part:**
+[ADR-0061](0061-refreshable-metadata.md) (its invariant that the table's metadata always equals
+the store's: the served `posted_at` is derived from the store's date and the row's `first_seen`) ·
+**Relates to:**
 [ADR-0031](0031-first-seen-index-stamp.md) (`first_seen`),
 [ADR-0173](0173-rebuild-the-search-indexes-with-the-table.md) (`posted_at_comparable`),
 [ADR-0061](0061-refreshable-metadata.md) (the metadata refresh that carries it, and its amendment that a `None` fact is not an observation) ·
@@ -69,3 +72,26 @@ The bound also stops churn. A refresh date that moves forward every run still se
   served one day earlier (3,243 of the 35,366 rows differ by exactly one day).
 - The 41,692 rows with no `first_seen` (indexed before ADR-0031) keep their raw date. Only 1 of
   the 112 future-dated rows is among them.
+
+## Amendment (2026-09-29): one day of slack, RippleHire's dates in ISO
+
+A code review of #838 found three gaps. Measured on served table v45 (500,568 rows) and the
+store's `meta.jsonl`, both read off HF on 2026-09-29.
+
+**One day later is kept.** #696 asked to bound dates "later than `first_seen` + 1 day", and the
+decision above bounded every later date. `first_seen` is our UTC stamp, and a company east of UTC
+dates the same moment a day later in its own zone. So `_served_posted_at` now serves a date that
+is exactly one day after the `first_seen` day as written, and bounds only those two or more days
+later. Of the 35,801 served rows whose raw date is later than their `first_seen` day, this serves
+3,265 as the company wrote them (Workday 1,547, SuccessFactors 1,050) instead of a day earlier.
+The other 32,536 are bounded as before.
+
+**RippleHire's dates are ISO.** Where a detail record carries no `publishDetails.CAREER_SITE`,
+the scraper fell back to `jobPostingDate`, `26-Dec-2022`. It was the only non-ISO `posted_at` in
+the served table (765 rows, 260 of them on nttltd), so no date filter could read those
+rows. `ripplehire._iso_date` now writes that day as `2022-12-26`. `posted_at` is a fact, so
+`update_meta` refreshes each row when its Board is next read. No migration is needed.
+
+**Not done: each ATS's original posting-date field.** The per-ATS measurement #696 suggested
+(Workday `startDate` against the listing, SuccessFactors' page against the sitemap's `lastmod`)
+is still open, as #917.

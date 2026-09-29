@@ -242,7 +242,8 @@ _SYMBOL_CURRENCY = {
 # word before "$": USD 10,534, CAD 854, AUD 35, SGD 16, MXN 11, NZD 9, TWD/NTD 7, CLP/COP 4. A code
 # this module can emit names its currency; a peso or Taiwan-dollar code declines to None rather
 # than a wrong USD. Upper case only: "can $" is a verb. COP and TWD became emittable on #698, so
-# only CLP and the non-ISO "NTD" still decline.
+# only CLP and the non-ISO "NTD" still decline. "PHP" is also a language: "PHP $250,000" reads as
+# pesos. No held description or served field wrote "PHP" before "$" on 2026-09-29.
 _EMITTABLE_CODES = frozenset(_CURRENCY_CODES.split("|")) | frozenset(
     _SYMBOL_CURRENCY.values()
 )
@@ -743,6 +744,12 @@ _QUOTED_MONTHLY = frozenset(
 _FIGURES_AND_CODE_ONLY = re.compile(
     rf"(?:\s|[-–+]|\d[\d.,]*\s*(?i:k\b)?|\b(?i:to)\b|\b(?i:{_CURRENCY_CODES})\b)+"
 )
+#: A "k" rupee figure the floor admits, which `_declines_k_figure` refused as annual, is read as
+#: monthly pay only below this. Every "k" rupee figure a served string states a period for says a
+#: month, to 270K ("Budget: ₹ 270K per month"): 26 on 2026-09-29, 3 salary fields and 23 held
+#: descriptions. None says a year, and none above 270K states a period, so "800K INR" read by the
+#: month (9.6M a year) would have no evidence behind it (#859 review).
+_MONTHLY_K_RUPEES_BELOW = 300_000
 
 
 def _field_zoho(value: str) -> SalarySpan | None:
@@ -756,14 +763,25 @@ def _field_zoho(value: str) -> SalarySpan | None:
     per month", "a competitive monthly salary within the range of 18,000 - 21,000"), and none
     annual. A figure the floor admits stays annual, so the threshold is the floor itself: INR
     figures from 100,000 to 199,999 stated a month 50 of 58 times across ATSes, too few to
-    override an annual reading that is in bounds."""
+    override an annual reading that is in bounds.
+
+    A "k" rupee figure the floor admits ("110K+ INR") was refused only because a "k" rupee figure
+    is monthly (`_declines_k_figure`), and reads by the month below
+    :data:`_MONTHLY_K_RUPEES_BELOW`, where the evidence stops."""
     span = _field_generic(value)
     if span is not None or not _FIGURES_AND_CODE_ONLY.fullmatch(value):
         return span
     code = _CURRENCY_CODE.search(value)
     if code is None or code.group(1).upper() not in _QUOTED_MONTHLY:
         return None
-    return _field_generic(value, mult=12)
+    monthly = _field_generic(value, mult=12)
+    if (
+        monthly is None
+        or monthly.min_annual < 12 * _MIN_PLAUSIBLE_ANNUAL[monthly.currency]
+    ):
+        return monthly
+    top = monthly.max_annual or monthly.min_annual
+    return monthly if top < 12 * _MONTHLY_K_RUPEES_BELOW else None
 
 
 #: ATS -> its Tier-1 parser. An ATS not listed here (including one not yet given its own research
