@@ -234,6 +234,95 @@ def test_a_row_whose_title_no_run_has_encoded_counts_as_unclassified(tmp_path):
     ]
 
 
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Python Developer",
+        "DEVELOPER L3",
+        "Senior Software Engineer (Python/Flask+React)",
+        "Legacy Programmer",
+        "Backend Developers",
+    ],
+)
+def test_a_title_naming_a_developer_programmer_or_software_engineer_is_one(title):
+    assert rfc.names_a_software_developer(title)
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Technical Lead L1",
+        "Systems Engineer",
+        "Software Engineering Manager",  # engineering, not an engineer
+        "Developer Advocate",
+        "Senior Developer Relations Manager",
+        "Lightning Developer Evangelist",
+        "Product Developer - Floorcare",
+        "",
+        None,
+    ],
+)
+def test_a_title_naming_no_software_developer_is_not_one(title):
+    assert not rfc.names_a_software_developer(title)
+
+
+def test_a_developer_title_the_head_abstains_on_is_software_engineering(tmp_path):
+    head = _head(tmp_path)
+    flat = np.zeros(3, np.float32)  # every family equally likely: below the 0.6 cutoff
+    cache = rfc.Cache(
+        7,
+        {
+            "python developer": flat,
+            "senior software engineer": flat,
+            "developer advocate": flat,
+            "technical lead": flat,
+        },
+    )
+    titles = [
+        "Python Developer",
+        "Senior Software Engineer",
+        "Developer Advocate",
+        "Technical Lead",
+    ]
+    rows = head.row_logits(_neutral_rows(len(titles)))
+    assert rfc.decide_rows(cache, head, titles, rows) == [
+        "software-engineering",
+        "software-engineering",
+        rfc.UNCLASSIFIED,
+        rfc.UNCLASSIFIED,
+    ]
+
+
+def test_a_family_the_head_decides_is_never_overruled_by_a_developer_title(tmp_path):
+    head = _head(tmp_path)
+    qa_title = np.array([0, 10.0, 0], np.float32)
+    cache = rfc.Cache(7, {"qa developer": qa_title})
+    rows = head.row_logits(np.array([[1.0, 0.0], _NON_TECH_ROW], np.float32))
+    assert rfc.decide_rows(cache, head, ["QA Developer", "QA Developer"], rows) == [
+        "qa-test",
+        "non-tech",  # the row part outvotes the title, and the rule only fills abstains
+    ]
+
+
+def test_a_developer_title_no_run_has_encoded_stays_unclassified(tmp_path):
+    """The rule fills the head's abstains; a title the head never read is not an abstain, and
+    the warm-up gate keeps a table with many of those out of the ledger."""
+    head = _head(tmp_path)
+    rows = head.row_logits(_neutral_rows(1))
+    assert rfc.decide_rows(rfc.Cache(7, {}), head, ["Python Developer"], rows) == [
+        rfc.UNCLASSIFIED
+    ]
+
+
+def test_the_ticks_classifier_version_names_the_head_and_the_developer_title_rule(
+    tmp_path,
+):
+    assert (
+        rfc.classifier_version(_head(tmp_path))
+        == f"7+developer-title-rule-{rfc.DEVELOPER_TITLE_RULE_VERSION}"
+    )
+
+
 def test_coverage_counts_served_rows_not_distinct_titles():
     cache = rfc.Cache(7, {"qa engineer": np.zeros(3, np.float32)})
     assert (
