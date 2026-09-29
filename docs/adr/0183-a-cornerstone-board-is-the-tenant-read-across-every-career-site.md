@@ -31,7 +31,8 @@ requisition is often posted to several of them.
    21 minutes to 24 hours, and expires into a 401 with an empty body — never a 200-empty, so an
    expired token cannot read as an empty Board. US-pod tenant hosts also need `ASP.NET_SessionId`,
    whose value is the JWT's `aud`; the page's own cookies are dropped from the pooled session the
-   moment it is read, because with them in the jar the explicit header answers 401.
+   moment it is read, because with them in the jar the explicit header answers 401. (Amended
+   2026-09-29: the jar is cleared before every page read too; see the amendment below.)
 3. **Dead versus empty.** DEAD is DNS failure (no wildcard DNS) or every career-site page on ids
    1–3 redirecting to `/ui/error` — what a corp with no career site answers (`csod.com` hosts the
    vendor's LMS on the same labels, so most discovered labels are LMS customers). Three ids,
@@ -39,7 +40,8 @@ requisition is often posted to several of them.
    sites and searches to zero. A search that answers 404 `ResourceNotFound` reads as an empty site:
    the page itself lists no openings (metso, in Chrome). The liveness probe counts the scraper's
    own union (`CornerstoneScraper.listing`), because summing each site's `totalCount` would have
-   read 58,083 where the union is 42,534.
+   read 58,083 where the union is 42,534. (Amended 2026-09-29: DEAD is the probe's verdict. The
+   scraper reads the same answer on a Scrapable Board as unread, not empty; see below.)
 4. **The description is the job ad**, fetched per posting: it was more than 20% longer than the
    listing text on 750 of 924 postings (median 3.24x), and the listing text deletes every `&`.
    An empty ad falls back to the listing text; a text under 30 word characters once `<<…>>`
@@ -103,3 +105,33 @@ requisition is often posted to several of them.
   `ros`, `ruba`, `sbk`, `scu`, `seok`, `sgb`, `sgn`, `sgu`, `sjp`, `sobi`, `stm`, `tbr`, `tdc`,
   `tmg`, `tpa`, `trs`, `tvnz`, `ubci`, `uci`, `ufcu`, `uic`, `uis`, `unco`, `unm`, `upmc`, `usm`,
   `wcaa`, `wwt`, `ymca`, `yvw`.
+
+## Amendment (2026-09-29): a siteless answer on a Scrapable Board is unread, and every page read starts from a cleared jar
+
+**Decision 3, the scraper side (#869).** The liveness probe still calls a tenant DEAD when every
+career-site page on ids 1–3 redirects to `/ui/error`. A Scrapable Board had a career site when it
+was probed, though, and CI read 14 such Boards that way on 2026-09-27/28, all 14 of which answered
+their page from a clean address. An empty read is in eviction scope (ADR-0200), so `fetch_raw` now
+reads the listing once more and then raises `BoardUnreadable`: the Board is Unauthoritative that run
+and keeps what it serves (ADR-0053). A tenant that really left still drains through the ledger
+re-probe, which reads `listing()` and gets `None`. Until that re-probe, it raises every run, which is
+the no-drain concern of #695.
+
+**Decision 2, the jar.** Clearing the tenant's cookies after the page read was not enough. Measured
+2026-09-29, from one address, sequentially:
+
+- With the jar seeded by one page GET, `listing()` read as siteless on both reads for 3 of 4
+  tenants (imcdgroup, covea, sacmi; beca read 7 each time). After the tenant's cookies were cleared,
+  the same tenants read 82, 0 and 57 postings.
+- The redirect needs the tenant's own `ASP.NET_SessionId` and `cscx` together. On sacmi, each cookie
+  alone and every other pair answered 200. A `/ui/error` redirect itself sets only the load
+  balancer's `AWSALB`/`AWSALBCORS` (myhr-ece site 1, uisystemoffice-pilot). All four cookies are
+  host-only, so one tenant's cookies never reach another's host.
+- `_read_company`'s posting-page GET leaves both cookies in the jar, and a page read after it
+  redirected on 3 of 3 tenants (sacmi, imcdgroup, jtcgroup). So a token that expired during the ad
+  pass could not be refreshed.
+
+So `_read_context` clears the tenant's cookies before every page read, as well as after the one that
+succeeds. The second read in `fetch_raw` and a token refresh then both start clean. What seeded the
+jar in CI's 2026-09-27 run is not known. The same shards logged Cornerstone timeouts, 500s and a
+200 page with no `csod.context` in that window.

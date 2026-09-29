@@ -7,10 +7,11 @@ on:
     branches: [main]
     # ADR-0290: only a change the Space loads deploys it, since every deploy boots a new
     # container for about six minutes. That means the headstart modules deploy/hf-space/app.py
-    # imports at load, plus the files it reads (ui/, config/). The copy below still ships the
-    # whole package (ADR-0156), so any other change rides along with the next deploy.
-    # tests/test_space_deploy_trigger.py loads the app and fails if a module it loads is missing
-    # here, or if a module it never loads is listed.
+    # imports at load, plus ui/ and all of config/, which it reads files from. The copy below
+    # still ships the whole package (ADR-0156), so any other change rides along with the next
+    # deploy. tests/test_space_deploy_trigger.py loads the app and fails if a module it loads is
+    # missing here, if a module it never loads is listed, or if a function of a loaded module
+    # imports one it does not load.
     paths:
       - "deploy/hf-space/**"
       - "config/**"
@@ -30,6 +31,7 @@ on:
       - "src/headstart/boards/company_ref.py"
       - "src/headstart/jobs/__init__.py"
       - "src/headstart/jobs/job.py"
+      - "src/headstart/jobs/requisition_copies.py"
       - "src/headstart/mcp_protocol/**"
       - "src/headstart/search_filters/**"
       - "src/headstart/serving/**"
@@ -43,9 +45,11 @@ permissions:
   contents: read
 
 # A merge landing while an earlier deploy's upload still runs cancels it: the newer checkout
-# holds every earlier change, and upload_folder's commit is all or nothing (ADR-0290).
+# holds every earlier change, and upload_folder's commit is all or nothing (ADR-0290). Only a
+# newer checkout of the same ref does, so the group is per ref: a dispatch from a branch never
+# cancels main's deploy.
 concurrency:
-  group: deploy-space
+  group: deploy-space-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

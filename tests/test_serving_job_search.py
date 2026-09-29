@@ -14,12 +14,15 @@ from dataclasses import replace
 import pytest
 
 from headstart.search_filters.compiler import account_clause, build_filter, with_extra
+from headstart.serving.job_absence import WHY_NOT_SERVED
 from headstart.serving.job_search import (
     FACET_CACHE_SIZE,
     QUERY_VECTOR_CACHE_SIZE,
+    REQUIREMENTS_CATEGORY_WINDOW,
     RESULT_COLUMNS,
     SORT_COLUMNS,
     JobSearch,
+    RoleAssignments,
     ScopeUnavailable,
     refusal,
     request_account_clause,
@@ -1662,11 +1665,12 @@ def test_like_applies_every_filter_as_a_query_does(served):
     assert [r["id"] for r in rows] == ["lever:acme:3", "lever:o'brien:5"]
 
 
-def test_like_naming_no_served_job_says_it_has_closed_or_was_never_an_id(served):
-    with pytest.raises(
-        ValueError, match="in the index now: it has closed, or was never an id"
-    ):
+def test_like_naming_no_served_job_says_why_it_may_be_gone(served):
+    with pytest.raises(ValueError) as refused:
         served.run({"like": "lever:gone:9"})
+    assert str(refused.value) == (
+        "no job with id 'lever:gone:9' is in the index now. " + WHY_NOT_SERVED
+    )
 
 
 def test_a_read_by_id_serves_the_detail_and_cuts_a_long_description(served):
@@ -1688,12 +1692,15 @@ def test_a_read_by_id_serves_the_detail_and_cuts_a_long_description(served):
 
 # ---- what a sample of Jobs asks for: /requirements (ADR-0324) ----
 
-_FAMILIES = {
-    "data-engineering": sorted(
-        ["lever:acme:1", "lever:acme:2", "lever:beta:4"], key=str.lower
-    ),
-    "security": ["lever:acme:3"],
-}
+_FAMILIES = RoleAssignments(
+    {
+        "data-engineering": sorted(
+            ["lever:acme:1", "lever:acme:2", "lever:beta:4"], key=str.lower
+        ),
+        "security": ["lever:acme:3"],
+    },
+    frozenset({"data-engineering", "security"}),
+)
 
 
 @pytest.fixture(scope="module")
@@ -1720,6 +1727,7 @@ def sampled(tmp_path_factory):
     rows = [
         {
             "id": job_id,
+            "title": f"Engineer {n}",
             "company": job_id.split(":")[1].title(),
             "location": "Berlin, Germany" if n % 2 else "Austin, TX",
             "remote": n == 1,
@@ -1738,6 +1746,7 @@ def sampled(tmp_path_factory):
     schema = pa.schema(
         [
             ("id", pa.string()),
+            ("title", pa.string()),
             ("company", pa.string()),
             ("location", pa.string()),
             ("remote", pa.bool_()),
@@ -1766,27 +1775,26 @@ def _query_string(args: dict):
 
 
 def _requirements(search, **args):
-    return search.requirements(
-        _query_string({"strict": "1", **args}), _FAMILIES, set(_FAMILIES)
-    )
+    return search.requirements(_query_string({"strict": "1", **args}), _FAMILIES)
 
 
 def test_a_query_samples_the_closest_jobs_and_counts_every_match(sampled):
     counted = _requirements(sampled, q="data engineer")
     assert counted["order"] == "closest" and counted["matching"] == 5
-    assert counted["sampled"] == 5 and counted["closest_score"] == 1.0
+    assert (counted["read"], counted["distinct"]) == (5, 5)
+    assert counted["closest_score"] == 1.0 and counted["category_window"] is None
     assert counted["closest_score"] >= counted["farthest_score"]
     python = next(s for s in counted["skills"] if s["skill"] == "Python")
-    assert (python["postings"], python["employers"]) == (4, 3)
+    assert (python["jobs"], python["employers"]) == (4, 3)
     assert counted["categories"] == [
-        {"family": "data-engineering", "postings": 3},
-        {"family": "security", "postings": 1},
+        {"family": "data-engineering", "jobs": 3},
+        {"family": "security", "jobs": 1},
     ]
 
 
 def test_a_query_is_narrowed_by_the_filters_and_the_boards(sampled):
     counted = _requirements(sampled, q="data engineer", board="lever:acme")
-    assert counted["matching"] == 3 and counted["sampled"] == 3
+    assert counted["matching"] == 3 and counted["distinct"] == 3
     remote = _requirements(sampled, q="data engineer", remote="true")
     assert remote["matching"] == 1 and remote["remote"] == 1
 
@@ -1806,15 +1814,16 @@ def test_a_category_alone_samples_its_newest_jobs(sampled, monkeypatch):
 
 def test_a_query_within_a_category_keeps_only_its_jobs(sampled):
     counted = _requirements(sampled, q="data engineer", family="data-engineering")
-    assert counted["matching"] == 3 and counted["sampled"] == 3
-    assert counted["categories"] == [{"family": "data-engineering", "postings": 3}]
+    assert counted["matching"] == 3 and counted["distinct"] == 3
+    assert counted["category_window"] == REQUIREMENTS_CATEGORY_WINDOW
+    assert counted["categories"] == [{"family": "data-engineering", "jobs": 3}]
 
 
 def test_the_counts_come_from_the_sampled_columns(sampled):
-    counted = _requirements(sampled, family="data-engineering", n="60")
+    counted = _requirements(sampled, family="data-engineering")
     assert counted["experience"]["stated"] == {"0-1": 1, "2-4": 2, "5-7": 0, "8+": 0}
     usd = counted["salary"]["currencies"][0]
-    assert (usd["currency"], usd["postings"], usd["median"]) == ("USD", 3, 200_000)
+    assert (usd["currency"], usd["jobs"], usd["median"]) == ("USD", 3, 200_000)
     assert {c["code"] for c in counted["countries"]} == {"DE", "US"}
 
 
@@ -1823,7 +1832,6 @@ def test_the_counts_come_from_the_sampled_columns(sampled):
     [
         ({}, "q=, a category with family="),
         ({"family": "cooking"}, "not a configured family"),
-        ({"q": "x", "n": "10"}, "n must be from 50 to 500"),
         ({"q": "x", "country": "ZZ"}, "country"),
     ],
 )
@@ -1834,7 +1842,7 @@ def test_a_requirements_request_is_refused_in_words(sampled, args, words):
 
 def test_a_category_without_role_assignments_is_the_deployments_state(sampled):
     with pytest.raises(ScopeUnavailable):
-        sampled.requirements(_query_string({"family": "security"}), None, {"security"})
+        sampled.requirements(_query_string({"family": "security"}), None)
 
 
 def test_a_requirements_answer_is_kept_for_the_boot(sampled, monkeypatch):

@@ -20,6 +20,7 @@ import secrets
 import threading
 import time
 import traceback
+import urllib.parse
 from collections import OrderedDict
 from dataclasses import replace
 from datetime import datetime, timedelta
@@ -285,9 +286,15 @@ _FAMILY_IDS = _with_predecessors(
     job_search.load_family_ids(_STATE / "data" / "state" / "role_assignments.parquet"),
     _FAMILY_SUCCESSOR,
 )
-# The families the taxonomy lists now, retired ones left out: what `/requirements` names a
-# sampled Job's category by, and accepts as `family=` (ADR-0324).
-_CURRENT_FAMILIES = _KNOWN_FAMILIES - frozenset(_FAMILY_SUCCESSOR)
+# The same assignments with the families the taxonomy lists now, retired ones left out: what
+# `/requirements` names a sampled Job's category by, and accepts as `family=` (ADR-0324).
+_ROLE_ASSIGNMENTS = (
+    None
+    if _FAMILY_IDS is None
+    else job_search.RoleAssignments(
+        _FAMILY_IDS, _KNOWN_FAMILIES - frozenset(_FAMILY_SUCCESSOR)
+    )
+)
 # A category across the whole index (`family=` without `board=`) reads each family's rows from
 # a table built on its first request (ADR-0322).
 if _FAMILY_IDS is not None:
@@ -430,7 +437,7 @@ _HARDENING_HEADERS = {
     "Referrer-Policy": "strict-origin-when-cross-origin",
 }
 
-#: What the page may load and run (#595, ADR-0282), bar `script-src`'s nonce. Scripts: this
+#: What the page may load and run (#595, ADR-0298), bar `script-src`'s nonce. Scripts: this
 #: Space's own files, Google's sign-in library, and an inline script only with this response's
 #: nonce, so no inline handler or injected script runs. Styles keep 'unsafe-inline': the page
 #: and the résumé builder write style attributes and `<style>` elements, the print frame's among
@@ -466,6 +473,34 @@ def _content_security_policy(nonce: str | None) -> str:
     return "; ".join(("default-src 'self'", f"script-src {scripts}", *_CSP_REST))
 
 
+_REQUEST_STARTED_KEY = "headstart.request_started"
+
+
+# These two are registered before every other hook, so a request's time spans all of them: the
+# start is stamped before the wall and the limits can refuse it, and Flask runs the after-hooks
+# in reverse, so the line is printed after every other one has run.
+@app.before_request
+def _note_the_start():
+    request.environ[_REQUEST_STARTED_KEY] = time.monotonic()
+
+
+@app.after_request
+def _log_the_request(response):
+    """One line per request in the Space run log, as the development server printed and waitress
+    does not: that log is how an edge outage is told from the app failing. The path only, since a
+    query string carries a search's words, and spelled as in a URL: waitress hands it over
+    percent-decoded, and a decoded `%0A` would print a line of its own. A read `/mcp` makes in
+    process is not a request anyone sent."""
+    if not request.environ.get(space_client.IN_PROCESS_READ):
+        path = urllib.parse.quote(request.path, safe="/:@!$&'()*+,;=")
+        took_s = time.monotonic() - request.environ[_REQUEST_STARTED_KEY]
+        print(
+            f'"{request.method} {path}" {response.status_code} {took_s:.3f}s',
+            flush=True,
+        )
+    return response
+
+
 @app.after_request
 def _hardening_headers(response):
     """Headers only: a gzipped body, a 304 and the cache headers pass through untouched."""
@@ -487,7 +522,8 @@ def _request_json_object() -> dict:
 @app.before_request
 def _end_a_week_old_session():
     """Sign out a session ``_SESSION_LIFETIME`` after its sign-in, on every path (#593). It is
-    registered first, so the wall, ADR-0262's limit and ``/me`` all see such a caller signed out."""
+    registered before the wall, so the wall, ADR-0262's limit and ``/me`` all see such a caller
+    signed out."""
     if _AUTH_ON and session.get("email") and not _signed_in_recently():
         session.clear()
 
@@ -675,7 +711,12 @@ def _keep_static_for_the_boot(response):
 # `closures_partly_uncounted` (ADR-0321).
 # 9: `family=` without `board=` (a category across the whole index), `max_age_days`,
 # `required_years_at_least` and `exclude_company` on /search and /facets (ADR-0322).
-_AGENT_API_VERSION = 9
+# 10: /companies/locations lists each country's cities, a place's first city merged across its
+# spellings ("Dublin" and "Dublin, Ireland"), not its places as written (ADR-0331).
+# 11: /requirements counts one Job per requisition under `jobs` keys, names a Board that names no
+# company by the directory, and says its `read`, `distinct`, `sample_size` and `category_window`
+# (ADR-0332).
+_AGENT_API_VERSION = 11
 
 
 @app.after_request
@@ -829,7 +870,7 @@ def read_jobs():
     search field plus the description (cut at ``description_limit``), department, the raw stated
     experience and ``unconfirmed`` — whether the latest scrape of its Board missed it, or null
     where this deployment does not know. An id the table does not hold is listed in ``missing``,
-    not refused: it has closed, or was never an id, and either is an answer."""
+    not refused: why one may be (`job_absence.WHY_NOT_SERVED`) is an answer."""
     ids = list(
         dict.fromkeys(i.strip() for i in request.args.getlist("id") if i.strip())
     )
@@ -1781,11 +1822,14 @@ def company_levels():
 def role_requirements():
     """What a sample of the served jobs for a role (``q=``) and/or a category (``family=``) ask
     for, for an agent's requirements view (ADR-0324): ``JobSearch.requirements`` documents the
-    sample and ``requirement_counts`` the counts. Takes every search filter and ``board=``, and
-    ``n=`` (50 to 500, default 300). Scoped by Boards and filters alone, so no Account's follow
-    or hide list reaches it. Counts only: no description text is served."""
+    sample and ``requirement_counts`` the counts. Takes every search filter and ``board=``. A
+    Board that names no company is named by the Company directory (ADR-0323). Scoped by Boards
+    and filters alone, so no Account's follow or hide list reaches it. Counts only: no
+    description text is served."""
     try:
-        answer = _searcher.requirements(request.args, _FAMILY_IDS, _CURRENT_FAMILIES)
+        answer = _searcher.requirements(
+            request.args, _ROLE_ASSIGNMENTS, _HISTORY.board_and_name_of_job
+        )
     except (ValueError, job_search.ScopeUnavailable) as exc:
         body, status = job_search.refusal(exc)
         return jsonify(body), status
@@ -1797,8 +1841,12 @@ def role_requirements():
 # HTTP, each reading the routes above in process, with no cookie. Anyone may add it to Claude by
 # URL. The Origins it answers: none (a server-side client such as claude.ai's connector or Claude
 # Code), Claude's two web origins, and this Space's own; any other is a page on another site,
-# refused with a 403, because HF's edge reflects every Origin in its CORS preflight.
-_MCP_SERVER = space_mcp_server.build_server(env={}, fetch=space_client.wsgi_fetch(app))
+# refused with a 403, because HF's edge reflects every Origin in its CORS preflight. The reads a
+# call stopped waiting for run on, counted in `_MCP_ABANDONED_READS` (ADR-0276, ADR-0325).
+_MCP_ABANDONED_READS = space_client.AbandonedReads()
+_MCP_SERVER = space_mcp_server.build_server(
+    env={}, fetch=space_client.wsgi_fetch(app, _MCP_ABANDONED_READS)
+)
 _MCP_ORIGINS = frozenset(
     {"https://claude.ai", "https://claude.com", space_client.SPACE_URL}
 )
@@ -1830,12 +1878,16 @@ _MCP_PLACE_WAIT_S = 10
 # second at once finishes neither sooner, and under a cold cache both pass the 45 s deadline.
 # Out of the 4 places above, it never holds one for a fast call to queue behind: a fast search
 # took 5.2 s alone and 7.7 s beside a scan. It waits 10 s like any call, then is told to retry
-# in about the time one scan takes.
+# in about the time one scan takes. Nor does a scan start while any read is running past its
+# call's deadline: a call answers at 45 s, but its reads run on (ADR-0276), and a scan started
+# then would share the CPU with them. It waits for them within the same 10 s, then is told to
+# retry in a minute, as `wsgi_fetch` tells a read refused at its cap.
 _MCP_SCANS_AT_ONCE = 1
 _MCP_SCAN_PLACES = concurrency_limit.ConcurrencyLimit(
     _MCP_SCANS_AT_ONCE, _MCP_SCANS_AT_ONCE
 )
 _MCP_SCAN_RETRY_S = 20
+_MCP_FINISHING_RETRY_S = 60
 
 # Each distinct Origin `/mcp` has received this boot, logged once, so the first real connection
 # shows what Anthropic's clients send. Bounded, since the header is the caller's to write.
@@ -1866,19 +1918,12 @@ def _note_mcp_origin(origin: str | None, address: str) -> None:
 
 def _scans_descriptions(body: bytes) -> bool:
     """Whether this `/mcp` POST is a search_jobs call matching its keyword in descriptions
-    (ADR-0325), read from the body before the protocol module reads it. A body that does not
-    parse is not one; the protocol module refuses it."""
-    try:
-        message = json.loads(body)
-    except ValueError:
-        return False
-    params = message.get("params") if isinstance(message, dict) else None
+    (ADR-0325), read before `streamable_http.answer` judges the request."""
+    called = streamable_http.tool_call(body)
     return (
-        isinstance(params, dict)
-        and message.get("method") == "tools/call"
-        and params.get("name") == "search_jobs"
-        and isinstance(params.get("arguments"), dict)
-        and space_mcp_search_jobs.scans_descriptions(params["arguments"])
+        called is not None
+        and called.name == space_mcp_search_jobs.TOOL.name
+        and space_mcp_search_jobs.scans_descriptions(called.arguments)
     )
 
 
@@ -1911,9 +1956,11 @@ def mcp():
             f"retry in {wait_s} s.",
             wait_s,
         )
-    places = _MCP_SCAN_PLACES if _scans_descriptions(body) else _MCP_PLACES
+    scan = _scans_descriptions(body)
+    places = _MCP_SCAN_PLACES if scan else _MCP_PLACES
+    asked = time.monotonic()
     refused = places.take(caller, _MCP_PLACE_WAIT_S)
-    if refused and places is _MCP_SCAN_PLACES:
+    if refused and scan:
         return _mcp_refusal(
             body,
             503,
@@ -1933,6 +1980,17 @@ def mcp():
     if refused:
         return _mcp_refusal(
             body, 503, "HeadStart is busy; retry shortly.", _MCP_PLACE_WAIT_S
+        )
+    left_s = max(0.0, _MCP_PLACE_WAIT_S - (time.monotonic() - asked))
+    if scan and not _MCP_ABANDONED_READS.wait_until_none(left_s):
+        places.give_back(caller)
+        return _mcp_refusal(
+            body,
+            503,
+            "HeadStart is still finishing an earlier search that ran past its time limit, "
+            "and starts a description-keyword search only once it has; retry in about a "
+            "minute, or match the keyword in titles (keyword_in: title), which is fast.",
+            _MCP_FINISHING_RETRY_S,
         )
     try:
         status, headers, out = streamable_http.answer(
@@ -2079,49 +2137,20 @@ def index():
     )
 
 
-_STARTED = "headstart.started"
-
-
-@app.before_request
-def _note_the_start():
-    request.environ[_STARTED] = time.monotonic()
-
-
-@app.after_request
-def _log_the_request(response):
-    """One run-log line per request, as the development server printed and waitress does not:
-    the run log is how an edge outage is told from the app failing. The path only, since a query
-    string carries a search's words. A read `/mcp` makes in process is not a request anyone sent.
-    Kept on the environ, not on `g`, which an in-process read shares with the `/mcp` request."""
-    if not request.environ.get(space_client.IN_PROCESS_READ):
-        started = request.environ.get(_STARTED, time.monotonic())
-        print(
-            f'"{request.method} {request.path}" {response.status_code} '
-            f"{time.monotonic() - started:.3f}s",
-            flush=True,
-        )
-    return response
-
-
-# How `python app.py` (start.sh) serves (#595): waitress, where it used to be Werkzeug's
-# development server. One process, on purpose: the résumé-read guard (`_PARSING`), every
-# `RateLimit`, the `/mcp` places and the kept Trends and facet answers live in this process's
-# memory, and a second worker process would keep a second copy of each.
+# How `python app.py` (start.sh) serves (#595, ADR-0279): waitress, where it used to be
+# Werkzeug's development server. One process, on purpose: the résumé-read guard (`_PARSING`),
+# every `RateLimit`, the `/mcp` places and the kept Trends and facet answers live in this
+# process's memory, and a second worker process would keep a second copy of each.
 #
 # 16 threads on the Space's 2 vCPUs. No more than two requests can compute at once, so the other
-# threads are there to wait: a résumé read waits on the router for up to 120 s, each Saved set or
-# Profile write on an HF commit, and a `/mcp` request up to 10 s for one of its 4 places or its
-# one description-scan place (ADR-0325). With all 5 taken and four more queued, 7 threads are
-# still left for the page. The development server started a thread per connection with no
-# bound. Waitress reads each request
-# whole before a thread takes it, so a client that never finishes sending holds a connection,
-# not a thread: 40 such clients cost the development server 41 threads and waitress none
-# (measured locally, 2026-09-29).
+# threads are there to wait: on the router for a résumé read, on an HF commit for each Saved set
+# or Profile write, and up to `_MCP_PLACE_WAIT_S` for a `/mcp` place. ADR-0279 works the
+# count out from `_MCP_AT_ONCE` and `_MCP_SCANS_AT_ONCE`, so a change to either revisits it.
 #
 # `clear_untrusted_proxy_headers` is off because waitress 3 otherwise deletes `X-Forwarded-For`
 # whenever no trusted proxy is named, and `_client_address` reads the caller from that header
 # (ADR-0262): without it, every caller would count as the edge's one address.
-_SERVE = {
+_WAITRESS_SETTINGS = {
     "host": "0.0.0.0",
     "port": 7860,
     "threads": 16,
@@ -2131,7 +2160,8 @@ _SERVE = {
 
 if __name__ == "__main__":
     print(
-        f"serving on port {_SERVE['port']} with waitress, {_SERVE['threads']} threads",
+        f"serving on port {_WAITRESS_SETTINGS['port']} with waitress, "
+        f"{_WAITRESS_SETTINGS['threads']} threads",
         flush=True,
     )
-    waitress.serve(app, **_SERVE)
+    waitress.serve(app, **_WAITRESS_SETTINGS)

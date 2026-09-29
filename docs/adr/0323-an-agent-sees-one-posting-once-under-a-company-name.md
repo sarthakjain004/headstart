@@ -6,6 +6,9 @@
 [ADR-0277](0277-an-agent-reads-a-posting-by-id-and-finds-jobs-like-one.md) (`get_job`),
 [ADR-0273](0273-a-country-filter-matches-every-way-a-location-names-a-country.md) (the gazetteer),
 [ADR-0185](0185-trends-narrow-to-companies-picked-from-a-directory-of-boards.md) (the Company directory)
+· **Amended by:** [ADR-0331](0331-a-copy-needs-one-companys-words-and-a-missing-id-gets-one-account.md) —
+the copy rule, the naming fallback, the missing-id account and the city roll-up, after the code
+review of #897
 
 ## Context
 
@@ -34,7 +37,7 @@ The second critique of the Space MCP server (2026-09-29, 6.0/10) found five outp
 ## Decision
 
 **A copy is the same title under one company, or the same title and first place under two
-spellings of it** (`space_mcp.posting_copies`). ADR-0274's rule stays: the same company and title,
+spellings of it** (`jobs.requisition_copies`, moved and renamed by ADR-0332). ADR-0274's rule stays: the same company and title,
 brackets aside. A second rule adds rows whose company names, with their legal suffixes dropped
 ("Inc", "LLC", "Corporation"), are one the other's first words ("EVERSOURCE" and "Eversource
 Energy"). That match is loose, so the rule also needs the same title stem and the same first

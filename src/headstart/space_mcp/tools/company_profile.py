@@ -13,7 +13,8 @@ suggestions. Then, at once (ADR-0275):
   opened and closed. Those lead: the change in openings also moves when HeadStart re-counts, so
   it follows them with its re-counted part named;
 - `/companies/locations` over its Boards, for the countries its served jobs name, each with its
-  top places as written, rolled up by the `country` filter's own gazetteer (ADR-0323);
+  top places (a place's first part, its spellings merged), by the `country` filter's own
+  gazetteer (ADR-0323, ADR-0331);
 - `/companies/levels` over its Boards, for how many of its served jobs are in each Trends level
   band, each counted once (ADR-0323) — not the Search rail's experience ceilings, where a job
   stating no experience counts at every one;
@@ -66,58 +67,57 @@ def _options(facets: dict[str, Any], dimension: str) -> dict[Any, int]:
     }
 
 
-def _levels(answer: dict[str, Any]) -> str | None:
-    bands = answer.get("bands") or []
-    if not any(band.get("count") for band in bands):
+def _counts_line(
+    title: str, counts: int | dict[str, int], note: str = ""
+) -> str | None:
+    """One breakdown line — one count, or a count per label — or None when every count on it is
+    0: a Board that states no employment type would otherwise read as hiring no full-time
+    staff."""
+    if isinstance(counts, int):
+        return f"  {title}: {counts:,}{note}" if counts else None
+    if not any(counts.values()):
         return None
-    return (
-        "  level, each job once, in the Trends Level view's bands"
-        + (" (the first rows only)" if answer.get("capped") else "")
-        + ": "
-        + " · ".join(f"{band['label']} {band['count']:,}" for band in bands)
-    )
+    said = " · ".join(f"{label} {count:,}" for label, count in counts.items())
+    return f"  {title}: {said}{note}"
 
 
 def _breakdown(facets: dict[str, Any], levels: dict[str, Any]) -> list[str]:
     total = int(facets.get("total") or 0)
+    posted = _options(facets, "posted_within")
+    seen = _options(facets, "seen_within")
     lines = [
+        _counts_line("remote", _options(facets, "remote").get(True, 0)),
+        _counts_line(
+            "employment type",
+            {str(value): count for value, count in _options(facets, "etype").items()},
+            " (a job whose Board states no type counts in none)",
+        ),
+        _counts_line(
+            "level, each job once, in the Trends Level view's bands"
+            + (" (the first rows only)" if levels.get("capped") else ""),
+            {band["label"]: band["count"] for band in levels.get("bands") or []},
+        ),
+        _counts_line("salary stated", _options(facets, "has_salary").get(True, 0)),
+        _counts_line(
+            "posted by the employer in the last",
+            {
+                _POSTED.get(days, f"{days} days"): count
+                for days, count in posted.items()
+            },
+        ),
+        _counts_line(
+            "new to HeadStart in the last",
+            {words: seen[hours] for hours, words in _NEW.items() if hours in seen},
+        ),
+    ]
+    return [
         (
             f"Of the {total:,} jobs search serves on its Boards (each count on its own, a line "
             "whose every count is 0 left out; search_jobs with the key and that filter lists "
             "them):"
-        )
+        ),
+        *(line for line in lines if line),
     ]
-    if remote := _options(facets, "remote"):
-        lines.append(f"  remote: {remote.get(True, 0):,}")
-    if any((types := _options(facets, "etype")).values()):
-        lines.append(
-            "  employment type: "
-            + " · ".join(f"{value} {count:,}" for value, count in types.items())
-            + " (a job whose Board states no type counts in none)"
-        )
-    if level := _levels(levels):
-        lines.append(level)
-    if salary := _options(facets, "has_salary"):
-        lines.append(f"  salary stated: {salary.get(True, 0):,}")
-    if any((posted := _options(facets, "posted_within")).values()):
-        lines.append(
-            "  posted by the employer in the last: "
-            + " · ".join(
-                f"{_POSTED.get(value, f'{value} days')} {count:,}"
-                for value, count in posted.items()
-            )
-        )
-    seen = _options(facets, "seen_within")
-    if any(seen.get(hours) for hours in _NEW):
-        lines.append(
-            "  new to HeadStart in the last: "
-            + " · ".join(
-                f"{words} {seen[hours]:,}"
-                for hours, words in _NEW.items()
-                if hours in seen
-            )
-        )
-    return lines
 
 
 def _turnover(move: dict[str, Any], since: str | None, window_from: str) -> str:
@@ -215,7 +215,7 @@ def _locations(answer: dict[str, Any]) -> str:
         more = len(countries) - len(shown)
         said += (
             ", by country as search_jobs' `country` reads each place (a job naming two "
-            "countries counts in both), with its top places as written"
+            "countries counts in both), with its top places, a first place's spellings merged"
             + (" (the first rows only)" if answer.get("capped") else "")
             + ": "
             + " · ".join(

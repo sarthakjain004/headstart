@@ -41,6 +41,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 from werkzeug.datastructures import MultiDict
+from werkzeug.test import EnvironBuilder
 
 from headstart.llm_router import RouterUnavailable
 from headstart.serving import concurrency_limit, rate_limit
@@ -700,6 +701,7 @@ def test_the_mcp_limits_are_pinned(auth_app):
     assert auth_app._MCP_AT_ONCE_EACH == 2
     # ADR-0325: one description-keyword search at a time, on a place of its own.
     assert (auth_app._MCP_SCANS_AT_ONCE, auth_app._MCP_SCAN_RETRY_S) == (1, 20)
+    assert auth_app._MCP_FINISHING_RETRY_S == 60
 
 
 def test_mcp_answers_anyone_with_the_wall_on_and_only_by_post(auth_app):
@@ -851,6 +853,34 @@ def test_a_description_scan_takes_its_own_place_and_never_a_fast_one(
     assert not scan._held  # given back once answered
 
 
+def test_a_scan_waits_for_reads_past_their_deadline_before_it_starts(
+    auth_app, monkeypatch
+):
+    """ADR-0325: a call answers at its 45 s deadline while its reads run on, burning a CPU, so a
+    scan does not start beside them; a fast call is not held up by them."""
+    import threading
+
+    from headstart.space_mcp import space_client
+
+    scan = concurrency_limit.ConcurrencyLimit(1, 1)
+    abandoned = space_client.AbandonedReads()
+    monkeypatch.setattr(auth_app, "_MCP_SCAN_PLACES", scan)
+    monkeypatch.setattr(auth_app, "_MCP_ABANDONED_READS", abandoned)
+    monkeypatch.setattr(auth_app, "_MCP_PLACE_WAIT_S", 0.01)
+    client = auth_app.app.test_client()
+    still_running = threading.Event()
+    abandoned.give_up(still_running)  # a read whose call stopped waiting runs on
+
+    r = _post_mcp(client, _DESCRIPTION_SCAN)
+    _mcp_refusal_says(r, 503, "still finishing an earlier search")
+    assert r.headers["Retry-After"] == "60"
+    assert not scan._held  # refused scans hold nothing
+    assert _post_mcp(client).status_code == 200
+
+    abandoned.finish(still_running)
+    assert _post_mcp(client, _DESCRIPTION_SCAN).status_code == 200
+
+
 def test_an_mcp_place_is_given_back_when_answering_fails(auth_app, monkeypatch):
     places = concurrency_limit.ConcurrencyLimit(1, 1)
     monkeypatch.setattr(auth_app, "_MCP_PLACES", places)
@@ -902,7 +932,7 @@ def test_a_caller_cannot_claim_the_in_process_mark_with_a_header(auth_app, monke
 
 # ---- the app's own mark on every reply (ADR-0253) ----
 
-_OWN_REPLY = "app; agent-api=9"
+_OWN_REPLY = "app; agent-api=11"
 
 
 def test_a_routes_own_answer_is_marked(auth_app):
@@ -3373,18 +3403,18 @@ def test_requirements_count_a_sample_and_carry_no_description_text(app):
     r = app.app.test_client().get("/requirements?q=backend+engineer&strict=1")
     assert r.status_code == 200
     body = r.get_json()
-    assert (body["order"], body["sampled"], body["described"]) == ("closest", 2, 1)
+    assert (body["order"], body["distinct"], body["described"]) == ("closest", 2, 1)
     assert body["newest_tick"] is None and body["vocabulary_size"] >= 300
     assert "Build the payments API" not in r.get_data(as_text=True)
 
 
 @pytest.mark.parametrize(
     ("query", "status"),
-    [("", 400), ("q=x&n=5", 400), ("q=x&n=x", 400), ("family=security", 503)],
+    [("", 400), ("q=x&country=ZZ&strict=1", 400), ("family=security", 503)],
 )
 def test_requirements_refuse_what_they_cannot_count(app, query, status):
-    """No role or category, a sample outside its bounds, or a category on a deployment without
-    role assignments (the fixture pulls none)."""
+    """No role or category, a filter the strict read refuses, or a category on a deployment
+    without role assignments (the fixture pulls none)."""
     r = app.app.test_client().get(f"/requirements?{query}")
     assert r.status_code == status, query
 
@@ -5071,7 +5101,7 @@ def test_no_template_or_script_writes_an_inline_handler_or_an_unnonced_script():
 
 def test_python_app_py_serves_through_waitress_not_the_dev_server():
     """#595: `start.sh` runs `python app.py`, whose main block started Werkzeug's development
-    server. It serves the one app object through waitress, in one process, with `_SERVE`."""
+    server. It serves the one app object through waitress, in one process, with `_WAITRESS_SETTINGS`."""
     tree = ast.parse(APP.read_text(encoding="utf-8"))
     main = next(
         node
@@ -5079,7 +5109,7 @@ def test_python_app_py_serves_through_waitress_not_the_dev_server():
         if isinstance(node, ast.If)
         and ast.unparse(node.test) == "__name__ == '__main__'"
     )
-    assert "waitress.serve(app, **_SERVE)" in ast.unparse(main)
+    assert "waitress.serve(app, **_WAITRESS_SETTINGS)" in ast.unparse(main)
     assert "app.run" not in ast.unparse(main)
 
 
@@ -5088,7 +5118,7 @@ def _served_by_waitress(module):
     """``module``'s app behind a real waitress server with the Space's own settings, on a free
     loopback port instead of 7860."""
     server = waitress.create_server(
-        module.app, **{**module._SERVE, "host": "127.0.0.1", "port": 0}
+        module.app, **{**module._WAITRESS_SETTINGS, "host": "127.0.0.1", "port": 0}
     )
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
@@ -5144,6 +5174,58 @@ def test_each_request_leaves_one_line_in_the_run_log(app, capsys):
         '"GET /search" 200',
     ]
     assert all(re.fullmatch(r'"GET /\w+" 200 \d+\.\d{3}s', line) for line in lines)
+
+
+def _request_lines(capsys) -> list[str]:
+    return [
+        line for line in capsys.readouterr().out.splitlines() if line.startswith('"')
+    ]
+
+
+def test_a_path_cannot_write_a_line_of_its_own_into_the_space_run_log(app, capsys):
+    """Waitress hands the app its path percent-decoded, so a `%0A` in it is a line break, and
+    the line is printed for a caller the wall refuses too. On the Space (2026-09-29),
+    `/x%0A"GET /forged" 200 0.001s` printed a second line that read as a request of its own.
+    The path is logged as a URL spells it, which leaves an ordinary path as it was sent."""
+    client = app.app.test_client()
+    sent = "/x%0A%22GET%20/forged%22%20200%200.001s%1B%5B31m%E2%80%A8"
+    client.get(sent)
+    client.get("/file=../.env")
+    lines = _request_lines(capsys)
+    assert [line.rsplit(" ", 1)[0] for line in lines] == [
+        f'"GET {sent}" 404',
+        '"GET /file=../.env" 404',
+    ]
+
+
+def test_a_request_the_wall_refuses_is_timed_from_its_arrival(auth_app, capsys):
+    """The start is stamped before the wall and the limits run, so a request they refuse is
+    timed like any other rather than read as 0 s. Called as WSGI, since the test client's
+    response holds a copy of the environ the app wrote to."""
+    environ = EnvironBuilder(path="/sets").get_environ()
+    statuses = []
+    auth_app.app(environ, lambda status, headers: statuses.append(status))
+    assert statuses == ["401 UNAUTHORIZED"]
+    assert auth_app._REQUEST_STARTED_KEY in environ
+    assert [line.rsplit(" ", 1)[0] for line in _request_lines(capsys)] == [
+        '"GET /sets" 401'
+    ]
+
+
+def test_a_request_the_limit_refuses_is_timed_across_the_limit(
+    auth_app, capsys, monkeypatch
+):
+    now = [100.0]
+
+    class SlowRefusal:
+        def admit(self, caller):
+            now[0] += 2.5
+            return 7
+
+    monkeypatch.setattr(auth_app.time, "monotonic", lambda: now[0])
+    monkeypatch.setattr(auth_app, "_READ_LIMIT", SlowRefusal())
+    assert auth_app.app.test_client().get("/hot").status_code == 429
+    assert _request_lines(capsys) == ['"GET /hot" 429 2.500s']
 
 
 def test_the_hardening_headers_leave_a_gzipped_static_304_alone(sets_app, monkeypatch):

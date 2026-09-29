@@ -19,7 +19,8 @@ So no single value is served. Three steps turn the Board's values into one name,
    ``og:description`` (whose casing is kept, so "NVIDIA USA" is served as the page writes it), or
    have four or more of its letters inside the Board's own ``{tenant}/{site}``. A one-word run
    must not be generic ("Bank", "Health"), and no run ends on "of", "and", "&" or "the". No run
-   starts on a bare number or a "&" or "-" left between codes ("01 & 04 Woodward").
+   starts on a bare number or a joiner ("&" or "-") left between codes ("01 & 04 Woodward"), and
+   none ends on a joiner ("Chukchansi Gold - Resort", "DAC Group / Canada").
 3. **Vote**: the top checked run wins if it covers 40% of the named postings, or is the only
    checked run there is. Airbus's nine entities all check to "Airbus"; Northrop's division codes
    check to nothing, and the Board gets no name here.
@@ -211,7 +212,7 @@ def _checked_run(name: str, prose: str, board_letters: str) -> str | None:
     four or more of the run's letters sit inside the Board's ``{tenant}/{site}``. The run may start
     after words that are themselves codes the cleaning left ("AMC OU Ambarella"). A legal form the
     prose wrote after the name ("U-Haul co") is dropped from what is returned, unless it ends
-    the name after a joining word ("Cohen & Co").
+    the name after a joiner ("Cohen & Co").
     """
     words = name.split()
     codes = 0
@@ -283,8 +284,7 @@ def _wrapped_title(title: str | None) -> str | None:
     for pattern in company_name._CAREERS_WRAPPER:
         match = pattern.match(title or "")
         if match:
-            # "Louisiana State University - Careers" leaves its separator behind.
-            return match.group("name").rstrip(" -–—|:")
+            return match.group("name").strip()
     return None
 
 

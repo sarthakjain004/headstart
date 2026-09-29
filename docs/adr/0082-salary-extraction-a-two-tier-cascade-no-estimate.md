@@ -133,6 +133,13 @@ pattern is a near-certain future need across other ATSes, not a speculative one.
   this corpus) — a deliberate, named guess, not a silent one; genuinely ambiguous cases (no unit,
   no period marker, mutually-inconsistent multiple ranges in one description) return `None` rather
   than guess, extending the no-fabrication principle from estimation to disambiguation.
+
+  > **Amended by [ADR-0293](0293-a-period-less-salary-figure-is-read-by-its-size-only-as-far-as-the-evidence-goes.md)
+  > (2026-09-29).** A figure with no period marker can now be read by its size, but only where
+  > the served evidence settles its period, and only as far as that evidence reaches. Three
+  > readings do this: adp_recruiting reads a figure under 200 as hourly, zoho reads a figure
+  > below a monthly-quoted currency's floor as monthly, and a "k" rupee figure is monthly.
+  > Past the evidence, the figure still returns `None`.
 - Known, explicitly documented gaps from the pilot (European decimal-comma monthly figures,
   narrower label phrasings like "Compensation Base:") are left unresolved rather than chased into
   an unbounded pattern list from single examples — `docs/salary-extraction/workable.md` names them

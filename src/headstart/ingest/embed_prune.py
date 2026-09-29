@@ -15,6 +15,11 @@ table would otherwise lose its vector, be re-planned by the next ``embed_plan``,
 The price is that a Job evicted and later seen again is re-embedded rather than re-added from a
 retained vector. Across the five runs of 2026-09-24 that was 43-150 adds a run.
 
+The dropped vectors are not lost: before the store is rewritten they are kept at half precision in
+the Job facts' vector archive (``data/facts/job_vectors/``, ADR-0330), which a later classifier
+reads to re-sort the past. An archive that cannot be written stops the prune, so the store keeps
+them and the next run tries again.
+
 Run after ``index prune --apply`` and before the store is uploaded. Dry-run by default; ``--apply``
 rewrites the store.
 
@@ -29,11 +34,12 @@ from collections import Counter
 from pathlib import Path
 
 import lancedb
+import numpy as np
 
 from headstart import log
 from headstart.boards.board_identity import ats_of
-from headstart.embedding_conventions import PROD_TABLE
-from headstart.ingest import REPO_ROOT, observability
+from headstart.embedding_conventions import MODEL, PROD_TABLE
+from headstart.ingest import REPO_ROOT, job_facts, observability, run_ts
 from headstart.ingest.corpus import iter_jobs
 from headstart.ingest.embed_merge import _FLOAT_BYTES, _dim_from_manifest, evict_ids
 from headstart.ingest.index import _all_ids, check_base
@@ -53,6 +59,25 @@ def _served_ids(db: Path) -> set[str] | None:
     return set(_all_ids(conn.open_table(PROD_TABLE)))
 
 
+def _archive(
+    facts_dir: Path, stored: list[str], drop: set[str], vec_path: Path, dim: int
+) -> int:
+    """Keep the vectors about to be dropped in the Job facts' archive, before anything is evicted.
+    Raises when it cannot, which stops the prune with the store whole."""
+    rows = [i for i, job_id in enumerate(stored) if job_id in drop]
+    if not rows:
+        return 0
+    count = vec_path.stat().st_size // (dim * _FLOAT_BYTES)
+    vectors = np.memmap(vec_path, dtype=np.float32, mode="r", shape=(count, dim))
+    return job_facts.archive_vectors(
+        facts_dir,
+        run_ts().isoformat(),
+        [stored[i] for i in rows],
+        np.asarray(vectors[rows]),
+        MODEL,
+    )
+
+
 def main() -> int:
     log.setup()
     log.context("embed_prune")
@@ -65,6 +90,11 @@ def main() -> int:
         "--source",
         default=str(_SOURCE),
         help="this run's tech corpus, whose ids are kept too (default: data/jobs/tech)",
+    )
+    ap.add_argument(
+        "--facts",
+        default=str(job_facts.FACTS_DIR),
+        help="where the dropped vectors are archived (ADR-0330; default: data/facts)",
     )
     ap.add_argument(
         "--apply", action="store_true", help="rewrite the store (default: dry run)"
@@ -107,6 +137,7 @@ def main() -> int:
         return 0
 
     dim = _dim_from_manifest(store)
+    archived = _archive(Path(args.facts), stored, drop, vec_path, dim)
     dropped = evict_ids(meta_path, vec_path, dim, drop)
     # Counted from the rewritten meta, not `len(stored) - dropped`: `evict_ids` also counts any
     # vector rows past the last meta line as dropped, so the subtraction would come out short.
@@ -121,7 +152,8 @@ def main() -> int:
             f"store inconsistent after prune: {vec_path.stat().st_size} bytes for {remaining} rows",
         )
     _log.info(
-        f"done: dropped {dropped} vectors; store now holds {remaining} -> {store}"
+        f"done: dropped {dropped} vectors ({archived} archived); store now holds "
+        f"{remaining} -> {store}"
     )
     observability.summary(
         "Embedding store prune",

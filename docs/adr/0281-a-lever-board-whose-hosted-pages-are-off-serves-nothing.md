@@ -21,6 +21,14 @@ URL was fetched per Board, and the board page was fetched wherever that posting 
 casings. `veeva` is the exception: its board page 404s, but its postings answer 200 (932 listed).
 `jobgether` is the reverse: one served posting 404s, but its board page answers 200.
 
+Issue #700 counted 79 Boards / 368 rows on 2026-09-25, from the 223 Lever Boards then serving a slug
+as their company. The per-Board row counts agree (`latitudeinc` 69, `aircall` 35, `fresha` 23), so
+the gap is in which Boards are still served. ADR-0250 evicted Dormant Boards' rows on 2026-09-28,
+and hosted pages off is common among them: 43 of the 104 Lever Boards the latest run judged
+Dormant. `momenti-inc` (11 rows in the issue) fits: its API still lists 14 postings, the newest
+from 2023-06-28, and it serves no row. The issue did not record its 79 Boards by name, so the rest
+of the gap cannot be traced Board by Board.
+
 ## Decision
 
 `LeverScraper.fetch_raw` checks every scrape. It asks for the board page, and only when that
@@ -39,15 +47,23 @@ answers 404 does it ask for the first listed posting's `hostedUrl`. If both answ
 - **It comes back on its own.** The check runs on every scrape. A Board that turns its pages back
   on is served again the next time it is in a run's Slice.
 - **Reuses the company-name fetches.** `resolve_company` already asks for the board page on
-  every Board still named by its slug, and for a posting page when that 404s. `LeverScraper._fetch_once` now answers each URL once per
-  scrape, so those Boards spend no extra request. A Board that already has a real name (a
-  mixed-case or curated one) spends one more GET per scrape, or two if its board page 404s.
+  every Board still named by its slug, and for a posting page when that 404s. `LeverScraper`
+  asks each hosted page once per scrape (`_hosted_page`), and its `_fetch_once` answers a plain
+  GET from there, so those Boards spend no extra request. Any other request (a stream, another
+  method or Accept) is not answered from it. A Board that already has a real name (a mixed-case
+  or curated one) spends one more GET per scrape, or two if its board page 404s.
 
 ## Rejected
 
 - **Serve `applyUrl` instead.** It 404s too.
-- **Ask every posting.** That is one request per Job, and hosted pages are a per-Board setting.
-  One posting stands for the Board once the board page has already 404'd.
+- **Ask every posting, or more than one.** Asking every posting is one request per Job, and
+  hosted pages are a per-Board setting. One posting stands for the Board once the board page has
+  already 404'd. Measured 2026-09-29: every served Lever Board's board page was fetched (1,310
+  Boards, served table version 45), and so was each of the 104 Lever Boards the latest run
+  judged Dormant (ADR-0250). 97 Boards had a board page that 404s and a listing that answers. For each,
+  the first listed posting and up to four more spread across the listing were fetched: 310
+  postings. On 96 Boards every one answered 404. On `veeva` every one answered 200. No Board had
+  a first posting that 404s while another answered, so a second posting would change nothing.
 - **Park the Board or mark its ledger row dead.** Nothing would bring it back when the company
   turns its pages on again, and the liveness probe reads the API, which still answers.
 
@@ -60,5 +76,9 @@ answers 404 does it ask for the first listed posting's `hostedUrl`. If both answ
 - The controls are unchanged: `veeva` 932 Jobs, `spotify` 81, `palantir` 321. So is the request
   count on a Board named by its slug.
 - Each such Board logs one INFO line per scrape (ADR-0039) naming both URLs and the listed count.
-- `scripts/eval/verify_filters.py` already fails a run on a 404 link. It samples three rows per
-  ATS, so it would catch such a Board only by chance. It is unchanged.
+- `scripts/eval/verify_filters.py` already failed a run on a 404 link, but it probed the top three
+  rows of one query per ATS. Run live on 2026-09-29, that probed 3 Lever links on 2 Boards and
+  found none dead. It now probes one row per Lever Board across its whole query battery: 243 of
+  the 1,310 served Lever Boards, 15 of them dead. That catches this failure class, for example the
+  scraper's check regressing, but not every such Board: a single Board is in the sample only if
+  it ranks for one of the queries.

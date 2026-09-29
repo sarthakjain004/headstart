@@ -4,8 +4,11 @@ read from the Space's `/requirements` (ADR-0324).
 A career switcher's question, "what does a data engineer typically need", answered as counts over
 postings rather than by reading five of them: the tech skills their descriptions mention, the
 minimum years they state, their salaries, how many are remote, and where and at whom they are.
-The Space picks the sample (the postings closest to `query`, or a category's newest) and counts
-it; this module only sends the arguments and says what was counted, over how many, of how many.
+The Space picks the sample (the postings closest to `query`, or a category's newest), counts each
+requisition once however many Boards or countries copy it, and names a Board that names no company
+by the Company directory's name (ADR-0332). This module only sends the arguments, which are the
+Search filters `search_jobs` takes, read by the same rules (`search_arguments`), and says what was
+counted, over how many, of how many.
 Descriptions are scraped text, so the answer carries none of it: counts, the vocabulary's own
 skill names, and the quoted company names search already shows.
 """
@@ -15,49 +18,40 @@ from __future__ import annotations
 from typing import Any
 
 from headstart.mcp_protocol.messages import ToolFailure
-from headstart.search_filters import country_filter, india_filter, india_gazetteer
-from headstart.space_mcp import company_scope, role_families, scraped_text
+from headstart.space_mcp import (
+    company_scope,
+    role_families,
+    scraped_text,
+    search_arguments,
+    shown_company,
+)
 from headstart.space_mcp.space_client import SpaceClient, SpaceRoute
 from headstart.space_mcp.space_tool import SpaceTool
-
-#: How many postings the answer counts over: the Space's default sample (ADR-0324).
-SAMPLE_SIZE = 300
 
 #: A company name past this is cut, as search cuts one.
 SHORT_FIELD = 60
 
-#: Every filter argument as this tool names it -> as `/requirements` (and `/search`) name it.
-_SPACE_NAME = {
-    "country": "country",
-    "india_place": "india",
-    "location": "location",
-    "max_years": "max_years",
-}
+#: The rows the Space reads for a sample (`JobSearch.REQUIREMENTS_SAMPLE`), restated for the
+#: description, which is written before any answer; an answer states its own.
+SAMPLE_SIZE = 300
 
-_INDIA_PLACES = [
-    india_filter.WHOLE_COUNTRY,
-    *india_gazetteer.REGIONS,
-    *india_gazetteer.CITIES,
-]
+#: The Search filters this tool takes, each as `search_jobs` takes it.
+_FILTERS = ("company", "remote", "country", "india_place", "location", "max_years")
 
 
 def _params(
     arguments: dict[str, Any], scope: company_scope.CompanyScope | None
 ) -> list[tuple[str, str]]:
-    params: list[tuple[str, str]] = [("strict", "1"), ("n", str(SAMPLE_SIZE))]
+    """The query string: the role and the category by this route's names, then the company
+    scope and the other filters as `search_jobs` sends them."""
+    params: list[tuple[str, str]] = [("strict", "1")]
     if query := (arguments.get("query") or "").strip():
         params.append(("q", query))
     if category := arguments.get("category"):
         params.append(("family", category))
     if scope is not None:
         params += scope.params()
-    if arguments.get("remote"):
-        params.append(("remote", "true"))
-    for argument, name in _SPACE_NAME.items():
-        value = arguments.get(argument)
-        if value is not None and value != "":
-            params.append((name, str(value)))
-    return params
+    return params + search_arguments.filter_params(arguments)
 
 
 def _category(name: str | None) -> str:
@@ -78,16 +72,23 @@ def _subject(arguments: dict[str, Any]) -> str:
 
 
 def _lead(arguments: dict[str, Any], counted: dict[str, Any]) -> list[str]:
-    sampled, matching = counted["sampled"], counted["matching"]
+    distinct, read, matching = counted["distinct"], counted["read"], counted["matching"]
     query = (arguments.get("query") or "").strip()
     category = arguments.get("category")
     admitted = (
-        f"{matching:,} {'in the category ' if category else ''}that the filters admit"
+        f"{matching:,} postings {'in the category ' if category else ''}that the filters "
+        "admit, copies included"
     )
+    copies = read - distinct
     lines = [
         (
-            f"What {_subject(arguments)} ask for: counted over {sampled:,} postings, "
-            f"of {admitted}."
+            f"What {_subject(arguments)} ask for: counted over {distinct:,} distinct postings, "
+            f"of {admitted}"
+            + (
+                f" ({read:,} postings read; {copies:,} copies of one counted once)."
+                if copies
+                else "."
+            )
         )
     ]
     if query and not category:
@@ -95,11 +96,12 @@ def _lead(arguments: dict[str, Any], counted: dict[str, Any]) -> list[str]:
             "The query ranks postings but does not narrow them, so the total is every posting "
             "the filters admit; the sample is the ones most like the query."
         )
-    if query and category and sampled < min(SAMPLE_SIZE, matching):
+    window = counted["category_window"]
+    if window and read < min(counted["sample_size"], matching):
         lines.append(
-            f"Only {sampled:,} of the category's postings are among the 2,000 closest to the "
-            "query, so the sample is smaller than asked; a broader query, or the category "
-            "alone, reaches more."
+            f"Only {read:,} of the category's postings, copies included, are among the "
+            f"{window:,} closest to the query, so the sample is smaller than it could be; a "
+            "broader query, or the category alone, reaches more."
         )
     if counted.get("closest_score") is not None:
         lines.append(
@@ -107,33 +109,6 @@ def _lead(arguments: dict[str, Any], counted: dict[str, Any]) -> list[str]:
             f"to {counted['farthest_score']:.2f} (the farthest counted)."
         )
     return lines
-
-
-def _scope_line(
-    arguments: dict[str, Any], scope: company_scope.CompanyScope | None
-) -> str | None:
-    said = []
-    if scope is not None:
-        said.append(
-            f"company {scope.company.described()}"
-            if scope.company is not None
-            else f"company name contains {scraped_text.quoted(scope.substring)}"
-        )
-        if scope.read_as:
-            said.append(scope.read_as)
-    if arguments.get("remote"):
-        said.append("remote only")
-    for argument in ("country", "india_place"):
-        if arguments.get(argument):
-            said.append(f"{argument} {arguments[argument]}")
-    if arguments.get("location"):
-        said.append(f"location contains {scraped_text.quoted(arguments['location'])}")
-    if arguments.get("max_years") is not None:
-        said.append(
-            f"open to someone with at most {arguments['max_years']} years, jobs that state "
-            "no experience included"
-        )
-    return ("Filters: " + " · ".join(said) + ".") if said else None
 
 
 def _share(count: int, whole: int) -> str:
@@ -156,7 +131,7 @@ def _skill_lines(counted: dict[str, Any]) -> list[str]:
     grouped: dict[str, list[str]] = {}
     for skill in skills:
         grouped.setdefault(skill["kind"], []).append(
-            f"{skill['skill']} {_share(skill['postings'], described)} "
+            f"{skill['skill']} {_share(skill['jobs'], described)} "
             f"({skill['employers']:,} employers)"
         )
     lines += [
@@ -175,21 +150,21 @@ def _experience_line(counted: dict[str, Any]) -> str:
     return (
         f"Minimum years the posting states: {bands}; estimated from the title's seniority: "
         f"{experience['estimated_from_title']:,}; not stated: {experience['not_stated']:,} "
-        f"(of {counted['sampled']:,})."
+        f"(of {counted['distinct']:,})."
     )
 
 
 def _salary_line(counted: dict[str, Any]) -> str:
     salary = counted["salary"]
     if not salary["stating"]:
-        return f"Salary: none of the {counted['sampled']:,} states one."
+        return f"Salary: none of the {counted['distinct']:,} states one."
     currencies = " · ".join(
-        f"{c['currency']}, {c['postings']:,} posting{'' if c['postings'] == 1 else 's'}: "
+        f"{c['currency']}, {c['jobs']:,} posting{'' if c['jobs'] == 1 else 's'}: "
         f"{c['p25']:,} / {c['median']:,} / {c['p75']:,}"
         for c in salary["currencies"]
     )
     return (
-        f"Salary, stated by {salary['stating']:,} of {counted['sampled']:,} (a year; the "
+        f"Salary, stated by {salary['stating']:,} of {counted['distinct']:,} (a year; the "
         f"middle of each stated range; 25th percentile / median / 75th, per currency): "
         f"{currencies}."
     )
@@ -197,8 +172,8 @@ def _salary_line(counted: dict[str, Any]) -> str:
 
 def _company_line(counted: dict[str, Any]) -> str:
     named = " · ".join(
-        f"{scraped_text.quoted(c['company'], SHORT_FIELD)} "
-        f"(key {scraped_text.quoted(c['board'], 300)}) {c['postings']:,}"
+        shown_company.said(c, SHORT_FIELD)
+        + f" (key {scraped_text.quoted(c['board'], 300)}) {c['jobs']:,}"
         for c in counted["companies"]
     )
     return f"Companies with the most sampled postings: {named or 'none named'}."
@@ -206,7 +181,7 @@ def _company_line(counted: dict[str, Any]) -> str:
 
 def _country_line(counted: dict[str, Any]) -> str:
     named = " · ".join(
-        f"{c['name']} ({c['code']}) {c['postings']:,}" for c in counted["countries"]
+        f"{c['name']} ({c['code']}) {c['jobs']:,}" for c in counted["countries"]
     )
     return (
         f"Countries their locations name (one naming several counts in each): "
@@ -225,13 +200,11 @@ def _category_line(counted: dict[str, Any]) -> str | None:
     ]
     if not categories:
         return None
-    placed = sum(c["postings"] for c in categories)
-    named = " · ".join(
-        f"{_category(c['family'])} {c['postings']:,}" for c in categories
-    )
+    placed = sum(c["jobs"] for c in categories)
+    named = " · ".join(f"{_category(c['family'])} {c['jobs']:,}" for c in categories)
     return (
         f"Job categories of the sampled postings: {named}; other or no tech category: "
-        f"{counted['sampled'] - placed:,}."
+        f"{counted['distinct'] - placed:,}."
     )
 
 
@@ -264,9 +237,11 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
         scope = company_scope.for_search(client, company, needs_boards=False)
     counted = client.read(SpaceRoute.REQUIREMENTS, _params(arguments, scope))
     lines = _lead(arguments, counted)
-    if scope_line := _scope_line(arguments, scope):
-        lines.append(scope_line)
-    if not counted["sampled"]:
+    if any(arguments.get(name) not in (None, "", False) for name in _FILTERS):
+        # The category is the lead's own subject, so the scope line leaves it out.
+        filters = {k: v for k, v in arguments.items() if k != "category"}
+        lines.append(search_arguments.scope_line(filters, scope))
+    if not counted["distinct"]:
         lines.append(_no_postings(client, counted, scope))
     else:
         lines.append(scraped_text.SCRAPED_NOTE)
@@ -276,8 +251,8 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
         lines.append(_experience_line(counted))
         lines.append(_salary_line(counted))
         lines.append(
-            f"Remote: {counted['remote']:,} of {counted['sampled']:,} "
-            f"({_share(counted['remote'], counted['sampled'])})."
+            f"Remote: {counted['remote']:,} of {counted['distinct']:,} "
+            f"({_share(counted['remote'], counted['distinct'])})."
         )
         lines.append(_company_line(counted))
         lines.append(_country_line(counted))
@@ -301,13 +276,14 @@ TOOL = SpaceTool(
         "with how many employers mention it), the minimum years they state, salary quartiles "
         "per currency, the remote share, and the companies and countries with the most of "
         "them. `query` is the role only, as in search_jobs ('data engineer'); the sample is "
-        f"the {SAMPLE_SIZE} postings closest to it among those the filters admit. `category` "
-        "alone samples the category's newest postings across the whole index; with `query`, "
-        "the closest within it. Say what was counted: how many postings, of how many, and how "
-        "they were picked, as the answer states it. Skills come from a fixed list of tech "
-        "skills; a skill few employers mention may be one employer's self-description. For "
-        "a career switcher, read the skills with the stated years. `company` matches as "
-        "search_jobs' does. No description text is returned."
+        f"the {SAMPLE_SIZE} postings closest to it among those the filters admit, each "
+        "requisition counted once however many Boards or countries copy it. `category` alone samples the "
+        "category's newest postings across the whole index; with `query`, the closest within "
+        "it. Say what was counted: how many postings, of how many, and how they were picked, "
+        "as the answer states it. Skills come from a fixed list of tech skills; a skill few "
+        "employers mention may be one employer's self-description. For a career switcher, "
+        "read the skills with the stated years. The filters mean what they mean in "
+        "search_jobs. No description text is returned."
     ),
     input_schema={
         "type": "object",
@@ -321,39 +297,7 @@ TOOL = SpaceTool(
                 "A job category: its postings across the whole index, or with `query` the "
                 "closest within it."
             ),
-            "company": {
-                "type": "string",
-                "maxLength": 100,
-                "description": (
-                    "A company name (matched as a substring), or a Board key such as "
-                    "'lever:razorpay'."
-                ),
-            },
-            "remote": {"type": "boolean", "description": "Remote postings only."},
-            "country": {
-                "type": "string",
-                "enum": list(country_filter.CODES),
-                "description": "ISO 3166-1 alpha-2 code (US, GB, DE, IN).",
-            },
-            "india_place": {
-                "type": "string",
-                "enum": _INDIA_PLACES,
-                "description": "An Indian city or region, or 'india' for anywhere in India.",
-            },
-            "location": {
-                "type": "string",
-                "maxLength": 60,
-                "description": "Text the posting's location contains, any country.",
-            },
-            "max_years": {
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 30,
-                "description": (
-                    "The user's own years of experience: keeps postings asking for at most "
-                    "this many, and those that state none."
-                ),
-            },
+            **{name: search_arguments.PROPERTIES[name] for name in _FILTERS},
         },
         "additionalProperties": False,
     },
@@ -363,5 +307,8 @@ TOOL = SpaceTool(
     ),
     answer=answer,
     max_chars=12_000,
-    argument_readers={"category": role_families.resolve},
+    argument_readers={
+        "category": role_families.resolve,
+        "country": search_arguments.read_country,
+    },
 )

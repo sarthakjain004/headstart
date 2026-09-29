@@ -1,6 +1,6 @@
 # ADR-0262: A caller with no session reads the public routes sixty times a minute
 
-**Status:** accepted, amended by [ADR-0269](0269-every-trends-control-is-answered-from-the-browser.md) (a Trends answer already kept is not counted) · **Date:** 2026-09-28 · **Relates to:**
+**Status:** accepted, amended by [ADR-0269](0269-every-trends-control-is-answered-from-the-browser.md) (a Trends answer already kept is not counted) and [ADR-0279](0279-the-space-serves-through-waitress-one-process-sixteen-threads.md) (the one process is waitress's, no longer Werkzeug's) · **Date:** 2026-09-28 · **Relates to:**
 [ADR-0258](0258-the-spaces-read-routes-answer-anyone.md) (the routes this limits, and the risks it
 named), [ADR-0253](0253-an-agent-reads-the-spaces-read-routes-through-a-read-scoped-token.md) (the
 MCP server and the `X-HeadStart` marker), [ADR-0251](0251-trends-answers-are-worked-out-once-a-boot-and-kept-by-the-browser.md)

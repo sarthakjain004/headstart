@@ -71,10 +71,10 @@ def test_places_are_counted_as_served_most_first_ties_by_name():
             {
                 "code": "US",
                 "jobs": 4,
+                # Within a country, a place is its first city, case-blind.
                 "places": [
-                    {"location": "Seattle, WA", "count": 2},
+                    {"location": "Seattle", "count": 3},
                     {"location": "Austin", "count": 1},
-                    {"location": "seattle, wa", "count": 1},
                 ],
             },
             {"code": "IN", "jobs": 2, "places": [{"location": "Pune", "count": 2}]},
@@ -84,7 +84,8 @@ def test_places_are_counted_as_served_most_first_ties_by_name():
     }
 
 
-def test_places_roll_up_by_country_a_multi_country_place_in_each():
+def test_places_roll_up_by_country_then_city_a_multi_country_place_in_each():
+    """rc02b: "Dublin" 15 and "Dublin, Ireland" 4 were two places; they are one Dublin."""
     rows = ["Dublin", "Dublin, Ireland", "Dublin", "N/A", "N/A", "Remote"]
     rows += ["London, UK; Berlin, Germany", "Cork, Ireland", "Galway, Ireland"]
     answer = location_counts.top(_Scan(rows), "x", 10)
@@ -93,21 +94,18 @@ def test_places_roll_up_by_country_a_multi_country_place_in_each():
             "code": "IE",
             "jobs": 5,
             "places": [
-                {"location": "Dublin", "count": 2},
-                {"location": "Cork, Ireland", "count": 1},
-                {"location": "Dublin, Ireland", "count": 1},
+                {"location": "Dublin", "count": 3},
+                {"location": "Cork", "count": 1},
+                {"location": "Galway", "count": 1},
             ],
         },
+        # Its first city is in another country, so under Germany it stays whole.
         {
             "code": "DE",
             "jobs": 1,
             "places": [{"location": "London, UK; Berlin, Germany", "count": 1}],
         },
-        {
-            "code": "GB",
-            "jobs": 1,
-            "places": [{"location": "London, UK; Berlin, Germany", "count": 1}],
-        },
+        {"code": "GB", "jobs": 1, "places": [{"location": "London", "count": 1}]},
     ]
     assert answer["no_country"] == {
         "jobs": 3,

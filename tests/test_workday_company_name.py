@@ -193,7 +193,7 @@ def test_clean_strips_a_code_joined_to_the_name_by_an_underscore(entity, cleaned
     assert clean(entity) == cleaned
 
 
-def test_a_run_never_starts_on_a_connector_or_a_bare_number():
+def test_a_run_never_starts_on_a_joiner_or_a_bare_number():
     """Woodward's values are code lists ("01 & 04"); the cache served "& 04 Woodward"."""
     entities = [
         "47 Woodward Aken GmbH",
@@ -258,3 +258,56 @@ def test_a_wrapped_og_title_drops_the_separator_before_careers():
     name with its " -" (2026-09-24)."""
     page = _page("Louisiana State University - Careers")
     assert board_name([], page, "lsu/lsu") == ("Louisiana State University", "og:title")
+
+
+# Each rule `_checked_run` gained in #862, pinned on its own: the mixed-entity cases above still
+# pass with any one of them removed, because the Board's other postings out-vote the bad run.
+
+
+@pytest.mark.parametrize(
+    ("entity", "board", "expected"),
+    [
+        # "01 & 04" is two codes and a "&" between them: skipping only codes left "&" at the front,
+        # and a run starting on "04" or "&" was vouched for by the Board's own letters
+        ("01 & 04 Woodward, Inc.", "woodward/woodward", "Woodward"),
+        # "6J6" is a code word and "-" joins it to the name
+        ("6J6 - Zoetis LLC", "zoetis/broadbean_external", "Zoetis"),
+    ],
+)
+def test_a_board_whose_every_posting_leads_with_codes_and_joiners(
+    entity, board, expected
+):
+    page = _page(None, f"What does it mean to be part of {expected}? It means more.")
+    assert board_name([entity] * 8, page, board) == (expected, "hiringOrganization")
+
+
+@pytest.mark.parametrize(
+    ("entity", "board", "prose", "expected"),
+    [
+        # each value as its Board states it on every posting read live on 2026-09-29; the cache
+        # had served the name with the joiner after it
+        (
+            "Chukchansi Gold - Resort & Casino",
+            "chukchansigold/cgrccareers",
+            "Chukchansi Gold Resort & Casino invites guests",
+            "Chukchansi Gold",
+        ),
+        (
+            "100 DAC Group / Canada Ltd.",
+            "dacgroup/EXT",
+            "DAC is a leading international media agency",
+            "DAC Group",
+        ),
+        (
+            "CCB iHeartMedia + Entertainment, Inc. | MPG",
+            "iheartmedia/External_iHM",
+            "future roles at iHeartMedia, we invite you",
+            "iHeartMedia",
+        ),
+    ],
+)
+def test_a_run_never_ends_on_a_joiner(entity, board, prose, expected):
+    assert board_name([entity] * 8, _page(None, prose), board) == (
+        expected,
+        "hiringOrganization",
+    )

@@ -28,6 +28,8 @@ The inventory, read from the templates and static scripts on 2026-09-29:
   and its template gallery, style attributes in three layouts, and a `<style>` into the
   `about:blank` frame it prints from. That frame inherits the page's policy. Google Sign-In also
   injects a `<style id="googleidentityservice_button_styles">` into the page (measured below).
+  (Missed by this inventory, and added on 2026-09-29 by the #870 review: the page `GET
+  /unsubscribe` answers with carries a style attribute too.)
 
 Google's sign-in guide ("Content Security Policy", last updated 2026-04-06, read 2026-09-29)
 names `script-src https://accounts.google.com/gsi/client`, `frame-src
@@ -67,6 +69,18 @@ frame-ancestors 'self' https://huggingface.co
   `<style>` itself, so that style would then apply only if Google copied our nonce onto it, which
   was not tested. An injected style cannot run code, so the XSS containment rests on
   `script-src`.
+
+  > **Correction, recorded rather than overwritten (2026-09-29, the #870 review).** Google does
+  > copy the nonce. `https://accounts.google.com/gsi/client`, read on 2026-09-29 (273,853 bytes),
+  > writes its button styles with `if (document.currentScript.nonce)
+  > style.setAttribute('nonce', document.currentScript.nonce)`. So a style nonce would cover
+  > Google's `<style>` as well, once our `gsi/client` script tag carried the nonce, which it does
+  > not today because `script-src` allows it by host. The two alternatives below that cite
+  > Google's style were rejected partly on that wrong premise. The decision keeps its other
+  > reason. Under a style nonce, every `<style>` element the door, the page and the résumé
+  > builder write would need the nonce, the print frame's among them. Style attributes would
+  > still need `'unsafe-inline'` in `style-src-attr`. And an injected style cannot run code.
+  > Whether Google's button renders under a style nonce was not tested in a browser.
 - **Google's origins as its guide lists them.** The host-and-path sources in `script-src` and
   `style-src`, and the `/gsi/` prefix in `connect-src` and `frame-src`.
 - **The page's own guard.** A test renders the door and the signed-in page and checks that every
@@ -103,11 +117,12 @@ passed at 1280 px and 390 px.
   caller-controlled script, plus a single path on accounts.google.com. Google's sign-in guide
   documents the allowlist, not this recipe. Rejected as more surface for no measured gain.
 - **Styles by nonce or hash, or moved into stylesheets.** Google's injected `<style>` would
-  need our nonce, as above. Doing this for our own styles alone
+  need our nonce, as above (it would get it: see the correction). Doing this for our own styles alone
   would mean threading a nonce through the résumé builder's renderer and into the print frame's
   document. That buys little, because style injection does not run code. Rejected.
 - **`style-src-elem` with a nonce, and `style-src-attr 'unsafe-inline'`.** This splits the same
-  problem in two, and Google's `<style>` still needs the nonce.
+  problem in two, and Google's `<style>` still needs the nonce (it would copy it from its script
+  tag: see the correction).
 - **Ship it as `Content-Security-Policy-Report-Only` first.** The Space has no report endpoint,
   and agents cannot read its logs, so nothing would ever be read. The browser run above does
   the job a report period would, and the change can be reverted in one PR.

@@ -58,9 +58,10 @@ SPACE_URL = "https://imposeidon-headstart-search.hf.space"
 #: `/companies/locations` (ADR-0275); since 6, its places by country and `/companies/levels`
 #: (ADR-0323); since 7, `/requirements` (ADR-0324); since 8, `/hot`'s `opened_less_closed`
 #: lens (ADR-0321); since 9, `family=` without `board=`, `max_age_days`,
-#: `required_years_at_least` and `exclude_company` (ADR-0322). The app states the one it
-#: serves on every reply.
-AGENT_API = 9
+#: `required_years_at_least` and `exclude_company` (ADR-0322); since 10, each country's cities
+#: on `/companies/locations` (ADR-0331); since 11, `/requirements`' one Job per requisition
+#: under `jobs` keys (ADR-0332). The app states the one it serves on every reply.
+AGENT_API = 11
 
 #: The measured boot, said when a call gives up waiting for one.
 BOOT_MEASURED = "a boot measured 4 min 13 s on 2026-09-28"
@@ -135,35 +136,79 @@ def urllib_fetch(url: str, headers: Mapping[str, str], timeout_s: float) -> Repl
 IN_PROCESS_READ = "headstart.space_mcp.in_process_read"
 
 
-def wsgi_fetch(wsgi_app: Callable, abandoned_cap: int = ABANDONED_READS_CAP) -> Fetch:
+class AbandonedReads:
+    """The in-process reads whose call stopped waiting and which are still running (ADR-0276).
+    :func:`wsgi_fetch` refuses a new read while ``cap`` of them run, and the Space's `/mcp` route
+    starts a description scan only when none does (ADR-0325). A read is known by the
+    ``threading.Event`` it sets when it finishes; one lock orders giving up on it against its
+    finishing, so a read is counted exactly when its call gave up on it before it finished."""
+
+    def __init__(self, cap: int = ABANDONED_READS_CAP) -> None:
+        self.cap = cap
+        self._abandoned: set[threading.Event] = set()
+        self._changed = threading.Condition()
+
+    @property
+    def running(self) -> int:
+        with self._changed:
+            return len(self._abandoned)
+
+    def full(self) -> bool:
+        with self._changed:
+            return len(self._abandoned) >= self.cap
+
+    def give_up(self, finished: threading.Event) -> int | None:
+        """Count the read that sets ``finished`` as abandoned, unless it has finished meanwhile:
+        how many are now running, or None when it had finished."""
+        with self._changed:
+            if finished.is_set():
+                return None
+            self._abandoned.add(finished)
+            return len(self._abandoned)
+
+    def finish(self, finished: threading.Event) -> bool:
+        """Set ``finished``; True when its call had given up on the read, which then stops
+        counting."""
+        with self._changed:
+            finished.set()
+            if finished not in self._abandoned:
+                return False
+            self._abandoned.discard(finished)
+            self._changed.notify_all()
+            return True
+
+    def wait_until_none(self, timeout_s: float) -> bool:
+        """True once no abandoned read is running; False if ``timeout_s`` passed first."""
+        with self._changed:
+            return self._changed.wait_for(
+                lambda: not self._abandoned, timeout=timeout_s
+            )
+
+
+def wsgi_fetch(wsgi_app: Callable, abandoned: AbandonedReads | None = None) -> Fetch:
     """The :data:`Fetch` for this server when the Space itself serves it (ADR-0267): each read is
     a request to ``wsgi_app`` in process, with no cookie, so no Account reaches an answer.
     Werkzeug is imported here, not at the top: the stdio install has no Werkzeug.
 
     **``timeout_s`` holds** (ADR-0276). Each read runs on a thread of its own and is waited for at
     most ``timeout_s``; past it the call stops waiting with :class:`DeadlinePassed`. The read
-    cannot be stopped, so it runs on to its end with a CPU busy all the while: while
-    ``abandoned_cap`` such reads are still running, a new read is refused at once with
-    :class:`SpaceBusy` instead of being started."""
+    cannot be stopped, so it runs on to its end with a CPU busy all the while, counted in
+    ``abandoned``: while ``abandoned.cap`` such reads are still running, a new read is refused at
+    once with :class:`SpaceBusy` instead of being started."""
     from werkzeug.test import Client
 
     client = Client(wsgi_app, use_cookies=False)
-    lock = threading.Lock()
-    abandoned = 0  # reads whose call stopped waiting, still running
+    reads = abandoned or AbandonedReads()
 
     def fetch(url: str, headers: Mapping[str, str], timeout_s: float) -> Reply:
-        nonlocal abandoned
         path, query = urllib.parse.urlsplit(url)[2:4]
-        with lock:
-            if abandoned >= abandoned_cap:
-                raise SpaceBusy(_STILL_FINISHING)
+        if reads.full():
+            raise SpaceBusy(_STILL_FINISHING)
         finished = threading.Event()
         outcome: list[Any] = []  # the answer, or what the read raised
-        given_up = False
         started = time.monotonic()
 
         def read() -> None:
-            nonlocal abandoned
             try:
                 # In an empty context, so the read gets an app context of its own: Flask reuses
                 # one already pushed on the thread, which would share the outer request's `g`.
@@ -179,10 +224,7 @@ def wsgi_fetch(wsgi_app: Callable, abandoned_cap: int = ABANDONED_READS_CAP) -> 
             except Exception as exc:  # noqa: BLE001 — raised again on the waiting thread
                 outcome.append(exc)
             finally:
-                with lock:
-                    finished.set()
-                    if given_up:
-                        abandoned -= 1
+                given_up = reads.finish(finished)
             if given_up:
                 _log.warning(
                     "%s: a read past its call's deadline finished after %.0f s",
@@ -192,12 +234,8 @@ def wsgi_fetch(wsgi_app: Callable, abandoned_cap: int = ABANDONED_READS_CAP) -> 
 
         threading.Thread(target=read, name="space-mcp-read", daemon=True).start()
         if not finished.wait(timeout_s):
-            with lock:
-                if not finished.is_set():
-                    given_up = True
-                    abandoned += 1
-                    running = abandoned
-            if given_up:
+            running = reads.give_up(finished)
+            if running is not None:
                 _log.warning(
                     "%s: no answer within %.0f s; %d reads past their deadline running",
                     path,

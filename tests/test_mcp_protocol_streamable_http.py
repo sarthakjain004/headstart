@@ -220,3 +220,26 @@ def test_a_refusals_code_is_outside_the_ranges_json_rpc_and_mcp_reserve():
     for status in (429, 503):
         _, _, reply = streamable_http.refusal(b"{}", status, "busy")
         assert not -32768 <= json.loads(reply)["error"]["code"] <= -32000
+
+
+def _call(params):
+    return {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": params}
+
+
+@pytest.mark.parametrize(
+    "body, called",
+    [
+        (
+            _call({"name": "search_jobs", "arguments": {"keyword": "visa"}}),
+            ("search_jobs", {"keyword": "visa"}),
+        ),
+        (_call({"name": "hiring_now"}), ("hiring_now", {})),
+        ({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, None),
+        (_call({}), None),
+        ([_call({"name": "search_jobs"})], None),  # a batch is not one request
+    ],
+)
+def test_a_route_reads_which_tool_a_call_names_before_answering(body, called):
+    """ADR-0325: the Space's /mcp route sends a description scan to a place of its own."""
+    assert streamable_http.tool_call(json.dumps(body).encode()) == called
+    assert streamable_http.tool_call(b"not json") is None

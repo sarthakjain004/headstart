@@ -367,7 +367,7 @@ def test_a_401_that_survives_the_refresh_fails_the_board():
 def test_a_board_whose_career_site_pages_all_redirect_is_unread_not_empty():
     """An LMS-only corp answers `302 /ui/error` for every career-site page (5 tenants x ids
     1-6); three ids are tried because `myhr-ece` starts at 2. `p_cornerstone` calls that DEAD, so
-    a Scrapable Board answering it is unread (#702): CI read 14 live Boards that way on
+    a Scrapable Board answering it is unread (#702): CI read 14 Scrapable Boards that way on
     2026-09-27/28, and an empty read is in eviction scope (ADR-0200). Asked twice, then raised,
     so the Board is Unauthoritative (ADR-0053) and keeps what it serves."""
     from headstart.ingest import board_failures
@@ -487,6 +487,53 @@ def test_the_pooled_session_keeps_no_cornerstone_cookies():
     every tenant-host request carries its session only as the header."""
     _, fake, _ = _scrape("ama-assn")
     assert fake.cookie_clears and set(fake.cookie_clears) == {"ama-assn.csod.com"}
+
+
+class _CookieJarCsod(_FakeCsod):
+    """A tenant whose page redirects to `/ui/error` while the jar holds its cookies, as a live
+    tenant's did with its own `ASP.NET_SessionId` and `cscx` in the jar (2026-09-29: sacmi,
+    imcdgroup, covea). A page or posting-page answer puts them there; clearing the tenant's
+    domain takes them out. `seeded` is the jar's state before the first request."""
+
+    def __init__(self, slug: str, *, seeded: bool) -> None:
+        super().__init__(slug, _boards()[slug])
+        self.seeded = seeded
+
+    def clear_cookies(self, domain: str | None = None) -> None:
+        super().clear_cookies(domain)
+        if domain in (None, f"{self.slug}.csod.com"):
+            self.seeded = False
+
+    def _answer(self, method, url, kwargs):
+        if "/home?c=" in url and self.seeded:
+            return _csod_response(302, "", {"location": "/ui/error"})
+        response = super()._answer(method, url, kwargs)
+        if "/home" in url and response.status_code == 200:
+            self.seeded = True
+        return response
+
+
+def test_a_jar_left_holding_the_tenants_cookies_does_not_make_the_board_unread():
+    """Seeded with one page GET, 3 of 4 live tenants read as siteless on both reads, and 82, 0
+    and 57 postings once the tenant's cookies were cleared (2026-09-29)."""
+    fake = _CookieJarCsod("ama-assn", seeded=True)
+    scraper = CornerstoneScraper("ama-assn", fetcher=fake)
+    jobs = scraper.parse(scraper.fetch_raw(), SCRAPED_AT)
+    assert sorted(_by_id(jobs)) == ["4070", "4125", "4144", "4152"]
+
+
+def test_a_token_refresh_after_the_company_read_still_reads_the_page():
+    """`_read_company`'s posting-page GET leaves the tenant's cookies in the jar (3 of 3 tenants,
+    2026-09-29), and a page read after it redirected to `/ui/error`. So a token that expired
+    during the ad pass could not be refreshed, and every ad after it answered 401."""
+    fake = _CookieJarCsod("ama-assn", seeded=False)
+    fake.posting_pages = {"2/4144": _posting_page("American Medical Association")}
+    fake.unauthorized_once = {"JobRequisitions/4125"}
+    scraper = CornerstoneScraper("ama-assn", fetcher=fake)
+    jobs = _by_id(scraper.parse(scraper.fetch_raw(), SCRAPED_AT))
+    assert scraper.company == "American Medical Association"
+    assert jobs["4125"].description is not None
+    assert _home_fetches(fake) == 2, "the first read, and the refresh"
 
 
 def test_a_refused_site_answer_fails_the_board_rather_than_walking_on():

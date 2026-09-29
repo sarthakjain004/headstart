@@ -14,6 +14,9 @@ scraped line before the tech filter, so it hands each one to :class:`ScrapedLine
   writes little.
 * **Board reads** (``board_reads/{stamp}.parquet``): every Board the run read, and whether the read
   was authoritative.
+* **Job vectors** (``job_vectors/{stamp}.parquet``): the description vector of every Job the
+  embedding store drops, at half precision, written by ``embed_prune`` (:func:`archive_vectors`),
+  so a later classifier can re-sort the past without re-embedding it.
 * **The Listed set** (``listed_jobs.parquet``): every currently listed id, its Board and a hash of
   its raw fields. It is state, rewritten each run, and exists only so the next run can tell what
   changed. ``merge`` uploads it with the run's facts in one commit, so a run whose upload fails
@@ -55,6 +58,7 @@ FACTS_DIR = REPO_ROOT / "data" / "facts"
 LISTED_JOBS = "listed_jobs.parquet"
 JOB_FACTS = "job_facts"
 BOARD_READS = "board_reads"
+JOB_VECTORS = "job_vectors"
 #: This run's scraped lines, gathered while the union streams and deleted once the run's facts are
 #: written. Named ``.tmp`` so the ``merge`` upload's ``--exclude "*.tmp"`` never carries it.
 SCRAPED_LINES = "scraped_lines.parquet.tmp"
@@ -345,15 +349,21 @@ def _run_metadata(stamp: str) -> dict[bytes, bytes]:
     return {k.encode(): v.encode() for k, v in meta.items()}
 
 
-def _write_staged(table, path: Path, stamp: str) -> None:
-    """Write ``table`` beside ``path`` and rename it over, so a killed run leaves no half file."""
+def _write_staged(
+    table, path: Path, stamp: str, extra: Mapping[str, str] | None = None
+) -> None:
+    """Write ``table`` beside ``path`` and rename it over, so a killed run leaves no half file.
+    ``extra`` joins the run's metadata."""
     import pyarrow.parquet as pq
 
     path.parent.mkdir(parents=True, exist_ok=True)
     staged = path.with_suffix(".parquet.tmp")
+    metadata = _run_metadata(stamp) | {
+        k.encode(): v.encode() for k, v in (extra or {}).items()
+    }
     try:
         pq.write_table(
-            table.replace_schema_metadata(_run_metadata(stamp)),
+            table.replace_schema_metadata(metadata),
             staged,
             compression="zstd",
         )
@@ -370,6 +380,37 @@ def facts_stamp() -> str:
 
 def file_name(stamp: str) -> str:
     return f"{stamp.replace(':', '-')}.parquet"
+
+
+def archive_vectors(
+    facts_dir: Path, stamp: str, ids: list[str], vectors, model: str
+) -> int:
+    """Keep ``vectors`` (one row per id, float32) at half precision under ``job_vectors/`` before
+    the embedding store drops them, and return how many were kept. ``model`` names the embedder
+    that made them, since a later one would make different vectors. Nothing is written when
+    nothing is dropped.
+
+    Half precision is the owner's choice (2026-09-29), measured before it merged: on 40,000 rows
+    sampled from the served table of 2026-09-23 (37,515 of them with cached title logits), the
+    classifier head (v3) decided the same family for every row at either precision, and no vector
+    component moved by more than 1.0e-4."""
+    import numpy as np
+    import pyarrow as pa
+
+    if not ids:
+        return 0
+    half = np.ascontiguousarray(vectors, dtype=np.float16)
+    table = pa.table(
+        {
+            "id": pa.array(ids, pa.string()),
+            "vector": pa.FixedSizeListArray.from_arrays(
+                pa.array(half.ravel(), pa.float16()), half.shape[1]
+            ),
+        }
+    )
+    path = facts_dir / JOB_VECTORS / file_name(stamp)
+    _write_staged(table, path, stamp, {"vector_model": model})
+    return len(ids)
 
 
 def record_run(

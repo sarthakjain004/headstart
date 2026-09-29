@@ -661,6 +661,41 @@ def test_the_company_is_the_default_sites_title(title, expected):
     assert OracleScraper(HOST).company_from_page(_titled(title)) == expected
 
 
+@pytest.mark.parametrize(
+    "title",
+    [
+        # the same labels in other languages, each the title of an Oracle Board on 2026-09-29;
+        # the old guards served every one of them whole as the company
+        "Magalu Carreiras",
+        "Sitio de experiencia de candidatos",
+        "Portal de Empleo",
+        "Empleos ICBC",
+        r"Bolsa de Trabajo Taj\u00EDn",
+        "Sito Carriere BPER",
+        "Sito ADR",
+        r"Site carri\u00E8re externe sodiaal",
+        "UNIA Karriereseite",
+        "Werken bij Profource",
+        "AG_SitioExterno",
+    ],
+)
+def test_a_careers_label_in_another_language_names_no_one(title):
+    assert OracleScraper(HOST).company_from_page(_titled(title)) is None
+
+
+@pytest.mark.parametrize(
+    ("title", "expected"),
+    [
+        # names that hold those words' letters ("Carrington" is a title the same census read)
+        ("Carrington", "Carrington"),
+        ("Carrier", "Carrier"),
+        ("Transition Networks", "Transition Networks"),
+    ],
+)
+def test_the_other_language_labels_are_words_not_letters(title, expected):
+    assert OracleScraper(HOST).company_from_page(_titled(title)) == expected
+
+
 # The default site's settings: its SEO organization name, where the title names no one (#703).
 
 
@@ -709,6 +744,10 @@ def test_a_site_titled_as_a_page_is_named_by_its_seo_organization_name():
         ("St. Olaf College | Careers", "St. Olaf College"),
         # and a label alone is still refused
         ("Career Site", None),
+        # SEO names the guards let through before 2026-09-29, on Boards whose title names them
+        # (iaiigs "KFMB", iaaywd "Magalu Carreiras"), so the settings were never asked
+        ("SEO Optimization", None),
+        ("Carreiras Magazine Luiza", None),
         ("", None),
         (None, None),
     ],
@@ -727,6 +766,16 @@ def test_an_seo_name_that_repeats_the_site_name_names_no_one():
         FakeResponse(text=_settings("Hill Minimal 112022", "Hill Minimal 112022"))
     )
     assert scraper.company_from_page(_root("Hill Minimal 112022")) is None
+
+
+def test_an_seo_name_that_repeats_a_readable_site_name_still_names_no_one():
+    # The site name differs from the title the root served (as a site asked in English and
+    # titled in another language does), so the title guards alone would pass the copy: only
+    # the repeat test refuses it.
+    scraper, _ = _scraper_answering(
+        FakeResponse(text=_settings("Acme Health", "Acme Health"))
+    )
+    assert scraper.company_from_page(_root("Candidate Experience site")) is None
 
 
 def test_a_title_that_names_the_board_asks_for_no_settings():

@@ -25,6 +25,7 @@ import pytest
 
 from headstart.mcp_protocol import messages, tool_arguments
 from headstart.mcp_protocol.messages import ToolFailure
+from headstart.serving.job_absence import WHY_NOT_SERVED
 from headstart.space_mcp import server
 from headstart.space_mcp import space_client as sc
 from headstart.space_mcp.tools import (
@@ -684,14 +685,17 @@ def test_one_posting_on_two_boards_under_two_spellings_is_listed_once():
             id="radancy:jobs.eversource.com:101283120016",
             title="IT Associate Software Engineer (Hybrid)",
             company="EVERSOURCE",
-            location="Berlin, CT, United States of America; Westwood, Massachusetts",
+            location=(
+                "Berlin, CT, United States of America; Westwood, Massachusetts, United "
+                "States; Manchester, New Hampshire, United States"
+            ),
         ),
         _job(
             2,
             id="workday:eversource/externalsite:R-031045",
             title="IT Associate Software Engineer (Hybrid)",
             company="Eversource Energy",
-            location="Berlin, CT; Westwood, MA; Manchester, NH",
+            location="Berlin, CT; Westwood, MA; Manchester, NH; United States of America",
         ),
         _job(
             3,
@@ -701,7 +705,7 @@ def test_one_posting_on_two_boards_under_two_spellings_is_listed_once():
         ),
     ]
     text = server.call(_search_space(rows), "search_jobs", {"query": "x"})
-    assert "or the same title and place under another spelling of the company" in text
+    assert "first city and countries under another spelling of the company" in text
     assert 'also #2: 0.88 "Eversource Energy" · "Berlin, CT; Westwood, MA;' in text
     # Another place under the other spelling is not the same posting.
     assert ' 3. 0.87 "IT Associate Software Engineer" · "Eversource Energy"' in text
@@ -710,36 +714,6 @@ def test_one_posting_on_two_boards_under_two_spellings_is_listed_once():
         "workday:eversource/externalsite:R-031045",
     ):
         assert f'id "{job_id}"' in text
-
-
-@pytest.mark.parametrize(
-    ("one", "other"),
-    [
-        ("Booz Allen", "Booz Allen Hamilton"),
-        ("Staples Inc.", "Staples, Inc."),
-        ("The Toro Company", "Toro"),
-    ],
-)
-def test_spellings_of_one_company_are_its_words_less_legal_suffixes(one, other):
-    rows = [
-        _job(1, title="Data Engineer", company=one, location="McLean, VA"),
-        _job(2, title="Data Engineer", company=other, location="McLean, Virginia"),
-    ]
-    text = server.call(_search_space(rows), "search_jobs", {})
-    assert "also #2" in text
-
-
-@pytest.mark.parametrize(
-    ("one", "other"),
-    [("Meta", "Metaview"), ("Bosch", "Boschung")],
-)
-def test_other_companies_are_not_copies_even_at_one_title_and_place(one, other):
-    rows = [
-        _job(1, title="Data Engineer", company=one, location="London"),
-        _job(2, title="Data Engineer", company=other, location="London"),
-    ]
-    text = server.call(_search_space(rows), "search_jobs", {})
-    assert "also #" not in text
 
 
 def test_a_row_named_only_by_its_board_host_shows_the_directory_name():
@@ -869,8 +843,13 @@ def _posting(n, **overrides):
     return job
 
 
-def _job_space(jobs, unheld=(), **answers):
-    """`/job` over ``jobs``; `/facets` counts one job on every Board but those in ``unheld``."""
+#: The Boards the fake Company directory holds, unless a test names others.
+_DIRECTORY = frozenset({"lever:razorpay", "greenhouse:stripe"})
+
+
+def _job_space(jobs, directory=_DIRECTORY, serving=frozenset(), **answers):
+    """`/job` over ``jobs``; `/companies/lookup` holding the ``directory`` Boards and refusing
+    any other, as the Space does; `/facets` counting one job on the ``serving`` Boards."""
 
     def read(params):
         asked = [value for key, value in params if key == "id"]
@@ -882,11 +861,18 @@ def _job_space(jobs, unheld=(), **answers):
             "newest_tick": "2026-09-28T06:23:08+00:00",
         }
 
-    def count(params):
-        board = dict(params)["board"]
-        return {"total": 0 if board in unheld else 1}
+    def lookup(params):
+        boards = [value for key, value in params if key == "board"]
+        if unknown := [b for b in boards if b not in directory]:
+            raise sc.InvalidRequest(f"no directory company holds {', '.join(unknown)}")
+        return {"companies": [_suggestion(b, b) for b in boards]}
 
-    return FakeSpace(job=read, **({"facets": count} | answers))
+    def count(params):
+        return {"total": 1 if dict(params)["board"] in serving else 0}
+
+    return FakeSpace(
+        job=read, **({"facets": count, "companies_lookup": lookup} | answers)
+    )
 
 
 def test_a_posting_is_read_whole_with_every_scraped_field_quoted():
@@ -910,7 +896,7 @@ def test_a_posting_is_read_whole_with_every_scraped_field_quoted():
     assert text.endswith("Data as of the trends tick 2026-09-28T06:23:08+00:00.")
 
 
-def test_a_missing_id_has_closed_or_was_never_an_id():
+def test_a_missing_id_is_explained_by_the_sentence_the_space_uses():
     space = _job_space([_posting(1)])
     text = server.call(
         space,
@@ -925,38 +911,72 @@ def test_a_missing_id_has_closed_or_was_never_an_id():
     )
     assert text.startswith("Read 1 of 3 jobs.")
     assert (
-        'Not in the index now: "greenhouse:stripe:0000", "greenhouse:stripe:9". Each has '
-        "closed, or was never an id: HeadStart removes a posting once two consecutive "
-        "scrapes of its Board miss it."
+        'Not in the index now: "greenhouse:stripe:0000", "greenhouse:stripe:9". '
+        + WHY_NOT_SERVED
     ) in text
-    # Its Board is asked about once, for its total alone.
+    # Its Board is looked up once; the directory holds it, so nothing is counted.
+    assert space.params_of(R.COMPANIES_LOOKUP) == [[("board", "greenhouse:stripe")]]
+    assert space.params_of(R.FACETS) == []
+
+
+def test_a_held_board_serving_no_job_now_is_still_held():
+    """A Board whose last posting closed, or that went Dormant, is not 'not a HeadStart id'."""
+    text = server.call(_job_space([]), "get_job", {"ids": ["greenhouse:stripe:9"]})
+    assert 'Not in the index now: "greenhouse:stripe:9".' in text
+    assert "Not a HeadStart id" not in text
+
+
+def test_a_board_the_directory_lacks_is_held_when_the_index_serves_it():
+    """An unnamed Oracle pod has no directory entry, but serves jobs."""
+    pod = "oracle:egud.fa.us2.oraclecloud.com"
+    space = _job_space([], serving={pod})
+    text = server.call(space, "get_job", {"ids": [f"{pod}:7"]})
+    assert f'Not in the index now: "{pod}:7".' in text
     assert space.params_of(R.FACETS) == [
-        [("strict", "1"), ("board", "greenhouse:stripe"), ("counts", "total")]
+        [("strict", "1"), ("board", pod), ("counts", "total")]
     ]
-    assert "likely" not in text
 
 
-def test_a_missing_id_whose_board_serves_nothing_was_not_a_headstart_id():
-    space = _job_space([], unheld={"greenhouse:nonexistentco"})
+def test_an_id_on_a_board_headstart_holds_nowhere_was_not_a_headstart_id():
     text = server.call(
-        space,
+        _job_space([]),
         "get_job",
         {"ids": ["greenhouse:nonexistentco:12", "greenhouse:stripe:0000"]},
     )
+    assert 'Not in the index now: "greenhouse:stripe:0000".' in text
     assert (
-        'Not in the index now: "greenhouse:stripe:0000". Each has closed, or was never an id'
-        in text
-    )
-    assert (
-        'Not a HeadStart id: "greenhouse:nonexistentco:12". HeadStart serves no job on the '
-        'Board it names, "greenhouse:nonexistentco"; copy ids whole from search_jobs.'
+        'Not a HeadStart id: "greenhouse:nonexistentco:12". HeadStart holds no Board '
+        '"greenhouse:nonexistentco": neither its Company directory nor its index names it. '
+        "Copy ids whole from search_jobs."
     ) in text
 
 
-def test_a_board_count_the_space_cannot_give_leaves_the_plain_sentence():
-    space = _job_space([], facets=sc.SpaceFailed("down"))
+def test_a_native_id_holding_a_colon_is_read_on_its_real_board():
+    """ADR-0049: Workday native ids include "REQ: 228", so `board_of` guesses a Board that does
+    not exist; a shorter prefix is the real one."""
+    job_id = "workday:acme/External:REQ: 228"
+    space = _job_space([], directory={"workday:acme/External"})
+    text = server.call(space, "get_job", {"ids": [job_id]})
+    assert f'Not in the index now: "{job_id}".' in text
+    assert "Not a HeadStart id" not in text
+
+
+def test_an_id_not_shaped_as_one_is_said_so_and_not_looked_up():
+    space = _job_space([])
+    text = server.call(space, "get_job", {"ids": ["12345", "greenhouse:9"]})
+    for bad in ("12345", "greenhouse:9"):
+        assert (
+            f'Not a HeadStart id: "{bad}". An id is ats:board:posting, as search_jobs '
+            "prints it after 'id'."
+        ) in text
+    assert "Not in the index now" not in text
+    assert space.params_of(R.COMPANIES_LOOKUP) == []
+
+
+def test_a_board_the_space_cannot_ask_about_leaves_the_plain_sentence():
+    space = _job_space([], companies_lookup=sc.SpaceFailed("down"))
     text = server.call(space, "get_job", {"ids": ["greenhouse:x:1"]})
-    assert 'Not in the index now: "greenhouse:x:1". Each has closed' in text
+    assert 'Not in the index now: "greenhouse:x:1". Most often it has closed' in text
     assert "Not a HeadStart id" not in text
 
 
@@ -976,6 +996,7 @@ def test_a_company_named_only_by_its_board_host_is_shown_by_its_directory_name()
             raise sc.InvalidRequest("unknown company")
         return {"companies": [advocate]}
 
+    # The fake's own directory is not asked: every id is found.
     space = _job_space([aah, pod, named], companies_lookup=lookup)
     text = server.call(space, "get_job", {"ids": [aah["id"], pod["id"], named["id"]]})
     assert '1. "Backend Engineer 1" at "Advocate Health" (directory name)' in text
@@ -1044,7 +1065,8 @@ def test_a_long_description_says_how_much_is_shown_and_how_to_read_more():
         {"ids": ["lever:razorpay:0001"], "max_chars_per_job": 1_000},
     )
     assert (
-        "Description, 20,000 characters, the first 997 shown; raise max_chars_per_job up "
+        # 996 of the description's own characters, and this answer's ellipsis.
+        "Description, 20,000 characters, the first 996 shown; raise max_chars_per_job up "
         "to 12,000 to read more."
     ) in text
 
@@ -1059,7 +1081,7 @@ def test_a_description_cut_by_the_shared_budget_says_to_ask_for_that_id_alone():
         "get_job",
         {"ids": [j["id"] for j in jobs], "max_chars_per_job": 12_000},
     )
-    assert text.count("the first 8,997 shown; ask for this id alone to read more.") == 2
+    assert text.count("the first 8,996 shown; ask for this id alone to read more.") == 2
     assert "raise max_chars_per_job" not in text
 
 
@@ -1090,7 +1112,7 @@ def test_a_description_the_space_cut_says_so():
         {"ids": ["lever:razorpay:0001"], "max_chars_per_job": 12_000},
     )
     assert (
-        "15,000 characters, the first 11,997 shown; read the rest at the link." in text
+        "15,000 characters, the first 11,996 shown; read the rest at the link." in text
     )
 
 
@@ -1115,7 +1137,7 @@ def test_five_postings_share_the_description_budget():
     )
     assert (
         text.count(
-            "12,000 characters, the first 3,597 shown; ask for this id alone to read more."
+            "12,000 characters, the first 3,596 shown; ask for this id alone to read more."
         )
         == 5
     )
@@ -1152,11 +1174,32 @@ def test_a_get_job_answer_stays_inside_its_budget(found):
     tool = server.BY_NAME["get_job"]
     text = _answer(
         "get_job",
-        # No Board of a missing id serves a job: the longest way to say it.
-        _job_space(jobs, unheld={i.rsplit(":", 1)[0] for i in missing}),
+        # HeadStart holds no Board of a missing id: the longest way to say it.
+        _job_space(jobs),
         {"ids": [j["id"] for j in jobs] + missing, "max_chars_per_job": 12_000},
     )
     assert len(text) <= tool.max_chars
+
+
+def test_a_link_past_an_ids_bound_takes_its_length_out_of_the_descriptions():
+    """The review of #853: five full descriptions with 2,000-character links reached 35,110."""
+    jobs = [
+        _posting(
+            n,
+            url="https://x.io/" + "a" * 1_987,
+            description="x" * 12_000,
+            description_chars=12_000,
+        )
+        for n in range(1, 6)
+    ]
+    text = _answer(
+        "get_job",
+        _job_space(jobs),
+        {"ids": [j["id"] for j in jobs], "max_chars_per_job": 12_000},
+    )
+    assert len(text) <= server.BY_NAME["get_job"].max_chars
+    # (18,000 less 5 × 1,702 over the bound) / 5 = 1,897 each, the ellipsis its own.
+    assert text.count("the first 1,894 shown; ask for this id alone") == 5
 
 
 # ---- read_trends --------------------------------------------------------------------------
@@ -2630,7 +2673,7 @@ def test_a_profile_rolls_its_places_up_by_country_quoting_each_as_written():
     )
     assert (
         "Where its 224 served jobs are, by country as search_jobs' `country` reads each "
-        "place (a job naming two countries counts in both), with its top places as written: "
+        "place (a job naming two countries counts in both), with its top places, a first place's spellings merged: "
         'United States 100 ("US place 0" 30 · "US place 1" 29 · "US place 2" 28) · '
         'Ireland 99 ("IE place 0" 30 ·' in text
     )
@@ -2677,6 +2720,21 @@ def test_a_profile_breaks_its_served_jobs_down_in_this_tools_words():
         "  new to HeadStart in the last: 24 hours 2 · 7 days 24",
     ):
         assert line in text.split("\n"), line
+
+
+def test_a_profile_leaves_out_every_line_whose_counts_are_all_zero():
+    """A one-count line too: "remote: 0" broke the header's own promise (#897's review)."""
+    facets = _profile_facets()
+    for dimension in ("remote", "has_salary", "posted_within", "seen_within"):
+        for option in facets["facets"][dimension]:
+            option["count"] = 0
+    text = server.call(
+        _profile_space(facets=facets, companies_levels=_levels(0, 0, 0, 0, 0, 0)),
+        "company_profile",
+        {"company": "Stripe"},
+    )
+    breakdown = text[text.index("Of the 224 jobs") :].split("\n")
+    assert breakdown[1].startswith("To list its jobs")
 
 
 def test_a_profile_by_key_reads_no_suggestions_and_says_no_name_was_read():
@@ -2751,20 +2809,23 @@ def test_a_company_profile_answer_stays_inside_its_budget():
 # ---- role_requirements --------------------------------------------------------------------
 
 
-def _requirements(sampled=300, matching=12_400, **overrides):
+def _requirements(distinct=263, read=300, matching=12_400, **overrides):
     """A `/requirements` answer in the route's shape (ADR-0324)."""
     answer = {
         "matching": matching,
         "order": "closest",
+        "sample_size": 300,
+        "category_window": None,
         "closest_score": 0.87,
         "farthest_score": 0.81,
-        "sampled": sampled,
-        "described": sampled - 4 if sampled else 0,
+        "read": read,
+        "distinct": distinct,
+        "described": distinct - 4 if distinct else 0,
         "skills": [
-            {"skill": "SQL", "kind": "data", "postings": 219, "employers": 162},
-            {"skill": "Python", "kind": "language", "postings": 215, "employers": 160},
-            {"skill": "Spark", "kind": "data", "postings": 143, "employers": 105},
-            {"skill": "AWS", "kind": "cloud", "postings": 140, "employers": 106},
+            {"skill": "SQL", "kind": "data", "jobs": 191, "employers": 162},
+            {"skill": "Python", "kind": "language", "jobs": 189, "employers": 160},
+            {"skill": "Spark", "kind": "data", "jobs": 123, "employers": 105},
+            {"skill": "AWS", "kind": "cloud", "jobs": 120, "employers": 106},
         ],
         "kinds": {
             "language": "Languages",
@@ -2773,35 +2834,52 @@ def _requirements(sampled=300, matching=12_400, **overrides):
         },
         "vocabulary_size": 376,
         "experience": {
-            "stated": {"0-1": 10, "2-4": 122, "5-7": 53, "8+": 8},
-            "estimated_from_title": 42,
-            "not_stated": 65,
+            "stated": {"0-1": 10, "2-4": 110, "5-7": 45, "8+": 8},
+            "estimated_from_title": 35,
+            "not_stated": 55,
         },
         "salary": {
-            "stating": 59,
+            "stating": 50,
             "currencies": [
                 {
                     "currency": "USD",
-                    "postings": 51,
+                    "jobs": 44,
                     "p25": 122500,
                     "median": 126800,
                     "p75": 132704,
                 }
             ],
         },
-        "remote": 47,
+        "remote": 42,
         "companies": [
-            {"company": "Capgemini", "board": "workday:capgemini", "postings": 13}
+            {
+                "company": "Capgemini",
+                "board": "workday:capgemini",
+                "company_from_directory": False,
+                "jobs": 13,
+            },
+            {
+                "company": "Capital One",
+                "board": "workday:capitalone.wd1.myworkdayjobs.com/capital_one",
+                "company_from_directory": True,
+                "jobs": 4,
+            },
+            {
+                "company": None,
+                "board": "oracle:egud.fa.us2.oraclecloud.com",
+                "company_from_directory": False,
+                "jobs": 2,
+            },
         ],
         "countries": [
-            {"code": "IN", "name": "India", "postings": 88},
-            {"code": "US", "name": "United States", "postings": 86},
+            {"code": "IN", "name": "India", "jobs": 80},
+            {"code": "US", "name": "United States", "jobs": 76},
         ],
         "no_country": 11,
         "categories": [
-            {"family": "data-engineering", "postings": 238},
-            {"family": "software-engineering", "postings": 2},
-            {"family": "unclassified-tech", "postings": 5},
+            {"family": "data-engineering", "jobs": 210},
+            {"family": "software-engineering", "jobs": 2},
+            {"family": "unclassified-tech", "jobs": 5},
         ],
         "newest_tick": "2026-09-29T04:04:35+00:00",
     }
@@ -2826,15 +2904,29 @@ def test_requirements_send_the_role_the_category_and_the_filters_in_the_spaces_n
     assert space.params_of(R.REQUIREMENTS) == [
         [
             ("strict", "1"),
-            ("n", "300"),
             ("q", "data engineer"),
             ("family", "ai-ml-data-science"),
             ("remote", "true"),
+            ("max_years", "3"),
             ("country", "DE"),
             ("location", "Berlin"),
-            ("max_years", "3"),
         ]
     ]
+
+
+def test_requirements_filters_are_search_jobs_own():
+    """The same schema, so a filter reads the same way in both tools."""
+    mine = server.BY_NAME["role_requirements"].input_schema["properties"]
+    search = server.BY_NAME["search_jobs"].input_schema["properties"]
+    for name in (
+        "company",
+        "remote",
+        "country",
+        "india_place",
+        "location",
+        "max_years",
+    ):
+        assert mine[name] == search[name], name
 
 
 def test_requirements_need_a_role_or_a_category():
@@ -2846,24 +2938,27 @@ def test_requirements_say_what_was_counted_over_how_many_and_how_picked():
     space = FakeSpace(requirements=_requirements())
     text = server.call(space, "role_requirements", {"query": "data engineer"})
     assert text.startswith(
-        'What postings closest to "data engineer" ask for: counted over 300 postings, '
-        "of 12,400 that the filters admit."
+        'What postings closest to "data engineer" ask for: counted over 263 distinct '
+        "postings, of 12,400 postings that the filters admit, copies included (300 postings "
+        "read; 37 copies of one counted once)."
     )
     assert "ranks postings but does not narrow them" in text
     assert "0.87 (the closest) to 0.81 (the farthest counted)" in text
-    # Unclassified tech is hidden (ADR-0306): its 5 count with the 55 in no tech category.
+    # Unclassified tech is hidden (ADR-0306): its 5 count with the 46 in no tech category.
     assert (
-        "Data Engineering (data-engineering) 238 · Software Engineering "
-        "(software-engineering) 2; other or no tech category: 60." in text
+        "Data Engineering (data-engineering) 210 · Software Engineering "
+        "(software-engineering) 2; other or no tech category: 51." in text
     )
     assert "nclassified" not in text
     assert "  Data engineering and analytics: SQL 74% (162 employers)" in text
     assert "  Languages: Python 73% (160 employers)" in text
-    assert "0–1: 10 · 2–4: 122 · 5–7: 53 · 8+: 8" in text
-    assert "USD, 51 postings: 122,500 / 126,800 / 132,704" in text
-    assert "Remote: 47 of 300 (16%)." in text
+    assert "0–1: 10 · 2–4: 110 · 5–7: 45 · 8+: 8" in text
+    assert "USD, 44 postings: 122,500 / 126,800 / 132,704" in text
+    assert "Remote: 42 of 263 (16%)." in text
     assert '"Capgemini" (key "workday:capgemini") 13' in text
-    assert "India (IN) 88 · United States (US) 86; no known country: 11." in text
+    assert '"Capital One" (directory name) (key ' in text
+    assert 'no company name (key "oracle:egud.fa.us2.oraclecloud.com") 2' in text
+    assert "India (IN) 80 · United States (US) 76; no known country: 11." in text
     assert "376 tech skills" in text
     assert text.endswith("Data as of the trends tick 2026-09-29T04:04:35+00:00.")
 
@@ -2871,25 +2966,38 @@ def test_requirements_say_what_was_counted_over_how_many_and_how_picked():
 def test_a_category_alone_is_its_newest_postings_and_lists_no_category_mix():
     space = FakeSpace(
         requirements=_requirements(
-            order="newest", closest_score=None, farthest_score=None
+            order="newest", closest_score=None, farthest_score=None, read=263
         )
     )
     text = server.call(space, "role_requirements", {"category": "security"})
     assert text.startswith(
-        "What the newest postings in Security (security) ask for: counted over 300 "
-        "postings, of 12,400 in the category that the filters admit."
+        "What the newest postings in Security (security) ask for: counted over 263 "
+        "distinct postings, of 12,400 postings in the category that the filters admit, "
+        "copies included."
     )
     assert "Similarity" not in text and "Job categories" not in text
 
 
 def test_a_query_within_a_category_says_when_the_window_held_fewer():
-    space = FakeSpace(requirements=_requirements(sampled=120))
+    space = FakeSpace(
+        requirements=_requirements(distinct=110, read=120, category_window=2_000)
+    )
     text = server.call(
         space,
         "role_requirements",
         {"query": "data engineer", "category": "data-engineering"},
     )
-    assert "Only 120 of the category's postings are among the 2,000 closest" in text
+    assert (
+        "Only 120 of the category's postings, copies included, are among the 2,000 closest"
+        in text
+    )
+    full = FakeSpace(requirements=_requirements(category_window=2_000))
+    text = server.call(
+        full,
+        "role_requirements",
+        {"query": "data engineer", "category": "data-engineering"},
+    )
+    assert "Only" not in text
 
 
 def test_a_company_key_scopes_every_board_and_a_name_is_the_company_box():
@@ -2913,7 +3021,7 @@ def test_a_company_key_scopes_every_board_and_a_name_is_the_company_box():
 
 def test_nothing_to_count_says_so_and_offers_the_companies_a_name_may_mean():
     space = FakeSpace(
-        requirements=_requirements(sampled=0, matching=0, skills=[]),
+        requirements=_requirements(distinct=0, read=0, matching=0, skills=[]),
         companies_suggest={
             "companies": [_suggestion("greenhouse:stripe", "Stripe", "typo")]
         },
@@ -2932,27 +3040,32 @@ def test_a_role_requirements_answer_stays_inside_its_budget():
         {
             "skill": "Infrastructure as code and more",
             "kind": f"kind{i % 17}",
-            "postings": 300,
+            "jobs": 300,
             "employers": 300,
         }
         for i in range(40)
     ]
     companies = [
-        {"company": long, "board": f"workday:{'b' * 280}", "postings": 300}
+        {
+            "company": long,
+            "board": f"workday:{'b' * 280}",
+            "company_from_directory": True,
+            "jobs": 300,
+        }
         for _ in range(10)
     ]
     countries = [
-        {"code": "CD", "name": "Congo, The Democratic Republic of the", "postings": 300}
+        {"code": "CD", "name": "Congo, The Democratic Republic of the", "jobs": 300}
         for _ in range(10)
     ]
     categories = [
-        {"family": "systems-administration-it-operations", "postings": 12}
+        {"family": "systems-administration-it-operations", "jobs": 12}
         for _ in range(25)
     ]
     currencies = [
         {
             "currency": "IDR",
-            "postings": 300,
+            "jobs": 300,
             "p25": 999_999_999,
             "median": 999_999_999,
             "p75": 999_999_999,
@@ -2961,13 +3074,13 @@ def test_a_role_requirements_answer_stays_inside_its_budget():
     ]
     space = FakeSpace(
         requirements=_requirements(
-            sampled=500,
+            distinct=150,
             skills=skills,
             kinds=kinds,
             companies=companies,
             countries=countries,
             categories=categories,
-            salary={"stating": 500, "currencies": currencies},
+            salary={"stating": 300, "currencies": currencies},
         )
     )
     text = _answer(

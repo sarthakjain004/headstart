@@ -79,6 +79,13 @@ JWT (`sub: -100`) and the pod. Measured properties:
   page with the jar populated redirects to `/ui/error` on ama-assn and aswatsoneurope, which would
   make every token refresh fail. The API responses set no cookies. So the scraper drops the host's
   cookies from the jar the moment the page is read and carries the session only as the header.
+  **Update 2026-09-29:** clearing after the read was not enough. The redirect needs the tenant's
+  `ASP.NET_SessionId` and `cscx` together (sacmi: each alone and every other pair 200). With the
+  jar seeded by one page GET, 3 of 4 tenants (imcdgroup, covea, sacmi) read as siteless twice, and
+  82, 0 and 57 postings once the tenant's cookies were cleared; beca read 7 each time. The
+  company-name read's posting-page GET puts both cookies back (3 of 3), so a later token refresh
+  redirected too. The scraper now clears the tenant's cookies before every page read as well
+  (ADR-0183, amendment of 2026-09-29).
 - The home page for a site id that does not exist answers `302 → /ui/error`. `myhr-ece` has no
   site 1 (the API says 500), so its site-1 page 302s while its site-2 page carries the token:
   the token must be sought on more than one site id.
@@ -121,7 +128,10 @@ JWT (`sub: -100`) and the pod. Measured properties:
   `eu-fra`) while the page and its active sites answer 200: the page itself, rendered in Chrome
   (metso), shows "Current Openings" with none listed. Read as an empty site; any other 404 raises.
 - So DEAD = DNS failure, or the site-1..3 pages all `302 → /ui/error` (read with redirects off).
-  Three ids, not one, because `myhr-ece` starts at 2 (1 of 398).
+  Three ids, not one, because `myhr-ece` starts at 2 (1 of 398). That is the liveness probe's
+  verdict. **Update 2026-09-29:** the scraper reads the same answer on a Scrapable Board as
+  unread, not empty. It reads once more and then raises `BoardUnreadable`, because CI read 14
+  Scrapable Boards that way on 2026-09-27/28 and all 14 answered from a clean address (#869).
 
 ## Detail (Q6, Q10, Q11, Q12)
 
