@@ -24,6 +24,12 @@ the kept section's own job URLs are the ones served. The rules, all in `burials`
   links (MOL Group's `internal`, Hyatt's `wallstreet_internal`, #794). The public sections elect
   among themselves; a non-public section is then buried onto the largest kept public section
   that lists all its reqs, and left unburied when none does (ADR-0186's amendment).
+- **A twin host's section goes to the employer's host** (ADR-0307, #888). A tenant can answer
+  under a second host with every section and req id the same (`pruitthealthcareers.taleo.net`
+  serves `pruitthealth.taleo.net`), which a per-host comparison never sees. After the per-host
+  election, a section of a host in `TWIN_HOSTS` that is not buried is buried onto the largest kept
+  public section of the employer's host that lists all its reqs, and the twin sections buried onto
+  it follow. Nothing of the employer's host is ever buried onto its twin.
 
 Reads every `live` row of the liveness ledger, including the sections the last run buried (the alias
 ledger leaves their liveness rows in place), so each run re-derives every verdict and a buried
@@ -53,6 +59,21 @@ from headstart.scrapers.taleo_enterprise import TaleoEnterpriseScraper
 
 ATS = "taleo_enterprise"
 SIGNAL = "subset-reqs"
+#: ``{twin host: the employer's host}``: one tenant answering under two hosts, every section and
+#: req id the same on both (#888, measured 2026-09-29; ADR-0307 has each pair's evidence). The
+#: employer's host is the one its own careers site links to, else the lower name. Only sections on
+#: live ledger rows are compared, so a twin section the employer's host has no row for
+#: (`percepta.taleo.net/careersection/10000`) is still scraped from the twin.
+TWIN_HOSTS = {
+    "careerglobalhc.taleo.net": "hyundaicapital.taleo.net",
+    "daimler.taleo.net": "tas-daimler.taleo.net",
+    "elsewedyelectric.taleo.net": "aa010.taleo.net",
+    "gb-corporation.taleo.net": "ghabbour.taleo.net",
+    "manpower.taleo.net": "manpowergroup.taleo.net",
+    "ouhk.taleo.net": "hkmu.taleo.net",
+    "percepta.taleo.net": "ttec.taleo.net",
+    "pruitthealthcareers.taleo.net": "pruitthealth.taleo.net",
+}
 #: Sections read at once. Each walks its own pages one after another, so this is also the most
 #: requests in flight — the scraper's own detail width, measured clean at 16 (2026-09-13).
 _WORKERS = 16
@@ -64,15 +85,38 @@ def burials(reqs_by_section: Mapping[str, Collection[str]]) -> dict[str, str]:
     ``reqs_by_section`` maps a section's canonical URL to its full requisition ids; the tenant is
     the URL's host. The election is `alias_ledger.bury_contained_keeping_public`: ADR-0186's, shared
     with ADP Recruiting Management's (ADR-0202) and iCIMS's, where a non-public section is never
-    the kept one (module docstring)."""
+    the kept one. Then each twin host's unburied sections go to the employer's host (module
+    docstring)."""
 
-    return alias_ledger.bury_contained_keeping_public(
-        reqs_by_section,
-        lambda section: urlsplit(section).hostname,
-        lambda section: is_non_public(
-            TaleoEnterpriseScraper(section).board_key().lower()
-        ),
+    def host(section: str) -> str:
+        return urlsplit(section).hostname
+
+    def non_public(section: str) -> bool:
+        return is_non_public(TaleoEnterpriseScraper(section).board_key().lower())
+
+    buried = alias_ledger.bury_contained_keeping_public(
+        reqs_by_section, host, non_public
     )
+    kept = {
+        s: frozenset(reqs)
+        for s, reqs in reqs_by_section.items()
+        if reqs
+        and s not in buried
+        and host(s) in TWIN_HOSTS.values()
+        and not non_public(s)
+    }
+    for section, reqs in reqs_by_section.items():
+        employer = TWIN_HOSTS.get(host(section))
+        if not reqs or employer is None or section in buried:
+            continue
+        onto = [
+            k for k, own in kept.items() if host(k) == employer and own >= set(reqs)
+        ]
+        if onto:
+            buried[section] = min(onto, key=lambda k: (-len(kept[k]), k))
+    # A twin section the per-host election buried onto one the loop then buried follows it there.
+    # One hop is enough: nothing in `kept` is buried.
+    return {dup: buried.get(keep, keep) for dup, keep in buried.items()}
 
 
 def write_aliases(
