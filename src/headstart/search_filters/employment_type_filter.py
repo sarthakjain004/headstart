@@ -16,6 +16,15 @@ from collections.abc import Collection
 from typing import NamedTuple
 
 
+def _contains(term: str) -> str:
+    """The LIKE pattern matching ``term`` anywhere. An underscore is LIKE's any-character
+    wildcard, so a term holding one ("_ft") escapes it, or "%_ft%" would match "software"."""
+    if "_" not in term:
+        return f"'%{term}%'"
+    escaped = term.replace("_", "\\_")
+    return f"'%{escaped}%' ESCAPE '\\'"
+
+
 class EmploymentTypeRule(NamedTuple):
     column: str
     #: The Facet's label for this canonical value.
@@ -34,13 +43,13 @@ class EmploymentTypeRule(NamedTuple):
 
     def raw_clause(self, column: str = "employment_type") -> str:
         lowered = f"lower({column})"
-        arms = [f"{lowered} LIKE '%{term}%'" for term in self.includes] + [
-            f"({lowered} LIKE '%{term}%' AND {lowered} NOT LIKE '%{veto}%')"
+        arms = [f"{lowered} LIKE {_contains(term)}" for term in self.includes] + [
+            f"({lowered} LIKE {_contains(term)} AND {lowered} NOT LIKE {_contains(veto)})"
             for term, veto in self.includes_unless
         ]
         included = " OR ".join(arms)
         excluded = " AND ".join(
-            f"{lowered} NOT LIKE '%{term}%'" for term in self.excludes
+            f"{lowered} NOT LIKE {_contains(term)}" for term in self.excludes
         )
         clause = f"({included})" if len(arms) > 1 else included
         if excluded:
@@ -52,18 +61,35 @@ RULES = {
     # "permanent" is contract duration, not hours: Recruitee's "parttime_permanent" and
     # Personio's "permanent / part-time" are part-time jobs. Every "permanent" value carrying
     # "part" but not "full" in a 228k-row corpus (2026-07) was one of those, so "part" vetoes it.
+    #
+    # ADR-0337 mapped the raw values the served table's top 130 read as none (500,134 rows,
+    # 2026-09-29) where their meaning is unambiguous. "regular" and "cdi" (France's permanent
+    # contract) read as "permanent" does: 4,894 rows are plain "Regular" (Radancy, TikTok,
+    # ByteDance), none titled part-time, and "Regular Part-Time" exists, so "part" vetoes them.
+    # "fte" is vetoed by "after" ("Second Shift (afternoon)"). Rippling's "SALARIED_FT"/"HOURLY_FT"
+    # (2,904 rows) and "_PT", and the French, Spanish, German and Chinese words for full-time.
+    # Fixed-term is a contract ("fulltime_fixed_term", "Fixed Term", 830 rows), and a co-op
+    # (a student's work term, 72 rows) an internship. Left unread:
+    # iCIMS's "OTHER" (4,840, 330 of them titled intern), Radancy's "F" (a letter the substring
+    # rules cannot tell from any word), "Temporary" (136 of 480 titled intern), "Employee",
+    # "Salary", "Professional" and the like.
     "full-time": EmploymentTypeRule(
         "is_full_time",
         "Full-time",
-        ("full",),
-        includes_unless=(("permanent", "part"),),
+        ("full", "_ft", "temps plein", "tiempo completo", "vollzeit", "全职"),
+        includes_unless=(
+            ("permanent", "part"),
+            ("regular", "part"),
+            ("cdi", "part"),
+            ("fte", "after"),
+        ),
     ),
-    "part-time": EmploymentTypeRule("is_part_time", "Part-time", ("part",)),
+    "part-time": EmploymentTypeRule("is_part_time", "Part-time", ("part", "_pt")),
     "contract": EmploymentTypeRule(
-        "is_contract", "Contract", ("contract", "freelance")
+        "is_contract", "Contract", ("contract", "freelance", "fixed")
     ),
     "internship": EmploymentTypeRule(
-        "is_internship", "Internship", ("intern",), ("international",)
+        "is_internship", "Internship", ("intern", "co-op", "coop"), ("international",)
     ),
 }
 

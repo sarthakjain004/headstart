@@ -303,6 +303,7 @@ supersedes it and note the supersession in both.
 | [0332](0332-a-requirements-sample-counts-each-requisition-once-under-its-directory-name.md) | A requirements sample counts each requisition once, under its directory name | 2026-09-29 |
 | [0334](0334-connecting-is-counted-apart-and-the-eval-judges-truth-not-one-path.md) | Connecting is counted apart, and the eval judges truth, not one path | 2026-09-29 |
 | [0336](0336-a-categorys-turnover-is-one-figure-in-every-view.md) | A category's turnover is one figure in every view (amends 0227) | 2026-09-29 |
+| [0337](0337-a-derived-field-reads-no-company-history-and-says-what-it-annualised.md) | A derived field reads no company history, and says what it annualised | 2026-09-29 |
 | [0338](0338-a-sorted-query-orders-only-close-matches-and-the-tools-agree-on-age-and-employer.md) | A sorted query orders only close matches, and the tools agree on age and employer (amends 0074, 0331) | 2026-09-29 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not

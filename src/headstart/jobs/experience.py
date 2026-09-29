@@ -429,10 +429,30 @@ _RANGE_TAIL = re.compile(
 # qualifying a *different* number disqualify this one — "5+ years of experience. Equity (4 year
 # vest)" lost its 5 to the vest schedule two sentences away. Anchoring is what ties the idiom to
 # the match. `row(?![\w-])` because `\b` is satisfied by the hyphen in "a row-level security team".
+#
+# Three company-history idioms joined them (ADR-0337), each allowed no filler, because a filler
+# reaches requirement prose ("3+ years in a role where we …"). "For over 30 years, we have
+# helped …": a comma and a lower-case "we" or "our", since a description flattened to one line
+# loses its full stops and "Experience Level: 8+ years We are seeking" is a requirement. "25+ years
+# of history" with nothing between "of" and "history", since "8+ years of work history" and
+# "3 years of driving history" are requirements. "25 years of growth," where "growth" ends the
+# phrase, since "3+ years of growth marketing" is a requirement.
 _NARRATIVE_SPAN = re.compile(
-    r"\S{1,8}(?:\s*(?:to|-|or)\s*\S{1,8})?\s*\+?\s*(?:years?|yrs?)\b"
-    r"[\s\w'()-]{0,18}?\b(?:in\s+a\s+row(?![\w-])|vest\w*|of\s+graduat\w*)\b",
+    r"\S{1,8}(?:\s*(?:to|-|or)\s*\S{1,8})?\s*\+?\s*(?:years?|yrs?)\b(?:"
+    r"[\s\w'()-]{0,18}?\b(?:in\s+a\s+row(?![\w-])|vest\w*|of\s+graduat\w*)\b"
+    r"|(?-i:,\s+(?:we|our)\b)"
+    r"|\s+of\s+(?:history|heritage)\b"
+    r"|\s+of\s+(?:\w+\s+)?growth\b(?=\s*[,.;&]|\s+and\b))",
     re.IGNORECASE,
+)
+
+# "in the last 10 years", "over the past 15 years": a window of time, never a requirement ("our
+# product offering has grown a lot in the last 10 years", Monzo's intern posting, read 10+).
+# Checked immediately before the number, for every pattern, like `_CEILING_BEFORE`. The
+# preposition is what separates it from requirement prose that uses the same words: "Minimum of
+# the past 2 years working with M365" states a requirement, and keeps it.
+_WINDOW_BEFORE = re.compile(
+    r"\b(?:in|over|during|within|throughout)\s+the\s+(?:last|past)\s*$", re.IGNORECASE
 )
 
 
@@ -496,6 +516,10 @@ def _scan(text: str, patterns: list[_Tier2Pattern]) -> ExperienceSpan | None:
                 else None
             )
             if _NARRATIVE_SPAN.match(text[match.start(1) : match.end() + 20]):
+                continue
+            if _WINDOW_BEFORE.search(
+                text[max(0, match.start(1) - 30) : match.start(1)]
+            ):
                 continue
             if lo > _MAX_PLAUSIBLE_REQUIREMENT:
                 continue
@@ -572,19 +596,24 @@ _SENIORITY = [
         re.compile(r"\bengineering\s+manager\b", re.IGNORECASE),
         5,
     ),
-    (
-        re.compile(
-            r"\b(associate|mid[\s_-]?level|intermediate|medior|middle(?![\s-]*east))\b",
-            re.IGNORECASE,
-        ),
-        3,
-    ),
+    # The entry tier is tried before the associate tier (ADR-0337): a title carrying both is an
+    # entry role ("Associate Software Engineer - Intern", "Associate Software Engineer (College
+    # Grad 2027)", "Software Developer (Junior to Intermediate)"). The 759 served titles holding
+    # one word of each and no higher tier (2026-09-29) state a median of 1 year (n=313), the
+    # entry tier's own median, not the associate tier's 3.
     (
         re.compile(
             r"\b(intern|internship|trainee|graduate|\bgrad\b|student\w*|entry[\s_-]?level|junior|\bjr\b|apprentice|fresher|early[\s-]?career)\b",
             re.IGNORECASE,
         ),
         0,
+    ),
+    (
+        re.compile(
+            r"\b(associate|mid[\s_-]?level|intermediate|medior|middle(?![\s-]*east))\b",
+            re.IGNORECASE,
+        ),
+        3,
     ),
 ]
 
@@ -599,8 +628,15 @@ _SENIORITY = [
 # ordinal `_LEVEL_YEARS` already trusts, not a new claim about what a level means. Ladders do
 # disagree on where L3 sits, but that disagreement applies identically to "Developer 3" and is
 # therefore an argument about `_LEVEL_YEARS`, not about which spellings reach it.
+#
+# "Engineering" joined the role nouns (ADR-0337) for ladders named after the discipline: Netflix's
+# "Software Engineering 5" and "Software Engineering L5", L3Harris's "Software Engineering 1".
+# Of the served titles it reaches that state a number (2026-09-29), levels 1-3 state medians of
+# 3, 5 and 6 years (n=25, 40, 3), at or above the 0, 3 and 5 this mapping gives: a low floor,
+# which is the safe side for `min_years <= N`. Netflix's level-5 postings state no number at all;
+# bare "L5" titles elsewhere state a median of 8 (n=31) against the 7 given here.
 _LEVEL = re.compile(
-    r"\b(?:engineer|developer|programmer|analyst|scientist|architect|sde|swe)\s*"
+    r"\b(?:engineer(?:ing)?|developer|programmer|analyst|scientist|architect|sde|swe)\s*"
     r"(?:\(\s*)?(?:l|ic|level\s*)?(iii|ii|iv|i|v|[1-5])\b",
     re.IGNORECASE,
 )

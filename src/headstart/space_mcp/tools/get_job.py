@@ -27,6 +27,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any, NamedTuple
 
 from headstart.boards.board_identity import board_of
+from headstart.jobs import salary as salary_extraction
 from headstart.mcp_protocol.messages import ToolFailure
 from headstart.serving.job_absence import WHY_NOT_SERVED
 from headstart.space_mcp import company_scope, scraped_text, shown_company
@@ -71,6 +72,38 @@ def _years(low: Any, high: Any) -> str:
     return "no years read from it"
 
 
+#: How a figure the description stated per hour, day, week or month is said to have been
+#: annualised, by `salary.SalarySpan.period` (ADR-0337).
+_ANNUALISED_FROM = {
+    "hour": "an hourly rate at 2,080 hours a year",
+    "day": "a daily rate at 260 days a year",
+    "week": "a weekly rate at 52 weeks a year",
+    "month": "a monthly figure at 12 a year",
+}
+
+
+def _annualised_from(job: dict[str, Any]) -> str | None:
+    """What a salary read from the description was annualised from, or None when it was stated
+    a year, came from a field (whose own text is shown), or cannot be told.
+
+    The served table holds no period (ADR-0337), so the cascade is re-run on the description this
+    answer carries. It speaks only when the re-run gives the served figure: a description cut at
+    the Space's limit, or a row the pipeline has not re-derived since the extractor changed, says
+    nothing rather than something about another figure.
+    """
+    if job.get("salary_source") != "regex" or not job.get("description"):
+        return None
+    span = salary_extraction.extract(
+        job.get("salary"), job["description"], job.get("ats")
+    )
+    if span is None or (span.min_annual, span.max_annual) != (
+        job.get("min_salary_annual"),
+        job.get("max_salary_annual"),
+    ):
+        return None
+    return _ANNUALISED_FROM.get(span.period or "")
+
+
 def _salary(job: dict[str, Any]) -> str | None:
     low, high = job.get("min_salary_annual"), job.get("max_salary_annual")
     said = []
@@ -85,8 +118,10 @@ def _salary(job: dict[str, Any]) -> str | None:
         else:
             amount = f"up to {high:,.0f}"
         where = " from the description" if job.get("salary_source") == "regex" else ""
+        annualised = _annualised_from(job)
         said.append(
             f"read{where} as {' '.join(filter(None, (currency, amount)))} a year"
+            + (f", annualised from {annualised}" if annualised else "")
         )
     return f"Salary: {'; '.join(said)}." if said else None
 

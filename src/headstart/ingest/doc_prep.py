@@ -420,7 +420,26 @@ def build_doc(job: dict) -> str:
 # greenhouse JPY/PHP 8, monthly pay typed YEAR 5), with zoho's 4 GBP day rates and one stated
 # "1000-3000 SGD per-month" among them. Figures naming a code with a null currency fall from 526 to
 # 31.
-DERIVATIONS_VERSION = 22
+# v23 (ADR-0337): `jobs/experience.py` reads no number after "in/over/during/within/throughout the
+# last/past", nor company history (", we"/", our" after the years, "years of history", "years of
+# growth,"), reads "Engineering <level>" titles on `_LEVEL`'s ladder, and tries the entry tier
+# before the associate tier; `jobs/salary.py` keeps both ends of a range whose ceiling repeats its
+# currency glued to the "$" ("USD$225.00 - USD$275.00 per hour") or follows "--"/"-to-". The range
+# since the v22 bump at `08f81f0e` is `git log 08f81f0e..<the squash-merged #PR> --
+# src/headstart/jobs/experience.py src/headstart/jobs/salary.py`: #920 (`876194a1`, moving 0 served
+# rows, left unbumped by ADR-0293) and this change. Measured old vs new `extract()` on all 500,134
+# rows of served version 41 read off HF on 2026-09-29, with the description store pulled the same
+# day, per ADR-0066 (the old code reproduces the served value on 500,123 experience and all
+# 500,134 salary rows). Experience, 878 move: 444 seniority 3 -> 0 (an associate-tier word beside
+# an entry-tier one), 167 regex floors rise (a "within the last 2 years" window had undercut the
+# stated floor), 99 regex -> seniority and 71 regex -> none (windows and company history: Monzo's
+# "grown a lot in the last 10 years" on 31 postings, "For the past 20 years, we have" on 33 of one
+# Oracle pod, polygraphs "within the last 5 years", Amazon's "Experience in development in the last
+# 3 years" on SDE I roles), 97 none -> seniority ("Software Engineering 5"/"II" titles). Salary,
+# 142 move, all Tier 2: 120 none -> regex ("USD$110,000.00 - USD$138,000.00" at BlackRock,
+# Perseus, Arc'teryx) and 22 regain an end ("USD$225.00 - USD$275.00 per hour", served as a floor
+# of 572,000, is 468,000-572,000).
+DERIVATIONS_VERSION = 23
 
 
 def to_meta(job: dict) -> dict:

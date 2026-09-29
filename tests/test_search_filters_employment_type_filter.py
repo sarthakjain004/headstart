@@ -31,11 +31,24 @@ def test_international_is_not_an_internship():
 def test_raw_clauses_keep_the_filter_contract():
     assert RULES["full-time"].raw_clause() == (
         "(lower(employment_type) LIKE '%full%' OR "
+        "lower(employment_type) LIKE '%\\_ft%' ESCAPE '\\' OR "
+        "lower(employment_type) LIKE '%temps plein%' OR "
+        "lower(employment_type) LIKE '%tiempo completo%' OR "
+        "lower(employment_type) LIKE '%vollzeit%' OR "
+        "lower(employment_type) LIKE '%全职%' OR "
         "(lower(employment_type) LIKE '%permanent%' AND "
-        "lower(employment_type) NOT LIKE '%part%'))"
+        "lower(employment_type) NOT LIKE '%part%') OR "
+        "(lower(employment_type) LIKE '%regular%' AND "
+        "lower(employment_type) NOT LIKE '%part%') OR "
+        "(lower(employment_type) LIKE '%cdi%' AND "
+        "lower(employment_type) NOT LIKE '%part%') OR "
+        "(lower(employment_type) LIKE '%fte%' AND "
+        "lower(employment_type) NOT LIKE '%after%'))"
     )
     assert RULES["internship"].raw_clause() == (
-        "(lower(employment_type) LIKE '%intern%' AND "
+        "((lower(employment_type) LIKE '%intern%' OR "
+        "lower(employment_type) LIKE '%co-op%' OR "
+        "lower(employment_type) LIKE '%coop%') AND "
         "lower(employment_type) NOT LIKE '%international%')"
     )
 
@@ -67,6 +80,16 @@ def test_raw_clauses_agree_with_the_python_flags():
         "International Internship",
         "Part-time contract",
         "",
+        # ADR-0337's terms, and the LIKE wildcard an unescaped "_ft" would be.
+        "SALARIED_FT",
+        "HOURLY_PT",
+        "Software",
+        "Regular",
+        "Regular Part-Time",
+        "Second Shift (afternoon)",
+        "fulltime_fixed_term",
+        "Co-op",
+        "Tiempo completo",
     )
     for value in values:
         for rule in RULES.values():
@@ -75,6 +98,42 @@ def test_raw_clauses_agree_with_the_python_flags():
                 (value,),
             ).fetchone()
             assert bool(sql) is rule.matches(value), (value, rule.column)
+
+
+def test_raw_values_that_read_as_none_are_mapped_where_unambiguous():
+    """ADR-0337: the served table's top raw values that set no flag."""
+    full = {
+        "is_full_time": True,
+        "is_part_time": False,
+        "is_contract": False,
+        "is_internship": False,
+    }
+    for value in (
+        "SALARIED_FT",
+        "HOURLY_FT",
+        "Regular",
+        "INTL Regular FT",
+        "CDI",
+        "FTE",
+        "Tiempo completo",
+        "Temps plein",
+        "Vollzeit",
+        "全职",
+    ):
+        assert flags(value) == full, value
+    assert flags("HOURLY_PT")["is_part_time"] is True
+    assert flags("Regular Part-Time")["is_full_time"] is False
+    assert flags("Second Shift (afternoon)")["is_full_time"] is False
+    assert flags("Fixed Term")["is_contract"] is True
+    assert flags("fulltime_fixed_term") == {**full, "is_contract": True}
+    assert flags("Co-op")["is_internship"] is True
+    # Left unread: ambiguous at the source.
+    for value in ("OTHER", "Temporary", "Employee", "F"):
+        assert not any(flags(value).values()), value
+
+
+def test_an_underscore_term_is_escaped_in_its_like_pattern():
+    assert "LIKE '%\\_ft%' ESCAPE '\\'" in RULES["full-time"].raw_clause()
 
 
 def test_clause_prefers_the_flag_and_ignores_an_unknown_value():
