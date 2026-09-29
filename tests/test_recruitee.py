@@ -37,3 +37,42 @@ def test_an_english_template_without_the_text_is_not_read():
     ("WHAT ARE YOU GOING TO DO? WE ASK WE OFFER"), 1% of the Dutch text."""
     job = _voortman_job(2603217)
     assert job.description.startswith("Wat ga je doen?")
+
+
+class _Landing:
+    """A settled response for `alias_key`: where the request landed, and a no-op `close`."""
+
+    def __init__(self, url):
+        self.url = url
+
+    def close(self):
+        pass
+
+
+def test_alias_key_is_the_label_a_redirect_lands_on(monkeypatch):
+    """Measured 2026-09-29: `thesjefgroup.recruitee.com/api/offers/` answers 302 to
+    `elockers.recruitee.com/api/offers/`. The key must be `elockers`, the ledger's own slug, or
+    `dedupe_boards.py` labels every Board `migrated` and finds no duplicate."""
+    monkeypatch.setattr(
+        "headstart.network.http.fetch",
+        lambda method, url, **kw: _Landing(
+            "https://elockers.recruitee.com/api/offers/"
+        ),
+    )
+    assert get_scraper("recruitee", "thesjefgroup", "x").alias_key() == "elockers"
+
+
+def test_alias_key_of_a_board_nothing_redirects_is_its_own_slug(monkeypatch):
+    monkeypatch.setattr(
+        "headstart.network.http.fetch", lambda method, url, **kw: _Landing(url)
+    )
+    assert get_scraper("recruitee", "elockers", "x").alias_key() == "elockers"
+
+
+def test_alias_key_of_a_landing_off_recruitee_is_the_whole_host(monkeypatch):
+    """No live slug matches a foreign host, so `alias_ledger.resolve` reports it as moved."""
+    monkeypatch.setattr(
+        "headstart.network.http.fetch",
+        lambda method, url, **kw: _Landing("https://careers.acme.com/api/offers/"),
+    )
+    assert get_scraper("recruitee", "acme", "x").alias_key() == "careers.acme.com"

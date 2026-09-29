@@ -124,6 +124,16 @@ class RecruiteeScraper(BaseScraper):
     def url(self) -> str:
         return f"https://{self.slug}.recruitee.com/api/offers/"
 
+    @staticmethod
+    def alias_key_of_landing(landing_url: str) -> str | None:
+        """The ``{label}`` of the ``{label}.recruitee.com`` host the offers API lands on — this
+        ledger's own slug, so ``alias_ledger.resolve`` can compare it (ADR-0301). A tenant that
+        moved answers 302 to its new label's API (``thesjefgroup`` to ``elockers``, 2026-09-29).
+        A landing off Recruitee keeps its whole host, which no slug matches."""
+        host = BaseScraper.alias_key_of_landing(landing_url)
+        label, _, domain = (host or "").partition(".")
+        return label if domain == "recruitee.com" else host
+
     def job_url(self, offer: dict) -> str:
         """Delegates to the module-level :func:`_offer_url`, which does the real construction
         (ADR-0153) — kept a free function since ``tests/test_scrapers.py`` exercises it

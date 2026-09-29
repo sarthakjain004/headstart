@@ -45,6 +45,8 @@ from headstart.scrapers.registry import SCRAPERS, company_from_row
 
 #: Probe width. These are one cheap header-only GET each against ~2,200 distinct hosts, so the
 #: bound is politeness to nobody in particular — no single origin sees more than a couple.
+#: Not so where every Board shares one origin's rate limit: Recruitee answered 37 of 48 requests
+#: 429 at this width, so its scan runs with ``--workers 4`` (ADR-0301).
 _WORKERS = 24
 
 
@@ -64,13 +66,15 @@ def read_prefer(path: Path) -> set[str]:
     return prefer
 
 
-def probe_all(scraper_cls, slugs: list[str]) -> dict[str, str | None]:
+def probe_all(
+    scraper_cls, slugs: list[str], workers: int = _WORKERS
+) -> dict[str, str | None]:
     """Every Board's `alias_key`, printed as it lands.
 
     `as_completed`, not `map`: one Board behind a 30s timeout must not hold up the other 2,200,
     and a scan this long has to show progress rather than a final dump."""
     keys: dict[str, str | None] = {}
-    with ThreadPoolExecutor(max_workers=_WORKERS) as pool:
+    with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = {pool.submit(scraper_cls(slug).alias_key): slug for slug in slugs}
         for done, future in enumerate(as_completed(futures), start=1):
             slug = futures[future]
@@ -97,6 +101,9 @@ def main() -> int:
         help="write the alias ledger (default: report only)",
     )
     ap.add_argument("--limit", type=int, help="probe only the first N live Boards")
+    ap.add_argument(
+        "--workers", type=int, default=_WORKERS, help="concurrent probes (default 24)"
+    )
     args = ap.parse_args()
 
     # `write` replaces the ledger, and a limited scan has only seen part of the ATS — so applying
@@ -158,7 +165,7 @@ def main() -> int:
     probe = live[: args.limit] if args.limit else live
     print(f"{args.ats}: probing {len(probe)} of {len(live)} live Board(s)", flush=True)
 
-    keys = probe_all(scraper_cls, probe)
+    keys = probe_all(scraper_cls, probe, args.workers)
     resolution = alias_ledger.resolve(
         keys,
         live,
