@@ -1836,11 +1836,9 @@ class WorkdayScraper(BaseScraper):
                     requisition=ats_id,
                 )
             )
-        if stubs:
-            _log.info(
-                f"{self.board_key()}: {stubs} listing item(s) with no title and no externalPath "
-                "skipped — a stub names a requisition and nothing else (ADR-0348)"
-            )
+        self.note_unread_rows(
+            stubs, len(raw), "had no title and no externalPath (ADR-0348)"
+        )
         return jobs
 
     def _salary_field(self, raw: Any) -> str | None:

@@ -40,8 +40,8 @@ metadata later; that ordering is inferred from those fields, not observed.
 
 ## Decision
 
-`WorkdayScraper.parse` makes no Job from an item that has no `externalPath` and no title. It logs one
-INFO line per Board with the count, `N listing item(s) with no title and no externalPath skipped`. The
+`WorkdayScraper.parse` makes no Job from an item that has no `externalPath` and no title. It says so
+through the shared `note_unread_rows` line, one INFO per Board: `N of M listed row(s) had no title and no externalPath`. The
 stub never reaches `data/jobs/workday.jsonl`, `data/facts/`, the description store or the index, so the
 tech gate is not asked to catch it. The premise comments in `workday.py` are corrected.
 

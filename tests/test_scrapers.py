@@ -2888,7 +2888,7 @@ def test_workday_stub_is_skipped_beside_real_postings_and_counted(caplog):
         jobs[0].url
         == "https://acme.wd1.myworkdayjobs.com/careers/job/Remote/Backend-Engineer_R-100"
     )
-    assert "2 listing item(s) with no title and no externalPath skipped" in caplog.text
+    assert "2 of 3 listed row(s) had no title and no externalPath" in caplog.text
 
 
 def test_workday_titled_item_without_a_path_is_still_a_job():
