@@ -123,29 +123,60 @@ _AGREEMENT = 0.9
 #: the amounts fall in two clusters, hourly up to 117.4 and annual from 51,300.
 _HOURLY_CEILING = 1_000
 
-#: A JSON-LD ``employmentType`` (or a visible label's value) is kept only if it holds one of these
-#: words, or is the lone letter ``F``. TalentBrew tenants write whatever their ATS field holds into
-#: ``employmentType``, and the page copies it verbatim (29 of 29 junk pages probed on 2026-09-29):
-#: org and shift codes (``SG``, ``BU``, ``SI``, ``DT``, ``FBENG``, ``1ST``, ``9``: 106, 85, 79, 58
-#: and 282 rows on ``www.capitalonecareers.com`` alone), pay grades (``Established``,
-#: ``Professional``, ``Standard``: ``careers.arm.com`` 340, ``careers.cargill.com`` 138,
-#: ``www.kaiserpermanentejobs.org`` 118) and department names (``Information Systems``,
-#: ``Software Engineering``). None names a type, and each would surface as a filter value. ``F``
-#: stays: ``jobs.appliedmaterials.com`` writes it on 1,009 rows and means Full time, which the
-#: filter reads from the raw value. Whole words only, so "International" is not an intern. Enums
-#: (``FULL_TIME``, ``PER_DIEM``) match too: ``_`` separates words here.
-_EMPLOYMENT_TYPE_WORDS = re.compile(
-    r"(?<![a-z])(?:full|part|time|permanent|regular|contract(?:or)?s?|temp(?:orary)?"
-    r"|intern(?:ship)?s?|casual|seasonal|freelance|fixed|salaried|hourly|per[ _]diem"
-    r"|apprentice(?:ship)?|volunteer)(?![a-z])|^F$",
-    re.IGNORECASE,
+#: The words an employment type is written in. A JSON-LD ``employmentType`` (or a visible label's
+#: value) is kept only if every letter-run in it is one of these or in :data:`_FILLER_WORDS` and at
+#: least one is not filler; ``F`` alone, upper case, is the one other keeper. TalentBrew tenants
+#: write whatever their ATS field holds into ``employmentType`` and the page copies it verbatim.
+#: The 2026-09-29 probe read 28 such junk pages holding 17 distinct values, none naming a type:
+#: org and shift codes on ``www.capitalonecareers.com`` (``SG``, ``BU``, ``SI``, ``DT``, ``FBENG``,
+#: ``DE``, ``MA``, ``DP``, ``TP``), ``1ST`` on ``jobs.citizensbank.com``, ``9`` on
+#: ``jobs.boeing.com``, pay grades (``Established`` on ``careers.arm.com``, ``Professional`` on
+#: ``careers.cargill.com``, ``Standard`` on ``www.kaiserpermanentejobs.org``) and department names
+#: (``Information Systems``, ``Software Engineering``, ``AI Engineering``). Its real values were
+#: ``Full time``, ``Full-Time``, ``Regular`` and ``F``: ``jobs.appliedmaterials.com`` writes ``F``
+#: and its page states "Time Type: Full time". Requiring every token, not any one, keeps
+#: "Full Stack Engineering", "Fixed Income" and "Time Off" out. Only ``full``, ``part``, ``time``,
+#: ``regular`` and ``permanent`` were seen on a Board; the rest are schema.org's
+#: ``EmploymentType`` enumeration (``CONTRACTOR``, ``TEMPORARY``, ``INTERN``, ``PER_DIEM``) and
+#: the owner's list, unmeasured on Radancy.
+_EMPLOYMENT_TYPE_WORDS = frozenset(
+    {
+        "full",
+        "part",
+        "fulltime",
+        "parttime",
+        "ft",
+        "pt",
+        "fte",
+        "permanent",
+        "regular",
+        "contract",
+        "contractor",
+        "temporary",
+        "temp",
+        "intern",
+        "internship",
+        "fixed",
+        "casual",
+        "seasonal",
+        "freelance",
+        "hourly",
+        "salaried",
+        "diem",
+    }
 )
+#: Words that may sit beside a type word ("Full Time", "Fixed Term", "Per Diem") but name none.
+_FILLER_WORDS = frozenset(
+    {"time", "term", "and", "or", "per", "employee", "employment"}
+)
+_LETTER_RUN = re.compile(r"[a-z]+")
+_TAG = re.compile(r"<[^>]*>")
 
 #: A job page's visible labels for the type, best first, on the 4 of 60 Boards sampled that state
-#: one outside JSON-LD (2026-09-29): ``jobs.jabil.com`` "Time Type" (428 rows),
-#: ``jobs.kansashealthsystem.com`` "Job Type" (21), ``careers.evotec.com`` "Working hours" and
-#: "Contract type" (12), ``jobs.rchsd.org`` "Schedule" (6). The hours outrank the contract type:
-#: evotec states "Full time" and "Permanent", and the first says more.
+#: one outside JSON-LD (2026-09-29): ``jobs.jabil.com`` "Time Type", ``jobs.kansashealthsystem.com``
+#: "Job Type", ``careers.evotec.com`` "Working hours" and "Contract type", ``jobs.rchsd.org``
+#: "Schedule". The hours outrank the contract type: evotec states "Full time" and "Permanent",
+#: and the first says more.
 _EMPLOYMENT_LABELS = (
     "working hours",
     "time type",
@@ -154,12 +185,12 @@ _EMPLOYMENT_LABELS = (
     "contract type",
 )
 _LABEL_SPAN = re.compile(
-    r'<span class="[^"]*\bjob-info\b[^"]*"[^>]*>\s*<b>\s*([^<]*?)\s*:?\s*</b>\s*([^<]*)</span>',
-    re.IGNORECASE,
+    r'<span\b[^>]*\bclass="[^"]*\bjob-info\b[^"]*"[^>]*>\s*<b>\s*([^<]*?)\s*:?\s*</b>(.*?)</span>',
+    re.IGNORECASE | re.DOTALL,
 )
 _LABEL_DT_DD = re.compile(
-    r'<dt class="[^"]*\bjob-term[^"]*"[^>]*>\s*([^<]*?)\s*</dt>\s*<dd[^>]*>\s*([^<]*?)\s*</dd>',
-    re.IGNORECASE,
+    r'<dt\b[^>]*\bclass="[^"]*\bjob-term[^"]*"[^>]*>\s*([^<]*?)\s*</dt>\s*<dd\b[^>]*>(.*?)</dd>',
+    re.IGNORECASE | re.DOTALL,
 )
 
 
@@ -391,11 +422,10 @@ def _page_fields(page: str) -> dict[str, Any] | None:
     if node is None:
         return _meta_fields(page)
     title = _PAGE_TITLE.search(page)
-    fields = job_posting_fields(node)
     return {
         # Its `location` keeps every place, "; "-joined: 126 of 990 pages name more than one.
-        **fields,
-        "employment_type": _employment_type(fields["employment_type"])
+        **job_posting_fields(node),
+        "employment_type": _jsonld_employment_type(node.get("employmentType"))
         or _visible_employment_type(page),
         "department": _meta(page, "gtm_tbcn_jobcategory"),
         "posted_at": _iso_date(node.get("datePosted")),
@@ -408,10 +438,25 @@ def _page_fields(page: str) -> dict[str, Any] | None:
     }
 
 
-def _employment_type(value: Any) -> str | None:
-    """``value`` if it names an employment type (:data:`_EMPLOYMENT_TYPE_WORDS`), else None."""
-    text = value.strip() if isinstance(value, str) else ""
-    return text if _EMPLOYMENT_TYPE_WORDS.search(text) else None
+def _gated_employment_type(value: Any) -> str | None:
+    """``value`` if it is an employment type (:data:`_EMPLOYMENT_TYPE_WORDS`), else None."""
+    text = value.replace("\xa0", " ").strip() if isinstance(value, str) else ""
+    words = set(_LETTER_RUN.findall(text.lower()))
+    if text == "F" or (
+        words
+        and words <= _EMPLOYMENT_TYPE_WORDS | _FILLER_WORDS
+        and not words <= _FILLER_WORDS
+    ):
+        return text
+    return None
+
+
+def _jsonld_employment_type(value: Any) -> str | None:
+    """JSON-LD ``employmentType``, one string or a list, each element gated on its own and the
+    survivors ", "-joined."""
+    ones = value if isinstance(value, list) else [value]
+    kept = (_gated_employment_type(one) for one in ones)
+    return ", ".join(one for one in kept if one) or None
 
 
 def _visible_employment_type(page: str) -> str | None:
@@ -419,9 +464,9 @@ def _visible_employment_type(page: str) -> str | None:
     (:data:`_EMPLOYMENT_LABELS`), best label first and gated like JSON-LD's; None when none."""
     stated: dict[str, str] = {}
     for label, value in (*_LABEL_SPAN.findall(page), *_LABEL_DT_DD.findall(page)):
-        kept = _employment_type(html.unescape(value))
+        kept = _gated_employment_type(html.unescape(_TAG.sub(" ", value)))
         if kept:
-            stated.setdefault(label.lower(), kept)
+            stated.setdefault(label.lower(), " ".join(kept.split()))
     return next((stated[name] for name in _EMPLOYMENT_LABELS if name in stated), None)
 
 

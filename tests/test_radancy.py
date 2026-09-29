@@ -381,9 +381,10 @@ def _jsonld_page(employment_type: object, body: str = "") -> str:
     return '<script type="application/ld+json">' + json.dumps(node) + "</script>" + body
 
 
-# Every value below is a real `employmentType` a tenant wrote into its JSON-LD (29 of 29 pages
-# probed on 2026-09-29): capitalonecareers.com's org codes, arm, cargill, kaiser, citizensbank's
-# shift code, boeing's "9" and tenet's department names.
+# The first 17 are real `employmentType` values tenants wrote into their JSON-LD (28 pages in the
+# 2026-09-29 probe): capitalonecareers.com's org codes, arm, cargill, kaiser, citizensbank's
+# shift code, boeing's "9" and tenet's department names. The rest are invented department and
+# job-family names that hold an employment word but name no type (the review's false keeps).
 @pytest.mark.parametrize(
     "junk",
     [
@@ -404,6 +405,24 @@ def _jsonld_page(employment_type: object, body: str = "") -> str:
         "Information Systems",
         "AI Engineering",
         "Software Engineering",
+        "Full Stack Engineering",
+        "Fixed Income",
+        "Contract Management",
+        "Real Time Systems",
+        "Time and Attendance",
+        "Time Off",
+        "Temp Staffing Ops",
+        "Intern Programs",
+        "Part Sales",
+        "Regular Shift 1",
+        "Full Cycle Recruiting",
+        "International",
+        "Timeshare",
+        "Contractual",
+        "Time",
+        "Term",
+        "f",
+        "",
     ],
 )
 def test_a_jsonld_employment_type_that_is_no_type_is_dropped(junk: str) -> None:
@@ -416,19 +435,24 @@ def test_a_jsonld_employment_type_that_is_no_type_is_dropped(junk: str) -> None:
     "kept",
     [
         "F",  # jobs.appliedmaterials.com, 1,009 rows: this tenant means Full time
-        "FULL_TIME",
         "Full time",
+        "Full-Time",
+        "FULL_TIME",
+        "Regular",
+        "Permanent",
+        "Regular Full-Time",
+        "Temporary",
+        "Contract",
         "Part-time",
         "PART_TIME",
-        "Permanent",
-        "Regular",
         "CONTRACTOR",
-        "Temporary",
         "Intern",
         "Internship",
         "Seasonal",
         "Fixed Term",
         "Salaried Full Time",
+        "Full/Part Time",
+        "Per Diem",
     ],
 )
 def test_a_jsonld_employment_type_that_names_a_type_is_kept(kept: str) -> None:
@@ -437,18 +461,16 @@ def test_a_jsonld_employment_type_that_names_a_type_is_kept(kept: str) -> None:
     assert fields["employment_type"] == kept
 
 
-def test_a_list_employment_type_keeps_the_types_it_names() -> None:
+def test_a_list_employment_type_is_gated_per_element() -> None:
+    fields = _page_fields(_jsonld_page(["FULL_TIME", "SG"]))
+    assert fields is not None
+    assert fields["employment_type"] == "FULL_TIME"
     fields = _page_fields(_jsonld_page(["FULL_TIME", "CONTRACTOR"]))
     assert fields is not None
     assert fields["employment_type"] == "FULL_TIME, CONTRACTOR"
-
-
-def test_the_gate_matches_words_not_substrings() -> None:
-    # "International" holds "intern", "Timeshare" holds "time", "Contractual" holds "contract".
-    for word in ("International", "Timeshare", "Contractual"):
-        fields = _page_fields(_jsonld_page(word))
-        assert fields is not None
-        assert fields["employment_type"] is None
+    fields = _page_fields(_jsonld_page(["SG", "BU"]))
+    assert fields is not None
+    assert fields["employment_type"] is None
 
 
 def test_a_jsonld_page_with_no_type_reads_the_visible_label() -> None:
@@ -520,6 +542,27 @@ def test_the_contract_type_alone_is_read_when_no_hours_are_stated() -> None:
     fields = _page_fields(_jsonld_page(None, body))
     assert fields is not None
     assert fields["employment_type"] == "Permanent"
+
+
+def test_a_label_value_in_nested_tags_and_nbsp_is_read() -> None:
+    body = (
+        '<div><dt class="job-term-schedule">Schedule</dt>'
+        '<dd class="job-detail-schedule">\n<span>Full&nbsp;time</span>\n</dd></div>'
+    )
+    fields = _page_fields(_jsonld_page(None, body))
+    assert fields is not None
+    assert fields["employment_type"] == "Full time"
+    body = '<span class="job-info"><b>Job Type</b> <a href="#">Full time</a></span>'
+    fields = _page_fields(_jsonld_page(None, body))
+    assert fields is not None
+    assert fields["employment_type"] == "Full time"
+
+
+def test_a_job_info_span_need_not_lead_with_its_class() -> None:
+    body = '<span id="t" data-x="1" class="x job-info"><b>Time Type</b>Full Time</span>'
+    fields = _page_fields(_jsonld_page(None, body))
+    assert fields is not None
+    assert fields["employment_type"] == "Full Time"
 
 
 def test_a_meta_only_page_with_no_label_has_no_type() -> None:
