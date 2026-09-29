@@ -1080,6 +1080,75 @@ def test_blocking_named_reads_the_company_form(ev):
     assert ev.verify_blocking_named({"argument": "company"}, transcript, None).passed
 
 
+# --- operator_mix --------------------------------------------------------------------------
+
+_SAMPLE = (
+    "What the newest postings in DevOps (devops) ask for: counted over 270 distinct ...\n"
+    'Companies with the most sampled postings: "Cognizant" (key '
+    '"happydance:careers.cognizant.com") 8 · "Northwind Staffing LLC" (operator unverified) '
+    '(key "lever:northwindstaffing") 3 · no company name (key "oracle:egud.fa.us2.oraclecloud.com") 2.\n'
+)
+
+
+def _sample(*companies):
+    """A role_requirements result whose companies line lists ``companies`` as the tool does."""
+    listed = " · ".join(
+        f"{json.dumps(name)} (key {json.dumps(key)}) {count}"
+        for name, key, count in companies
+    )
+    return f"Companies with the most sampled postings: {listed}.\n"
+
+
+def test_sampled_companies_reads_names_tags_keys_and_the_counted_figure(ev):
+    assert ev.sampled_companies(_SAMPLE) == [
+        ("Cognizant", "happydance:careers.cognizant.com", 8),
+        ("Northwind Staffing LLC", "lever:northwindstaffing", 3),
+        ("", "oracle:egud.fa.us2.oraclecloud.com", 2),
+    ]
+    capped = _sample(
+        ("DigitalXNode", "wp_job_openings:digitalxnode.com", "15 sampled, 8 counted")
+    )
+    assert ev.sampled_companies(capped)[0][2] == 8
+
+
+def test_operator_mix_fails_a_curated_agency_or_board_it_was_not_asked_for(ev):
+    """Round-4 critique P1-2 (ADR-0352): an agency led the DevOps sample."""
+
+    def verdict(result, arguments=None):
+        calls = [
+            ("role_requirements", arguments or {"category": "devops"}, result, False)
+        ]
+        return ev.verify_operator_mix({}, _transcript(ev, calls, "..."), None)
+
+    assert verdict(_SAMPLE).passed
+    jobgether = _sample(("Jobgether", "lever:jobgether", 6), ("Cognizant", "x:y", 5))
+    staffing = _sample(("Vrinda International", "zoho:vrindainternational", 5))
+    assert "is aggregator" in verdict(jobgether).detail
+    assert not verdict(jobgether).passed and not verdict(staffing).passed
+    # Asked for by its operators, or by name, it is the user's own choice.
+    every = ["employer", "services", "staffing", "aggregator"]
+    assert verdict(jobgether, {"category": "devops", "operators": every}).passed
+    assert verdict(jobgether, {"category": "devops", "company": "Jobgether"}).passed
+
+
+def test_operator_mix_fails_one_company_counted_past_the_cap_unless_named(ev):
+    over = _sample(("Cognizant", "happydance:careers.cognizant.com", 11))
+
+    def verdict(arguments):
+        calls = [("role_requirements", arguments, over, False)]
+        return ev.verify_operator_mix({}, _transcript(ev, calls, "..."), None)
+
+    assert "counted 11, over 8" in verdict({"category": "devops"}).detail
+    assert verdict({"category": "devops", "company": "Cognizant"}).passed
+
+
+def test_operator_mix_needs_a_sample_that_lists_its_companies(ev):
+    none = ev.verify_operator_mix({}, _transcript(ev, [], "..."), None)
+    assert not none.passed and "no successful role_requirements" in none.detail
+    unlisted = [("role_requirements", {"query": "x"}, "No postings to count.", False)]
+    assert not ev.verify_operator_mix({}, _transcript(ev, unlisted, "..."), None).passed
+
+
 # --- mentions ------------------------------------------------------------------------------
 
 
@@ -1673,7 +1742,7 @@ def test_the_recording_covers_every_task_whose_verifier_reads_tool_results(ev):
     def reads_results(task):
         checks = (task.get("expect") or {}).get("checks") or [task]
         return any(
-            c["verifier"] in ("blocking_named", "title_keyword_rows")
+            c["verifier"] in ("blocking_named", "title_keyword_rows", "operator_mix")
             or {"tool_results_all", "answer_carries", "answer_any"}
             & set(c.get("expect") or {})
             for c in checks

@@ -27,7 +27,7 @@ from headstart.jobs import work_authorization
 from headstart.mcp_protocol import messages, tool_arguments
 from headstart.mcp_protocol.messages import ToolFailure
 from headstart.serving.job_absence import WHY_NOT_SERVED
-from headstart.space_mcp import scraped_text, server
+from headstart.space_mcp import scraped_text, server, shown_company
 from headstart.space_mcp import space_client as sc
 from headstart.space_mcp.tools import (
     REGISTRY,
@@ -537,6 +537,63 @@ def test_operators_are_sent_as_named_and_not_at_all_when_every_one_is():
     assert _operators_sent(space) == [None, "employer,staffing", None, "aggregator"]
     with pytest.raises(ToolFailure, match="send at least one of"):
         server.BY_NAME["search_jobs"].answer(space, {"operators": []})
+
+
+def _per_company_sent(space):
+    return [dict(p).get("per_company") for p in space.params_of(R.SEARCH)]
+
+
+def test_per_company_is_sent_on_a_relevance_ranking_without_a_company():
+    """P1-5 of the round-4 critique: one employer filled a page (ADR-0352)."""
+    space = _search_space([_job(1)])
+    server.call(space, "search_jobs", {"query": "staff platform engineer"})
+    server.call(space, "search_jobs", {"similar_to": "lever:x:1", "per_company": 5})
+    server.call(space, "search_jobs", {"query": "x", "per_company": 0})
+    server.call(space, "search_jobs", {"query": "x", "company": "Reflection"})
+    server.call(space, "search_jobs", {"query": "x", "sort": "posted"})
+    server.call(space, "search_jobs", {"keyword": "rust"})
+    assert _per_company_sent(space) == ["3", "5", None, None, None, None]
+
+
+def test_a_spread_page_says_what_it_held_back_and_marks_the_rows_past_it():
+    reflection = {"company": "Reflection", "more_from_company": 23}
+    rows = [
+        _job(1, **reflection),
+        _job(2, **reflection),
+        _job(3, company="Neara"),
+        _job(4, company="Reflection", past_company_cap=True),
+    ]
+    text = server.call(
+        _search_space(rows, total=90),
+        "search_jobs",
+        {"query": "staff platform engineer"},
+    )
+    assert (
+        "with at most 3 jobs of one company before every other company's (per_company; 0 "
+        "lists the ranking as it is)."
+    ) in text
+    assert (
+        'Listed after every other company\'s jobs, past per_company: 23 more from "Reflection": '
+        'send company "Reflection".'
+    ) in text
+    assert (
+        text.count("past per_company: its company's closer jobs are listed earlier")
+        == 1
+    )
+    plain = server.call(_search_space([_job(1)]), "search_jobs", {"query": "x"})
+    assert "Listed after every other" not in plain
+
+
+def test_a_row_whose_company_reads_like_an_agency_is_tagged_never_left_out():
+    """P1-2 of the round-4 critique: hiring_now's flag reached no search row (ADR-0352)."""
+    rows = [_job(1, company="Northwind Staffing LLC"), _job(2)]
+    text = server.call(_search_space(rows), "search_jobs", {"query": "frontend"})
+    assert '"Northwind Staffing LLC" (operator unverified) · ' in text
+    assert '"Razorpay" (operator unverified)' not in text
+    assert shown_company.UNVERIFIED_NOTE in text
+    assert shown_company.UNVERIFIED_NOTE not in server.call(
+        _search_space([_job(1)]), "search_jobs", {"query": "frontend"}
+    )
 
 
 def test_nothing_left_but_what_operators_left_out_is_said():
@@ -3442,6 +3499,7 @@ def test_requirements_send_the_role_the_category_and_the_filters_in_the_spaces_n
             ("strict", "1"),
             ("q", "data engineer"),
             ("family", "ai-ml-data-science"),
+            ("per_company", "8"),
             ("remote", "true"),
             ("max_years", "3"),
             ("country", "DE"),
@@ -3449,6 +3507,50 @@ def test_requirements_send_the_role_the_category_and_the_filters_in_the_spaces_n
             ("max_age_days", "365"),
             ("operators", "employer,services"),
         ]
+    ]
+
+
+def test_a_requirements_sample_caps_one_company_unless_one_is_named_and_says_so():
+    """P1-2 of the round-4 critique: DigitalXNode was 15 of a DevOps sample (ADR-0352)."""
+    capped = _requirements(
+        distinct=255,
+        per_company=8,
+        over_company_cap=8,
+        companies=[
+            {
+                "company": "DigitalXNode",
+                "from_directory": False,
+                "board": "wp_job_openings:digitalxnode.com",
+                "jobs": 16,
+                "counted": 8,
+            },
+            {
+                "company": "Northwind Staffing LLC",
+                "from_directory": False,
+                "board": "lever:northwindstaffing",
+                "jobs": 3,
+                "counted": 3,
+            },
+        ],
+    )
+    space = FakeSpace(requirements=capped)
+    text = server.call(space, "role_requirements", {"category": "devops"})
+    assert "(300 postings read; 37 copies of one counted once)." in text
+    assert (
+        "At most 8 postings of one company are counted, so one company's wording cannot "
+        "speak for the role: 8 more were left out."
+    ) in text
+    assert (
+        '"DigitalXNode" (key "wp_job_openings:digitalxnode.com") 16 sampled, 8 counted · '
+        '"Northwind Staffing LLC" (operator unverified) (key "lever:northwindstaffing") 3.'
+    ) in text
+    assert shown_company.UNVERIFIED_NOTE in text
+    server.call(
+        space, "role_requirements", {"category": "devops", "company": "Northwind"}
+    )
+    assert [dict(p).get("per_company") for p in space.params_of(R.REQUIREMENTS)] == [
+        "8",
+        None,
     ]
 
 

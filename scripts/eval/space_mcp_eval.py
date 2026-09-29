@@ -17,7 +17,9 @@ call returned back from ``/job`` and needs the keyword where a word starts in ev
 keyword's own rule (ADR-0299, ADR-0325). ``sponsorship_polarity`` reads back every row the calls
 listed and fails an answer naming a job that does not offer sponsorship, judged apart from the
 Space's rules: by a person's label where the job has one, else by a negation check of its own
-(ADR-0333). ``all_of`` and ``any_of`` combine checks.
+(ADR-0333). ``operator_mix`` reads each role_requirements sample's companies and fails one that
+counts a curated staffing firm or job board it was not asked for, or more of one company's
+postings than the cap (ADR-0352). ``all_of`` and ``any_of`` combine checks.
 A run whose server was not connected at its start is not judged: it is an error, left out of the
 summary's scores and named on a line of its own, first.
 
@@ -71,9 +73,11 @@ from typing import Any, Protocol
 
 _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT / "src"))
+from headstart.boards import board_operator
+from headstart.boards.board_operator import OPERATORS
 from headstart.mcp_protocol import tool_arguments
 from headstart.mcp_protocol.messages import ToolFailure
-from headstart.space_mcp import company_scope
+from headstart.space_mcp import company_scope, search_arguments
 from headstart.space_mcp.server import BY_NAME, NAME, URL_VAR
 from headstart.space_mcp.server import call as call_tool
 from headstart.space_mcp.space_client import (
@@ -90,6 +94,7 @@ from headstart.space_mcp.tools import (
     get_job,
     hiring_now,
     read_trends,
+    role_requirements,
     search_jobs,
 )
 
@@ -975,6 +980,75 @@ def verify_sponsorship_polarity(
     )
 
 
+# --- operator_mix --------------------------------------------------------------------------
+
+#: One company on role_requirements' companies line: its quoted name, any tags, its quoted key,
+#: and its count, "15" or "15 sampled, 8 counted".
+_SAMPLED_COMPANY = re.compile(
+    r'(?:("(?:[^"\\]|\\.)*")|no company name)(?: \([^)]*\))* \(key ("(?:[^"\\]|\\.)*")\) '
+    r"([\d,]+)(?: sampled, ([\d,]+) counted)?"
+)
+_COMPANIES_LINE = "Companies with the most sampled postings:"
+#: Operators a sample leaves out unless its call keeps them (ADR-0335).
+_LEFT_OUT_OPERATORS = ("staffing", "aggregator")
+
+
+def sampled_companies(result: str) -> list[tuple[str, str, int]]:
+    """Each company on a role_requirements result's companies line: its name, its key, and how
+    many of its postings were counted."""
+    line = next(
+        (ln for ln in result.splitlines() if ln.startswith(_COMPANIES_LINE)), ""
+    )
+    return [
+        (
+            json.loads(name) if name else "",
+            json.loads(key),
+            int((counted or sampled).replace(",", "")),
+        )
+        for name, key, sampled, counted in _SAMPLED_COMPANY.findall(line)
+    ]
+
+
+def verify_operator_mix(
+    expect: dict[str, Any], transcript: Transcript, space: Space
+) -> Verdict:
+    """Round-4 critique P1-2 (ADR-0352): in every successful role_requirements call, no company
+    the sample counted is one the curated lists (`board_operator.classify`, read here, not by the
+    tool) call a staffing firm or job board unless that call's `operators` kept it, and, unless a
+    `company` was named, no company counted more than ``expect["per_company"]`` postings."""
+    schema = BY_NAME["role_requirements"].input_schema
+    calls = [
+        (call, tool_arguments.with_defaults(schema, call.arguments))
+        for call in transcript.calls
+        if call.name == "role_requirements" and call.succeeded
+    ]
+    if not calls:
+        return Verdict(False, "no successful role_requirements call")
+    cap = int(expect.get("per_company", role_requirements.PER_COMPANY))
+    wrong: list[str] = []
+    listed = 0
+    for call, arguments in calls:
+        kept = set(search_arguments.operators_kept(arguments) or OPERATORS)
+        for name, key, counted in sampled_companies(call.result or ""):
+            listed += 1
+            operator = board_operator.classify(key, name)
+            if operator in _LEFT_OUT_OPERATORS and operator not in kept:
+                wrong.append(f"{name or key!r} is {operator}")
+            if counted > cap and not (arguments.get("company") or "").strip():
+                wrong.append(f"{name or key!r} counted {counted}, over {cap}")
+    if not listed:
+        return Verdict(False, "no role_requirements result lists its sampled companies")
+    return Verdict(
+        not wrong,
+        f"{listed} sampled companies read"
+        + (
+            f"; {'; '.join(wrong[:5])}"
+            if wrong
+            else "; none a left-out operator or over the cap"
+        ),
+    )
+
+
 # --- mentions ------------------------------------------------------------------------------
 
 
@@ -1079,6 +1153,7 @@ VERIFIERS: dict[str, Verifier] = {
     "search_args": verify_tool_args,
     "title_keyword_rows": verify_title_keyword_rows,
     "sponsorship_polarity": verify_sponsorship_polarity,
+    "operator_mix": verify_operator_mix,
     "trend_sign": verify_trend_sign,
     "hot_top": verify_hot_top,
     "blocking_named": verify_blocking_named,

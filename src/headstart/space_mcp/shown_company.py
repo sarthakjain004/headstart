@@ -14,12 +14,16 @@ A served name names no company when `company_name.names_no_company` reads it as 
 URL, host or path, lowercase: "Checkout.com" on `ashby:checkout.com` is a
 company, "egud.fa.us2.oraclecloud.com" on its own pod is not. Looking the directory up is a
 courtesy: a Board the Space could not be asked about keeps its served name, whatever it is.
+
+A company named like an agency and on no curated list is shown tagged "operator unverified"
+(`tagged`, ADR-0352), by the rule `hiring_now`'s flag reads (ADR-0335).
 """
 
 from __future__ import annotations
 
 from typing import Any
 
+from headstart.boards import board_operator
 from headstart.boards.board_identity import board_of
 from headstart.boards.company_name import (
     FROM_DIRECTORY,
@@ -86,3 +90,23 @@ def said(row: dict[str, Any], limit: int) -> str:
         return "no company name"
     text = scraped_text.quoted(row["company"], limit)
     return f"{text} (directory name)" if row.get(FROM_DIRECTORY) else text
+
+
+#: The tag a company earns when ADR-0335's rule flags it (ADR-0352).
+UNVERIFIED = "operator unverified"
+
+#: What the tag means, said once in an answer that carries it.
+UNVERIFIED_NOTE = (
+    'A company tagged "operator unverified" is named like a staffing firm or recruiter and '
+    "HeadStart has not checked who posts for it ('employer' is only the default): read a "
+    "posting (get_job) before calling it the employer."
+)
+
+
+def tagged(row: dict[str, Any], board: str, limit: int) -> str:
+    """:func:`said`, tagged "operator unverified" when `board_operator.unverified` flags the
+    company over ``board`` and its name (ADR-0335, ADR-0352): a tag, never a filter."""
+    text = said(row, limit)
+    if board_operator.unverified([board], str(row.get("company") or "")):
+        return f"{text} ({UNVERIFIED})"
+    return text

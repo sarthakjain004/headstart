@@ -240,6 +240,16 @@ the filter costing the most.
   ("Group", "Technologies", "Energy") drop, so "GE" and "GE HealthCare" stay apart; "Siemens" and
   "Siemens Energy" do not, if they post one title in one city. On 16 live pages of 40
   rows (2026-09-29) that second rule grouped two pairs, both true copies.
+- **A few jobs of each company first** (ADR-0352). On a relevance-ranked search (`query` or
+  `similar_to`, sort relevance, no `company`) the Space lists at most `per_company` (3) jobs of
+  one company before every other company's, over the 2,000 closest, so paging walks one list; a
+  copy of a listed posting takes no place. The answer says "23 more from "Reflection": send
+  company "Reflection"", and marks a row paging reaches past the cap. `per_company: 0` lists the
+  ranking as it is. Reflection held 9 of 10 rows of a London staff-platform search; at 3 the page
+  named 8 companies. 11 of 13 live searches measured were unchanged.
+- **"operator unverified".** A row whose company is named like a staffing firm or recruiter
+  and is on no curated list says so after its name, by `hiring_now`'s rule (ADR-0335); a tag,
+  never a filter.
 - **A company named only by its Board's host** ("aah.wd5.myworkdayjobs.com/external", an Oracle
   pod, or nothing) is shown by the Company directory's name for its Board, marked
   `(directory name)`; a Board the directory holds and does not name reads "no company name". When
@@ -448,6 +458,11 @@ of them, for a career switcher's "what does a data engineer typically need" (ADR
   admit, copies included (300 postings read; 37 copies of one counted once)" (a local copy of the
   served table, 2026-09-29; ADR-0332). A query does not narrow, so that total is every
   posting the filters admit; the answer gives the similarity range of the sample instead.
+- **At most 8 of one company's** (ADR-0352), unless `company` is named: DigitalXNode was 15 of
+  the DevOps sample. The answer says how many the cap left out, and the companies line "16
+  sampled, 8 counted"; a company named like an agency and on no curated list is tagged
+  "operator unverified". 8 left out a median 1.4% of 11 live samples; 5 left out 5.9% and
+  reshaped every sample's ordinary head.
 - **Filters.** `company`, `country`, `india_place`, `location`, `remote` and `max_years`, the same
   schema as `search_jobs`' and read the same way.
 - **Skills.** The tech skills the sampled descriptions mention, from a fixed list of about 380

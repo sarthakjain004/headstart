@@ -11,7 +11,10 @@ A row carries its posting's age, flagged past a year, and its employment type as
 the `employment_type` values it counts as, and its company as the Company directory names it when
 the served name is only its Board's host (`shown_company`). Rows on one page that copy one
 posting — per country, or on two Boards of its employer (`requisition_copies`) — are listed under
-the first of them, with only what differs; every id and link stays.
+the first of them, with only what differs; every id and link stays. A relevance page lists at most
+`per_company` jobs of one company before every other company's and says how many more each has,
+and a company named like an agency and on no curated list is tagged "operator unverified"
+(ADR-0352).
 """
 
 from __future__ import annotations
@@ -21,6 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime
 from typing import Any
 
+from headstart.boards.board_identity import board_of
 from headstart.jobs import requisition_copies, work_authorization
 from headstart.mcp_protocol.messages import ToolFailure
 from headstart.search_filters import (
@@ -155,9 +159,29 @@ def _params(
         )
     if sort := SORTS[arguments["sort"]]:
         params.append(("sort", sort))
+    if per_company := _per_company(arguments):
+        params.append(("per_company", str(per_company)))
     params.append(("k", str(arguments["limit"])))
     params.append(("page", str(arguments["page"])))
     return params
+
+
+def _per_company(arguments: dict[str, Any]) -> int | None:
+    """The most jobs of one company a page lists before other companies' (ADR-0352), or None
+    when it does not apply: only a relevance ranking has places to spread, and a `company`
+    asks for that company's jobs."""
+    ranked = (arguments.get("query") or "").strip() or (
+        arguments.get("similar_to") or ""
+    ).strip()
+    per_company = arguments.get("per_company")
+    if (
+        not ranked
+        or arguments["sort"] != "relevance"
+        or (arguments.get("company") or "").strip()
+        or not per_company
+    ):
+        return None
+    return int(per_company)
 
 
 def _refuse_by_policy(arguments: dict[str, Any]) -> None:
@@ -268,6 +292,8 @@ def _facts(row: dict[str, Any], today: date, experience_filtered: bool) -> list[
     if seen:
         age = "" if posted else _age(str(seen), today)
         facts.append(f"first seen {str(seen)[:10]}{age}")
+    if row.get("past_company_cap"):
+        facts.append("past per_company: its company's closer jobs are listed earlier")
     return facts
 
 
@@ -282,10 +308,15 @@ def _where(row: dict[str, Any]) -> str:
     )
 
 
+def _company(row: dict[str, Any]) -> str:
+    """The row's company as shown, tagged when its operator is unverified (ADR-0352)."""
+    return shown_company.tagged(row, board_of(str(row.get("id") or "")), SHORT_FIELD)
+
+
 def _row(number: int, row: dict[str, Any], facts: list[str]) -> str:
     said = [
         scraped_text.quoted(row.get("title")),
-        shown_company.said(row, SHORT_FIELD),
+        _company(row),
         *facts,
     ]
     return f"{number:>2}. {_score(row)}{' · '.join(said)}\n    {_where(row)}"
@@ -303,7 +334,7 @@ def _also(
     if row.get("title") != head.get("title"):
         said.append(scraped_text.quoted(row.get("title")))
     if row.get("company") != head.get("company"):
-        said.append(shown_company.said(row, SHORT_FIELD))
+        said.append(_company(row))
     said += [fact for fact in facts if fact not in head_facts]
     return (
         f"    also #{number}: {_score(row)}{' · '.join(said) or 'as above'}\n"
@@ -327,6 +358,28 @@ def _page_lines(
             _also(first + i, rows[i], facts[i], rows[head], facts[head]) for i in others
         ]
     return lines, len(groups) < len(rows)
+
+
+def _held_line(rows: list[dict[str, Any]]) -> str | None:
+    """How many more jobs each company on the page has after every other company's
+    (`more_from_company`, ADR-0352), and how to list them."""
+    held: dict[str, tuple[int, str]] = {}
+    for row in rows:
+        if more := row.get("more_from_company"):
+            name = str(row.get("company") or "").strip()
+            key = name or board_of(str(row.get("id") or ""))
+            held.setdefault(key.casefold(), (int(more), key))
+    if not held:
+        return None
+    said = "; ".join(
+        f"{more:,} more from {scraped_text.quoted(name, SHORT_FIELD)}: send company "
+        f"{scraped_text.quoted(name, SHORT_FIELD)}"
+        for more, name in held.values()
+    )
+    return (
+        f"Listed after every other company's jobs, past per_company: {said}. Say so rather "
+        "than calling this page all there is from them."
+    )
 
 
 def _sorted_by_similarity(arguments: dict[str, Any]) -> bool:
@@ -361,6 +414,12 @@ def _order_line(arguments: dict[str, Any], rows: list[dict[str, Any]]) -> str:
             f"{lowest}. Less similar rows are left out of a sorted answer, since they are "
             f"mostly other roles; omit {ranking} for a global order, or sort by relevance for "
             "every match."
+        )
+    if (per_company := _per_company(arguments)) is not None:
+        return (
+            f"Ordered by similarity to {ranked_by}, which orders the matches but does not "
+            f"narrow them, with at most {per_company} jobs of one company before every other "
+            "company's (per_company; 0 lists the ranking as it is)."
         )
     if query or similar_to:
         return f"Ordered by similarity to {ranked_by}, which orders the matches but does not narrow them."
@@ -532,6 +591,10 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
                 "one posting on two of its Boards is."
             )
         lines += page_lines
+        if held := _held_line(rows):
+            lines.append(held)
+        if any(shown_company.UNVERIFIED in line for line in page_lines):
+            lines.append(shown_company.UNVERIFIED_NOTE)
         shown_to = first + len(rows) - 1
         if shown_to < total:
             lines.append(
@@ -705,6 +768,18 @@ TOOL = SpaceTool(
                     "salary orders by the low end of each stated range, in salary_currency "
                     "or else USD. With `query`, any sort orders only the matches scoring "
                     f"at least {SORT_FLOOR:.2f} among its {SORT_WINDOW:,} closest."
+                ),
+            },
+            "per_company": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 40,
+                "default": 3,
+                "description": (
+                    "With `query` or `similar_to` and sort relevance: at most this many jobs "
+                    "of one company before every other company's; its others follow them, "
+                    "and the answer says how many. 0 lists the ranking as it is. Not applied "
+                    "with `company`."
                 ),
             },
             "limit": {
