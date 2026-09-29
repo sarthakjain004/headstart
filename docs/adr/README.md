@@ -282,6 +282,7 @@ supersedes it and note the supersession in both.
 | [0303](0303-a-zwayam-board-is-read-from-the-api-cluster-that-holds-it.md) | A Zwayam Board is read from the API cluster that holds it | 2026-09-29 |
 | [0304](0304-the-index-view-takes-boards-found-out-of-each-line-by-its-own-openings.md) | The index view takes Boards found out of each line by its own openings | 2026-09-29 |
 | [0305](0305-an-abstained-row-whose-title-names-a-developer-is-software-engineering.md) | An abstained row whose title names a developer is software engineering | 2026-09-29 |
+| [0323](0323-an-agent-sees-one-posting-once-under-a-company-name.md) | An agent sees one posting once, under a company's name, and a company's places by country | 2026-09-29 |
 | [0325](0325-the-model-retries-an-edge-failure-and-a-description-scan-runs-alone.md) | The model retries an edge failure, a description scan runs alone, and the hosted eval waits for its server | 2026-09-29 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not

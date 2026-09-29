@@ -5,13 +5,18 @@ Board key, or a name the directory holds exactly or by alias; anything looser is
 suggestions. Then, at once (ADR-0275):
 
 - `/facets` with ``board=`` for each of its Boards — the scope `search_jobs` sends for a key — for
-  how many of its served jobs are remote, of each employment type, open at each experience
-  ceiling, stating a salary, and posted or new recently;
+  how many of its served jobs are remote, of each employment type, stating a salary, and posted
+  or new recently; a line whose every count is 0 is left out, since a Board that states no
+  employment type would otherwise read as hiring no full-time staff;
 - `/trends?company=<key>` over the trailing :data:`TREND_DAYS` days, split by job category (the
   default split for one company), for its tech openings now, its category mix, and the postings
   opened and closed. Those lead: the change in openings also moves when HeadStart re-counts, so
   it follows them with its re-counted part named;
-- `/companies/locations` over its Boards, for the places its served jobs name most;
+- `/companies/locations` over its Boards, for the countries its served jobs name, each with its
+  top places as written, rolled up by the `country` filter's own gazetteer (ADR-0323);
+- `/companies/levels` over its Boards, for how many of its served jobs are in each Trends level
+  band, each counted once (ADR-0323) — not the Search rail's experience ceilings, where a job
+  stating no experience counts at every one;
 - for a name, `/companies/suggest` again, to name the other directory companies it may also mean
   — Deloitte is five, and the exact name is not the largest.
 """
@@ -23,6 +28,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from headstart.mcp_protocol.messages import ToolFailure
+from headstart.search_filters import country_filter
 from headstart.space_mcp import company_scope, scraped_text
 from headstart.space_mcp.space_client import SpaceClient, SpaceRoute
 from headstart.space_mcp.space_tool import SpaceTool
@@ -30,9 +36,9 @@ from headstart.space_mcp.space_tool import SpaceTool
 #: The trailing window the trend is read over.
 TREND_DAYS = 30
 
-#: How many job categories, locations, other directory companies and Board keys the answer lists.
+#: How many job categories, countries, other directory companies and Board keys the answer lists.
 CATEGORIES_SHOWN = 12
-LOCATIONS_SHOWN = 10
+COUNTRIES_SHOWN = 8
 OTHERS_SHOWN = 3
 BOARDS_SHOWN = 10
 
@@ -60,33 +66,40 @@ def _options(facets: dict[str, Any], dimension: str) -> dict[Any, int]:
     }
 
 
-def _breakdown(facets: dict[str, Any]) -> list[str]:
+def _levels(answer: dict[str, Any]) -> str | None:
+    bands = answer.get("bands") or []
+    if not any(band.get("count") for band in bands):
+        return None
+    return (
+        "  level, each job once, in the Trends Level view's bands"
+        + (" (the first rows only)" if answer.get("capped") else "")
+        + ": "
+        + " · ".join(f"{band['label']} {band['count']:,}" for band in bands)
+    )
+
+
+def _breakdown(facets: dict[str, Any], levels: dict[str, Any]) -> list[str]:
     total = int(facets.get("total") or 0)
     lines = [
         (
-            f"Of the {total:,} jobs search serves on its Boards (each count on its own; "
-            "search_jobs with the key and that filter lists them):"
+            f"Of the {total:,} jobs search serves on its Boards (each count on its own, a line "
+            "whose every count is 0 left out; search_jobs with the key and that filter lists "
+            "them):"
         )
     ]
     if remote := _options(facets, "remote"):
         lines.append(f"  remote: {remote.get(True, 0):,}")
-    if types := _options(facets, "etype"):
+    if any((types := _options(facets, "etype")).values()):
         lines.append(
             "  employment type: "
             + " · ".join(f"{value} {count:,}" for value, count in types.items())
             + " (a job whose Board states no type counts in none)"
         )
-    if ceilings := _options(facets, "max_years"):
-        lines.append(
-            "  open to someone with at most: "
-            + " · ".join(
-                f"{value} years {count:,}" for value, count in ceilings.items()
-            )
-            + " (a job stating no experience counts at every level)"
-        )
+    if level := _levels(levels):
+        lines.append(level)
     if salary := _options(facets, "has_salary"):
         lines.append(f"  salary stated: {salary.get(True, 0):,}")
-    if posted := _options(facets, "posted_within"):
+    if any((posted := _options(facets, "posted_within")).values()):
         lines.append(
             "  posted by the employer in the last: "
             + " · ".join(
@@ -94,7 +107,8 @@ def _breakdown(facets: dict[str, Any]) -> list[str]:
                 for value, count in posted.items()
             )
         )
-    if seen := _options(facets, "seen_within"):
+    seen = _options(facets, "seen_within")
+    if any(seen.get(hours) for hours in _NEW):
         lines.append(
             "  new to HeadStart in the last: "
             + " · ".join(
@@ -176,22 +190,51 @@ def _category(line: dict[str, Any]) -> str:
     return said
 
 
-def _locations(answer: dict[str, Any]) -> str:
-    places = answer.get("locations") or []
-    jobs = int(answer.get("jobs") or 0)
-    if not places:
-        return f"Locations: none of its {jobs:,} served jobs names one."
-    return (
-        f"Top locations of its {jobs:,} served jobs, as the employer wrote them "
-        f"({answer.get('distinct', 0):,} distinct, {answer.get('unstated', 0):,} naming none"
-        + ("; the first rows only" if answer.get("capped") else "")
-        + "): "
-        + " · ".join(
-            f"{scraped_text.quoted(place['location'], SHORT_FIELD)} {place['count']:,}"
-            for place in places
-        )
-        + "."
+def _places(places: list[dict[str, Any]]) -> str:
+    return " · ".join(
+        f"{scraped_text.quoted(place['location'], SHORT_FIELD)} {place['count']:,}"
+        for place in places
     )
+
+
+def _country(code: str) -> str:
+    return country_filter.name(code) if code in country_filter.CODES else code
+
+
+def _locations(answer: dict[str, Any]) -> str:
+    jobs = int(answer.get("jobs") or 0)
+    countries = answer.get("countries") or []
+    no_country = answer.get("no_country") or {}
+    if not countries and not no_country.get("jobs"):
+        return f"Locations: none of its {jobs:,} served jobs names one."
+    said = f"Where its {jobs:,} served jobs are"
+    if countries:
+        shown = countries[:COUNTRIES_SHOWN]
+        more = len(countries) - len(shown)
+        said += (
+            ", by country as search_jobs' `country` reads each place (a job naming two "
+            "countries counts in both), with its top places as written"
+            + (" (the first rows only)" if answer.get("capped") else "")
+            + ": "
+            + " · ".join(
+                f"{_country(c['code'])} {c['jobs']:,} ({_places(c['places'])})"
+                for c in shown
+            )
+            + (f" · …{more} more countries" if more > 0 else "")
+            + "."
+        )
+    else:
+        said += ": no place names a country the `country` filter reads."
+    if no_country.get("jobs"):
+        said += (
+            f" No country is read from the places of {no_country['jobs']:,} "
+            f"({_places(no_country.get('places') or [])})."
+        )
+    if unstated := int(answer.get("unstated") or 0):
+        said += f" {unstated:,} name no place."
+    if unread := int(answer.get("places_unread") or 0):
+        said += f" {unread:,} are at places too rare to be read."
+    return said
 
 
 def _company_lines(
@@ -232,30 +275,28 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
     by_name = value.lower() not in {board.lower() for board in pick.board_keys}
     boards = [("board", board) for board in pick.board_keys]
     since = (_now() - timedelta(days=TREND_DAYS)).isoformat(timespec="seconds")
-    with ThreadPoolExecutor(max_workers=4) as pool:
+    with ThreadPoolExecutor(max_workers=5) as pool:
         facets = pool.submit(client.read, SpaceRoute.FACETS, [("strict", "1"), *boards])
         trends = pool.submit(
             client.read,
             SpaceRoute.TRENDS,
             [("since", since), ("company", pick.key)],
         )
-        places = pool.submit(
-            client.read,
-            SpaceRoute.COMPANIES_LOCATIONS,
-            [*boards, ("limit", str(LOCATIONS_SHOWN))],
-        )
+        places = pool.submit(client.read, SpaceRoute.COMPANIES_LOCATIONS, boards)
+        levels = pool.submit(client.read, SpaceRoute.COMPANIES_LEVELS, boards)
         similar = (
             pool.submit(company_scope.suggest, client, value, OTHERS_SHOWN + 1)
             if by_name
             else None
         )
         facets, trends, places = facets.result(), trends.result(), places.result()
+        levels = levels.result()
         others = [c for c in (similar.result() if similar else []) if c.key != pick.key]
     lines = _company_lines(pick, by_name, others[:OTHERS_SHOWN])
     lines.append(scraped_text.SCRAPED_NOTE)
     lines += _trend(trends, pick.key)
     lines.append(_locations(places))
-    lines += _breakdown(facets)
+    lines += _breakdown(facets, levels)
     lines.append(
         f"To list its jobs: search_jobs with company {pick.key} (add category for one job "
         "category)."
@@ -270,14 +311,14 @@ TOOL = SpaceTool(
     title="One company's hiring profile",
     description=(
         "One company's hiring profile: its tech openings now; postings opened and closed "
-        "recently; its job-category mix; the places its jobs name most; and how many of its "
-        "jobs are remote, of each employment type, open at each experience level, show a "
-        "salary, and were posted recently. `company` is a directory company: a key from "
-        "find_company (such as 'greenhouse:stripe') or its exact name, read as the site's "
-        "Trends picker reads it. Tell the user which company and Boards it was read as, and "
-        "name the other companies the answer says the name may mean. Locations are as each "
-        "employer wrote them, not merged, and a job stating no experience counts at every "
-        "level."
+        "recently; its job-category mix; the countries its jobs are in, with their top "
+        "places; and how many of its jobs are remote, of each employment type, at each "
+        "level, show a salary, and were posted recently. `company` is a directory company: a "
+        "key from find_company (such as 'greenhouse:stripe') or its exact name, read as the "
+        "site's Trends picker reads it. Tell the user which company and Boards it was read "
+        "as, and name the other companies the answer says the name may mean. Countries are "
+        "read as search_jobs' `country` reads a place; levels are the Trends bands, each job "
+        "counted once, and a job stating no experience in its own band."
     ),
     input_schema={
         "type": "object",
