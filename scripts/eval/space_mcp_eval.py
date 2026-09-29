@@ -932,6 +932,64 @@ def verify_sponsorship_polarity(
     )
 
 
+# --- entry_level_titles --------------------------------------------------------------------
+
+#: A title word that marks a job no new graduate is hired into (round-4 critique P0-1).
+_SENIOR_TITLE = re.compile(
+    r"(?i)\b(?:senior|sr|staff|principal|manager|director|lead)\b"
+)
+#: A qualifier that makes such a title an entry one: "Associate Product Manager", "Junior Lead".
+_ENTRY_QUALIFIER = re.compile(r"(?i)\b(?:associate|junior|jr)\b")
+
+
+def senior_title(title: str) -> bool:
+    """Whether ``title`` names a senior, lead or manager job with no entry qualifier."""
+    return bool(_SENIOR_TITLE.search(title)) and not _ENTRY_QUALIFIER.search(title)
+
+
+def verify_entry_level_titles(
+    expect: dict[str, Any], transcript: Transcript, space: Space
+) -> Verdict:
+    """The truth of a "jobs for a new graduate" answer (ADR-0357), judged by title apart from
+    the Space's experience reading: every row a search_jobs or get_job result listed is read back
+    from `/job`, and none the final answer names (by id, or by title and company) may have
+    Senior, Sr, Staff, Principal, Manager, Director or Lead in its title without an Associate or
+    Junior qualifier. At least ``expect["at_least"]`` must be named.
+
+    It catches the round-4 failure, a Capital One "Sr. Manager" served as "1+ yrs" to a
+    `max_years: 1` search. It cannot catch a senior job whose title says nothing of it, and it
+    fails a right answer naming a "Lead"-titled apprenticeship."""
+    ids: list[str] = []
+    for call in transcript.calls:
+        if call.name in ("search_jobs", "get_job") and call.succeeded:
+            ids += [i for i in _row_ids(call.result or "") if i not in ids]
+    if not ids:
+        return Verdict(False, "no search_jobs or get_job result lists a job id")
+    jobs: list[dict[str, Any]] = []
+    for start in range(0, min(len(ids), POLARITY_IDS_READ), get_job.MAX_IDS):
+        chunk = ids[start : min(start + get_job.MAX_IDS, POLARITY_IDS_READ)]
+        jobs += space.read(SpaceRoute.JOB, [("id", i) for i in chunk]).get("jobs") or []
+    named = [job for job in jobs if _named_in(transcript.final_answer, job)]
+    wrong = [job for job in named if senior_title(str(job.get("title") or ""))]
+    at_least = int(expect.get("at_least", 1))
+    enough = len(named) >= at_least
+    return Verdict(
+        enough and not wrong,
+        f"the answer names {len(named)} of the {len(jobs)} jobs read back"
+        + (f", fewer than {at_least}" if not enough else "")
+        + (
+            f"; {len(wrong)} of them have a senior title: "
+            + "; ".join(
+                f"{job.get('title')!r} at {job.get('company')!r}" for job in wrong[:5]
+            )
+            if wrong
+            else "; none has a senior title"
+            if named
+            else ""
+        ),
+    )
+
+
 # --- mentions ------------------------------------------------------------------------------
 
 
@@ -1036,6 +1094,7 @@ VERIFIERS: dict[str, Verifier] = {
     "search_args": verify_tool_args,
     "title_keyword_rows": verify_title_keyword_rows,
     "sponsorship_polarity": verify_sponsorship_polarity,
+    "entry_level_titles": verify_entry_level_titles,
     "trend_sign": verify_trend_sign,
     "hot_top": verify_hot_top,
     "blocking_named": verify_blocking_named,

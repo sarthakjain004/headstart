@@ -513,6 +513,15 @@
       "verifier": "sponsorship_polarity",
       "expect": {"at_least": 1},
       "why": "Round-3 critique P0-1 (ADR-0333): a keyword search for 'sponsorship' in descriptions led with jobs refusing it (36 of 40 sampled did), and t13 passed while checking only that a description search ran. The verifier judges the answer's truth, not its arguments, and apart from the Space's own rules, so it can see their errors (round-3 review SP8): every row the search_jobs and get_job calls listed is read back from /job, and no job the answer names may be one that does not offer sponsorship. A job in the 660 descriptions a person labelled for ADR-0333 (tests/fixtures/work_authorization_labelled.jsonl) is judged by its label, offers or mixed passing; any other by a plain negation check ('no', 'not', 'without', 'refuse', 'citizenship required') within five words of a sponsorship word in the sentences /job quotes. It catches a labelled job labelled refuses or none, and an unlabelled one whose quoted sponsorship sentence negates. It cannot catch an unlabelled job whose refusal no quoted sentence states, and it fails a right answer whose job offers sponsorship in a sentence that also negates ('no matter your visa status, we sponsor'). The work_authorization offers_sponsorship filter is the way to pass; a keyword answer passes only if every job it names offers it."
+    },
+    {
+      "id": "t37",
+      "prompt": "I'm a new grad with no experience, find me backend jobs in the US.",
+      "verifier": "entry_level_titles",
+      "expect": {
+        "at_least": 1
+      },
+      "why": "Round-4 critique P0-1 (ADR-0357): stated experience was the smallest years clause in a description, so Google's senior roles ('5 years of software development ... 1 year of software design') read 1+ years and a new graduate's max_years search led with Capital One Sr. Managers. The verifier judges the answer by title, apart from the Space's experience reading: every row the search_jobs and get_job calls listed is read back from /job, and no job the answer names may have Senior, Sr, Staff, Principal, Manager, Director or Lead in its title without an Associate or Junior qualifier. It cannot catch a senior job whose title says nothing of it, and it fails a right answer naming a Lead-titled apprenticeship."
     }
   ],
   "heldout_sha256": "801e7149bc71c42e7b346dcf089ea20f87d1e0035d989b3dba8ffb50fe055e4d"

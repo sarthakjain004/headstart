@@ -953,6 +953,88 @@ def test_sponsorship_polarity_fails_an_answer_naming_no_job(ev):
     assert not verdict.passed and "fewer than 1" in verdict.detail
 
 
+# --- entry_level_titles --------------------------------------------------------------------
+
+
+def _titled_space(*jobs):
+    """`/job` answering ``jobs``, as (id, title, company), to every read."""
+    served = [{"id": i, "title": t, "company": c} for i, t, c in jobs]
+    return FakeSpace({SpaceRoute.JOB: {"jobs": served, "missing": []}})
+
+
+_ENTRY_JOBS = (
+    ("teamtailor:threemagmbh:07fb", "Backend Engineer I", "Threema AG"),
+    (
+        "ashby:webai:daf8",
+        "Sr. Manager, Software Engineering, Back End",
+        "Capital One",
+    ),
+    ('ashby:webai:"quoted"', "Associate Lead Backend Engineer", "webAI"),
+)
+
+
+@pytest.mark.parametrize(
+    ("title", "senior"),
+    [
+        ("Senior Software Engineer, Generative AI", True),
+        ("Sr. Manager, Software Engineering", True),
+        ("Staff Backend Engineer", True),
+        ("Tech Lead, Payments", True),
+        ("Principal DevOps Engineer", True),
+        ("Associate Product Manager", False),
+        ("Junior Backend Developer (Lead track)", False),
+        ("Backend Engineer, New Grad", False),
+        ("Leadership Development Program Engineer", False),
+    ],
+)
+def test_senior_title(ev, title, senior):
+    assert ev.senior_title(title) is senior
+
+
+def test_entry_level_titles_passes_an_answer_naming_only_entry_titles(ev):
+    transcript = _transcript(
+        ev,
+        [("search_jobs", {"max_years": 0}, _RUST_ROWS, False)],
+        answer="Backend Engineer I at Threema AG, and webAI's Associate Lead Backend Engineer.",
+    )
+    verdict = ev.verify_entry_level_titles(
+        {"at_least": 1}, transcript, _titled_space(*_ENTRY_JOBS)
+    )
+    assert verdict.passed, verdict.detail
+    assert "names 2 of the 3 jobs read back; none has a senior title" in verdict.detail
+
+
+def test_entry_level_titles_fails_an_answer_naming_a_senior_title(ev):
+    transcript = _transcript(
+        ev,
+        [("search_jobs", {"max_years": 1}, _RUST_ROWS, False)],
+        answer="Try ashby:webai:daf8 and Backend Engineer I at Threema AG.",
+    )
+    verdict = ev.verify_entry_level_titles(
+        {"at_least": 1}, transcript, _titled_space(*_ENTRY_JOBS)
+    )
+    assert not verdict.passed
+    assert (
+        "1 of them have a senior title: 'Sr. Manager, Software Engineering, Back End' at "
+        "'Capital One'" in verdict.detail
+    )
+
+
+def test_entry_level_titles_fails_an_answer_naming_no_job(ev):
+    transcript = _transcript(
+        ev,
+        [("search_jobs", {"max_years": 0}, _RUST_ROWS, False)],
+        answer="Many companies hire new graduates.",
+    )
+    verdict = ev.verify_entry_level_titles(
+        {"at_least": 1}, transcript, _titled_space(*_ENTRY_JOBS)
+    )
+    assert not verdict.passed and "fewer than 1" in verdict.detail
+    assert not ev.verify_entry_level_titles(
+        {"at_least": 1}, _transcript(ev, [], answer="Threema AG"), _titled_space()
+    ).passed
+
+
 def test_sponsorship_polarity_reads_get_job_rows_and_needs_some(ev):
     empty = _transcript(ev, [], answer="Threema AG")
     assert not ev.verify_sponsorship_polarity(
@@ -1632,7 +1714,8 @@ def test_the_recording_covers_every_task_whose_verifier_reads_tool_results(ev):
     def reads_results(task):
         checks = (task.get("expect") or {}).get("checks") or [task]
         return any(
-            c["verifier"] in ("blocking_named", "title_keyword_rows")
+            c["verifier"]
+            in ("blocking_named", "title_keyword_rows", "entry_level_titles")
             or {"tool_results_all", "answer_carries", "answer_any"}
             & set(c.get("expect") or {})
             for c in checks
