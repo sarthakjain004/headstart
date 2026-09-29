@@ -8,14 +8,14 @@ which filter is to blame, named as this tool names it. A concise answer asks `/f
 total alone (``counts=total``, ADR-0274); only ``detail=full`` pays for every option's count.
 
 A row carries its posting's age, flagged past a year, and its employment type as scraped beside
-the `employment_type` values it counts as. Rows on one page sharing a company and a title
-(brackets aside: "Backend Developer (Peru)", "(Chile)") are listed under the first of them, with
-only what differs, so one posting copied per country reads as one; every id and link stays.
+the `employment_type` values it counts as, and its company as the Company directory names it when
+the served name is only its Board's host (`company_names`). Rows on one page that copy one
+posting — per country, or on two Boards of its employer (`posting_copies`) — are listed under
+the first of them, with only what differs; every id and link stays.
 """
 
 from __future__ import annotations
 
-import re
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime
 from typing import Any
@@ -27,7 +27,13 @@ from headstart.search_filters import (
     india_filter,
     india_gazetteer,
 )
-from headstart.space_mcp import company_scope, role_families, scraped_text
+from headstart.space_mcp import (
+    company_names,
+    company_scope,
+    posting_copies,
+    role_families,
+    scraped_text,
+)
 from headstart.space_mcp.space_client import SpaceClient, SpaceRoute
 from headstart.space_mcp.space_tool import SpaceTool
 
@@ -250,7 +256,7 @@ def _where(row: dict[str, Any]) -> str:
 def _row(number: int, row: dict[str, Any], facts: list[str]) -> str:
     said = [
         scraped_text.quoted(row.get("title")),
-        scraped_text.quoted(row.get("company"), SHORT_FIELD),
+        company_names.said(row, SHORT_FIELD),
         *facts,
     ]
     return f"{number:>2}. {_score(row)}{' · '.join(said)}\n    {_where(row)}"
@@ -264,14 +270,11 @@ def _also(
     head_facts: list[str],
 ) -> str:
     """A row listed under an earlier one on its page: only what differs from that one."""
-    said = [
-        scraped_text.quoted(row.get(field), limit)
-        for field, limit in (
-            ("title", scraped_text.FIELD_LIMIT),
-            ("company", SHORT_FIELD),
-        )
-        if row.get(field) != head.get(field)
-    ]
+    said = []
+    if row.get("title") != head.get("title"):
+        said.append(scraped_text.quoted(row.get("title")))
+    if row.get("company") != head.get("company"):
+        said.append(company_names.said(row, SHORT_FIELD))
     said += [fact for fact in facts if fact not in head_facts]
     return (
         f"    also #{number}: {_score(row)}{' · '.join(said) or 'as above'}\n"
@@ -279,28 +282,17 @@ def _also(
     )
 
 
-def _title_stem(title: Any) -> str:
-    """A title case-blind with its bracketed parts dropped: what per-country copies share."""
-    return " ".join(
-        re.sub(r"\([^)]*\)|\[[^\]]*\]", " ", str(title or "")).lower().split()
-    )
-
-
 def _page_lines(
     first: int, rows: list[dict[str, Any]], experience_filtered: bool
 ) -> tuple[list[str], bool]:
-    """One page's rows numbered from ``first``, and whether any went under another: a row sharing
-    an earlier row's company and title stem is listed under it as "also #N". Only within the page,
-    so paging and the header's row numbers are the Space's."""
+    """One page's rows numbered from ``first``, and whether any went under another: a row copying
+    an earlier row's posting (`posting_copies`) is listed under it as "also #N". Only within the
+    page, so paging and the header's row numbers are the Space's."""
     today = _today()
     facts = [_facts(row, today, experience_filtered) for row in rows]
-    groups: dict[Any, list[int]] = {}
-    for i, row in enumerate(rows):
-        stem = _title_stem(row.get("title"))
-        company = str(row.get("company") or "").casefold().strip()
-        groups.setdefault((company, stem) if stem else i, []).append(i)
+    groups = posting_copies.groups(rows)
     lines = []
-    for head, *others in groups.values():
+    for head, *others in groups:
         lines.append(_row(first + head, rows[head], facts[head]))
         lines += [
             _also(first + i, rows[i], facts[i], rows[head], facts[head]) for i in others
@@ -493,6 +485,7 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
         rows_asked = pool.submit(client.read, SpaceRoute.SEARCH, params)
         facets_asked = pool.submit(client.read, SpaceRoute.FACETS, counted)
         rows, facets = rows_asked.result(), facets_asked.result()
+    rows = company_names.named(client, rows)
     total = int(facets.get("total") or 0)
     k, page = int(arguments["limit"]), int(arguments["page"])
     lines = [_scope_line(arguments, scope)]
@@ -518,8 +511,10 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
         )
         if grouped:
             lines.append(
-                "A row with the same company and title as one above it (brackets aside) is "
-                "listed under it as 'also #N', with only what differs."
+                "A row repeating one above it is listed under it as 'also #N', with only what "
+                "differs: the same company and title (brackets aside), or the same title and "
+                "place under another spelling of the company, as one posting on two of its "
+                "Boards is."
             )
         lines += page_lines
         shown_to = first + len(rows) - 1

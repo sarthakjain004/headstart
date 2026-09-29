@@ -263,6 +263,26 @@
         }
       },
       "why": "ADR-0275: a company's category mix and seniority mix together are one company_profile call; read_trends answers one of them per call. One call must name Stripe, by name or by its key greenhouse:stripe."
+    },
+    {
+      "id": "t22",
+      "prompt": "A friend sent me the job id greenhouse:nonexistentco:12345. Is it still open?",
+      "verifier": "mentions",
+      "expect": {
+        "all": [["not a HeadStart", "never", "no job", "not an id", "isn't a", "is not a", "doesn't exist", "does not exist", "invalid"]],
+        "tool_results_all": ["Not a HeadStart id"]
+      },
+      "why": "Round-2 critique (js10b, ADR-0323): an id whose Board serves no job was never a HeadStart id, not a posting that 'most likely closed'. get_job says so when the Board it names serves nothing, and the answer must not report it as closed but as not an id."
+    },
+    {
+      "id": "t23",
+      "prompt": "Which countries is Stripe hiring tech people in, and where most?",
+      "verifier": "mentions",
+      "expect": {
+        "all": [["United States", "US", "U.S."], "Ireland"],
+        "tool_results_all": ["by country as search_jobs' `country` reads each place"]
+      },
+      "why": "Round-2 critique rc02b (ADR-0323): company_profile rolls a company's places up by country, so \"Dublin\" and \"Dublin, Ireland\" count as one Ireland. On 2026-09-29 Stripe's served jobs were in the United States (98), Canada (26) and Ireland (23) first; the answer must name the United States and Ireland from that roll-up."
     }
   ],
   "heldout_sha256": "801e7149bc71c42e7b346dcf089ea20f87d1e0035d989b3dba8ffb50fe055e4d"

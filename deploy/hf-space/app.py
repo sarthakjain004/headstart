@@ -374,11 +374,11 @@ app.session_interface = _AnswersLeaveTheSessionAlone()
 #
 # The read routes answer anyone as well, so that anyone can use HeadStart's MCP server
 # (ADR-0258): Search and its Facet counts, Trends, Hot, the two company lookups, a Job read
-# by id (ADR-0277) and a company's locations (ADR-0275). None writes, and none serves one
-# Account's records to another: a signed-in caller's own session still applies its follow/hide
-# clause to /search and /facets (`_company_where`), and an anonymous one gets none. Every Account
-# route stays behind the wall, and the page at `/` still shows the door until its visitor signs
-# in. Every caller is rate-limited on them (`_limit_each_caller`).
+# by id (ADR-0277), and a company's locations (ADR-0275) and levels (ADR-0323). None writes,
+# and none serves one Account's records to another: a signed-in caller's own session still
+# applies its follow/hide clause to /search and /facets (`_company_where`), and an anonymous
+# one gets none. Every Account route stays behind the wall, and the page at `/` still shows the
+# door until its visitor signs in. Every caller is rate-limited on them (`_limit_each_caller`).
 _READ_ROUTES = frozenset(
     {
         "/search",
@@ -389,6 +389,7 @@ _READ_ROUTES = frozenset(
         "/companies/lookup",
         "/job",
         "/companies/locations",
+        "/companies/levels",
     }
 )
 _PUBLIC_PATHS = {
@@ -659,7 +660,8 @@ def _keep_static_for_the_boot(response):
 # 4: /job (a Job read by id, with its description and whether the latest scrape missed it), and
 # `like=` on /search and /facets (ADR-0277).
 # 5: /companies/locations (ADR-0275).
-_AGENT_API_VERSION = 5
+# 6: each location's country on /companies/locations, and /companies/levels (ADR-0323).
+_AGENT_API_VERSION = 6
 
 
 @app.after_request
@@ -813,7 +815,7 @@ def read_jobs():
     search field plus the description (cut at ``description_limit``), department, the raw stated
     experience and ``unconfirmed`` — whether the latest scrape of its Board missed it, or null
     where this deployment does not know. An id the table does not hold is listed in ``missing``,
-    not refused: a posting HeadStart evicted has most likely closed, which is an answer."""
+    not refused: it has closed, or was never an id, and either is an answer."""
     ids = list(
         dict.fromkeys(i.strip() for i in request.args.getlist("id") if i.strip())
     )
@@ -1744,6 +1746,18 @@ def company_locations():
     follow or hide list reaches it; a request naming no Board is a 400."""
     try:
         return jsonify(_searcher.locations(request.args))
+    except ValueError as exc:
+        body, status = job_search.refusal(exc)
+        return jsonify(body), status
+
+
+@app.route("/companies/levels")
+def company_levels():
+    """How many served jobs on the ``?board=`` Boards (repeatable, 1 to 200) are in each Trends
+    level band, for an agent's company profile (ADR-0323): ``JobSearch.levels`` documents the
+    answer. Scoped by Boards alone, as ``/companies/locations`` is; naming no Board is a 400."""
+    try:
+        return jsonify(_searcher.levels(request.args))
     except ValueError as exc:
         body, status = job_search.refusal(exc)
         return jsonify(body), status

@@ -572,6 +572,104 @@ def test_a_page_with_no_copies_says_nothing_about_them():
     assert "also #" not in text and "listed under it" not in text
 
 
+def test_one_posting_on_two_boards_under_two_spellings_is_listed_once():
+    """The round-2 critique's Eversource page: its Radancy front and its Workday Board."""
+    rows = [
+        _job(
+            1,
+            id="radancy:jobs.eversource.com:101283120016",
+            title="IT Associate Software Engineer (Hybrid)",
+            company="EVERSOURCE",
+            location="Berlin, CT, United States of America; Westwood, Massachusetts",
+        ),
+        _job(
+            2,
+            id="workday:eversource/externalsite:R-031045",
+            title="IT Associate Software Engineer (Hybrid)",
+            company="Eversource Energy",
+            location="Berlin, CT; Westwood, MA; Manchester, NH",
+        ),
+        _job(
+            3,
+            title="IT Associate Software Engineer",
+            company="Eversource Energy",
+            location="Hartford, CT",
+        ),
+    ]
+    text = server.call(_search_space(rows), "search_jobs", {"query": "x"})
+    assert "or the same title and place under another spelling of the company" in text
+    assert 'also #2: 0.88 "Eversource Energy" · "Berlin, CT; Westwood, MA;' in text
+    # Another place under the other spelling is not the same posting.
+    assert ' 3. 0.87 "IT Associate Software Engineer" · "Eversource Energy"' in text
+    for job_id in (
+        "radancy:jobs.eversource.com:101283120016",
+        "workday:eversource/externalsite:R-031045",
+    ):
+        assert f'id "{job_id}"' in text
+
+
+@pytest.mark.parametrize(
+    ("one", "other"),
+    [
+        ("Booz Allen", "Booz Allen Hamilton"),
+        ("Staples Inc.", "Staples, Inc."),
+        ("The Toro Company", "Toro"),
+    ],
+)
+def test_spellings_of_one_company_are_its_words_less_legal_suffixes(one, other):
+    rows = [
+        _job(1, title="Data Engineer", company=one, location="McLean, VA"),
+        _job(2, title="Data Engineer", company=other, location="McLean, Virginia"),
+    ]
+    text = server.call(_search_space(rows), "search_jobs", {})
+    assert "also #2" in text
+
+
+@pytest.mark.parametrize(
+    ("one", "other"),
+    [("Meta", "Metaview"), ("Bosch", "Boschung")],
+)
+def test_other_companies_are_not_copies_even_at_one_title_and_place(one, other):
+    rows = [
+        _job(1, title="Data Engineer", company=one, location="London"),
+        _job(2, title="Data Engineer", company=other, location="London"),
+    ]
+    text = server.call(_search_space(rows), "search_jobs", {})
+    assert "also #" not in text
+
+
+def test_a_row_named_only_by_its_board_host_shows_the_directory_name():
+    rows = [
+        _job(
+            1,
+            id="oracle:hcbt.fa.em2.oraclecloud.com:5",
+            company="hcbt.fa.em2.oraclecloud.com",
+        ),
+        _job(2),
+    ]
+    kotak = _suggestion("oracle:hcbt.fa.em2.oraclecloud.com", "Kotak")
+    space = _search_space(rows, companies_lookup={"companies": [kotak]})
+    text = server.call(space, "search_jobs", {})
+    assert ' 1. 0.89 "Backend Engineer 1" · "Kotak" (directory name) · ' in text
+    assert 'oraclecloud.com"' not in text.split("id ")[0]
+    assert ' 2. 0.88 "Backend Engineer 2" · "Razorpay" · ' in text
+    assert space.params_of(R.COMPANIES_LOOKUP) == [
+        [("board", "oracle:hcbt.fa.em2.oraclecloud.com")]
+    ]
+
+
+def test_a_directory_the_space_cannot_read_leaves_the_rows_unnamed_not_failed():
+    rows = [
+        _job(1, id="oracle:x.fa.us2.oraclecloud.com:5", company="", title="SRE"),
+        _job(2, id="oracle:y.fa.us2.oraclecloud.com:6", company="", title="SRE"),
+    ]
+    space = _search_space(rows, companies_lookup=sc.SpaceFailed("down"))
+    text = server.call(space, "search_jobs", {})
+    assert ' 1. 0.89 "SRE" · no company name · ' in text
+    # Two Boards that name no company are not thereby one company.
+    assert ' 2. 0.88 "SRE" · no company name · ' in text
+
+
 def test_a_category_label_reaches_the_space_as_its_id_and_is_said_with_its_label():
     stripe = _suggestion("greenhouse:stripe", "Stripe")
     space = _search_space([_job(1)], companies_suggest={"companies": [stripe]})
@@ -665,7 +763,9 @@ def _posting(n, **overrides):
     return job
 
 
-def _job_space(jobs, **answers):
+def _job_space(jobs, unheld=(), **answers):
+    """`/job` over ``jobs``; `/facets` counts one job on every Board but those in ``unheld``."""
+
     def read(params):
         asked = [value for key, value in params if key == "id"]
         found = {job["id"]: job for job in jobs}
@@ -676,7 +776,11 @@ def _job_space(jobs, **answers):
             "newest_tick": "2026-09-28T06:23:08+00:00",
         }
 
-    return FakeSpace(job=read, **answers)
+    def count(params):
+        board = dict(params)["board"]
+        return {"total": 0 if board in unheld else 1}
+
+    return FakeSpace(job=read, **({"facets": count} | answers))
 
 
 def test_a_posting_is_read_whole_with_every_scraped_field_quoted():
@@ -700,15 +804,87 @@ def test_a_posting_is_read_whole_with_every_scraped_field_quoted():
     assert text.endswith("Data as of the trends tick 2026-09-28T06:23:08+00:00.")
 
 
-def test_a_missing_id_is_most_likely_closed():
+def test_a_missing_id_has_closed_or_was_never_an_id():
     space = _job_space([_posting(1)])
     text = server.call(
-        space, "get_job", {"ids": ["lever:razorpay:0001", "greenhouse:gone:9"]}
+        space,
+        "get_job",
+        {
+            "ids": [
+                "lever:razorpay:0001",
+                "greenhouse:stripe:0000",
+                "greenhouse:stripe:9",
+            ]
+        },
     )
-    assert text.startswith("Read 1 of 2 jobs.")
-    assert 'Not in the index: "greenhouse:gone:9".' in text
-    assert "two consecutive scrapes of its Board miss it" in text
-    assert "most likely closed" in text
+    assert text.startswith("Read 1 of 3 jobs.")
+    assert (
+        'Not in the index now: "greenhouse:stripe:0000", "greenhouse:stripe:9". Each has '
+        "closed, or was never an id: HeadStart removes a posting once two consecutive "
+        "scrapes of its Board miss it."
+    ) in text
+    # Its Board is asked about once, for its total alone.
+    assert space.params_of(R.FACETS) == [
+        [("strict", "1"), ("board", "greenhouse:stripe"), ("counts", "total")]
+    ]
+    assert "likely" not in text
+
+
+def test_a_missing_id_whose_board_serves_nothing_was_not_a_headstart_id():
+    space = _job_space([], unheld={"greenhouse:nonexistentco"})
+    text = server.call(
+        space,
+        "get_job",
+        {"ids": ["greenhouse:nonexistentco:12", "greenhouse:stripe:0000"]},
+    )
+    assert (
+        'Not in the index now: "greenhouse:stripe:0000". Each has closed, or was never an id'
+        in text
+    )
+    assert (
+        'Not a HeadStart id: "greenhouse:nonexistentco:12". HeadStart serves no job on the '
+        'Board it names, "greenhouse:nonexistentco"; copy ids whole from search_jobs.'
+    ) in text
+
+
+def test_a_board_count_the_space_cannot_give_leaves_the_plain_sentence():
+    space = _job_space([], facets=sc.SpaceFailed("down"))
+    text = server.call(space, "get_job", {"ids": ["greenhouse:x:1"]})
+    assert 'Not in the index now: "greenhouse:x:1". Each has closed' in text
+    assert "Not a HeadStart id" not in text
+
+
+def test_a_company_named_only_by_its_board_host_is_shown_by_its_directory_name():
+    aah = _posting(
+        1,
+        id="workday:aah/External:R244133",
+        company="aah.wd5.myworkdayjobs.com/external",
+    )
+    pod = _posting(2, id="oracle:egud.fa.us2.oraclecloud.com:7", company="")
+    named = _posting(3, id="ashby:checkout.com:9", company="Checkout.com")
+    advocate = _suggestion("workday:aah/External", "Advocate Health")
+
+    def lookup(params):
+        boards = [value for key, value in params if key == "board"]
+        if boards != ["workday:aah/External"]:
+            raise sc.InvalidRequest("unknown company")
+        return {"companies": [advocate]}
+
+    space = _job_space([aah, pod, named], companies_lookup=lookup)
+    text = server.call(space, "get_job", {"ids": [aah["id"], pod["id"], named["id"]]})
+    assert '1. "Backend Engineer 1" at "Advocate Health" (directory name)' in text
+    assert '2. "Backend Engineer 2" at no company name' in text
+    assert '3. "Backend Engineer 3" at "Checkout.com"\n' in text
+    assert "myworkdayjobs" not in text.split("id ")[0]
+    # One lookup of both Boards, refused for the pod, then each alone.
+    assert [p for p in space.params_of(R.COMPANIES_LOOKUP)] == [
+        [
+            ("board", "workday:aah/External"),
+            ("board", "oracle:egud.fa.us2.oraclecloud.com"),
+        ],
+        [("board", "workday:aah/External")],
+        [("board", "oracle:egud.fa.us2.oraclecloud.com")],
+    ]
 
 
 def test_an_unconfirmed_posting_says_it_may_have_closed_and_unknown_says_nothing():
@@ -762,9 +938,40 @@ def test_a_long_description_says_how_much_is_shown_and_how_to_read_more():
         {"ids": ["lever:razorpay:0001"], "max_chars_per_job": 1_000},
     )
     assert (
-        "Description, 20,000 characters, the first 997 shown; ask for fewer ids" in text
+        "Description, 20,000 characters, the first 997 shown; raise max_chars_per_job up "
+        "to 12,000 to read more."
+    ) in text
+
+
+def test_a_description_cut_by_the_shared_budget_says_to_ask_for_that_id_alone():
+    """Asked 12,000 for two, each shows 9,000: raising max_chars_per_job cannot help."""
+    jobs = [
+        _posting(n, description="y" * 9_699, description_chars=9_699) for n in (1, 2)
+    ]
+    text = server.call(
+        _job_space(jobs),
+        "get_job",
+        {"ids": [j["id"] for j in jobs], "max_chars_per_job": 12_000},
     )
-    assert "raise max_chars_per_job up to 12,000, to read more." in text
+    assert text.count("the first 8,997 shown; ask for this id alone to read more.") == 2
+    assert "raise max_chars_per_job" not in text
+
+
+def test_a_description_cut_below_its_share_says_both_ways_to_read_more():
+    jobs = [
+        _posting(n, description="y" * 9_699, description_chars=9_699) for n in (1, 2)
+    ]
+    text = server.call(
+        _job_space(jobs),
+        "get_job",
+        {"ids": [j["id"] for j in jobs], "max_chars_per_job": 2_000},
+    )
+    assert (
+        text.count(
+            "raise max_chars_per_job up to 9,000, or ask for this id alone, to read more."
+        )
+        == 2
+    )
 
 
 def test_a_description_the_space_cut_says_so():
@@ -801,7 +1008,10 @@ def test_five_postings_share_the_description_budget():
         {"ids": [j["id"] for j in jobs], "max_chars_per_job": 12_000},
     )
     assert (
-        text.count("12,000 characters, the first 3,597 shown; ask for fewer ids") == 5
+        text.count(
+            "12,000 characters, the first 3,597 shown; ask for this id alone to read more."
+        )
+        == 5
     )
 
 
@@ -832,11 +1042,12 @@ def test_a_get_job_answer_stays_inside_its_budget(found):
         )
         for n in range(found)
     ]
-    missing = [f"gone:{n}:" + "m" * 290 for n in range(5 - found)]
+    missing = [f"gone{n}:" + "b" * 200 + ":" + "m" * 90 for n in range(5 - found)]
     tool = server.BY_NAME["get_job"]
     text = _answer(
         "get_job",
-        _job_space(jobs),
+        # No Board of a missing id serves a job: the longest way to say it.
+        _job_space(jobs, unheld={i.rsplit(":", 1)[0] for i in missing}),
         {"ids": [j["id"] for j in jobs] + missing, "max_chars_per_job": 12_000},
     )
     assert len(text) <= tool.max_chars
@@ -1753,12 +1964,50 @@ def _profile_trends(n_categories=3):
 
 
 def _locations(n=3):
+    """``n`` countries of three places each, as `/companies/locations` rolls them up."""
+
+    def places(code):
+        return [{"location": f"{code} place {i}", "count": 30 - i} for i in range(3)]
+
+    codes = ["US", "IE", "GB", "DE", "FR", "IN", "CA", "SG", "JP", "AU", "BR"][:n]
     return {
         "jobs": 224,
         "unstated": 21,
         "distinct": 97,
         "capped": False,
-        "locations": [{"location": f"Place {i}", "count": 30 - i} for i in range(n)],
+        "locations": [],
+        "countries": [
+            {"code": code, "jobs": 100 - i, "places": places(code)}
+            for i, code in enumerate(codes)
+        ],
+        "no_country": {
+            "jobs": 23,
+            "places": [
+                {"location": "N/A", "count": 20},
+                {"location": "Remote", "count": 3},
+            ],
+        },
+        "places_unread": 0,
+    }
+
+
+def _levels(*counts):
+    labels = [
+        ("intern", "Internships"),
+        ("entry", "Entry level (0–1 yrs)"),
+        ("mid", "Mid level (2–4 yrs)"),
+        ("senior", "Senior (5–7 yrs)"),
+        ("staff", "Staff and above (8+ yrs)"),
+        ("unspecified", "Experience not stated"),
+    ]
+    counts = counts or (3, 12, 40, 60, 20, 89)
+    return {
+        "jobs": sum(counts),
+        "capped": False,
+        "bands": [
+            {"band": band, "label": label, "count": count}
+            for (band, label), count in zip(labels, counts, strict=True)
+        ],
     }
 
 
@@ -1772,6 +2021,7 @@ def _profile_space(**answers):
         "facets": _profile_facets(),
         "trends": _profile_trends(),
         "companies_locations": _locations(),
+        "companies_levels": _levels(),
     }
     return FakeSpace(**{**defaults, **answers})
 
@@ -1792,9 +2042,8 @@ def test_a_profile_reads_the_company_as_read_trends_does_and_scopes_every_read_t
     assert space.params_of(R.TRENDS) == [
         [("since", "2026-08-30T00:00:00+00:00"), ("company", "greenhouse:stripe")]
     ]
-    assert space.params_of(R.COMPANIES_LOCATIONS) == [
-        [("board", "greenhouse:stripe"), ("limit", "10")]
-    ]
+    assert space.params_of(R.COMPANIES_LOCATIONS) == [[("board", "greenhouse:stripe")]]
+    assert space.params_of(R.COMPANIES_LEVELS) == [[("board", "greenhouse:stripe")]]
     assert text.startswith(
         'Company: "Stripe" (greenhouse:stripe, 1 Board, 218 tech openings). A name is read '
         "as the directory's largest company of that name"
@@ -1862,25 +2111,53 @@ def test_a_profile_lists_a_hidden_family_last_as_other():
     )
 
 
-def test_a_profile_quotes_the_places_as_the_employer_wrote_them():
-    text = server.call(_profile_space(), "company_profile", {"company": "Stripe"})
+def test_a_profile_rolls_its_places_up_by_country_quoting_each_as_written():
+    """rc02b: "N/A" 23, "Dublin" 15 and "Dublin, Ireland" 4 were three separate places."""
+    text = server.call(
+        _profile_space(companies_locations=_locations(10)),
+        "company_profile",
+        {"company": "Stripe"},
+    )
     assert (
-        "Top locations of its 224 served jobs, as the employer wrote them (97 distinct, 21 "
-        'naming none): "Place 0" 30 · "Place 1" 29 · "Place 2" 28.' in text
+        "Where its 224 served jobs are, by country as search_jobs' `country` reads each "
+        "place (a job naming two countries counts in both), with its top places as written: "
+        'United States 100 ("US place 0" 30 · "US place 1" 29 · "US place 2" 28) · '
+        'Ireland 99 ("IE place 0" 30 ·' in text
+    )
+    assert "Singapore 93" in text and "Japan" not in text  # eight countries are listed
+    assert " · …2 more countries." in text
+    assert (
+        'No country is read from the places of 23 ("N/A" 20 · "Remote" 3). 21 name no '
+        "place." in text
+    )
+
+
+def test_a_profile_whose_places_name_no_country_says_so():
+    locations = {**_locations(0), "unstated": 0}
+    text = server.call(
+        _profile_space(companies_locations=locations),
+        "company_profile",
+        {"company": "Stripe"},
+    )
+    assert (
+        "Where its 224 served jobs are: no place names a country the `country` filter "
+        'reads. No country is read from the places of 23 ("N/A" 20 · "Remote" 3).'
+        in text
     )
 
 
 def test_a_profile_breaks_its_served_jobs_down_in_this_tools_words():
     text = server.call(_profile_space(), "company_profile", {"company": "Stripe"})
+    # Its Board states no employment type, so that line would read as no full-time jobs.
+    assert "employment type" not in text
+    assert "open to someone with at most" not in text
+    assert "a line whose every count is 0 left out" in text
     for line in (
         "  remote: 29",
         (
-            "  employment type: full-time 0 · part-time 0 · contract 0 · internship 0 (a job "
-            "whose Board states no type counts in none)"
-        ),
-        (
-            "  open to someone with at most: 0 years 18 · 2 years 63 · 5 years 167 · 10 years "
-            "224 (a job stating no experience counts at every level)"
+            "  level, each job once, in the Trends Level view's bands: Internships 3 · "
+            "Entry level (0–1 yrs) 12 · Mid level (2–4 yrs) 40 · Senior (5–7 yrs) 60 · "
+            "Staff and above (8+ yrs) 20 · Experience not stated 89"
         ),
         "  salary stated: 15",
         (
@@ -1933,7 +2210,7 @@ def test_a_profile_with_no_trend_reading_still_gives_the_rest():
         "No trend: the Space could not read this company's counts (KeyError: x)."
         in text
     )
-    assert "Top locations of its 224 served jobs" in text
+    assert "Where its 224 served jobs are" in text
 
 
 def test_a_company_profile_answer_stays_inside_its_budget():
@@ -1947,7 +2224,10 @@ def test_a_company_profile_answer_stays_inside_its_budget():
     for line in trends["reading"]["lines"]:
         line["label"] = "Systems Administration & IT Ops"
     locations = _locations(10)
-    for place in locations["locations"]:
+    for country in locations["countries"]:
+        for place in country["places"]:
+            place["location"] = long
+    for place in locations["no_country"]["places"]:
         place["location"] = long
     space = _profile_space(
         companies_suggest={"companies": [big, *others]},

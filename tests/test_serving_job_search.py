@@ -1632,8 +1632,10 @@ def test_like_applies_every_filter_as_a_query_does(served):
     assert [r["id"] for r in rows] == ["lever:acme:3", "lever:o'brien:5"]
 
 
-def test_like_naming_no_served_job_says_it_has_most_likely_closed(served):
-    with pytest.raises(ValueError, match="most likely closed"):
+def test_like_naming_no_served_job_says_it_has_closed_or_was_never_an_id(served):
+    with pytest.raises(
+        ValueError, match="in the index now: it has closed, or was never an id"
+    ):
         served.run({"like": "lever:gone:9"})
 
 
