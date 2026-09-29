@@ -8,8 +8,12 @@ The company name is the public board's ``<title>``, on the instance that answere
 page lives on ``jobs.eu.lever.co``, and asking ``jobs.lever.co`` for it 404s — which left every EU
 Board on its slug (57 Boards, 841 rows among the affected ones, 2026-09-24). Where the board page
 itself is disabled but a posting page still answers, that page's JSON-LD ``hiringOrganization``
-names the company instead (`veeva`, 157 rows). 79 global Boards had both disabled: their API
-lists postings whose hosted links 404 (368 rows).
+names the company instead (`veeva`, 157 rows).
+
+A Board can have both disabled while its API still lists postings: every link it would serve 404s,
+and so does each posting's ``applyUrl``. :meth:`LeverScraper.fetch_raw` checks for that on every
+scrape and serves nothing from such a Board, so its rows evict (ADR-0281; 53 Boards, 312 served rows
+on 2026-09-29).
 """
 
 from __future__ import annotations
@@ -27,6 +31,7 @@ from headstart.jobs.job import (
     requisition_of,
 )
 from headstart.network import http
+from headstart.network.fetcher import Fetcher
 from headstart.scrapers.base import BaseScraper, classify_exception
 from headstart.scrapers.country_codes import ISO_ALPHA2_NAMES
 from headstart.scrapers.job_posting_jsonld import find_job_posting, hiring_organization
@@ -127,6 +132,13 @@ class LeverScraper(BaseScraper):
     #: One posting's hosted page, for a Board whose board page is disabled (module docstring).
     _first_posting: str | None = None
 
+    def __init__(
+        self, slug: str, company: str | None = None, fetcher: Fetcher | None = None
+    ) -> None:
+        super().__init__(slug, company, fetcher)
+        # The hosted pages `_fetch_once` has answered this scrape, by URL.
+        self._pages: dict[str, Any] = {}
+
     def url(self) -> str:
         return self.listing_url_on(GLOBAL_API_HOST)
 
@@ -170,6 +182,32 @@ class LeverScraper(BaseScraper):
             self.ats, hiring_organization((posting or {}).get("hiringOrganization"))
         )
 
+    def _fetch_once(self, method: str, url: str, **kwargs: Any) -> Any:
+        """Base's one-attempt fetch, asked once per URL: :meth:`hosted_pages_disabled` and the
+        company-name read ask for the same board page and posting page, so the second asker reads
+        the first one's answer rather than spending a request. A request that raised is not kept."""
+        if url not in self._pages:
+            self._pages[url] = super()._fetch_once(method, url, **kwargs)
+        return self._pages[url]
+
+    def hosted_pages_disabled(self) -> bool:
+        """Whether this Board's hosted pages are switched off: its board page answers 404, and so
+        does one listed posting's ``hostedUrl`` (ADR-0281).
+
+        The posting is asked only when the board page 404s, because `veeva`'s board page 404s while
+        its postings answer. Only a 404 counts: a 5xx, a 429 or a request that raises reads as
+        enabled, so a transient failure never empties the Board.
+        """
+        for page in (self.board_page(), self._first_posting):
+            if not page:
+                return False
+            try:
+                if self._fetch_once("GET", page).status_code != 404:
+                    return False
+            except http.RequestsError:
+                return False
+        return True
+
     def fetch_raw(self) -> Any:
         # try the global instance, then EU; a 404 on both means the company isn't on Lever —
         # which must RAISE, not read as an empty board: swallowing it left dead boards
@@ -184,6 +222,17 @@ class LeverScraper(BaseScraper):
             self._first_posting = next(
                 (p.get("hostedUrl") for p in postings if p.get("hostedUrl")), None
             )
+            if postings and self.hosted_pages_disabled():
+                # `[]`, not a raise: the listing answered, so the Board stays in the eviction
+                # scope and its rows evict after ADR-0083's two consecutive absences (ADR-0200).
+                # Checked every scrape, so a Board that turns its pages back on is served again.
+                self._log.info(
+                    f"{self.board_key()}: hosted pages disabled — {self.board_page()} and "
+                    f"{self._first_posting} both answered 404, so none of its "
+                    f"{len(postings)} listed posting(s) has a working link; serving none "
+                    "(ADR-0281)"
+                )
+                return []
             return postings
         # Both instances 404: the company is not on Lever. Raised in the shape
         # `board_failures.is_gone` matches, rather than left to curl_cffi's message wording.

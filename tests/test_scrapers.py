@@ -12985,6 +12985,76 @@ def test_lever_reads_a_posting_only_when_the_board_page_is_gone(monkeypatch):
     assert labelled.company == "schmidt-entities"
 
 
+_LEVER_LISTING = "https://api.lever.co/v0/postings/acme?mode=json"
+_LEVER_BOARD_PAGE = "https://jobs.lever.co/acme"
+_LEVER_POSTING = "https://jobs.lever.co/acme/p1"
+
+
+def _lever_hosted_pages(board: int | Exception, posting: int | Exception):
+    """A Lever Board whose API lists one posting, and whose board page and posting page answer
+    ``board`` and ``posting`` — a status, or an exception to raise."""
+    listing = json.dumps(
+        [{"id": "p1", "text": "Backend Engineer", "hostedUrl": _LEVER_POSTING}]
+    )
+
+    def route(method, url, kwargs):
+        if url == _LEVER_LISTING:
+            return FakeResponse(text=listing)
+        answer = board if url == _LEVER_BOARD_PAGE else posting
+        if isinstance(answer, Exception):
+            return answer
+        return FakeResponse(answer, "<title>Acme</title>")
+
+    return FakeFetcher(route)
+
+
+def test_lever_serves_nothing_from_a_board_whose_hosted_pages_are_disabled(caplog):
+    """`latitudeinc`'s API listed 314 postings on 2026-09-29 while its board page and posting
+    pages all answered 404, and so did each `applyUrl`: every link it would serve is dead, so it
+    serves none and its rows evict (ADR-0281). The company-name read reuses both answers."""
+    from headstart.scrapers.lever import LeverScraper
+
+    fetcher = _lever_hosted_pages(board=404, posting=404)
+    with caplog.at_level(logging.INFO):
+        jobs = LeverScraper("acme", fetcher=fetcher).fetch()
+    assert jobs == []
+    assert "lever:acme: hosted pages disabled" in caplog.text
+    assert [r.url for r in fetcher.requests] == [
+        _LEVER_LISTING,
+        _LEVER_BOARD_PAGE,
+        _LEVER_POSTING,
+    ]
+
+
+@pytest.mark.parametrize(
+    ("board", "posting"),
+    [
+        (404, 200),  # `veeva`: the board page is off, its postings answer
+        (404, 503),
+        (404, 429),
+        (404, http.RequestsError("timed out")),
+        (503, 404),
+        (429, 404),
+        (http.RequestsError("timed out"), 404),
+    ],
+)
+def test_lever_serves_a_board_unless_both_hosted_pages_answer_404(board, posting):
+    """Only a 404 on both pages empties a Board: a transient failure on either must not."""
+    from headstart.scrapers.lever import LeverScraper
+
+    jobs = LeverScraper("acme", fetcher=_lever_hosted_pages(board, posting)).fetch()
+    assert [job.url for job in jobs] == [_LEVER_POSTING]
+
+
+def test_lever_asks_no_posting_page_when_the_board_page_answers():
+    from headstart.scrapers.lever import LeverScraper
+
+    fetcher = _lever_hosted_pages(board=200, posting=404)
+    jobs = LeverScraper("acme", fetcher=fetcher).fetch()
+    assert [job.url for job in jobs] == [_LEVER_POSTING]
+    assert [r.url for r in fetcher.requests] == [_LEVER_LISTING, _LEVER_BOARD_PAGE]
+
+
 def _ashby_graphql(name: str | None) -> str:
     return json.dumps({"data": {"organization": {"name": name} if name else None}})
 
