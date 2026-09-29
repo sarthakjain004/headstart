@@ -18,6 +18,7 @@ data/lancedb/jobs.lance/…             # the production `jobs` table LanceDB re
 data/descriptions/{ats}/…             # the ADR-0050 description store, append-only
 data/facts/job_facts/{stamp}.parquet  # what each scrape saw of every Job, tech or not (ADR-0330)
 data/facts/board_reads/{stamp}.parquet # every Board each run read, and its outcome (ADR-0330)
+data/facts/job_vectors/{tick}.parquet # closed Jobs' description vectors, float16 (ADR-0330)
 data/facts/listed_jobs.parquet        # the Listed set the next run's facts are diffed against
 data/state/board_priority.csv         # sticky per-board tech-priority EWMA (ADR-0022)
 data/state/published_dirs.json        # which roots were last published (ADR-0095)
