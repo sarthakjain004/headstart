@@ -123,6 +123,45 @@ _AGREEMENT = 0.9
 #: the amounts fall in two clusters, hourly up to 117.4 and annual from 51,300.
 _HOURLY_CEILING = 1_000
 
+#: A JSON-LD ``employmentType`` (or a visible label's value) is kept only if it holds one of these
+#: words, or is the lone letter ``F``. TalentBrew tenants write whatever their ATS field holds into
+#: ``employmentType``, and the page copies it verbatim (29 of 29 junk pages probed on 2026-09-29):
+#: org and shift codes (``SG``, ``BU``, ``SI``, ``DT``, ``FBENG``, ``1ST``, ``9``: 106, 85, 79, 58
+#: and 282 rows on ``www.capitalonecareers.com`` alone), pay grades (``Established``,
+#: ``Professional``, ``Standard``: ``careers.arm.com`` 340, ``careers.cargill.com`` 138,
+#: ``www.kaiserpermanentejobs.org`` 118) and department names (``Information Systems``,
+#: ``Software Engineering``). None names a type, and each would surface as a filter value. ``F``
+#: stays: ``jobs.appliedmaterials.com`` writes it on 1,009 rows and means Full time, which the
+#: filter reads from the raw value. Whole words only, so "International" is not an intern. Enums
+#: (``FULL_TIME``, ``PER_DIEM``) match too: ``_`` separates words here.
+_EMPLOYMENT_TYPE_WORDS = re.compile(
+    r"(?<![a-z])(?:full|part|time|permanent|regular|contract(?:or)?s?|temp(?:orary)?"
+    r"|intern(?:ship)?s?|casual|seasonal|freelance|fixed|salaried|hourly|per[ _]diem"
+    r"|apprentice(?:ship)?|volunteer)(?![a-z])|^F$",
+    re.IGNORECASE,
+)
+
+#: A job page's visible labels for the type, best first, on the 4 of 60 Boards sampled that state
+#: one outside JSON-LD (2026-09-29): ``jobs.jabil.com`` "Time Type" (428 rows),
+#: ``jobs.kansashealthsystem.com`` "Job Type" (21), ``careers.evotec.com`` "Working hours" and
+#: "Contract type" (12), ``jobs.rchsd.org`` "Schedule" (6). The hours outrank the contract type:
+#: evotec states "Full time" and "Permanent", and the first says more.
+_EMPLOYMENT_LABELS = (
+    "working hours",
+    "time type",
+    "schedule",
+    "job type",
+    "contract type",
+)
+_LABEL_SPAN = re.compile(
+    r'<span class="[^"]*\bjob-info\b[^"]*"[^>]*>\s*<b>\s*([^<]*?)\s*:?\s*</b>\s*([^<]*)</span>',
+    re.IGNORECASE,
+)
+_LABEL_DT_DD = re.compile(
+    r'<dt class="[^"]*\bjob-term[^"]*"[^>]*>\s*([^<]*?)\s*</dt>\s*<dd[^>]*>\s*([^<]*?)\s*</dd>',
+    re.IGNORECASE,
+)
+
 
 class RadancyScraper(BaseScraper):
     """One Radancy TalentBrew career front, keyed by its host (e.g. ``jobs.intuit.com``)."""
@@ -352,9 +391,12 @@ def _page_fields(page: str) -> dict[str, Any] | None:
     if node is None:
         return _meta_fields(page)
     title = _PAGE_TITLE.search(page)
+    fields = job_posting_fields(node)
     return {
         # Its `location` keeps every place, "; "-joined: 126 of 990 pages name more than one.
-        **job_posting_fields(node),
+        **fields,
+        "employment_type": _employment_type(fields["employment_type"])
+        or _visible_employment_type(page),
         "department": _meta(page, "gtm_tbcn_jobcategory"),
         "posted_at": _iso_date(node.get("datePosted")),
         "salary": _salary(node.get("baseSalary")),
@@ -364,6 +406,23 @@ def _page_fields(page: str) -> dict[str, Any] | None:
         "requisition": _requisition(node.get("identifier"))
         or requisition_of(_meta(page, "gtm_reqid")),
     }
+
+
+def _employment_type(value: Any) -> str | None:
+    """``value`` if it names an employment type (:data:`_EMPLOYMENT_TYPE_WORDS`), else None."""
+    text = value.strip() if isinstance(value, str) else ""
+    return text if _EMPLOYMENT_TYPE_WORDS.search(text) else None
+
+
+def _visible_employment_type(page: str) -> str | None:
+    """The type a job page states in a labelled span or definition list
+    (:data:`_EMPLOYMENT_LABELS`), best label first and gated like JSON-LD's; None when none."""
+    stated: dict[str, str] = {}
+    for label, value in (*_LABEL_SPAN.findall(page), *_LABEL_DT_DD.findall(page)):
+        kept = _employment_type(html.unescape(value))
+        if kept:
+            stated.setdefault(label.lower(), kept)
+    return next((stated[name] for name in _EMPLOYMENT_LABELS if name in stated), None)
 
 
 def _requisition(identifier: Any) -> str | None:
@@ -402,7 +461,7 @@ def _meta_fields(page: str) -> dict[str, Any] | None:
         )
         or None,
         "remote": None,
-        "employment_type": None,
+        "employment_type": _visible_employment_type(page),
         "department": _meta(page, "gtm_tbcn_jobcategory"),
         "posted_at": _us_date(_meta(page, "gtm_firstindex")),
         "salary": None,
