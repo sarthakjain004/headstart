@@ -614,7 +614,7 @@ def test_a_later_page_with_no_items_is_not_read_as_the_counter_over_stating(capl
     assert "over-states" not in logged
 
 
-# --- only what an active career site publishes (ADR-0303) -----------------------------------
+# --- only what an active career site publishes (ADR-0278) -----------------------------------
 
 
 def _site_statuses(**status_by_site: str) -> str:
@@ -665,7 +665,7 @@ def _served(fetcher: FakeFetcher) -> list[str]:
 def test_a_tenant_with_no_active_career_site_serves_nothing(caplog):
     """`egcu.fa.us6` (Masimo) on 2026-09-29: both its sites were `ORA_INACTIVE` while the
     host-wide listing still held 102 requisitions, and every link we served went to
-    `/errors/404`. It serves none, so its rows evict (ADR-0303), and reads no page to learn it."""
+    `/errors/404`. It serves none, so its rows evict (ADR-0278), and reads no page to learn it."""
     fetcher = _tenant(
         _site_statuses(CX="ORA_INACTIVE", CX_1="ORA_INACTIVE"),
         {None: ["2901", "3799", "3993"]},

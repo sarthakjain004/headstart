@@ -26,7 +26,7 @@ a bad site number still answers 200 with a well-formed envelope.
 **The whole Board includes what no candidate can open.** The host-wide listing also carries
 requisitions that only *inactive* sites publish, and their links go to ``/errors/404``. So a
 tenant with an inactive site is read one active site at a time, and a tenant with no active site
-serves nothing (ADR-0303).
+serves nothing (ADR-0278).
 
 **The listing carries almost nothing, and the description it does carry is truncated.** Across
 15,189 requisitions, ``LegalEmployer``, ``Department``, ``JobFunction`` and ``JobType`` are 0.0%
@@ -84,7 +84,7 @@ _NEWEST_FIRST = "POSTING_DATES_DESC"
 _DETAIL_WORKERS = 16
 
 #: The one ``StatusCode`` a Candidate Experience site answers on. A posting no active site publishes
-#: has no working link: the careers UI sends it to ``/errors/404`` (ADR-0303).
+#: has no working link: the careers UI sends it to ``/errors/404`` (ADR-0278).
 _ACTIVE_SITE = "ORA_ACTIVE"
 
 
@@ -309,7 +309,7 @@ class OracleScraper(BaseScraper):
     def url(self) -> str:
         # No `siteNumber` unless `_site` is set: it filters the Board down to one site, and
         # omitting it returns the union of every site (module docstring). It is set only to read
-        # a tenant's active sites one by one, when some other site is inactive (ADR-0303).
+        # a tenant's active sites one by one, when some other site is inactive (ADR-0278).
         # `findReqs` still needs its other params inside the finder string, comma-separated —
         # the careers UI's own calls use literal commas.
         return (
@@ -333,7 +333,7 @@ class OracleScraper(BaseScraper):
         sites could not be read, which leaves the Board read as it always was.
 
         One attempt (`_fetch_once`): a 5xx, a 429, a request that raises or a body this cannot
-        read is None, so a transient failure never narrows or empties a Board (ADR-0303). So is
+        read is None, so a transient failure never narrows or empties a Board (ADR-0278). So is
         an empty site list: the tenants that answered one all listed no postings either.
         """
         try:
@@ -468,7 +468,7 @@ class OracleScraper(BaseScraper):
 
         The host-wide listing also carries requisitions no active site publishes, and each of
         those links to `/errors/404`. So a tenant with an inactive site is read one active site
-        at a time, and one with no active site serves nothing (ADR-0303). `[]`, not a raise: the
+        at a time, and one with no active site serves nothing (ADR-0278). `[]`, not a raise: the
         tenant answered, so its rows evict through ADR-0083's two absences (ADR-0200).
         """
         sites = self._sites()
@@ -476,7 +476,7 @@ class OracleScraper(BaseScraper):
         if sites is not None and not active:
             self._log.info(
                 f"{self.board_key()}: no active career site ({', '.join(sites)} all "
-                "inactive) — every posting links to /errors/404, so serving none (ADR-0303)"
+                "inactive) — every posting links to /errors/404, so serving none (ADR-0278)"
             )
             return []
         if sites is None or len(active) == len(sites):
@@ -553,7 +553,7 @@ class OracleScraper(BaseScraper):
         because that is where the app lands anyway, not because the Board is known to use it.
 
         More exactly, the app redirects to an *active* site that publishes the posting, whatever
-        site the link names, and to ``/errors/404`` when no active site does (ADR-0303) — which
+        site the link names, and to ``/errors/404`` when no active site does (ADR-0278) — which
         is why :meth:`_servable_listing` lists only what an active site publishes.
         """
         return (

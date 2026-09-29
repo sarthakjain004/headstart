@@ -1,4 +1,4 @@
-# ADR-0303: An Oracle Board serves only what an active career site publishes
+# ADR-0278: An Oracle Board serves only what an active career site publishes
 
 **Status:** accepted · **Date:** 2026-09-29 · **Relates to:**
 [ADR-0053](0053-scope-eviction-on-scrape-outcome.md) (Unauthoritative Boards),

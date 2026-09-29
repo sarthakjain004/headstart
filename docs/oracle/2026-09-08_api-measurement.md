@@ -93,7 +93,7 @@ Apply controls for the correct site, a wrong site, and a nonexistent `CX_9999`. 
 omitting it entirely returns the job on all 454 cross-pod calls.
 
 > **Correction, 2026-09-29 — only while an active site publishes the job
-> ([ADR-0303](../adr/0303-an-oracle-board-serves-only-what-an-active-career-site-publishes.md)).**
+> ([ADR-0278](../adr/0278-an-oracle-board-serves-only-what-an-active-career-site-publishes.md)).**
 > `recruitingCESites` states each site's `StatusCode`. The UI redirects a job link to an
 > `ORA_ACTIVE` site that publishes the job, and to `/hcmUI/CandidateExperience/errors/404` when
 > none does. §3's host-wide listing still carries such jobs: on `egcu.fa.us6` both sites are
