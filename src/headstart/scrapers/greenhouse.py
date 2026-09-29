@@ -14,7 +14,8 @@ smartrecruiters' own native-compensation field (see that scraper's docstring), `
 re-observed FACT_FIELD, so once a Board is rescraped its now-populated raw ``Job.salary`` differs
 from the stored one and `refresh_row`'s `salary_inputs_moved` reprocesses it — no version sweep
 required. A bump is for when unchanged input starts parsing differently; here the input itself
-changes from ``None`` to a real string. The same holds for ``pay_input_ranges``.
+changes from ``None`` to a real string. The same holds for ``pay_input_ranges`` and for
+``employment_type`` read from ``metadata`` (``_employment_type``): both are FACT_FIELDS.
 """
 
 from __future__ import annotations
@@ -62,6 +63,36 @@ def _workplace_type(metadata: list[dict] | None) -> str | None:
     for m in metadata or []:
         if (m.get("name") or "").strip().lower() == "workplace type":
             return str(m.get("value") or "")
+    return None
+
+
+# The tenant fields that state an employment type, in the order they win. Measured live
+# 2026-09-29: 13 of 130 sampled Boards carry one of these as a single_select on every job (979 of
+# 5,503 listed jobs) - xometry `Employment Type`, deliveroo `Time Type`, precisionaq `Employment
+# Status`. `Employment Level` beside it on glassboxltd is a seniority, so names match exactly.
+_EMPLOYMENT_TYPE_NAMES = (
+    "employment type",
+    "time type",
+    "employment status",
+    "employee type",
+)
+
+
+def _employment_type(metadata: list[dict] | None) -> str | None:
+    """The tenant's own employment-type field in ``metadata``, as the employer wrote it.
+
+    ``employment_type`` is display text; the filter maps it. A null or blank value is None, and
+    with several matching fields the first non-empty one by ``_EMPLOYMENT_TYPE_NAMES`` wins.
+    """
+    stated: dict[str, str] = {}
+    for m in metadata or []:
+        name = (m.get("name") or "").strip().lower()
+        value = m.get("value")
+        if name in _EMPLOYMENT_TYPE_NAMES and isinstance(value, str) and value.strip():
+            stated.setdefault(name, value.strip())
+    for name in _EMPLOYMENT_TYPE_NAMES:
+        if name in stated:
+            return stated[name]
     return None
 
 
@@ -207,6 +238,7 @@ class GreenhouseScraper(BaseScraper):
                         _workplace_type(j.get("metadata")), location
                     ),
                     department=department,
+                    employment_type=_employment_type(j.get("metadata")),
                     url=self.job_url(j.get("absolute_url", "")),
                     posted_at=j.get("first_published") or j.get("updated_at"),
                     scraped_at=scraped_at,

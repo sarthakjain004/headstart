@@ -82,6 +82,93 @@ def test_greenhouse_remote_reads_the_tenants_workplace_type():
     ]
 
 
+def _greenhouse_employment_type(metadata):
+    raw = {"jobs": [{"id": 1, "title": "T", "metadata": metadata}]}
+    return get_scraper("greenhouse", "x", "X").parse(raw, SCRAPED_AT)[0].employment_type
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("Employment Type", "Full-time"),  # xometry, glassboxltd
+        ("Time Type", "Full time"),  # deliveroo
+        ("Employment Status", "Regular Full-time"),  # precisionaq
+        ("Employee Type", "Temporary Employee"),
+        ("employment type", "Contract"),  # name matched case-insensitively
+    ],
+)
+def test_greenhouse_employment_type_reads_the_tenants_metadata_field(name, value):
+    """Real shape (2026-09-29 probe, 13 of 130 sampled Boards): a single_select `metadata` entry
+    on every job. The value passes through as the employer wrote it; the filter maps it."""
+    md = [
+        {
+            "id": 1,
+            "name": "Employment Level",
+            "value": "Intermediate",
+            "value_type": "single_select",
+        },
+        {"id": 2, "name": name, "value": value, "value_type": "single_select"},
+    ]
+    assert _greenhouse_employment_type(md) == value
+
+
+def test_greenhouse_employment_type_ignores_lookalike_fields():
+    """`Employment Level` sits beside `Employment Type` on glassboxltd and is not a type."""
+    md = [
+        {
+            "id": 1,
+            "name": "Employment Level",
+            "value": "Intermediate",
+            "value_type": "single_select",
+        }
+    ]
+    assert _greenhouse_employment_type(md) is None
+
+
+@pytest.mark.parametrize("value", [None, "", "   "])
+def test_greenhouse_employment_type_null_or_blank_is_none(value):
+    md = [
+        {
+            "id": 1,
+            "name": "Employment Type",
+            "value": value,
+            "value_type": "single_select",
+        }
+    ]
+    assert _greenhouse_employment_type(md) is None
+
+
+def test_greenhouse_employment_type_takes_first_non_empty_by_name_order():
+    """Several matching entries: the first non-empty by name order (Employment Type, Time Type,
+    Employment Status, Employee Type), not by array order, and a null one is skipped."""
+    md = [
+        {
+            "id": 1,
+            "name": "Employee Type",
+            "value": "Regular",
+            "value_type": "single_select",
+        },
+        {
+            "id": 2,
+            "name": "Employment Status",
+            "value": "Contract",
+            "value_type": "single_select",
+        },
+        {
+            "id": 3,
+            "name": "Employment Type",
+            "value": None,
+            "value_type": "single_select",
+        },
+    ]
+    assert _greenhouse_employment_type(md) == "Contract"
+
+
+@pytest.mark.parametrize("metadata", [None, []])
+def test_greenhouse_employment_type_without_metadata_is_none(metadata):
+    assert _greenhouse_employment_type(metadata) is None
+
+
 def test_greenhouse_hybrid_location_is_not_read_as_on_site():
     # Real location string, location-field audit 2026-08-24.
     raw = {
