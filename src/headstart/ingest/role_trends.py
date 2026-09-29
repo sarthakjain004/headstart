@@ -24,6 +24,12 @@ The ids that arrived since the last tick, and the ids that left, are booked as O
 Recounted per Board, family and band. They go into the tick's file as rows of their own metrics,
 beside the level changes, so a net change can be read with what made it.
 
+The same decision is written back to the served table (ADR-0349): rows the head calls non-tech
+with a top probability of at least 0.9 get ``is_confident_non_tech``, the column Search leaves out
+by default, through :mod:`headstart.ingest.confident_non_tech_stamp` and before ``refresh-indexes``
+and the publication. It is written only once every input is decided, so each degrade path below
+leaves the column exactly as it was, and a failed or refused write never sinks the tick.
+
 Degrades rather than dies: without the classifier head or the family list on disk it logs a
 warning and exits 0, and while a new head's title cache is still warming up it fills the cache
 and counts nothing — trends must never sink a run that already scraped and embedded
@@ -45,6 +51,7 @@ from headstart.ingest import (
     EVICTION_QUEUE_PATH,
     REPO_ROOT,
     UNAUTHORITATIVE_BOARDS_PATH,
+    confident_non_tech_stamp,
     job_turnover,
     role_assignments,
     role_family_classifier,
@@ -60,6 +67,7 @@ from headstart.ingest.index_plan import (
 )
 from headstart.ingest.role_assignments import Placement
 from headstart.jobs import tech_filter
+from headstart.search_filters import confident_non_tech_filter
 from headstart.trends import role_taxonomy, trend_history
 
 _log = log.get(__name__, __spec__)
@@ -259,6 +267,34 @@ def _served_row_logits(table, ids: list[str], head) -> np.ndarray:
     return out
 
 
+def _stamp_confident_non_tech(
+    table, ids: list[str], scored: list[tuple[str, float]]
+) -> None:
+    """Stamp the rows the head confidently calls non-tech on the served table, so Search leaves
+    them out by default (ADR-0349). Never fatal, and a refused or failed stamp leaves the column
+    as the last healthy tick wrote it: what Trends counted must not depend on it."""
+    confident = {
+        job_id
+        for job_id, (family, probability) in zip(ids, scored, strict=True)
+        if confident_non_tech_filter.is_confident(family, probability)
+    }
+    try:
+        stamped = confident_non_tech_stamp.stamp(table, confident)
+    except confident_non_tech_stamp.StampRefused as exc:
+        _log.warning(f"non-tech stamp left as it was: {exc}")
+    except Exception as exc:  # noqa: BLE001 - a diagnostic write must never sink Trends
+        _log.warning(
+            f"non-tech stamp failed: {type(exc).__name__}: {exc}", exc_info=True
+        )
+    else:
+        _log.info(
+            f"non-tech stamp: {stamped.stamped} of {len(ids)} served rows hidden by default "
+            f"({100 * stamped.stamped / max(len(ids), 1):.1f}%, head probability >= "
+            f"{confident_non_tech_filter.PROBABILITY}): +{stamped.newly} -{stamped.cleared}"
+            + ("" if stamped.written else ", column unchanged")
+        )
+
+
 def main() -> int:
     log.setup()
     log.context("role_trends")
@@ -377,10 +413,13 @@ def main() -> int:
     except ValueError as exc:
         _log.error(f"role families undecidable, no trends this run: {exc}")
         return 1
-    decided = role_family_classifier.decide_rows(cache, head, titles, row_logits)
+    scored = role_family_classifier.decide_rows_scored(cache, head, titles, row_logits)
     families = [
-        None if family == role_taxonomy.NON_TECH else family for family in decided
+        None if family == role_taxonomy.NON_TECH else family for family, _ in scored
     ]
+    # Every input the head needs is here and decided, so the stamp is safe to write; before this
+    # point each degrade path leaves the column exactly as it was (ADR-0349).
+    _stamp_confident_non_tech(table, rows["id"].to_pylist(), scored)
 
     # The run's one stamp, which `index prune` also wrote its dedup evictions under (ADR-0210).
     now = run_ts()

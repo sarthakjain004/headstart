@@ -15,6 +15,7 @@ from headstart.jobs.experience import (
     from_description,
     from_field,
     from_seniority,
+    stated_floors,
 )
 
 # --- Tier 1: from_field ---------------------------------------------------------------------------
@@ -1108,3 +1109,59 @@ def test_a_degree_substitution_is_not_the_requirement():
     assert from_description(
         "Requires a bachelor's degree and 5+ years of relevant experience, additional years of experience may be considered in lieu of a degree"
     ) == _regex(5)
+
+
+# --- the floors a description states, and one employer's ladder (ADR-0357) -----------------------
+
+
+def test_stated_floors_lists_every_floor_smallest_first_without_ceilings():
+    assert stated_floors(
+        "5 years of experience with software development. 3 years of experience testing "
+        "software products, and 1 year of experience with software design."
+    ) == [1, 3, 5]
+    assert stated_floors(
+        "up to 3 years of experience; 5+ years of Java experience"
+    ) == [5]
+    assert stated_floors("5+ years of experience") == [5]
+    assert stated_floors(None) == []
+    # The first floor is the one ADR-0079 serves.
+    text = "7+ years in software engineering with 2+ years in a people management role"
+    assert stated_floors(text)[0] == from_description(text).min_years
+
+
+def test_stated_floors_follow_the_third_pass_when_it_is_the_one_that_answers():
+    # "Two (2) years" is read by the third pass alone, so the floors get_job names come from it too (ADR-0350).
+    text = "Two (2) years of experience with A. Five (5) years of experience with B."
+    assert stated_floors(text) == [2, 5]
+    assert stated_floors(text)[0] == from_description(text).min_years
+    # A description the first pass answers keeps that pass's floors: the third pass never adds to them.
+    text = "3 years of experience with A. Five (5) years of experience with B."
+    assert stated_floors(text) == [3]
+
+
+def test_netflix_titles_read_on_netflixs_own_ladder_only_when_no_number_is_stated():
+    assert extract(None, None, "Software Engineer (L4) - CKG", "Netflix") == (
+        ExperienceSpan(3, None, "seniority")
+    )
+    assert extract(None, None, "Business Security Partner (L5)", "Netflix") == (
+        ExperienceSpan(5, None, "seniority")
+    )
+    assert extract(None, None, "Creative Tech Researcher 5", "Netflix") == (
+        ExperienceSpan(5, None, "seniority")
+    )
+    assert extract(None, None, "Staff Software Engineer (L6)", "Netflix") == (
+        ExperienceSpan(9, None, "seniority")
+    )
+    # A stated number always wins over the ladder, from the description or a field.
+    assert extract(
+        None, "2+ years of experience", "Software Engineer (L5)", "Netflix"
+    ) == ExperienceSpan(2, None, "regex")
+    assert extract("1-3", None, "Software Engineer (L5)", "Netflix") == ExperienceSpan(
+        1, 3, "field"
+    )
+    # Another employer keeps the shared mapping.
+    assert extract(None, None, "Software Engineer (L4) - CKG", "Acme") == (
+        ExperienceSpan(7, None, "seniority")
+    )
+    assert extract(None, None, "Business Security Partner (L5)", "Acme") is None
+    assert extract(None, None, "Windows 11 Engineer", "Netflix") is None

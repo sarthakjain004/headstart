@@ -115,6 +115,9 @@ def test_a_concise_search_asks_the_app_for_the_total_alone(companies_app, monkey
     assert asked_full is None and strip["facets"]["remote"]
     assert strip["total"] == total_only["total"]
     assert "remote=true: " in full and "remote=true: " not in concise
+    # ADR-0355: only the full answer asks where the matching jobs are, and the app says it.
+    assert "places" in strip and "places" not in total_only
+    assert "Where the " in full and "Where the " not in concise
 
 
 def test_a_company_name_is_the_company_boxs_substring_at_the_app(companies_app, parsed):

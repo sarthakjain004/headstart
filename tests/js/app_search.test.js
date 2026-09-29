@@ -93,7 +93,7 @@ function loadApp(respond, cfg = {}, doc = {}) {
   const src = fs.readFileSync(APP_JS, 'utf8')
     + '\n;globalThis.__t = { go, goToPage, loadSets, runSet, page: () => page, jobCard, savedRow,'
     + ' salStop, SALARY_STOPS, stops: () => SALARY_STOPS, sync: syncSalarySlider, slide: salSlide,'
-    + ' handleSetAction, searchCompany, dropFilter, readSearchHash, setCompany,'
+    + ' handleSetAction, searchCompany, dropFilter, readSearchHash, setCompany, applySetToControls,'
     + ' saveSearch, searchHash, queryMode };';
   vm.runInNewContext(src, ctx);
   return { nodes, fetches, posted, t: ctx.__t, ctx, docHandlers, logged };
@@ -914,4 +914,66 @@ test('nothing in title mode says which words no title holds, and offers meaning 
   await t.go();
   assert.match(nodes.results.innerHTML, /No job title has every word of “zzqx”/);
   assert.match(nodes.results.innerHTML, /match by meaning/);
+});
+
+test('non-tech roles are left out unless the switch is on, and both routes are asked alike (ADR-0349)', async () => {
+  const { t, nodes, fetches } = loadApp(() => []);
+  await t.go();
+  const last = prefix => qs(fetches.filter(u => u.startsWith(prefix)).at(-1));
+  assert.equal(last('/search?').include_non_tech, undefined);
+  assert.equal(last('/facets?').include_non_tech, undefined);
+  nodes.includenontech.checked = true;
+  fetches.length = 0;
+  await t.go();
+  assert.equal(last('/search?').include_non_tech, 'true');
+  assert.equal(last('/facets?').include_non_tech, 'true');
+});
+
+test('the switch is a pill that removes itself, and Clear all switches it off', async () => {
+  const { t, nodes, fetches } = loadApp(() => []);
+  nodes.includenontech = Object.assign(fakeEl(), { type: 'checkbox', checked: true });
+  await t.go();
+  assert.match(nodes.active.innerHTML, /Non-tech roles/);
+  assert.match(nodes.active.innerHTML, /data-drop-filter="include_non_tech"/);
+  fetches.length = 0;
+  t.dropFilter('include_non_tech');
+  await new Promise(r => setTimeout(r, 0));
+  assert.equal(nodes.includenontech.checked, false);
+  assert.equal(qs(fetches.filter(u => u.startsWith('/search?')).at(-1)).include_non_tech, undefined);
+});
+
+test('a set saved with the switch on restores it', async () => {
+  const { t, nodes } = loadApp(() => []);
+  nodes.includenontech = Object.assign(fakeEl(), { type: 'checkbox' });
+  t.applySetToControls({ query: 'q', search_filters: { include_non_tech: 'true' } });
+  assert.equal(nodes.includenontech.checked, true);
+  t.applySetToControls({ query: 'q', search_filters: {} });
+  assert.equal(nodes.includenontech.checked, false);
+});
+
+test('a search only non-tech roles match says so, and offers them in one click', async () => {
+  const { t, nodes, fetches, docHandlers } = loadApp(url =>
+    url.startsWith('/facets?') ? { total: 0, blocking: null, non_tech_left_out: 4 } : []);
+  await t.go();
+  assert.match(nodes.results.innerHTML, /The 4 that match/);
+  assert.match(nodes.results.innerHTML, /data-include-non-tech/);
+  fetches.length = 0;
+  const button = { dataset: { includeNonTech: '' } };
+  const target = { closest: sel => (sel.includes('button[data-include-non-tech]') ? button : null) };
+  for (const handler of docHandlers.click) await handler({ target });
+  await new Promise(r => setTimeout(r, 0));
+  assert.equal(nodes.includenontech.checked, true);
+  assert.equal(qs(fetches.filter(u => u.startsWith('/search?')).at(-1)).include_non_tech, 'true');
+});
+
+test('the rail says how many non-tech roles this search leaves out, and nothing when they are in', async () => {
+  const { t, nodes } = loadApp(url =>
+    url.startsWith('/facets?') ? { total: 9, facets: {}, non_tech_left_out: 1234 } : [job('a')]);
+  await t.go();
+  assert.match(nodes['nontech-hidden'].textContent, /1,234/);
+  const included = loadApp(url => (url.startsWith('/facets?') ? { total: 9, facets: {} } : [job('a')]));
+  included.nodes.includenontech = fakeEl();
+  included.nodes.includenontech.checked = true;
+  await included.t.go();
+  assert.equal(included.nodes['nontech-hidden'].textContent, '');
 });

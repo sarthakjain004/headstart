@@ -17,6 +17,7 @@ from headstart.mcp_protocol.messages import ToolFailure
 from headstart.search_filters import (
     country_filter,
     country_gazetteer,
+    employment_type_filter,
     india_filter,
     india_gazetteer,
 )
@@ -47,10 +48,11 @@ SPACE_NAME = {
     "required_years_at_least": "required_years_at_least",
     "exclude_company": "exclude_company",
     "work_authorization": "work_authorization",
+    "include_non_tech": "include_non_tech",
 }
 #: Sent as the literal "true" `parse_filters` compares against; the company and the keyword are
 #: sent by their own rules below, and `max_age_days` 0 (any age) as nothing.
-FLAGS = ("remote", "has_salary")
+FLAGS = ("remote", "has_salary", "include_non_tech")
 _SENT_ELSEWHERE = (*FLAGS, "company", "keyword", "keyword_in")
 
 #: `max_age_days` when the caller sends none (ADR-0322): a relevance search led with Jobs posted
@@ -91,6 +93,39 @@ PROPERTIES: dict[str, dict[str, Any]] = {
         ),
     },
     "remote": {"type": "boolean", "description": "Remote jobs only."},
+    "employment_type": {
+        "type": "string",
+        "enum": list(employment_type_filter.RULES),
+        "description": (
+            "full-time also keeps jobs whose source states no type; part-time, "
+            "contract and internship keep only jobs that say so."
+        ),
+    },
+    "salary_min": {
+        "type": "integer",
+        "minimum": 0,
+        "description": (
+            "Annual; needs salary_currency (30 lakh = 3000000 INR). Keeps a job whose "
+            "stated range reaches it; other currencies are converted at fixed rates."
+        ),
+    },
+    "salary_max": {
+        "type": "integer",
+        "minimum": 0,
+        "description": (
+            "Annual; needs salary_currency. Keeps a job whose stated range starts at "
+            "or below it."
+        ),
+    },
+    "salary_currency": {
+        "type": "string",
+        "maxLength": 3,
+        "description": "ISO 4217 code, such as USD, INR, EUR, GBP.",
+    },
+    "has_salary": {
+        "type": "boolean",
+        "description": "Only jobs that state a salary.",
+    },
     "max_years": {
         "type": "integer",
         "minimum": 0,
@@ -134,6 +169,17 @@ PROPERTIES: dict[str, dict[str, Any]] = {
             "the day HeadStart first saw the job. 365 unless sent; 0 for any age."
         ),
     },
+    "include_non_tech": {
+        "type": "boolean",
+        "default": False,
+        "description": (
+            "Also list the jobs HeadStart's classifier is confident are not tech (a store "
+            "cashier, a plant's process engineer), which are left out unless this is true, "
+            "as the site leaves them out unless its 'Include non-tech roles' switch is on. "
+            "The answer says how many were left out. Send it for a role the user really "
+            "wants that is not software or tech."
+        ),
+    },
     "operators": {
         "type": "array",
         "items": {"type": "string", "enum": list(OPERATORS)},
@@ -154,15 +200,22 @@ PROPERTIES: dict[str, dict[str, Any]] = {
         "description": (
             "Use this, not `keyword`, for visa sponsorship or relocation: a description "
             "that mentions sponsorship usually refuses it. offers_sponsorship: the "
-            "description offers or may offer visa sponsorship and nothing in it refuses "
-            "it; refuses_sponsorship: it refuses sponsorship ('now or in the future', "
-            "'Visa Sponsorship: No') or requires citizenship; offers_relocation: it offers "
+            "description offers this job visa sponsorship and nothing in it refuses it; an "
+            "offer limited to another country than the job's, or to levels above its title, "
+            "does not count. may_offer_sponsorship: those jobs, plus the ones whose offer is "
+            "hedged ('not guaranteed', 'case by case', 'may be available') or names a country "
+            "or level the job's place or title does not show; say which kind each job is "
+            "(get_job prints its stance). refuses_sponsorship: it refuses sponsorship ('now "
+            "or in the future', 'Visa Sponsorship: No'), requires citizenship of this job or "
+            "work authorisation already held, or offers it only to another country or level; offers_relocation: it offers "
             "relocation help. Text-derived, not a field the employer set: HeadStart's rules "
             "(headstart.jobs.work_authorization) read each sponsorship, citizenship and "
-            "relocation sentence with its negation. On 660 hand-read descriptions "
-            "(ADR-0333) about 1 in 35 jobs it names is wrong: precision 0.97 for "
-            "offers_sponsorship and refuses_sponsorship, 0.99 for offers_relocation; it "
-            "finds about 96% of each. A posting without a description never matches."
+            "relocation sentence with its negation, and read an offer against the "
+            "job's place and title. On 893 hand-read descriptions (ADR-0333, ADR-0353) "
+            "precision is 0.99 for offers_sponsorship, 0.98 for refuses_sponsorship and 0.99 "
+            "for offers_relocation, each finding about 98%; 48 of 50 offers drawn from the "
+            "live index after the rules froze were right. A posting without a description "
+            "never matches."
         ),
     },
 }
@@ -171,9 +224,27 @@ PROPERTIES: dict[str, dict[str, Any]] = {
 #: `work_authorization.STANCES`' order: the search scope line and role_requirements' counts.
 STANCE_WORDS = {
     work_authorization.OFFERS_SPONSORSHIP: "offers visa sponsorship",
+    work_authorization.MAY_OFFER_SPONSORSHIP: "offers or may offer visa sponsorship",
     work_authorization.REFUSES_SPONSORSHIP: "refuses visa sponsorship or requires citizenship",
     work_authorization.OFFERS_RELOCATION: "offers relocation help",
 }
+
+
+def refuse_unreadable_salary(arguments: dict[str, Any]) -> None:
+    """A :class:`ToolFailure` for salary bounds no range could meet, or sent with no currency,
+    which the Space would read as USD."""
+    low, high = arguments.get("salary_min"), arguments.get("salary_max")
+    if low is not None and high is not None and low > high:
+        raise ToolFailure(
+            f"salary_min {low:,} is above salary_max {high:,}, so no range could be read as "
+            "both; send the lower figure as salary_min."
+        )
+    if (low is not None or high is not None) and not arguments.get("salary_currency"):
+        raise ToolFailure(
+            "salary_min and salary_max need salary_currency: an unqualified bound is read as "
+            "USD, so 30 lakh would become $3,000,000. For 30 lakh send salary_min 3000000 with "
+            "salary_currency INR."
+        )
 
 
 def read_country(asked: Any) -> Any:
@@ -299,13 +370,24 @@ def _operators_said(arguments: dict[str, Any], left_out: int | None) -> str | No
     return f"{dropped} left out{counted}"
 
 
+def non_tech_said(left_out: int) -> str:
+    """How many jobs the Space left out as not tech, in words: a search's scope line (ADR-0349)."""
+    return (
+        f"{left_out:,} jobs HeadStart's classifier is confident are not tech (a cashier, a "
+        "process engineer) left out, as the site leaves them out (send include_non_tech true "
+        "to include them)"
+    )
+
+
 def scope_line(
     arguments: dict[str, Any],
     scope: company_scope.CompanyScope | None,
     operators_left_out: int | None = None,
+    non_tech_left_out: int | None = None,
 ) -> str:
     """What the filters in ``arguments`` scoped the answer to, as the tools name them, with how
-    many jobs ``operators`` left out where the Space counted them (``operators_left_out``)."""
+    many jobs ``operators`` left out where the Space counted them (``operators_left_out``) and how
+    many the classifier's non-tech call did (``non_tech_left_out``, ADR-0349)."""
     said = []
     if scope is not None:
         if scope.company is not None:
@@ -393,4 +475,8 @@ def scope_line(
         )
     if operators := _operators_said(arguments, operators_left_out):
         said.append(operators)
+    if arguments.get("include_non_tech"):
+        said.append("non-tech roles included (include_non_tech)")
+    elif non_tech_left_out:
+        said.append(non_tech_said(non_tech_left_out))
     return "Scope: " + (" · ".join(said) if said else "the whole index") + "."

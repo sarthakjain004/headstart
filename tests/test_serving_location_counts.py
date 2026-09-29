@@ -1,10 +1,11 @@
-"""Where a set of Boards' served jobs are — `headstart.serving.location_counts` (ADR-0275,
-ADR-0323).
+"""Where a set of served jobs are — `headstart.serving.location_counts` (ADR-0275, ADR-0323,
+ADR-0355).
 
-Contracts: one filtered scan that reads only the `location` column, bounded; places counted as
-served, whitespace collapsed and nothing else merged; empty locations counted apart; most first,
-ties by name; a scan that reaches its bound says so; and every place rolled up by the countries
-the ``country`` filter reads in it, a place naming none counted apart.
+Contracts: one filtered scan that reads only the `location` column (and India's materialized
+`country` column where the table has it), bounded for a company and whole for a search; places
+counted as served, whitespace collapsed and nothing else merged; empty locations counted apart;
+most first, ties by name; a scan that reaches its bound says so; and every place rolled up by the
+countries the ``country`` filter reads in it, a place naming none counted apart.
 """
 
 from __future__ import annotations
@@ -13,11 +14,15 @@ from headstart.serving import location_counts
 
 
 class _Scan:
-    """A lancedb table's plain scan: records what it was asked, answers ``rows``."""
+    """A lancedb table's plain scan: records what it was asked, answers ``rows`` (locations, or
+    (location, country) pairs for a table with India's column)."""
 
     def __init__(self, rows):
         self.rows = rows
         self.asked = {}
+
+    def count_rows(self):
+        return len(self.rows)
 
     def search(self, *args):
         self.asked["query"] = args
@@ -38,12 +43,13 @@ class _Scan:
         return self
 
     def to_list(self):
-        return [{"location": place} for place in self.rows]
+        pairs = [row if isinstance(row, tuple) else (row, None) for row in self.rows]
+        return [{"location": place, "country": country} for place, country in pairs]
 
 
 def test_it_scans_only_the_location_column_of_the_rows_the_clause_selects():
     table = _Scan(["Berlin"])
-    location_counts.top(table, "(lower(id) LIKE 'lever:acme:%')", 10)
+    location_counts.top(table, "(lower(id) LIKE 'lever:acme:%')", 10, False)
     assert table.asked == {
         "query": (),
         "where": ("(lower(id) LIKE 'lever:acme:%')", True),
@@ -55,7 +61,7 @@ def test_it_scans_only_the_location_column_of_the_rows_the_clause_selects():
 def test_places_are_counted_as_served_most_first_ties_by_name():
     rows = ["Seattle, WA", "Pune", "Seattle,  WA ", "seattle, wa", "Austin", "Pune"]
     rows += ["", None, "   "]
-    answer = location_counts.top(_Scan(rows), "x", 3)
+    answer = location_counts.top(_Scan(rows), "x", 3, False)
     assert answer == {
         "jobs": 9,
         "unstated": 3,
@@ -80,7 +86,6 @@ def test_places_are_counted_as_served_most_first_ties_by_name():
             {"code": "IN", "jobs": 2, "places": [{"location": "Pune", "count": 2}]},
         ],
         "no_country": {"jobs": 0, "places": []},
-        "places_unread": 0,
     }
 
 
@@ -88,7 +93,7 @@ def test_places_roll_up_by_country_then_city_a_multi_country_place_in_each():
     """rc02b: "Dublin" 15 and "Dublin, Ireland" 4 were two places; they are one Dublin."""
     rows = ["Dublin", "Dublin, Ireland", "Dublin", "N/A", "N/A", "Remote"]
     rows += ["London, UK; Berlin, Germany", "Cork, Ireland", "Galway, Ireland"]
-    answer = location_counts.top(_Scan(rows), "x", 10)
+    answer = location_counts.top(_Scan(rows), "x", 10, False)
     assert answer["countries"] == [
         {
             "code": "IE",
@@ -113,23 +118,39 @@ def test_places_roll_up_by_country_then_city_a_multi_country_place_in_each():
     }
 
 
-def test_places_past_the_read_bound_are_counted_as_unread(monkeypatch):
-    monkeypatch.setattr(location_counts, "MAX_PLACES_READ", 1)
-    answer = location_counts.top(_Scan(["Pune", "Pune", "Austin"]), "x", 10)
+def test_india_is_read_from_the_column_country_in_reads_where_the_table_has_it():
+    """ADR-0355: `country=IN` reads the materialized column, so a count under India does too, even
+    where the gazetteer would read the place otherwise."""
+    table = _Scan(
+        [("Pune", "IN"), ("Pune", None), ("Remote", "IN"), ("Austin, TX", None)]
+    )
+    answer = location_counts.top(table, "x", 10, True)
+    assert table.asked["select"] == ["location", "country"]
     assert answer["countries"] == [
-        {"code": "IN", "jobs": 2, "places": [{"location": "Pune", "count": 2}]}
+        {
+            "code": "IN",
+            "jobs": 2,
+            "places": [
+                {"location": "Pune", "count": 1},
+                {"location": "Remote", "count": 1},
+            ],
+        },
+        {"code": "US", "jobs": 1, "places": [{"location": "Austin", "count": 1}]},
     ]
-    assert answer["places_unread"] == 1
+    assert answer["no_country"] == {
+        "jobs": 1,
+        "places": [{"location": "Pune", "count": 1}],
+    }
 
 
 def test_a_scan_that_reaches_its_bound_says_so(monkeypatch):
     monkeypatch.setattr(location_counts, "MAX_ROWS", 3)
-    answer = location_counts.top(_Scan(["A", "B", "C", "D"]), "x", 10)
+    answer = location_counts.top(_Scan(["A", "B", "C", "D"]), "x", 10, False)
     assert answer["jobs"] == 3 and answer["capped"] is True
 
 
 def test_no_rows_is_an_empty_answer_not_an_error():
-    assert location_counts.top(_Scan([]), "x", 10) == {
+    assert location_counts.top(_Scan([]), "x", 10, False) == {
         "jobs": 0,
         "unstated": 0,
         "distinct": 0,
@@ -137,5 +158,27 @@ def test_no_rows_is_an_empty_answer_not_an_error():
         "locations": [],
         "countries": [],
         "no_country": {"jobs": 0, "places": []},
-        "places_unread": 0,
+    }
+
+
+def test_a_search_reads_every_row_it_matches_with_no_bound(monkeypatch):
+    """ADR-0355: a search's places read the whole match, past a company's bound."""
+    monkeypatch.setattr(location_counts, "MAX_ROWS", 2)
+    table = _Scan(["Berlin, Germany", "Munich", "", "Remote"])
+    answer = location_counts.places(table, None, False)
+    assert "where" not in table.asked and table.asked["limit"] == 4
+    assert answer == {
+        "jobs": 4,
+        "unstated": 1,
+        "countries": [
+            {
+                "code": "DE",
+                "jobs": 2,
+                "places": [
+                    {"location": "Berlin", "count": 1},
+                    {"location": "Munich", "count": 1},
+                ],
+            }
+        ],
+        "no_country": {"jobs": 1, "places": [{"location": "Remote", "count": 1}]},
     }

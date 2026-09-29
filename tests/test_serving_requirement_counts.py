@@ -161,10 +161,13 @@ def test_each_work_authorization_stance_is_counted_over_the_described_jobs():
             _job(2, description="Python. We cannot sponsor visas."),
             _job(3, description="Python. Relocation assistance provided."),
             _job(4, description=None),
+            _job(5, description="Python. Sponsorship for this role is not guaranteed."),
         ]
     )
+    # may_offer_sponsorship counts the firm offers too, as the filter keeps them (ADR-0353).
     assert counted["work_authorization"] == {
         "offers_sponsorship": 1,
+        "may_offer_sponsorship": 2,
         "refuses_sponsorship": 1,
         "offers_relocation": 1,
     }

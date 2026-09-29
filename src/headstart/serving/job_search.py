@@ -29,6 +29,7 @@ from headstart.boards.board_operator import OPERATORS
 from headstart.embedding_conventions import encode_query
 from headstart.jobs import work_authorization
 from headstart.search_filters import (
+    confident_non_tech_filter,
     country_filter,
     employment_type_filter,
     experience_filter,
@@ -93,6 +94,9 @@ FACET_CACHE_SIZE = 128
 #: What `/facets` may be asked to count (``counts=``, ADR-0274): every option's count, the default
 #: the page reads, or only the total, for an agent that prints nothing else.
 FACET_COUNTS = ("all", "total")
+#: `/facets`' ``places=1``: where every matching job is, by country with each country's top
+#: cities (`location_counts.places`, ADR-0355). The page never asks it.
+FACET_PLACES = "1"
 FACET_CACHE_TTL_SECONDS = 60
 BROWSE_CACHE_SIZE = 64
 BROWSE_CACHE_TTL_SECONDS = 60
@@ -257,6 +261,13 @@ def refusal(exc: ValueError | ScopeUnavailable) -> tuple[dict[str, str], int]:
     return {"error": "invalid filter", "detail": str(exc)}, 400
 
 
+def _asks_for_non_tech(args: Mapping[str, str]) -> bool:
+    """Whether the request sent ``include_non_tech`` (``true`` as the page's switches say it, or
+    ``1``): Jobs the head confidently calls non-tech are left out otherwise (ADR-0349). One
+    reading for :meth:`JobSearch.parse_filters` and the routes that scope by Board alone."""
+    return args.get("include_non_tech") in ("true", "1")
+
+
 def _is_strict(args: Mapping[str, str]) -> bool:
     """Whether the request asked for ``strict=1``: every value this module would otherwise drop,
     re-scope or widen with only a log line is refused instead (ADR-0253). An agent sends it; the
@@ -300,6 +311,7 @@ REQUEST_PARAMETERS = frozenset(
         "required_years_at_least",
         "exclude_company",
         "work_authorization",
+        "include_non_tech",
         # the ranking, the order and the page
         "q",
         "like",
@@ -310,6 +322,7 @@ REQUEST_PARAMETERS = frozenset(
         "per_company",
         # /facets alone
         "counts",
+        "places",
         # the app's scope and answers
         "board",
         "family",
@@ -1026,7 +1039,9 @@ def _job_row(row: Mapping[str, Any]) -> dict[str, Any]:
     result["description_chars"] = len(description)
     result["description_cut"] = len(description) > JOB_DESCRIPTION_LIMIT
     # Read from the whole description, not the cut one: a visa sentence often closes it.
-    held = work_authorization.stances(description)
+    held = work_authorization.stances(
+        description, row.get("title"), row.get("location")
+    )
     result["work_authorization"] = {
         "stances": [s for s in work_authorization.STANCES if s in held],
         "mentions": work_authorization.mentions(description),
@@ -1133,6 +1148,7 @@ class JobSearch:
             has_salary_known=salary_known_filter.has_flags(names),
             has_posted_at_comparable=posted_date_guard.has_flags(names),
             has_experience_filter_flags=experience_filter.has_flags(names),
+            has_confident_non_tech_flag=confident_non_tech_filter.has_flags(names),
             # What the location filter folds a term against (ADR-0344), learned as `atses` is,
             # so it follows the table rather than a list someone must refresh.
             accented_words=(
@@ -1198,6 +1214,11 @@ class JobSearch:
                 ("min_salary_annual", has_min_salary_annual),
                 ("description", has_description),
                 (india_filter.COLUMN, has_country),
+                # Not slower without it but off: nothing is left out of Search (ADR-0349).
+                (
+                    confident_non_tech_filter.COLUMN,
+                    confident_non_tech_filter.has_flags(names),
+                ),
             )
             if not live
         ]
@@ -1317,6 +1338,7 @@ class JobSearch:
             exclude_company=(args.get("exclude_company") or "").strip() or None,
             work_authorization=(args.get("work_authorization") or "").strip().lower()
             or None,
+            include_non_tech=_asks_for_non_tech(args),
         )
         if filters.work_authorization:
             self._check_work_authorization(filters.work_authorization)
@@ -1457,7 +1479,8 @@ class JobSearch:
         if not reads_descriptions(filters, self.capabilities):
             return _FamilyScope(family, table, table, filters)
         keyword = self._description_matches.where(
-            SearchFilters(kw=filters.kw, kw_in=filters.kw_in), None
+            SearchFilters(kw=filters.kw, kw_in=filters.kw_in, include_non_tech=True),
+            None,
         )
         return _FamilyScope(
             family,
@@ -1520,6 +1543,11 @@ class JobSearch:
         ``counts=total`` in ``args`` counts no option (:data:`FACET_COUNTS`, ADR-0274), cached
         apart from the full strip; any other value but ``all`` is refused.
 
+        ``places=1`` adds ``places``: where every row the total counts is, by country with each
+        country's top cities, read from the same table and where-clause as the total
+        (`location_counts.places`, ADR-0355), so its ``jobs`` is the total and a country's count
+        is what adding ``country=`` would total. Any other value is refused.
+
         A ``like=`` Job is left out of every count, as :meth:`run` leaves it out of the list.
         ``operators=`` narrows every count, and ``operators_left_out`` counts the rows it left
         out (ADR-0335).
@@ -1532,6 +1560,11 @@ class JobSearch:
                 f"counts {asked!r} is not known; known: {_listed(FACET_COUNTS)}"
             )
         only_total = asked == "total"
+        with_places = (args.get("places") or "").strip()
+        if with_places not in ("", FACET_PLACES):
+            raise ValueError(
+                f"places {with_places!r} is not known; send places={FACET_PLACES} or nothing"
+            )
         if like := _like_id(args):
             extra_where = with_extra(extra_where, _other_than(like))
         # `operators=` narrows every count, and what it left out is the total without it, less
@@ -1541,7 +1574,14 @@ class JobSearch:
         operators, extra_where = self._narrowed_by_operators(args, unkept)
         # `operators` too: a list leaving nothing out keeps the where-clause as it was, and
         # still answers with its count.
-        cache_key = (filters, extra_where, only_total, _family_asked(args), operators)
+        cache_key = (
+            filters,
+            extra_where,
+            only_total,
+            _family_asked(args),
+            operators,
+            bool(with_places),
+        )
         cached = _cache_get(
             self._facet_cache,
             self._facet_cache_lock,
@@ -1572,6 +1612,25 @@ class JobSearch:
         if operators:
             everyone = self._total(args, filters, unkept)
             counted = {**counted, "operators_left_out": everyone - counted["total"]}
+        if (
+            self.capabilities.has_confident_non_tech_flag
+            and not filters.include_non_tech
+        ):
+            # What the default leaves out of this request's rows: the total with the switch on,
+            # less the total (ADR-0349). Absent where nothing is left out by default, so an
+            # answer never claims a hiding the table cannot do.
+            shown = self._total(
+                args, replace(filters, include_non_tech=True), extra_where
+            )
+            counted = {**counted, "non_tech_left_out": shown - counted["total"]}
+        if with_places:
+            _, table, where = self._table_and_where(args, filters, extra_where)
+            counted = {
+                **counted,
+                "places": location_counts.places(
+                    table, where, self.capabilities.has_country
+                ),
+            }
         elapsed_ms = (time.monotonic() - started) * 1000
         if elapsed_ms > SLOW_SEARCH_MS:
             # The strip is ~46 counts, the most expensive request the Space serves; shapes only,
@@ -1920,6 +1979,8 @@ class JobSearch:
         self.work_authorization.start()
         self.run({})
         self.facets({})
+        # Reads every served location's countries once, which later answers look up (ADR-0355).
+        self.facets({"places": FACET_PLACES})
         self.run({"q": "software engineer"})
 
     def indexed(self, ids: Collection[str]) -> set[str]:
@@ -1980,6 +2041,24 @@ class JobSearch:
             )
         return rows[0]["vector"]
 
+    def _non_tech_clause(self, args: Mapping[str, str]) -> str | None:
+        """The clause leaving the head's confidently non-tech Jobs out of a read that names Boards
+        alone (:meth:`locations`, :meth:`levels`), as a search's filters leave them out (ADR-0349),
+        or None when asked for them or the table has no stamp."""
+        return confident_non_tech_filter.clause(
+            _asks_for_non_tech(args), self.capabilities.has_confident_non_tech_flag
+        )
+
+    def n_served(self) -> int:
+        """How many Jobs a search with no filter lists: the served rows, less those the default
+        leaves out as confidently non-tech (ADR-0349). What the door's and the header's job
+        counts say, so they agree with the total a search shows and with :meth:`n_seen_within`.
+        One :meth:`count_rows`, 0.5 ms on the bitmap column."""
+        where = build_filter(SearchFilters(), self.capabilities)
+        return (
+            self._table.count_rows(filter=where) if where else self._table.count_rows()
+        )
+
     def n_seen_within(self, hours: int) -> int | None:
         """How many Jobs entered the index in the last ``hours`` — ``None`` without the column.
 
@@ -2003,18 +2082,23 @@ class JobSearch:
         :mod:`headstart.serving.location_counts`. A request naming no Board, too many, or a
         ``limit`` outside 1 to :data:`MAX_LOCATIONS` is a :class:`ValueError`: without Boards it
         would read every row's location."""
-        where = _named_boards_clause(args)
+        where = with_extra(_named_boards_clause(args), self._non_tech_clause(args))
         limit = _int_arg(args)("limit")
         limit = LOCATIONS_SHOWN if limit is None else limit
         if not 1 <= limit <= MAX_LOCATIONS:
             raise ValueError(f"limit must be from 1 to {MAX_LOCATIONS}")
-        return location_counts.top(self._table, where, limit)
+        return location_counts.top(
+            self._table, where, limit, self.capabilities.has_country
+        )
 
     def levels(self, args: Mapping[str, str]) -> dict[str, Any]:
         """The Trends level bands of the served jobs on ``board=`` (repeatable, required) — see
         :mod:`headstart.serving.level_counts`. A request naming no Board, or too many, is a
         :class:`ValueError`, as :meth:`locations` refuses one."""
-        return level_counts.bands(self._table, _named_boards_clause(args))
+        return level_counts.bands(
+            self._table,
+            with_extra(_named_boards_clause(args), self._non_tech_clause(args)),
+        )
 
     def requirements(
         self,
@@ -2091,9 +2175,34 @@ class JobSearch:
             left_out = (
                 len(everyone) if everyone is not None else self._count(unkept)
             ) - matching
+        non_tech_left_out = None
+        if (
+            self.capabilities.has_confident_non_tech_flag
+            and not filters.include_non_tech
+        ):
+            # What the default hid, counted as the sample counts: the same request with the
+            # switch on, its Jobs in the category and under `operators=` (ADR-0349).
+            admitted = with_extra(
+                build_filter(
+                    replace(filters, include_non_tech=True), self.capabilities
+                ),
+                scoped_boards_clause(args),
+            )
+            if family:
+                shown = self._in_family(
+                    admitted, self._family_array(family, assignments)
+                )
+                if operators:
+                    shown = [i for i in shown if operators.keeps(i)]
+                shown_matching = len(shown)
+            else:
+                _, admitted_where = self._narrowed_by_operators(args, admitted)
+                shown_matching = self._count(admitted_where)
+            non_tech_left_out = shown_matching - matching
         answer = {
             "matching": matching,
             "operators_left_out": left_out,
+            "non_tech_left_out": non_tech_left_out,
             "order": "closest" if query else "newest",
             "sample_size": REQUIREMENTS_SAMPLE,
             "category_window": (

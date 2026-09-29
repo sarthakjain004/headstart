@@ -27,6 +27,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any, NamedTuple
 
 from headstart.boards.board_identity import board_of
+from headstart.jobs import experience as experience_extraction
 from headstart.jobs import salary as salary_extraction
 from headstart.jobs import work_authorization
 from headstart.mcp_protocol.messages import ToolFailure
@@ -71,6 +72,25 @@ def _years(low: Any, high: Any) -> str:
     if high is not None:
         return f"up to {high} years"
     return "no years read from it"
+
+
+def _floors_stated(job: dict[str, Any]) -> str | None:
+    """One line when the description the served years came from states several floors: the
+    served one is the smallest (ADR-0079), which the reader should know to check (ADR-0357). Read
+    again from the description `/job` carries; said only when no field states the years and the
+    served floor is the description's smallest, so it describes the number shown."""
+    if not job.get("description") or experience_extraction.from_field(
+        job.get("experience")
+    ):
+        return None
+    floors = experience_extraction.stated_floors(job["description"])
+    if len(floors) < 2 or job.get("min_years") != floors[0]:
+        return None
+    listed = ", ".join(str(n) for n in floors[:-1]) + f" and {floors[-1]}"
+    return (
+        f"   States {listed} years in separate clauses; HeadStart shows the smallest "
+        "(ADR-0079), so check which applies to you."
+    )
 
 
 #: How a figure the description stated per hour, day, week or month is said to have been
@@ -195,6 +215,13 @@ def _description(job: dict[str, Any], share: _DescriptionShare) -> list[str]:
     ]
 
 
+#: What the weaker sponsorship stance means, beside its name (ADR-0353).
+_MAY_OFFER_SAID = (
+    " (not a firm offer: hedged, as 'not guaranteed' or 'case by case', or limited to a "
+    "country or level this job's place or title does not show)"
+)
+
+
 def _work_authorization(job: dict[str, Any]) -> list[str]:
     """What the description says of visa sponsorship and relocation (ADR-0333): the stances the
     rules read, and every sentence they could read it from, quoted as data so a reader can judge
@@ -202,7 +229,10 @@ def _work_authorization(job: dict[str, Any]) -> list[str]:
     read = job.get("work_authorization")
     if not isinstance(read, dict) or not job.get("description"):
         return []
-    stances = ", ".join(read.get("stances") or []) or "none"
+    held = read.get("stances") or []
+    stances = ", ".join(held) or "none"
+    if work_authorization.MAY_OFFER_SPONSORSHIP in held:
+        stances += _MAY_OFFER_SAID
     lines = [
         (
             f"   Work authorisation read from the whole description by HeadStart's rules (they "
@@ -247,6 +277,8 @@ def _job(number: int, job: dict[str, Any], share: _DescriptionShare) -> list[str
         f"   {' · '.join(place)}",
         f"   Experience: {stated}; {_years(job.get('min_years'), job.get('max_years'))}.",
     ]
+    if floors := _floors_stated(job):
+        lines.append(floors)
     if salary := _salary(job):
         lines.append(f"   {salary}")
     if dates:
@@ -274,7 +306,15 @@ def _held(client: SpaceClient, board: str) -> bool | None:
         return None
     try:
         counted = client.read(
-            SpaceRoute.FACETS, [("strict", "1"), ("board", board), ("counts", "total")]
+            SpaceRoute.FACETS,
+            [
+                ("strict", "1"),
+                ("board", board),
+                # Whether the index serves a job there at all: a Board of nothing but roles a
+                # search leaves out as non-tech is held (ADR-0349).
+                ("include_non_tech", "true"),
+                ("counts", "total"),
+            ],
         )
     except SpaceError:
         return None

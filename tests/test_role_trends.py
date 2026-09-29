@@ -1061,3 +1061,171 @@ def test_a_tick_replays_the_history_once(tmp_path, monkeypatch):
     )
     _run(tmp_path, monkeypatch)
     assert len(replays) == 1
+
+
+# --- the stamp on the served table (ADR-0349) ------------------------------------------------------
+
+_STAMP = "is_confident_non_tech"
+_TECH = [1.0, 0.0, 0.0, 0.0]
+_NON_TECH = [0.0, 0.0, 1.0, 0.0]
+
+
+def _served(tmp_path: Path):
+    return lancedb.connect(tmp_path / "db").open_table(PROD_TABLE)
+
+
+def _stamped(tmp_path: Path) -> set[str]:
+    table = _served(tmp_path)
+    rows = table.search().where(f"{_STAMP} = true").select(["id"]).limit(100).to_list()
+    return {r["id"] for r in rows}
+
+
+def _tech_rows(n: int = 6) -> list[dict]:
+    return [
+        {"id": f"t{i}", "title": f"Backend Dev {i}", "vector": _TECH} for i in range(n)
+    ]
+
+
+def test_a_confidently_non_tech_row_is_stamped_on_the_served_table(
+    tmp_path, monkeypatch
+):
+    _taxonomy(tmp_path / "head", tmp_path / "families.json")
+    _table(
+        tmp_path / "db",
+        [
+            *_tech_rows(),
+            {"id": "clerk", "title": "Data Entry Clerk", "vector": _NON_TECH},
+        ],
+    )
+    _run(tmp_path, monkeypatch)
+    assert _stamped(tmp_path) == {"greenhouse:tests:clerk"}
+    assert _served(tmp_path).count_rows(filter=f"{_STAMP} = false") == 6
+
+
+def test_a_non_tech_call_below_the_threshold_is_counted_but_not_stamped(
+    tmp_path, monkeypatch
+):
+    """Title logits [0, 0, 10] and a row part pulling software up by 9: non-tech at about 0.73,
+    which the head places (cutoff 0.6) and the stamp, at 0.9, does not hide."""
+    row_weights = np.zeros((len(_HEAD_FAMILIES), _DIM), dtype=np.float32)
+    row_weights[0, 3] = 9.0
+    _taxonomy(tmp_path / "head", tmp_path / "families.json", row_weights=row_weights)
+    _table(
+        tmp_path / "db",
+        [
+            *_tech_rows(),
+            {
+                "id": "maybe",
+                "title": "Systems Engineer",
+                "vector": [0.0, 0.0, 1.0, 1.0],
+            },
+        ],
+    )
+    ledger = _run(tmp_path, monkeypatch)
+    rows = {(r["metric"], r["family"]): r["count"] for r in _rows(ledger)}
+    assert rows[("stock", role_taxonomy.NON_TECH)] == 1  # Trends counts it
+    assert _stamped(tmp_path) == set()  # Search still shows it
+
+
+def test_a_description_that_reads_as_non_tech_stamps_a_tech_sounding_title(
+    tmp_path, monkeypatch
+):
+    row_weights = np.zeros((len(_HEAD_FAMILIES), _DIM), dtype=np.float32)
+    row_weights[_HEAD_FAMILIES.index(role_taxonomy.NON_TECH), 3] = 30.0
+    _taxonomy(tmp_path / "head", tmp_path / "families.json", row_weights=row_weights)
+    _table(
+        tmp_path / "db",
+        [
+            *_tech_rows(),
+            {"id": "grid", "title": "Systems Engineer", "vector": [1.0, 0.0, 0.0, 1.0]},
+        ],
+    )
+    _run(tmp_path, monkeypatch)
+    assert _stamped(tmp_path) == {"greenhouse:tests:grid"}
+
+
+def test_the_stamp_follows_the_head_from_one_tick_to_the_next(tmp_path, monkeypatch):
+    """A row retitled into tech is no longer hidden on the next tick."""
+    _taxonomy(tmp_path / "head", tmp_path / "families.json")
+    rows = [
+        *_tech_rows(),
+        {"id": "x", "title": "Data Entry Clerk", "vector": _NON_TECH},
+    ]
+    _table(tmp_path / "db", rows)
+    monkeypatch.setenv(RUN_TS_ENV, "2026-09-25T05:00:00+00:00")
+    _run(tmp_path, monkeypatch)
+    assert _stamped(tmp_path) == {"greenhouse:tests:x"}
+    table = _served(tmp_path)
+    table.update(where="id = 'greenhouse:tests:x'", values={"title": "Backend Dev 9"})
+    # an unknown title encodes as software-engineering in the stub, and this head's row part is
+    # neutral, so the row is tech now
+    monkeypatch.setenv(RUN_TS_ENV, "2026-09-25T06:00:00+00:00")
+    _run(tmp_path, monkeypatch)
+    assert _stamped(tmp_path) == set()
+
+
+def test_no_head_and_no_stamp(tmp_path, monkeypatch):
+    """Missing classifier: Trends degrades and the column is left untouched."""
+    _table(tmp_path / "db", _tech_rows())
+    _run(tmp_path, monkeypatch)
+    assert _STAMP not in _served(tmp_path).schema.names
+
+
+def test_a_warming_cache_leaves_the_stamp_untouched(tmp_path, monkeypatch):
+    _taxonomy(tmp_path / "head", tmp_path / "families.json")
+    _table(
+        tmp_path / "db",
+        [*_tech_rows(), {"id": "c", "title": "Clerk", "vector": _NON_TECH}],
+    )
+    monkeypatch.setattr(role_trends, "_CLASSIFY_BUDGET_SECONDS", -1.0)
+    _run(tmp_path, monkeypatch)
+    assert _STAMP not in _served(tmp_path).schema.names
+
+
+def test_an_unusable_taxonomy_leaves_the_stamp_untouched(tmp_path, monkeypatch):
+    _taxonomy(
+        tmp_path / "head", tmp_path / "families.json", row_model="another-embedder"
+    )
+    _table(
+        tmp_path / "db",
+        [*_tech_rows(), {"id": "c", "title": "Clerk", "vector": _NON_TECH}],
+    )
+    _run(tmp_path, monkeypatch, expect=1)
+    assert _STAMP not in _served(tmp_path).schema.names
+
+
+def test_a_failed_stamp_never_sinks_the_tick(tmp_path, monkeypatch, caplog):
+    import logging
+
+    from headstart.ingest import confident_non_tech_stamp
+
+    def broken(table, ids):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(confident_non_tech_stamp, "stamp", broken)
+    _taxonomy(tmp_path / "head", tmp_path / "families.json")
+    _table(
+        tmp_path / "db",
+        [*_tech_rows(), {"id": "c", "title": "Clerk", "vector": _NON_TECH}],
+    )
+    caplog.set_level(logging.WARNING, logger="headstart.ingest.role_trends")
+    ledger = _run(tmp_path, monkeypatch)
+    assert _rows(ledger)  # Trends counted
+    assert any("stamp" in r.getMessage() for r in caplog.records)
+
+
+def test_a_refused_stamp_leaves_the_column_and_says_why(tmp_path, monkeypatch, caplog):
+    import logging
+
+    _taxonomy(tmp_path / "head", tmp_path / "families.json")
+    # half the table is confidently non-tech: past what a healthy head can give
+    rows = [
+        {"id": f"n{i}", "title": f"Store Clerk {i}", "vector": _NON_TECH}
+        for i in range(4)
+    ]
+    _table(tmp_path / "db", [*_tech_rows(4), *rows])
+    caplog.set_level(logging.WARNING, logger="headstart.ingest.role_trends")
+    ledger = _run(tmp_path, monkeypatch)
+    assert _rows(ledger)
+    assert _STAMP not in _served(tmp_path).schema.names
+    assert any("would be hidden" in r.getMessage() for r in caplog.records)

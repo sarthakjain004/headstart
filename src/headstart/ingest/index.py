@@ -139,6 +139,7 @@ from headstart.ingest.index_plan import (
 )
 from headstart.ingest.update_descriptions import read_store
 from headstart.search_filters import (
+    confident_non_tech_filter,
     employment_type_filter,
     experience_filter,
     india_filter,
@@ -192,6 +193,10 @@ _EMPLOYMENT_TYPE_FIELDS = tuple(
     pa.field(column, pa.bool_()) for column in employment_type_filter.COLUMNS
 )
 _SALARY_KNOWN_FIELD = pa.field(salary_known_filter.COLUMN, pa.bool_())
+# The stamp a Trends tick writes (ADR-0349): true for the rows the role-family head confidently
+# calls non-tech, which Search leaves out unless asked. Not derived from the row's own meta, so
+# `_refresh_metadata` carries it across a rewrite like `first_seen`, and a new row is visible.
+_CONFIDENT_NON_TECH_FIELD = pa.field(confident_non_tech_filter.COLUMN, pa.bool_())
 _POSTED_AT_COMPARABLE_FIELD = pa.field(posted_date_guard.COLUMN, pa.bool_())
 _EXPERIENCE_FILTER_FIELDS = tuple(
     pa.field(column, pa.bool_()) for column in experience_filter.COLUMNS
@@ -210,6 +215,7 @@ class _Held(NamedTuple):
     job_id: str
     first_seen: str | None
     description: str | None
+    confident_non_tech: bool | None = None
 
 
 # One row per Job: canonical typed metadata (ADR-0007) + inline experience numbers (ADR-0019) +
@@ -250,6 +256,7 @@ def _schema(dim: int) -> pa.Schema:
             ),  # "field" | "regex" | null — no seniority tier
             _SALARY_KNOWN_FIELD,
             pa.field("department", pa.string()),
+            _CONFIDENT_NON_TECH_FIELD,
             pa.field("url", pa.string()),
             _REQUISITION_FIELD,
             pa.field("posted_at", pa.string()),
@@ -294,6 +301,7 @@ def _served_meta(meta: dict, first_seen: str | None) -> dict:
     row.update(salary_known_filter.flags(meta.get("min_salary_annual")))
     row.update(posted_date_guard.flags(row["posted_at"]))
     row.update(experience_filter.flags(meta.get("min_years")))
+    row.update(confident_non_tech_filter.flags())
     return row
 
 
@@ -335,6 +343,12 @@ def _migrate_experience_filter_flags(table: Any) -> None:
     _add_missing_columns(table, experience_filter.MIGRATION_SQL)
 
 
+def _migrate_confident_non_tech_flag(table: Any) -> None:
+    """Add the non-tech stamp to a table that predates ADR-0349, every row visible until the tick
+    that follows stamps the confident ones."""
+    _add_missing_columns(table, confident_non_tech_filter.MIGRATION_SQL)
+
+
 class _SearchIndexSpec(NamedTuple):
     column: str
     index_type: str
@@ -363,6 +377,7 @@ def _search_index_specs() -> list[_SearchIndexSpec]:
             _SearchIndexSpec(column, "BITMAP", Bitmap())
             for column in employment_type_filter.COLUMNS
         ),
+        _SearchIndexSpec(_CONFIDENT_NON_TECH_FIELD.name, "BITMAP", Bitmap()),
         # Exact scans are already cheap on tiny test/dev tables, and an ANN index needs a real
         # training population. Production is over 500k rows; this boundary is deliberately remote.
         _SearchIndexSpec("vector", "IVF_SQ", IvfSq(distance_type="cosine"), 256),
@@ -544,7 +559,9 @@ def _refresh_metadata(
 
     ``first_seen`` is carried across (re-stamping would resurface every refreshed Job as a new
     listing to the alerts watermark, ADR-0031), and the vector is taken from the store, which is
-    where the row's own vector came from.
+    where the row's own vector came from. So is the non-tech stamp (ADR-0349): a tick's verdict, not
+    the store's meta, so it is left out of the comparison (else every stamped row would read stale
+    on every run) and written back as it was, until the next tick decides it again.
 
     ``description`` (ADR-0104) is **never compared against the store's meta**, which holds no
     text, only a ``has_description`` bit — comparing it there would read every row as stale and
@@ -560,9 +577,18 @@ def _refresh_metadata(
         _FIRST_SEEN_FIELD.name,
         _DESCRIPTION_FIELD.name,
         _DESCRIPTION_STORED_FIELD.name,
+        _CONFIDENT_NON_TECH_FIELD.name,
     )
     columns = [f for f in table.schema.names if f not in carried]
-    indexed = _scan(table, columns + [_FIRST_SEEN_FIELD.name, _DESCRIPTION_FIELD.name])
+    indexed = _scan(
+        table,
+        columns
+        + [
+            _FIRST_SEEN_FIELD.name,
+            _DESCRIPTION_FIELD.name,
+            _CONFIDENT_NON_TECH_FIELD.name,
+        ],
+    )
 
     # Only ids and their carried columns are held across the scan; a row's replacement is
     # materialised one batch at a time. Carrying a vector per stale row would be ~25 KB each — a
@@ -581,7 +607,10 @@ def _refresh_metadata(
         if index is None or job_id in just_added:
             continue
         kept = _Held(
-            job_id, row[_FIRST_SEEN_FIELD.name], row.get(_DESCRIPTION_FIELD.name)
+            job_id,
+            row[_FIRST_SEEN_FIELD.name],
+            row.get(_DESCRIPTION_FIELD.name),
+            row.get(_CONFIDENT_NON_TECH_FIELD.name),
         )
         stored = _served_meta(metas[index], kept.first_seen)
         if all(row.get(field) == stored.get(field) for field in columns):
@@ -627,6 +656,8 @@ def _refresh_metadata(
             description = texts.get(kept.job_id) or kept.description
             fresh[_DESCRIPTION_FIELD.name] = description
             fresh[_DESCRIPTION_STORED_FIELD.name] = description is not None
+            # The tick's verdict, not the store's: kept until the next tick restamps (ADR-0349).
+            fresh[_CONFIDENT_NON_TECH_FIELD.name] = bool(kept.confident_non_tech)
             fresh["vector"] = vectors[index].tolist()
             rows.append(fresh)
         apply_sync(table, rows, [kept.job_id for kept in batch])
@@ -921,6 +952,7 @@ def sync(args: argparse.Namespace) -> int:
     _migrate_presence_flags(table)
     _migrate_posted_at_comparable(table)
     _migrate_experience_filter_flags(table)
+    _migrate_confident_non_tech_flag(table)
 
     # And for `country` (ADR-0138). Existing rows get null until `_refresh_metadata` below rewrites
     # them from the store — no bespoke backfill command needed here, unlike description: `country`'s
@@ -1400,6 +1432,7 @@ def compact(args: argparse.Namespace) -> int:
             _migrate_presence_flags(table)
             _migrate_posted_at_comparable(table)
             _migrate_experience_filter_flags(table)
+            _migrate_confident_non_tech_flag(table)
             _create_search_indexes(table)
         count = table.count_rows()
         if name == PROD_TABLE:

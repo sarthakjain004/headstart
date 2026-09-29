@@ -95,6 +95,10 @@
           <span class="tip" id="remote-tip">Some employers mark a job as remote and we use that; for the rest we
             read the location they wrote. A job that says it's remote only in its description can be
             missed.</span></div>
+        <div class="f"><label class="sw"><input type="checkbox" id="includenontech" aria-describedby="includenontech-tip"> Include non-tech roles</label>
+          <span class="tip" id="includenontech-tip">Employers list every job they have, and some are not tech: a store's
+            front-end cashier, a plant's process engineer. Roles our classifier is confident are not tech are
+            left out unless you tick this.<span id="nontech-hidden"></span></span></div>
       </div>
 
       {# Pay is its own group, not the tail of Role: a currency, two bounds, a slider, its scale

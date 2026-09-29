@@ -15,6 +15,7 @@ from dataclasses import replace
 import pytest
 
 from headstart.search_filters.compiler import account_clause, build_filter, with_extra
+from headstart.serving import location_counts
 from headstart.serving.job_absence import WHY_NOT_SERVED
 from headstart.serving.job_search import (
     FACET_CACHE_SIZE,
@@ -420,9 +421,17 @@ def test_warm_uses_the_same_normalized_key_as_the_first_browser_request(monkeypa
     monkeypatch.setattr(
         facets, "counts", lambda *_args, **_kwargs: {"total": 1, "facets": {}}
     )
+    # ADR-0355: warming reads every served location's countries once.
+    read_places = []
+    monkeypatch.setattr(
+        location_counts,
+        "places",
+        lambda table, where, india: read_places.append(where) or {"jobs": 1},
+    )
     searcher, table = _searcher()
     table.search_calls = 0
     searcher.warm()
+    assert read_places == [None]
     assert table.search_calls == 2
     searcher.run({"q": "", "k": "20", "page": "1"})
     assert table.search_calls == 2
@@ -2115,6 +2124,47 @@ def _ids(rows):
     return [row["id"] for row in rows]
 
 
+@pytest.mark.parametrize(
+    "asked",
+    [
+        {},
+        {"remote": "true"},
+        {"family": "ai-ml"},
+        {"kw": "visa", "kw_in": "description"},
+        {"family": "ai-ml", "kw": "sponsorship", "kw_in": "description"},
+    ],
+    ids=["index", "filter", "category", "keyword", "category-keyword"],
+)
+def test_places_count_every_matching_job_as_country_would(families_served, asked):
+    """ADR-0355: `places=1` reads the rows the total counts, so its jobs are the total and each
+    country's count is the total with `country=` added: over the index, a filter, a category's
+    family table and a description keyword's rows."""
+    counted = families_served.facets({**asked, "places": "1", "counts": "total"})
+    places = counted["places"]
+    assert places["jobs"] == counted["total"]
+    assert places["countries"], asked
+    for country in places["countries"]:
+        alone = families_served.facets(
+            {**asked, "country": country["code"], "counts": "total"}
+        )
+        assert country["jobs"] == alone["total"], (asked, country["code"])
+
+
+def test_places_are_asked_by_one_value_and_cached_apart(families_served):
+    with pytest.raises(ValueError, match="places 'yes' is not known"):
+        families_served.facets({"places": "yes"})
+    plain = families_served.facets({"counts": "total"})
+    placed = families_served.facets({"counts": "total", "places": "1"})
+    assert "places" not in plain and placed["places"]["countries"][0] == {
+        "code": "DE",
+        "jobs": 3,
+        "places": [
+            {"location": "Berlin", "count": 2},
+            {"location": "Munich", "count": 1},
+        ],
+    }
+
+
 def test_a_category_across_the_index_lists_and_counts_exactly_its_jobs(
     families_served,
 ):
@@ -2336,7 +2386,10 @@ def test_a_stance_costing_everything_is_named_as_the_blocking_filter(families_se
 
 
 def test_an_unknown_stance_is_refused_naming_the_known_ones(families_served):
-    with pytest.raises(ValueError, match="offers_sponsorship, refuses_sponsorship"):
+    with pytest.raises(
+        ValueError,
+        match="offers_sponsorship, may_offer_sponsorship, refuses_sponsorship",
+    ):
         families_served.run({"work_authorization": "sponsors"})
 
 
@@ -2351,6 +2404,24 @@ def test_a_read_by_id_says_what_its_whole_description_states(families_served):
     assert job["work_authorization"] == {
         "stances": ["offers_sponsorship"],
         "mentions": ["We sponsor visas."],
+    }
+
+
+def test_a_read_by_id_judges_a_scoped_offer_against_its_own_place():
+    # ADR-0353: an offer scoped to Germany offers nothing to a job in the United States.
+    from headstart.serving.job_search import _job_row
+
+    row = {
+        "id": "lever:n8n:1",
+        "title": "Senior Developer Advocate, US",
+        "description": "We can sponsor visas to Germany.",
+    }
+    assert _job_row({**row, "location": "Berlin, Germany"})["work_authorization"][
+        "stances"
+    ] == ["offers_sponsorship"]
+    assert _job_row({**row, "location": "New York, NY"})["work_authorization"] == {
+        "stances": [],
+        "mentions": ["We can sponsor visas to Germany."],
     }
 
 
@@ -2428,3 +2499,352 @@ def test_a_table_with_no_location_column_learns_no_accented_words():
     table = _Table([dict(_ROW)])
     assert "location" not in table.schema.names
     assert JobSearch(_Model(), table).capabilities.accented_words == ()
+
+
+# ---- the Jobs the head confidently calls non-tech are left out unless asked (ADR-0349) ----
+
+
+@pytest.fixture
+def non_tech_served(tmp_path_factory):
+    """Eight Jobs on one Board, two of them stamped `is_confident_non_tech` and one row with no
+    stamp at all (NULL), which counts as visible."""
+    lancedb = pytest.importorskip("lancedb")
+    pa = pytest.importorskip("pyarrow")
+    rows = [
+        {
+            "id": f"lever:acme:{n}",
+            "title": f"Engineer {n}",
+            "company": "Acme",
+            "location": "Berlin",
+            "remote": True,
+            "ats": "lever",
+            "first_seen": f"2026-09-2{n}T00:00:00+00:00",
+            "url": f"https://jobs.lever.co/acme/{n}",
+            "posted_at": f"2026-09-2{n}",
+            "employment_type": "Full-time",
+            "min_years": None,
+            "is_confident_non_tech": None if n == 8 else n in (2, 5),
+            "vector": [1.0 - 0.1 * n, 0.1 * n, 0.0, 0.0],
+        }
+        for n in range(1, 9)
+    ]
+    schema = pa.schema(
+        [
+            ("id", pa.string()),
+            ("title", pa.string()),
+            ("company", pa.string()),
+            ("location", pa.string()),
+            ("remote", pa.bool_()),
+            ("ats", pa.string()),
+            ("first_seen", pa.string()),
+            ("url", pa.string()),
+            ("posted_at", pa.string()),
+            ("employment_type", pa.string()),
+            ("min_years", pa.int32()),
+            ("is_confident_non_tech", pa.bool_()),
+            ("vector", pa.list_(pa.float32(), 4)),
+        ]
+    )
+    np = pytest.importorskip("numpy")
+
+    class _Encoder:
+        def encode(self, texts, normalize_embeddings=False):
+            return np.array([[1.0, 0.0, 0.0, 0.0]], dtype="float32")
+
+    db = lancedb.connect(tmp_path_factory.mktemp("non_tech"))
+    table = db.create_table("jobs", data=pa.Table.from_pylist(rows, schema=schema))
+    return JobSearch(_Encoder(), table)
+
+
+_VISIBLE = {f"lever:acme:{n}" for n in (1, 3, 4, 6, 7, 8)}
+_EVERY = {f"lever:acme:{n}" for n in range(1, 9)}
+
+
+def _served_ids(rows):
+    return {row["id"] for row in rows}
+
+
+def test_the_stamp_is_learned_from_the_schema():
+    searcher, table = _searcher()
+    assert searcher.capabilities.has_confident_non_tech_flag is False
+    table.schema = types.SimpleNamespace(
+        names=["ats", "title", "is_confident_non_tech"]
+    )
+    assert JobSearch(_Model(), table).capabilities.has_confident_non_tech_flag is True
+
+
+def test_a_table_without_the_stamp_hides_nothing_and_says_so_at_boot(caplog):
+    searcher, table = _searcher()
+    searcher.run({"q": "x"})
+    assert table.last_where is None
+    _, table = _searcher()
+    with caplog.at_level(logging.WARNING, logger="headstart.serving.job_search"):
+        caplog.clear()
+        JobSearch(_Model(), table)
+    assert "is_confident_non_tech" in caplog.records[0].getMessage()
+
+
+def test_a_browse_and_a_ranked_search_leave_the_stamped_rows_out(non_tech_served):
+    assert _served_ids(non_tech_served.run({"k": "20"})) == _VISIBLE
+    assert _served_ids(non_tech_served.run({"q": "engineer", "k": "20"})) == _VISIBLE
+    assert _served_ids(non_tech_served.run({"like": "lever:acme:1", "k": "20"})) == (
+        _VISIBLE - {"lever:acme:1"}
+    )
+
+
+@pytest.mark.parametrize("asked", ["true", "1"])
+def test_include_non_tech_shows_every_row(non_tech_served, asked):
+    rows = non_tech_served.run({"include_non_tech": asked, "k": "20"})
+    assert _served_ids(rows) == _EVERY
+    ranked = non_tech_served.run(
+        {"q": "engineer", "include_non_tech": asked, "k": "20"}
+    )
+    assert _served_ids(ranked) == _EVERY
+
+
+def test_anything_else_for_include_non_tech_is_not_asking(non_tech_served):
+    assert _served_ids(
+        non_tech_served.run({"include_non_tech": "false", "k": "20"})
+    ) == (_VISIBLE)
+
+
+def test_the_counts_agree_with_the_list_and_say_how_many_were_left_out(non_tech_served):
+    counted = non_tech_served.facets({})
+    assert counted["total"] == len(_VISIBLE) == 6
+    assert counted["non_tech_left_out"] == 2
+    assert counted["facets"]["remote"][0]["count"] == 6
+    including = non_tech_served.facets({"include_non_tech": "true"})
+    assert including["total"] == 8
+    assert "non_tech_left_out" not in including
+    only_total = non_tech_served.facets({"counts": "total"})
+    assert (only_total["total"], only_total["non_tech_left_out"]) == (6, 2)
+
+
+def test_a_table_without_the_stamp_reports_nothing_left_out():
+    searcher, _ = _searcher()
+    assert "non_tech_left_out" not in searcher.facets({})
+
+
+def test_a_search_that_only_non_tech_rows_match_says_what_hid_them(non_tech_served):
+    counted = non_tech_served.facets({"company": "acme", "title_words": "engineer 2"})
+    assert counted["total"] == 0 and counted["non_tech_left_out"] == 1
+
+
+def test_strict_accepts_include_non_tech(non_tech_served):
+    rows = non_tech_served.run({"strict": "1", "include_non_tech": "true", "k": "20"})
+    assert _served_ids(rows) == _EVERY
+    from headstart.serving.job_search import REQUEST_PARAMETERS
+
+    assert "include_non_tech" in REQUEST_PARAMETERS
+
+
+def test_a_read_by_id_opens_a_stamped_job_and_a_listing_still_holds_it(non_tech_served):
+    """get_job, Saved and the like ask for a Job by id: hiding it there would lose a posting the
+    user already has."""
+    assert set(non_tech_served.jobs_by_id(["lever:acme:2", "lever:acme:5"])) == {
+        "lever:acme:2",
+        "lever:acme:5",
+    }
+    assert non_tech_served.indexed(["lever:acme:2", "lever:acme:9"]) == {"lever:acme:2"}
+
+
+def test_a_companys_places_and_levels_leave_the_stamped_rows_out_too(non_tech_served):
+    from werkzeug.datastructures import MultiDict
+
+    board = ("board", "lever:acme")
+    assert non_tech_served.locations(MultiDict([board]))["jobs"] == 6
+    every = MultiDict([board, ("include_non_tech", "true")])
+    assert non_tech_served.locations(every)["jobs"] == 8
+    assert non_tech_served.levels(MultiDict([board]))["jobs"] == 6
+    assert (
+        non_tech_served.levels(MultiDict([board, ("include_non_tech", "1")]))["jobs"]
+        == 8
+    )
+
+
+def test_the_doors_new_jobs_count_what_a_search_shows(non_tech_served):
+    assert non_tech_served.n_seen_within(10**6) == 6
+
+
+def test_the_door_and_header_count_what_a_search_lists(non_tech_served):
+    """ADR-0349: the total the page prints, the new-jobs tile and a search agree on one set."""
+    assert non_tech_served.n_served() == 6
+    assert (
+        non_tech_served.n_served()
+        == non_tech_served.facets({"counts": "total"})["total"]
+    )
+    assert non_tech_served.n_served() == non_tech_served.n_seen_within(10**6)
+
+
+def test_a_table_without_the_stamp_counts_every_row():
+    searcher, _ = _searcher()
+    assert searcher.n_served() == 1
+
+
+@pytest.fixture(scope="module")
+def sampled_with_stamp(tmp_path_factory):
+    """The `sampled` table with the non-tech stamp on jobs 4 (a data-engineering job) and 5."""
+    lancedb = pytest.importorskip("lancedb")
+    pa = pytest.importorskip("pyarrow")
+    vectors = [
+        [1.0, 0.0, 0.0, 0.0],
+        [0.9, 0.1, 0.0, 0.0],
+        [0.7, 0.3, 0.0, 0.0],
+        [0.2, 0.8, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ]
+    ids = [
+        "lever:acme:1",
+        "lever:acme:2",
+        "lever:acme:3",
+        "lever:beta:4",
+        "lever:gamma:5",
+    ]
+    rows = [
+        {
+            "id": job_id,
+            "title": f"Engineer {n}",
+            "company": job_id.split(":")[1].title(),
+            "location": "Berlin, Germany",
+            "remote": False,
+            "ats": "lever",
+            "first_seen": f"2026-09-2{n}T00:00:00+00:00",
+            "min_years": n,
+            "description": "Python, SQL and Spark on AWS.",
+            "is_confident_non_tech": n >= 4,
+            "vector": vector,
+        }
+        for n, (job_id, vector) in enumerate(zip(ids, vectors, strict=True), start=1)
+    ]
+    schema = pa.schema(
+        [
+            ("id", pa.string()),
+            ("title", pa.string()),
+            ("company", pa.string()),
+            ("location", pa.string()),
+            ("remote", pa.bool_()),
+            ("ats", pa.string()),
+            ("first_seen", pa.string()),
+            ("min_years", pa.int32()),
+            ("description", pa.string()),
+            ("is_confident_non_tech", pa.bool_()),
+            ("vector", pa.list_(pa.float32(), 4)),
+        ]
+    )
+    db = lancedb.connect(tmp_path_factory.mktemp("sampled_stamped"))
+    table = db.create_table("jobs", data=pa.Table.from_pylist(rows, schema=schema))
+    search = JobSearch(_Model(), table)
+    search._query_vector = lambda _query: [1.0, 0.0, 0.0, 0.0]
+    return search
+
+
+def test_a_requirements_sample_leaves_out_non_tech_roles_and_counts_them(
+    sampled_with_stamp,
+):
+    """ADR-0349: /requirements reads the default like a search, and says what it left out."""
+    from werkzeug.datastructures import MultiDict
+
+    default = sampled_with_stamp.requirements(MultiDict({"q": "engineer"}), _FAMILIES)
+    assert (default["matching"], default["non_tech_left_out"]) == (3, 2)
+    included = sampled_with_stamp.requirements(
+        MultiDict({"q": "engineer", "include_non_tech": "true"}), _FAMILIES
+    )
+    assert (included["matching"], included["non_tech_left_out"]) == (5, None)
+
+
+def test_a_categorys_sample_counts_the_stamped_jobs_it_left_out_too(sampled_with_stamp):
+    from werkzeug.datastructures import MultiDict
+
+    args = {"family": "data-engineering"}
+    default = sampled_with_stamp.requirements(MultiDict(args), _FAMILIES)
+    assert (default["matching"], default["non_tech_left_out"]) == (2, 1)
+    included = sampled_with_stamp.requirements(
+        MultiDict({**args, "include_non_tech": "1"}), _FAMILIES
+    )
+    assert (included["matching"], included["non_tech_left_out"]) == (3, None)
+
+
+def test_a_requirements_sample_of_a_table_without_the_stamp_says_nothing_left_out(
+    sampled,
+):
+    from werkzeug.datastructures import MultiDict
+
+    assert (
+        sampled.requirements(MultiDict({"q": "engineer"}), _FAMILIES)[
+            "non_tech_left_out"
+        ]
+        is None
+    )
+
+
+def test_a_location_and_the_default_hide_compose_on_a_real_table():
+    """ADR-0344 folds the term and ADR-0349 hides the stamped rows: both clauses reach the table
+    together, and the rows, the total and the count left out agree on the one set."""
+    import tempfile
+
+    lancedb = pytest.importorskip("lancedb")
+    pa = pytest.importorskip("pyarrow")
+    places = [
+        ("Zürich, Switzerland", False),
+        ("Zurich, Switzerland", True),
+        ("Zürich, Switzerland", None),
+        ("Bangalore, India", True),
+        ("London, UK", False),
+    ]
+    rows = [
+        {
+            "id": f"lever:acme:{n}",
+            "title": f"Engineer {n}",
+            "company": "Acme",
+            "location": place,
+            "remote": False,
+            "ats": "lever",
+            "first_seen": f"2026-09-2{n}T00:00:00+00:00",
+            "url": f"https://jobs.lever.co/acme/{n}",
+            "is_confident_non_tech": stamped,
+            "vector": [1.0, 0.0, 0.0, 0.0],
+        }
+        for n, (place, stamped) in enumerate(places, start=1)
+    ]
+    schema = pa.schema(
+        [
+            ("id", pa.string()),
+            ("title", pa.string()),
+            ("company", pa.string()),
+            ("location", pa.string()),
+            ("remote", pa.bool_()),
+            ("ats", pa.string()),
+            ("first_seen", pa.string()),
+            ("url", pa.string()),
+            ("is_confident_non_tech", pa.bool_()),
+            ("vector", pa.list_(pa.float32(), 4)),
+        ]
+    )
+    with tempfile.TemporaryDirectory() as directory:
+        table = lancedb.connect(directory).create_table(
+            "jobs", data=pa.Table.from_pylist(rows, schema=schema)
+        )
+        searcher = JobSearch(_Model(), table)
+        assert set(searcher.capabilities.accented_words) == {"zUrich"}
+        where = build_filter(
+            searcher.parse_filters({"location": "zurich"}), searcher.capabilities
+        )
+        assert where.endswith(
+            "AND (is_confident_non_tech IS NULL OR is_confident_non_tech = false)"
+        )
+        # the folded term is a character-class regex on `location`, then the hide, joined by AND
+        assert where.startswith("regexp_like(location, '(?i)[z")
+
+        def ids(**args):
+            return {
+                r["id"] for r in searcher.run({"location": "zurich", "k": "20", **args})
+            }
+
+        assert ids() == {"lever:acme:1", "lever:acme:3"}
+        assert ids(include_non_tech="true") == {
+            "lever:acme:1",
+            "lever:acme:2",
+            "lever:acme:3",
+        }
+        counted = searcher.facets({"location": "zurich", "counts": "total"})
+        assert (counted["total"], counted["non_tech_left_out"]) == (2, 1)

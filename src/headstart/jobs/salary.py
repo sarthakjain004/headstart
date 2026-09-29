@@ -158,6 +158,27 @@ class SalarySpan:
     period: str | None = field(default=None, compare=False)
 
 
+#: A rupee figure below this a year cannot be pay for a job every place of which is outside India
+#: (ADR-0357). Of the 70 served rows stating INR on a job placed wholly abroad (2026-09-29), the 19
+#: below it were read: 7 are a dollar or euro figure typed under an ATS's default currency
+#: (Knowfinity's US "100000-130000 INR per-year" on PyjamaHR, GreyOrange's Redwood City
+#: "200000-215000 INR"), 10 monthly Gulf pay read as annual ("₹1–₹2 Lakh" for Doha), 2 unclear.
+#: Above it the figures are mostly rupee pay: an Indian agency's quote for a Gulf job, or an Indian
+#: job whose location the ATS misplaced, so every rupee figure abroad is not dropped.
+ABROAD_INR_BELOW = 500_000
+
+
+def placed(span: SalarySpan | None, places: set[str] | None) -> SalarySpan | None:
+    """``span``, or None when it is a rupee figure too small to be pay for a job in ``places``.
+
+    ``places`` is every country code the job's location names (``country_gazetteer.classify``);
+    an empty set says nothing, and a job placed in India keeps any figure."""
+    if span is None or span.currency != "INR" or not places or "IN" in places:
+        return span
+    top = span.max_annual if span.max_annual is not None else span.min_annual
+    return None if top is not None and top < ABROAD_INR_BELOW else span
+
+
 def extract(
     salary: str | None, description: str | None, ats: str | None = None
 ) -> SalarySpan | None:

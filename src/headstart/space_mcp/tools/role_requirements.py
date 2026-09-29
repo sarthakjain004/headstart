@@ -10,7 +10,9 @@ by the Company directory's name (ADR-0332). This module only sends the arguments
 Search filters `search_jobs` takes, read by the same rules (`search_arguments`), `max_age_days`'s
 default among them (ADR-0338), and says what was counted, over how many, of how many.
 Descriptions are scraped text, so the answer carries none of it: counts, the vocabulary's own
-skill names, and the quoted company names search already shows.
+skill names, and the quoted company names search already shows. Unless a company is named, at most
+:data:`PER_COMPANY` of one company's postings are counted, and a company named like an agency and
+on no curated list is tagged "operator unverified" (ADR-0352).
 """
 
 from __future__ import annotations
@@ -35,8 +37,14 @@ SHORT_FIELD = 60
 #: description, which is written before any answer; an answer states its own.
 SAMPLE_SIZE = 300
 
+#: The most postings of one company a sample counts (ADR-0352): across 11 live samples a cap of
+#: 8 left out a median 1.4% of the sample, binding only on the companies far above the rest
+#: (DigitalXNode 15, STAFIDE 21); 5 reshaped every sample's ordinary head.
+PER_COMPANY = 8
+
 #: The Search filters this tool takes, each as `search_jobs` takes it; `max_age_days` too, so a
-#: sample leaves out what search leaves out by default (ADR-0338).
+#: sample leaves out what search leaves out by default (ADR-0338); and the employment type, the
+#: work-authorisation stance and pay, so internships or sponsoring roles can be sampled (ADR-0355).
 _FILTERS = (
     "company",
     "remote",
@@ -45,6 +53,13 @@ _FILTERS = (
     "location",
     "max_years",
     "max_age_days",
+    "include_non_tech",
+    "employment_type",
+    "work_authorization",
+    "salary_min",
+    "salary_max",
+    "salary_currency",
+    "has_salary",
 )
 
 
@@ -60,6 +75,10 @@ def _params(
         params.append(("family", category))
     if scope is not None:
         params += scope.params()
+    else:
+        # A named company asks for its own postings; any other sample counts at most
+        # PER_COMPANY of one company's (ADR-0352).
+        params.append(("per_company", str(PER_COMPANY)))
     return params + search_arguments.filter_params(arguments)
 
 
@@ -88,7 +107,8 @@ def _lead(arguments: dict[str, Any], counted: dict[str, Any]) -> list[str]:
         f"{matching:,} postings {'in the category ' if category else ''}that the filters "
         "admit, copies included"
     )
-    copies = read - distinct
+    over = counted.get("over_company_cap") or 0
+    copies = read - distinct - over
     lines = [
         (
             f"What {_subject(arguments)} ask for: counted over {distinct:,} distinct postings, "
@@ -100,6 +120,11 @@ def _lead(arguments: dict[str, Any], counted: dict[str, Any]) -> list[str]:
             )
         )
     ]
+    if over:
+        lines.append(
+            f"At most {counted['per_company']} postings of one company are counted, so one "
+            f"company's wording cannot speak for the role: {over:,} more were left out."
+        )
     if query and not category:
         lines.append(
             "The query ranks postings but does not narrow them, so the total is every posting "
@@ -159,6 +184,7 @@ def _work_authorization_line(counted: dict[str, Any]) -> str | None:
     counted = ", ".join(
         f"{words} in {held[stance]:,} ({_share(held[stance], described)})"
         for stance, words in search_arguments.STANCE_WORDS.items()
+        if stance in held
     )
     return (
         f"Of the {described:,} with a description, read by HeadStart's rules (not a field, "
@@ -195,13 +221,22 @@ def _salary_line(counted: dict[str, Any]) -> str:
     )
 
 
-def _company_line(counted: dict[str, Any]) -> str:
+def _company_count(company: dict[str, Any]) -> str:
+    """How many of a company's postings the sample held, and counted when the cap cut it."""
+    jobs, kept = company["jobs"], company.get("counted", company["jobs"])
+    return f"{jobs:,}" if kept == jobs else f"{jobs:,} sampled, {kept:,} counted"
+
+
+def _company_line(counted: dict[str, Any]) -> list[str]:
     named = " · ".join(
-        shown_company.said(c, SHORT_FIELD)
-        + f" (key {scraped_text.quoted(c['board'], 300)}) {c['jobs']:,}"
+        shown_company.tagged(c, c["board"], SHORT_FIELD)
+        + f" (key {scraped_text.quoted(c['board'], 300)}) {_company_count(c)}"
         for c in counted["companies"]
     )
-    return f"Companies with the most sampled postings: {named or 'none named'}."
+    lines = [f"Companies with the most sampled postings: {named or 'none named'}."]
+    if shown_company.UNVERIFIED in named:
+        lines.append(shown_company.UNVERIFIED_NOTE)
+    return lines
 
 
 def _country_line(counted: dict[str, Any]) -> str:
@@ -253,6 +288,7 @@ def _refuse_by_policy(arguments: dict[str, Any]) -> None:
             "Name a role in `query` ('data engineer'), a job `category`, or both: the answer "
             "counts what those postings ask for."
         )
+    search_arguments.refuse_unreadable_salary(arguments)
 
 
 def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
@@ -262,14 +298,19 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
         scope = company_scope.for_search(client, company, needs_boards=False)
     counted = client.read(SpaceRoute.REQUIREMENTS, _params(arguments, scope))
     lines = _lead(arguments, counted)
-    if any(
-        arguments.get(name) not in (None, "", False) for name in _FILTERS
-    ) or search_arguments.operators_kept(arguments):
+    if (
+        any(arguments.get(name) not in (None, "", False) for name in _FILTERS)
+        or search_arguments.operators_kept(arguments)
+        or counted.get("non_tech_left_out")
+    ):
         # The category is the lead's own subject, so the scope line leaves it out.
         filters = {k: v for k, v in arguments.items() if k != "category"}
         lines.append(
             search_arguments.scope_line(
-                filters, scope, counted.get("operators_left_out")
+                filters,
+                scope,
+                counted.get("operators_left_out"),
+                counted.get("non_tech_left_out"),
             )
         )
     if note := search_arguments.query_constraints_note(arguments.get("query") or ""):
@@ -289,7 +330,7 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
         )
         if stances := _work_authorization_line(counted):
             lines.append(stances)
-        lines.append(_company_line(counted))
+        lines += _company_line(counted)
         lines.append(_country_line(counted))
         lines.append(
             f"Skills are matched against HeadStart's list of {counted['vocabulary_size']:,} "
@@ -312,13 +353,16 @@ TOOL = SpaceTool(
         "per currency, the remote share, and the companies and countries with the most of "
         "them. `query` is the role only, as in search_jobs ('data engineer'); the sample is "
         f"the {SAMPLE_SIZE} postings closest to it among those the filters admit, each "
-        "requisition counted once however many Boards or countries copy it. `category` alone samples the "
+        "requisition counted once however many Boards or countries copy it, and at most "
+        f"{PER_COMPANY} of one company's unless `company` is named. `category` alone samples the "
         "category's newest postings across the whole index; with `query`, the closest within "
         "it. Say what was counted: how many postings, of how many, and how they were picked, "
         "as the answer states it. Skills come from a fixed list of tech skills; a skill few "
         "employers mention may be one employer's self-description. For a career switcher, "
         "read the skills with the stated years. The filters mean what they mean in "
-        "search_jobs. No description text is returned."
+        "search_jobs, `include_non_tech` too: postings HeadStart's classifier is confident "
+        "are not tech are left out of the sample unless it is true, and the answer says how "
+        "many. No description text is returned."
     ),
     input_schema={
         "type": "object",

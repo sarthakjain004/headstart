@@ -205,6 +205,17 @@ def test_where_agrees_with_matches_on_a_real_table(table):
         assert hits == expected, code
 
 
+def test_the_bulk_reading_is_classify_less_india_row_for_row():
+    """ADR-0355: the column-at-a-time rule answers what `classify` does, India aside, on every
+    trap above, on "İstanbul" (Python lowers "İ" as the filter does, Arrow alone would not), and
+    on nothing."""
+    pytest.importorskip("pyarrow")
+    locations = [loc for loc, _ in _ROWS] + ["İstanbul", "Istanbul, TR", "", None]
+    read = country_gazetteer.countries_outside_india(locations)
+    assert read == [frozenset(classify(loc) - {"IN"}) for loc in locations]
+    assert read[-4] == frozenset() and read[-3] == {"TR"}
+
+
 def test_a_clause_is_at_most_five_regex_passes_and_seven_with_a_city_word():
     for code, country in COUNTRIES.items():
         limit = 7 if country.city_words else 5

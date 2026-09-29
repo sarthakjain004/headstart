@@ -20,6 +20,14 @@ the sentence, next to the word:
 sponsorship when nothing in its text refuses it. :func:`mentions` quotes the sentences a reader
 would need to judge it themselves.
 
+An offer is read against the job it is posted on (ADR-0353). One hedged ("Sponsorship for this
+role is not guaranteed", "may be available … on a case-by-case basis") is the weaker stance
+:data:`MAY_OFFER_SPONSORSHIP`. One scoped to a named country ("We can sponsor visas to Germany")
+or to named levels ("offered exclusively for Principal-level roles and above") is judged against
+the job's ``location`` and ``title``: in scope it stands; out of scope it offers nothing, and
+refuses when it says the scope is the only one ("only", "exclusively"); where the job's country or
+level cannot be read, it may offer.
+
 These are rules over scraped text, with the error rates ADR-0333 measured on a hand-labelled
 sample; they are not the employer's structured answer, and an answer that serves them says so.
 """
@@ -27,12 +35,22 @@ sample; they are not the employer's structured answer, and an answer that serves
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 
-#: The stances :func:`stances` can find, in the order an answer names them.
+from headstart.search_filters import country_gazetteer
+
+#: The stances :func:`stances` can find, in the order an answer names them. A description holds
+#: at most one of the three sponsorship stances.
 OFFERS_SPONSORSHIP = "offers_sponsorship"
+MAY_OFFER_SPONSORSHIP = "may_offer_sponsorship"
 REFUSES_SPONSORSHIP = "refuses_sponsorship"
 OFFERS_RELOCATION = "offers_relocation"
-STANCES = (OFFERS_SPONSORSHIP, REFUSES_SPONSORSHIP, OFFERS_RELOCATION)
+STANCES = (
+    OFFERS_SPONSORSHIP,
+    MAY_OFFER_SPONSORSHIP,
+    REFUSES_SPONSORSHIP,
+    OFFERS_RELOCATION,
+)
 
 #: What every sentence a rule or :func:`mentions` reads contains. The serving side reads only
 #: the descriptions this matches (Rust's regex engine runs it, so it keeps to syntax both
@@ -93,7 +111,7 @@ _REACH = 70
 
 _NEGATION = re.compile(
     r"(?i)(?:\b(?:not|no|non|none|never|neither|nor|without|unable|cannot|can ?not|"
-    r"unavailable|ineligible|n/a|disqualif\w*)\b|n't\b)"
+    r"unavailable|ineligible|n/a|disqualif\w*)\b|n['’]t\b)"
 )
 
 # -- sponsorship -----------------------------------------------------------------------------
@@ -108,7 +126,9 @@ _SPONSOR = re.compile(
     + r"\s+(?:\w+\s+){0,2}?(?:support|assistance|help|transfers?|applications?|costs?|fees?)\b|"
     r"\b(?:support|assistance|help|assist)\s+(?:\w+\s+){0,4}?"
     + _VISA_HELPED
-    + r"(?!\s+(?:eligibility|requirements?|status|information|rules|categor))"
+    # Immigration as a product's domain ("support immigration and border security operations").
+    + r"(?!\s+(?:eligibility|requirements?|status|information|rules|categor|and border|"
+    r"processing|systems?|operations))"
 )
 
 # A sponsor verb ("sponsor", "sponsoring") means a visa only when one of these is near it; the
@@ -151,9 +171,199 @@ _REFUSAL = re.compile(
     r"(?i)now or in the future|or in the future|current or future|future (?:\S+ )?sponsorship|"
     r"at any time in the future"
 )
+# Work authorisation demanded, not helped with: "to support essential … therefore EU work
+# authorisation and eligibility required" is no offer, whatever "support" is near it.
+_AUTHORIZATION_REQUIRED = re.compile(
+    r"(?i)work authori[sz]ation(?: and eligibility)? (?:is )?required"
+)
 
-# "Sponsorship is not guaranteed": offered to some, a negation that is not a refusal.
-_HEDGE = re.compile(r"(?i)\b(?:is not|isn't|not) guaranteed")
+# A job that asks for work authorisation the candidate already holds refuses one who needs a
+# visa, sponsor word or not: "for this role, applicants must be currently authorized to work",
+# "You must currently possess valid and unrestricted U.S. work authorization" (ADR-0353). Without
+# "currently" or "already" the demand is the usual one an offer sits beside ("must be legally
+# authorized to work in the United States. Visa sponsorship is available").
+_ALREADY_AUTHORIZED = re.compile(
+    r"(?i)\b(?:must|needs? to|should|required to)\s+(?:be\s+)?(?:currently|already)\s+"
+    r"(?:be\s+)?(?:legally\s+)?(?:authori[sz]ed to work|(?:hold|have|possess)\b[^;]{0,40}?"
+    r"(?:work authori[sz]ation|right to work|work permit))|"
+    # "You must have a valid NZ work visa for your application to be considered."
+    r"\bmust (?:have|hold|possess) (?:a |an )?(?:valid|current)\b[^;]{0,30}?"
+    r"(?:visa|work permit|work authori[sz]ation)"
+)
+
+# "Sponsorship is not guaranteed", "decided case by case": offered to some, a negation that is not
+# a refusal. Read before the negation is.
+_HEDGE = re.compile(
+    r"(?i)\b(?:is not|isn't|not) guaranteed|\bcase[- ]by[- ]case\b|"
+    r"\b(?:should|must) not be assumed|\bnot (?:all|every) (?:positions?|roles?|jobs?)\b|"
+    r"\bnot (?:always|typically)\b|\bfor every (?:role|position|candidate)\b"
+)
+# An offer said with a hedge: it may be made, not that it is ("Visa sponsorship may be available
+# for select positions", "we may sponsor").
+_MAY = re.compile(
+    r"(?i)\bmay (?:be |also )?(?:available|offered|provided|possible|considered|consider|"
+    r"sponsor|support|offer|provide)|\bmight\b|\bcould be\b|\bpotential(?:ly)?\b|"
+    r"\b(?:select|certain|some|limited) (?:positions|roles|cases|circumstances)\b|"
+    r"\bdepend(?:s|ing|ent)? (?:on|upon)\b|\bdiscretion\b|"
+    r"\bin (?:some|rare|exceptional) cases\b|\bexceptional (?:cases|circumstances)\b|"
+    # An offer for a move the job does not need, or one made later ("If you wish to relocate, we
+    # are happy to help you obtain a visa", "for a move to NYC (after 2 years' tenure)").
+    r"\bif you (?:later )?(?:wish|choose|decide|want|opt) to relocate\b|"
+    r"\bafter (?:\d+|one|two|three) (?:years?|months?)\b"
+)
+
+# -- an offer's scope (ADR-0353) --
+
+# What makes a scope the only one: out of it, the job is refused, not merely not offered.
+_ONLY = re.compile(
+    r"(?i)\b(?:only|exclusively|solely|limited to|restricted to|reserved for)\b"
+)
+
+# A country an offer is scoped to, named in prose: every gazetteer country's English name, and
+# the abbreviations a sentence writes. A two-letter abbreviation counts only in capitals ("US",
+# never "us"). Names that are also a US state or a person's name (Georgia, Jordan) are left out.
+_PROSE_COUNTRY_NAMES = {
+    code: country.name
+    for code, country in country_gazetteer.COUNTRIES.items()
+    if country.name not in {"Georgia", "Jordan"}
+} | {"IN": "India"}
+_PROSE_COUNTRY_ALIASES = {
+    "the Netherlands": "NL",
+    "Holland": "NL",
+    "Britain": "GB",
+    "Great Britain": "GB",
+    "England": "GB",
+    "Scotland": "GB",
+    "Deutschland": "DE",
+    "America": "US",
+    "UAE": "AE",
+}
+# The European Union as an offer's scope ("candidates already located in a UK/EU country").
+# fmt: off
+_EU = frozenset({
+    "AT", "BE", "BG", "HR", "CY", "CZ", "DK", "EE", "FI", "FR", "DE", "GR", "HU", "IE", "IT",
+    "LV", "LT", "LU", "MT", "NL", "PL", "PT", "RO", "SK", "SI", "ES", "SE",
+})
+# fmt: on
+_PROSE_COUNTRY = re.compile(
+    r"(?i:\b(?:"
+    + "|".join(
+        re.escape(name)
+        for name in sorted(
+            {*_PROSE_COUNTRY_NAMES.values(), *_PROSE_COUNTRY_ALIASES, "European Union"},
+            key=len,
+            reverse=True,
+        )
+    )
+    + r")\b)|\b(?:U\.S\.A?\.?|U\.K\.|USA|US|UK|EU|EEA)(?![A-Za-z])"
+)
+_CODES_BY_NAME = (
+    {name.lower(): frozenset({code}) for code, name in _PROSE_COUNTRY_NAMES.items()}
+    | {
+        alias.lower(): frozenset({code})
+        for alias, code in _PROSE_COUNTRY_ALIASES.items()
+    }
+    | {
+        "us": frozenset({"US"}),
+        "usa": frozenset({"US"}),
+        "uk": frozenset({"GB"}),
+        "eu": _EU,
+        "eea": _EU | {"NO"},
+        "european union": _EU,
+    }
+)
+
+
+# A country named as where the candidate is or comes from, not where the job is: "If you are
+# outside Canada, we support … immigration", "citizens of the EU".
+_NOT_THE_SCOPE = re.compile(
+    r"(?i)(?:\b(?:outside|from|beyond|except|other than|citizens? of|nationals? of|"
+    r"residents? of|based outside)(?:\s+(?:of|the))*\s*)$"
+)
+
+
+def _named_countries(window: str) -> frozenset[str]:
+    """The countries ``window`` names as an offer's scope, as gazetteer codes."""
+    codes = set()
+    for match in _PROSE_COUNTRY.finditer(window):
+        if _NOT_THE_SCOPE.search(window, 0, match.start()):
+            continue
+        codes |= _CODES_BY_NAME[match.group().replace(".", "").lower()]
+    return frozenset(codes)
+
+
+@lru_cache(maxsize=65_536)
+def _countries_of(location: str) -> frozenset[str]:
+    """The countries a job's ``location`` is in, by the ``country`` filter's gazetteer."""
+    return frozenset(country_gazetteer.classify(location))
+
+
+# Levels by rank, as a title or a scoped offer names them. A title naming none of these ranks as
+# an engineer with no level word (2); a manager's rank is not read, since ladders place it apart.
+_LEVELS = (
+    (r"intern(?:ship)?s?|co-?op", 0),
+    (r"junior|jr\.?|entry|graduate|grad|associate", 1),
+    (r"mid|intermediate", 2),
+    (r"senior|sr\.?", 3),
+    (r"staff|lead", 4),
+    (r"principal", 5),
+    (r"director|distinguished|fellow|vp|vice president|head|chief|executive", 6),
+)
+_LEVEL_WORD = re.compile(
+    r"(?i)\b(?:"
+    + "|".join(f"(?P<l{rank}>{words})" for words, rank in _LEVELS)
+    + r")(?!\w)"
+)
+_MANAGER = re.compile(r"(?i)\bmanag(?:er|ement)\b")
+# A level an offer is limited to: "Principal-level roles and above", "senior positions only",
+# "for roles at the Staff level or higher".
+_LEVEL_SCOPE = re.compile(
+    r"(?i)\b(?P<level>"
+    + "|".join(words for words, _ in _LEVELS)
+    + r")(?:[- ]level)?\s+(?:level\s+)?(?:(?:and|or) (?:above|higher)|\+|"
+    r"(?:roles?|positions?|jobs?|hires|candidates|employees)(?:\s+(?:and|or) (?:above|higher))?)"
+)
+
+
+def _rank(word: str) -> int:
+    match = _LEVEL_WORD.fullmatch(word)
+    assert match, word
+    return next(int(name[1:]) for name, value in match.groupdict().items() if value)
+
+
+def _title_rank(title: str | None) -> int | None:
+    """The rank of the highest level ``title`` names, 2 when it names none, None for a manager's
+    title or no title."""
+    if not title:
+        return None
+    ranks = [_rank(m.group()) for m in _LEVEL_WORD.finditer(title)]
+    if _MANAGER.search(title) and not any(rank >= 5 for rank in ranks):
+        return None
+    return max(ranks, default=2)
+
+
+def _scoped(window: str, location: str | None, title: str | None) -> str:
+    """Whether an offer read in ``window`` covers the job: ``"in"``, ``"out"`` (it offers
+    nothing here), ``"refused"`` (it is the only scope, and the job is outside it) or
+    ``"unknown"`` (a scope is named but the job's country or level cannot be read). An offer
+    naming no scope is ``"in"``."""
+    verdicts = []
+    if named := _named_countries(window):
+        countries = _countries_of(location) if location else frozenset()
+        verdicts.append(
+            "unknown" if not countries else "in" if named & countries else "out"
+        )
+    if level := _LEVEL_SCOPE.search(window):
+        rank = _title_rank(title)
+        least = _rank(level.group("level"))
+        verdicts.append("unknown" if rank is None else "in" if rank >= least else "out")
+        # A level named is a limit whether or not "only" says so: why else name it.
+        if verdicts[-1] == "out":
+            return "refused"
+    if "out" in verdicts:
+        return "refused" if _ONLY.search(window) else "out"
+    return "unknown" if "unknown" in verdicts else "in"
+
 
 # An offer must name what it sponsors: "sponsorship" alone is often a sales or mentoring word
 # ("executive sponsorship", "horizontal sponsorship"), and an offer read wrongly is the costly
@@ -173,7 +383,8 @@ _FOR_LATER = re.compile(r"(?i)\bfuture\b")
 
 # Sponsorship stated as available: a word of offering near a sponsor word no negation reaches.
 _OFFER = re.compile(
-    r"(?i)\b(?:available|offer(?:s|ed|ing)?|provide[sd]?|providing|support(?:s|ed|ing)?|"
+    r"(?i)\b(?:available|offer(?:s|ed|ing)?|provide[sd]?\b(?!\s+(?:proof|documentation|evidence))|"
+    r"providing|support(?:s|ed|ing)?|"
     r"assist(?:ance|s)?|help|yes|possible|considered|consider sponsoring|eligible for|"
     r"welcome[sd]?|open to|cover(?:s|ed)?|pay(?:s|ing)?|will sponsor|can sponsor|"
     r"may sponsor|do sponsor|does sponsor|we sponsor|able to sponsor|willing to sponsor|"
@@ -193,6 +404,21 @@ _REQUIRED = re.compile(
 )
 _NOT_REQUIRED = re.compile(
     r"(?i)\b(?:not|isn't|no longer)\s+(?:be\s+)?(?:required|a requirement|necessary)"
+)
+# A citizenship requirement some other positions carry ("Some positions will require current U.S.
+# Citizenship"): not a refusal of this job (ADR-0353).
+_SOME_POSITIONS = re.compile(
+    r"(?i)\b(?:some|certain|select|specific|many|most) (?:of (?:our|the) )?(?:positions|roles|jobs|"
+    r"programs|projects|contracts|customers|assignments)\b|\bmay (?:also )?(?:be )?require|"
+    r"\bmay be limited\b"
+)
+# Citizenship named, not required: an agency ("U.S. Citizenship and Immigration Services"), a field
+# label ("U.S. Citizen, U.S. Person, or Immigration Status Requirements: The company will offer
+# immigration sponsorship"), a definition ("A U.S. person according to their definition is a U.S.
+# citizen").
+_CITIZENSHIP_NAMED = re.compile(
+    r"(?i)citizenship and immigration services|or immigration status requirements|"
+    r"according to (?:their|the|its) definition"
 )
 _PROTECTED_TRAIT = re.compile(
     r"(?i)regard to|without regard|protected|discriminat|national origin|equal opportunity|"
@@ -314,15 +540,27 @@ def _window(sentence: str, start: int, end: int) -> tuple[str, str]:
     return before + sentence[start:end] + after, before + sentence[start:end] + after
 
 
-def _sponsorship(sentence: str) -> tuple[bool, bool]:
-    """Whether ``sentence`` offers, and whether it refuses, visa sponsorship."""
-    offers = refuses = False
+def _sponsorship(
+    sentence: str, location: str | None, title: str | None
+) -> tuple[bool, bool, bool]:
+    """Whether ``sentence`` offers, may offer, and refuses visa sponsorship to the job at
+    ``location`` titled ``title``."""
+    offers = may_offer = refuses = False
     for match in _CITIZENSHIP.finditer(sentence):
         window, _ = _window(sentence, match.start(), match.end())
-        if _PROTECTED_TRAIT.search(window) or _NOT_REQUIRED.search(window):
+        if (
+            _PROTECTED_TRAIT.search(window)
+            or _NOT_REQUIRED.search(window)
+            or _SOME_POSITIONS.search(window)
+            # Read past the clause: a field label's window stops at its own colon.
+            or _CITIZENSHIP_NAMED.search(
+                sentence, max(0, match.start() - _REACH), match.end() + _REACH
+            )
+        ):
             continue
         if _REQUIRED.search(window) or match.group().lower() != "citizenship":
             refuses = True
+    refuses |= bool(_ALREADY_AUTHORIZED.search(sentence))
     for match in _SPONSOR.finditer(sentence):
         window, offer_window = _window(sentence, match.start(), match.end())
         if _NOT_A_VISA.search(window) and not _VISA_NAMED.search(window):
@@ -332,14 +570,28 @@ def _sponsorship(sentence: str) -> tuple[bool, bool]:
         if _CLEARANCE.search(window) and not _VISA_NAMED.search(window):
             continue
         if _HEDGE.search(window):
-            offers |= not _FOR_LATER.search(window)
+            tier = "may" if not _FOR_LATER.search(window) else None
         elif _NEGATION.search(window) or _REFUSAL.search(window):
             refuses = True
-        elif _OFFER.search(offer_window) and (
-            _OFFER_NAMES_A_VISA.search(window) or _FIELD_YES.search(offer_window)
+            continue
+        elif (
+            _OFFER.search(offer_window)
+            and (_OFFER_NAMES_A_VISA.search(window) or _FIELD_YES.search(offer_window))
+            and not _AUTHORIZATION_REQUIRED.search(window)
         ):
+            tier = "may" if _MAY.search(window) else "offers"
+        else:
+            continue
+        if tier is None:
+            continue
+        scope = _scoped(window, location, title)
+        if scope == "refused":
+            refuses = True
+        elif scope == "unknown" or (scope == "in" and tier == "may"):
+            may_offer = True
+        elif scope == "in":
             offers = True
-    return offers, refuses
+    return offers, may_offer, refuses
 
 
 def _relocation(sentence: str) -> tuple[bool, bool]:
@@ -362,16 +614,23 @@ def _relocation(sentence: str) -> tuple[bool, bool]:
     return offers, refuses
 
 
-def stances(description: str | None) -> frozenset[str]:
-    """The text-derived stances ``description`` holds, among :data:`STANCES`.
+def stances(
+    description: str | None, title: str | None = None, location: str | None = None
+) -> frozenset[str]:
+    """The text-derived stances ``description`` holds for the job titled ``title`` at
+    ``location``, among :data:`STANCES`.
 
-    Sponsorship is offered only when some mention offers it and none refuses it, relocation
-    likewise: a text that says both is not said to offer it."""
+    Sponsorship is refused when any mention refuses it; otherwise offered when a mention offers it
+    to this job; otherwise possibly offered when one does with a hedge, or names a country or level
+    the job's own cannot be matched to (ADR-0353). Relocation is offered only when some mention
+    offers it and none refuses it: a text that says both is not said to offer it."""
     found: set[str] = set()
-    sponsor_offer = sponsor_refusal = relocation_offer = relocation_refusal = False
+    sponsor_offer = sponsor_may = sponsor_refusal = False
+    relocation_offer = relocation_refusal = False
     for sentence in _sentences(description or ""):
-        offers, refuses = _sponsorship(sentence)
+        offers, may_offer, refuses = _sponsorship(sentence, location, title)
         sponsor_offer |= offers
+        sponsor_may |= may_offer
         sponsor_refusal |= refuses
         offers, refuses = _relocation(sentence)
         relocation_offer |= offers
@@ -380,6 +639,8 @@ def stances(description: str | None) -> frozenset[str]:
         found.add(REFUSES_SPONSORSHIP)
     elif sponsor_offer:
         found.add(OFFERS_SPONSORSHIP)
+    elif sponsor_may:
+        found.add(MAY_OFFER_SPONSORSHIP)
     if relocation_offer and not relocation_refusal:
         found.add(OFFERS_RELOCATION)
     return frozenset(found)
@@ -390,7 +651,7 @@ def stances(description: str | None) -> frozenset[str]:
 _MENTION = re.compile(
     r"(?i)\bsponsor(?:ship|ing|ed)?\b|\bvisas?\b|reloca\w*|work(?:ing)? authori[sz]ation|"
     r"authori[sz]ed to work|eligible to work|right to work|work permit|\bcitizen\w*|"
-    r"immigra\w*|\bh-?1-?b\b|permanent resident"
+    r"immigra\w*|\bh-?1-?b\b|permanent resident|\bu\.?\s?s\.?\s+persons?\b"
 )
 
 # A citizenship word in an equal-opportunity sentence is a protected trait, not a requirement.

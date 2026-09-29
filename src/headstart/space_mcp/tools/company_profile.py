@@ -33,8 +33,12 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from headstart.mcp_protocol.messages import ToolFailure
-from headstart.search_filters import country_filter
-from headstart.space_mcp import company_scope, scraped_text, search_arguments
+from headstart.space_mcp import (
+    company_scope,
+    job_places,
+    scraped_text,
+    search_arguments,
+)
 from headstart.space_mcp.space_client import SpaceClient, SpaceError, SpaceRoute
 from headstart.space_mcp.space_tool import SpaceTool
 
@@ -51,9 +55,6 @@ BOARDS_SHOWN = 10
 #: and `/companies/levels` take in one request.
 COMPANIES_ROLLED_UP = 10
 BOARDS_READ = 200
-
-#: A location or company name past this is cut, as search cuts one.
-SHORT_FIELD = 60
 
 #: The facet options the breakdown reads, by the Space's dimension name and option value, in the
 #: words the answer uses; the site's labels ("Entry level") are not this tool's arguments.
@@ -208,53 +209,6 @@ def _category(line: dict[str, Any], old: dict[str, int]) -> str:
     return said + (f" ({'; '.join(notes)})" if notes else "")
 
 
-def _places(places: list[dict[str, Any]]) -> str:
-    return " · ".join(
-        f"{scraped_text.quoted(place['location'], SHORT_FIELD)} {place['count']:,}"
-        for place in places
-    )
-
-
-def _country(code: str) -> str:
-    return country_filter.name(code) if code in country_filter.CODES else code
-
-
-def _locations(answer: dict[str, Any]) -> str:
-    jobs = int(answer.get("jobs") or 0)
-    countries = answer.get("countries") or []
-    no_country = answer.get("no_country") or {}
-    if not countries and not no_country.get("jobs"):
-        return f"Locations: none of its {jobs:,} served jobs names one."
-    said = f"Where its {jobs:,} served jobs are"
-    if countries:
-        shown = countries[:COUNTRIES_SHOWN]
-        more = len(countries) - len(shown)
-        said += (
-            ", by country as search_jobs' `country` reads each place (a job naming two "
-            "countries counts in both), with its top places, a first place's spellings merged"
-            + (" (the first rows only)" if answer.get("capped") else "")
-            + ": "
-            + " · ".join(
-                f"{_country(c['code'])} {c['jobs']:,} ({_places(c['places'])})"
-                for c in shown
-            )
-            + (f" · …{more} more countries" if more > 0 else "")
-            + "."
-        )
-    else:
-        said += ": no place names a country the `country` filter reads."
-    if no_country.get("jobs"):
-        said += (
-            f" No country is read from the places of {no_country['jobs']:,} "
-            f"({_places(no_country.get('places') or [])})."
-        )
-    if unstated := int(answer.get("unstated") or 0):
-        said += f" {unstated:,} name no place."
-    if unread := int(answer.get("places_unread") or 0):
-        said += f" {unread:,} are at places too rare to be read."
-    return said
-
-
 def _company_lines(
     picks: list[company_scope.DirectoryCompany],
     boards: list[str],
@@ -364,6 +318,14 @@ def _old_by_category(
     return old
 
 
+def _non_tech_line(left_out: int) -> str:
+    return (
+        f"{left_out:,} more jobs on its Boards are roles HeadStart's classifier is confident "
+        "are not tech: search_jobs leaves them out unless include_non_tech is true, and so "
+        "does this profile (ADR-0349)."
+    )
+
+
 def _age_line(total: int, old: int) -> str:
     return (
         f"{old:,} of its {total:,} served jobs were posted over a year ago (the posted date, "
@@ -417,9 +379,15 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
     lines = _company_lines(picks, board_keys, by_name, others[:OTHERS_SHOWN])
     lines.append(scraped_text.SCRAPED_NOTE)
     lines += _trend(trends, [pick.key for pick in picks], old)
+    if left_out := facets.get("non_tech_left_out"):
+        lines.append(_non_tech_line(left_out))
     if old_total > 0:
         lines.append(_age_line(total, old_total))
-    lines.append(_locations(places))
+    lines.append(
+        job_places.said(
+            places, f"its {int(places.get('jobs') or 0):,} served jobs", COUNTRIES_SHOWN
+        )
+    )
     lines += _breakdown(facets, levels)
     lines.append(
         f"To list its jobs: search_jobs with company {picks[0].key} (add category for one job "

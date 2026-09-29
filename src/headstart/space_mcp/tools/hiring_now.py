@@ -16,9 +16,14 @@ than its postings opened and closed could make, closures that went uncounted on 
 its Boards, more postings opened than are open now, and on Rate a base too small to read.
 Opened less closed ranks by a figure none of those questions (`LENSES`). Every Lens flags a
 row whose operator is unverified (ADR-0335): an employer only because no curated list names
-it, while its name reads like a staffing firm's, as Vrinda International's did at #3. Every
-flagged row `/hot` serves is listed after every unflagged one, each group in the site's order,
-before the answer is cut to its `limit`, and every row then gives its place on the page.
+it, while its name reads like a staffing firm's, as Vrinda International's did at #3. Every Lens
+also flags a row whose postings opened were mostly found late (ADR-0351): of its postings first
+seen in the window and still served, those posted more than 14 days before HeadStart first saw
+them are at least half its opened, and those posted since are fewer than half. Starbucks stood
+#3 on the default Lens on 50 opened, and 28 of its 50 postings first seen that week were posted
+more than 14 days before. Every flagged row `/hot` serves is listed after every unflagged one,
+each group in the site's order, before the answer is cut to its `limit`, and every row then
+gives its place on the page.
 """
 
 from __future__ import annotations
@@ -44,6 +49,11 @@ FLAG_MARK = " · FLAG "
 #: 2026-09-29: 12 postings opened on 25 openings.
 SMALL_BASE_FLOORS = 2
 
+#: Below this many postings opened, a row is never flagged as found late: one posting moves the
+#: share too far. Box read 8 found late of 11 opened on 2026-09-29, each of the 8 first published
+#: on Greenhouse in July or August (ADR-0351).
+FOUND_LATE_MIN_OPENED = 10
+
 
 class Flag(StrEnum):
     """An artifact a row can carry, as a row names it."""
@@ -55,6 +65,7 @@ class Flag(StrEnum):
     CLOSURES_UNCOUNTED = "closures not counted"
     CLOSURES_PARTLY_UNCOUNTED = "closures counted on only some Boards"
     OPERATOR_UNVERIFIED = "operator unverified"
+    FOUND_LATE = "opened mostly found late, not newly posted"
 
 
 #: What the line under the rows says of each flag, after "N of these rows".
@@ -78,6 +89,11 @@ _FLAG_SUMMARY = {
     Flag.OPERATOR_UNVERIFIED: (
         "are named like a staffing firm or recruiter, and HeadStart has not checked who posts "
         "for them: 'employer' is only its default, so do not report them as employers hiring."
+    ),
+    Flag.FOUND_LATE: (
+        "opened mostly postings HeadStart found late, posted weeks before it first saw them "
+        "(a Board read again, or postings listed again): report their opened as postings "
+        "found, not as hiring this week."
     ),
 }
 
@@ -116,6 +132,7 @@ _SITE_CHECKS = (
     Flag.CLOSURES_UNCOUNTED,
     Flag.CLOSURES_PARTLY_UNCOUNTED,
     Flag.OPERATOR_UNVERIFIED,
+    Flag.FOUND_LATE,
 )
 
 #: The Lens answered unless another is asked for: the one whose figure holds no re-counting.
@@ -129,8 +146,9 @@ LENSES = {
             "counted on every Board, largest first"
         ),
         in_site_order=False,
-        # Its figure holds no re-counting, but who posts for a row is a question on every Lens.
-        checks=(Flag.OPERATOR_UNVERIFIED,),
+        # Its figure holds no re-counting, but who posts for a row, and whether what it opened
+        # was newly posted, are questions on every Lens.
+        checks=(Flag.OPERATOR_UNVERIFIED, Flag.FOUND_LATE),
         left_out=("closures_uncounted", "closures_partly_uncounted"),
     ),
     "expansion": Lens(
@@ -213,6 +231,24 @@ def _net_not_backed(row: dict[str, Any], pace: float) -> bool:
     return net * turnover_net < 0 and abs(net) > abs(turnover_net) * pace
 
 
+def _found_late(row: dict[str, Any]) -> bool:
+    """Whether most of the row's postings opened were found late (ADR-0351): postings posted more
+    than `hot_ranking.FOUND_LATE_DAYS` before first sight number at least half its opened, and
+    those posted since fewer than half. Both are needed, as the counts are of postings still
+    served, first seen in any run: the first alone would flag a row whose found-late postings
+    mostly never reached its opened (Accenture Federal Services, 234 found late on 38 opened, 19
+    fresh), the second alone one whose opened left no served posting at all (New York Life's
+    re-listed ids, which its closures flag already)."""
+    opened, fresh, late = (
+        row.get("opened"),
+        row.get("opened_fresh"),
+        row.get("opened_found_late"),
+    )
+    if opened is None or fresh is None or late is None:
+        return False
+    return opened >= FOUND_LATE_MIN_OPENED and 2 * fresh < opened <= 2 * late
+
+
 def _flags(
     row: dict[str, Any], lens: Lens, pace: float, min_stock: int
 ) -> tuple[Flag, ...]:
@@ -226,11 +262,18 @@ def _flags(
         Flag.CLOSURES_PARTLY_UNCOUNTED: row.get("closed") is not None
         and bool(row.get("closures_uncounted_boards")),
         Flag.OPERATOR_UNVERIFIED: bool(row.get("operator_unverified")),
+        Flag.FOUND_LATE: _found_late(row),
     }
     return tuple(flag for flag in lens.checks if carried[flag])
 
 
-def _said(flag: Flag, row: dict[str, Any]) -> str:
+def _said(flag: Flag, row: dict[str, Any], found_late_days: int) -> str:
+    if flag is Flag.FOUND_LATE:
+        return (
+            f"{flag.value}: of its postings first seen since turnover began, "
+            f"{row['opened_found_late']:,} were posted more than {found_late_days} days before "
+            f"HeadStart saw them and {row['opened_fresh']:,} since"
+        )
     if flag is Flag.SMALL_BASE:
         stock = row["stock"]
         return (
@@ -259,7 +302,7 @@ def _listing(hot: dict[str, Any], lens: str, limit: int, show_hidden: bool) -> _
     return _Listing(shown, len(ranked) - len(rows), moved)
 
 
-def _row(rank: int, listed: ListedRow, moved: bool) -> str:
+def _row(rank: int, listed: ListedRow, moved: bool, found_late_days: int) -> str:
     row = listed.row
     rate = "not counted" if row.get("rate") is None else f"{row['rate']}%"
     opened, closed = row.get("opened"), row.get("closed")
@@ -280,7 +323,9 @@ def _row(rank: int, listed: ListedRow, moved: bool) -> str:
             else ""
         )
         + f" · rate {rate}"
-        + "".join(f"{FLAG_MARK}{_said(flag, row)}" for flag in listed.flags)
+        + "".join(
+            f"{FLAG_MARK}{_said(flag, row, found_late_days)}" for flag in listed.flags
+        )
     )
 
 
@@ -355,8 +400,9 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
                 else "hidden, as the tab hides them by default."
             )
         )
+    found_late_days = (hot.get("counts") or {}).get("found_late_days", 14)
     lines += [
-        _row(rank, listed, listing.moved)
+        _row(rank, listed, listing.moved, found_late_days)
         for rank, listed in enumerate(listing.rows, start=1)
     ]
     if not listing.rows:
@@ -405,7 +451,9 @@ TOOL = SpaceTool(
         "staffs with its own engineers), staffing (a staffing agency posting its clients' "
         "contracts) or aggregator (a job board re-posting other companies' jobs). On every "
         "Lens a row is flagged operator unverified when it is an employer only by that default "
-        "and its name reads like an agency's. Flagged rows are listed after the rest. "
+        "and its name reads like an agency's, and opened mostly found late when most of what "
+        "it opened was posted weeks before HeadStart first saw it. Flagged rows are listed "
+        "after the rest. "
         "Staffing and "
         "aggregator rows are left out unless asked for, as on the site. Each row carries a key "
         "that search_jobs and read_trends accept."
