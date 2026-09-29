@@ -351,6 +351,7 @@ fails if this table drifts from it.
 | `salary_source` | string | `field` \| `regex` \| null — how it was derived; no seniority-style tier exists for salary (ADR-0082) |
 | `salary_known` | bool | whether `min_salary_annual` is known; materialized and bitmap-indexed for the “Shows salary” filter (ADR-0173) |
 | `department` | string | raw ATS text, served by `/job` (ADR-0277). Not read from this table by any filter, sort, or downstream logic — the tech filter reads it off the *raw scrape record*, before a row ever reaches this table |
+| `is_confident_non_tech` | bool | true where the role-family head calls the Job `non-tech` with a top probability of at least 0.9 (`confident_non_tech_filter.PROBABILITY`, ADR-0349): Search, Browse and their counts leave such rows out unless a request sends `include_non_tech`, while `/job` and Trends still read them. Written by `role_trends` each tick, as a column of its own rather than a row rewrite, and recomputed whole, so a retitled Job stops being hidden the next tick. Never null: a new row is false until the tick that follows it stamps it, and a table from before the column has none, so Search hides nothing there. Bitmap-indexed |
 | `url` | string | the job-detail link |
 | `requisition` | string | the ATS's own requisition id, kept only on rows whose Board `data/validate/eightfold_backing.csv` names — an Eightfold career site, or a Board behind one (any site of a Workday tenant). On an Eightfold row it is the id its backing Board states (`atsJobId`, or `displayJobId` over Oracle); on a backing row, that Board's own. **Nullable**: null everywhere else and on rows not re-scraped since the column arrived, and null never matches. Not served to the API; `index sync`/`prune` read it to serve a posting once when an Eightfold career site and its backing Board both list it (ADR-0210) |
 | `posted_at` | string | **the company's** posting date as the ATS states it — inconsistent in shape across ATSes (`2026-01-09T00:46:44.672+00:00`, `2026-07-03`; a RippleHire row not re-read since 2026-09-29 may still carry `03-Jul-2026`) and null on a meaningful share of rows. An ISO date more than one day after the row's `first_seen` day is served as that day (a repost or closing date), and a pre-2000 sentinel is served as null (ADR-0268) |
@@ -376,6 +377,7 @@ Two rows, fetched live from the index:
   "salary": "180000-300000 USD 1 YEAR",
   "min_salary_annual": 180000, "max_salary_annual": 300000, "salary_currency": "USD",
   "salary_known": true,
+  "is_confident_non_tech": false,
   "url": "https://jobs.ashbyhq.com/character/b063d44b-e1fd-4777-8079-573706a589a0",
   "requisition": null,                                    // null off the paired Boards
   "posted_at": "2025-12-08T19:38:59.867+00:00",
@@ -397,6 +399,7 @@ Two rows, fetched live from the index:
   "salary": "108000-125000 MYR 1 YEAR",
   "min_salary_annual": 108000, "max_salary_annual": 125000, "salary_currency": "MYR",
   "salary_known": true,
+  "is_confident_non_tech": false,
   "url": "https://jobs.smartrecruiters.com/xplor/744000140844907",
   "requisition": null,                                    // null off the paired Boards
   "posted_at": "2026-07-31T07:57:53.720Z",                 // not every ATS's date is ISO

@@ -753,6 +753,62 @@ def run_input_checks(base: str) -> list[dict]:
     return out
 
 
+_NON_TECH_CASES = ({}, {"remote": "true"}, {"country": "US"}, {"etype": "full-time"})
+
+
+def run_non_tech_checks(base: str) -> list[dict]:
+    """The "Include non-tech roles" switch (ADR-0349), read through ``/facets`` totals.
+
+    Search leaves out the Jobs the role-family head confidently calls non-tech unless a request
+    sends ``include_non_tech``. Three things must hold for each filter set: a strict request naming
+    the switch is accepted (a Space older than agent-api 18 refuses it as an unknown parameter);
+    showing more never narrows; and the count the Space says it left out, ``non_tech_left_out``,
+    is exactly what the switch adds, and absent once they are included. A table with no stamp
+    leaves none out and says nothing, which passes.
+    """
+    out = []
+    for filters in _NON_TECH_CASES:
+        base_params = {**filters, "strict": "1", "counts": "total"}
+        name = f"include_non_tech [{filters or 'no filters'}]"
+        (s1, hidden), (s2, shown) = (
+            _probe(base, "/facets", base_params),
+            _probe(base, "/facets", {**base_params, "include_non_tech": "true"}),
+        )
+        violations: list[dict] = []
+        if s1 != 200 or s2 != 200:
+            violations.append({"expected": 200, "got": [s1, s2]})
+        else:
+            if shown["total"] < hidden["total"]:
+                violations.append({"narrowed": [hidden["total"], shown["total"]]})
+            left_out = hidden.get("non_tech_left_out")
+            if left_out is not None and left_out != shown["total"] - hidden["total"]:
+                violations.append(
+                    {
+                        "non_tech_left_out": left_out,
+                        "switch_adds": shown["total"] - hidden["total"],
+                    }
+                )
+            if "non_tech_left_out" in shown:
+                violations.append(
+                    {"said_left_out_while_included": shown["non_tech_left_out"]}
+                )
+        out.append(
+            {
+                "name": name,
+                "params": base_params,
+                "n_results": 0,
+                "n_violations": len(violations),
+                "violations": violations,
+            }
+        )
+        print(
+            f"[non-tech] {name}: {len(violations)} violations",
+            file=sys.stderr,
+            flush=True,
+        )
+    return out
+
+
 def _gh_jid_matches_row(row: dict, url: str) -> bool:
     """A greenhouse embed link's ``gh_jid`` names the job THIS row is for — vacuously true
     of every other link, which identifies its job in the path.
@@ -875,7 +931,11 @@ def main() -> int:
     # rows would produce meaningless cases (app.py's whitelist silently ignores unknown ats).
     gate_atses = sorted(set(atses) | (set(SCRAPERS) - DISABLED_ATS))
 
-    checks = run_checks(args.base, atses) + run_input_checks(args.base)
+    checks = (
+        run_checks(args.base, atses)
+        + run_input_checks(args.base)
+        + run_non_tech_checks(args.base)
+    )
     url_checks = run_url_checks(args.base, atses, http=not args.no_http)
 
     report = {

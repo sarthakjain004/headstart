@@ -45,6 +45,7 @@ _FILTERS = (
     "location",
     "max_years",
     "max_age_days",
+    "include_non_tech",
 )
 
 
@@ -262,14 +263,19 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
         scope = company_scope.for_search(client, company, needs_boards=False)
     counted = client.read(SpaceRoute.REQUIREMENTS, _params(arguments, scope))
     lines = _lead(arguments, counted)
-    if any(
-        arguments.get(name) not in (None, "", False) for name in _FILTERS
-    ) or search_arguments.operators_kept(arguments):
+    if (
+        any(arguments.get(name) not in (None, "", False) for name in _FILTERS)
+        or search_arguments.operators_kept(arguments)
+        or counted.get("non_tech_left_out")
+    ):
         # The category is the lead's own subject, so the scope line leaves it out.
         filters = {k: v for k, v in arguments.items() if k != "category"}
         lines.append(
             search_arguments.scope_line(
-                filters, scope, counted.get("operators_left_out")
+                filters,
+                scope,
+                counted.get("operators_left_out"),
+                counted.get("non_tech_left_out"),
             )
         )
     if note := search_arguments.query_constraints_note(arguments.get("query") or ""):
@@ -318,7 +324,9 @@ TOOL = SpaceTool(
         "as the answer states it. Skills come from a fixed list of tech skills; a skill few "
         "employers mention may be one employer's self-description. For a career switcher, "
         "read the skills with the stated years. The filters mean what they mean in "
-        "search_jobs. No description text is returned."
+        "search_jobs, `include_non_tech` too: postings HeadStart's classifier is confident "
+        "are not tech are left out of the sample unless it is true, and the answer says how "
+        "many. No description text is returned."
     ),
     input_schema={
         "type": "object",

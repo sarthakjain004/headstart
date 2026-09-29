@@ -1169,8 +1169,15 @@ def test_a_board_the_directory_lacks_is_held_when_the_index_serves_it():
     space = _job_space([], serving={pod})
     text = server.call(space, "get_job", {"ids": [f"{pod}:7"]})
     assert f'Not in the index now: "{pod}:7".' in text
+    # Whether the index serves a job on the Board at all: a Board of nothing but non-tech roles
+    # (which a search leaves out by default) is held (ADR-0349).
     assert space.params_of(R.FACETS) == [
-        [("strict", "1"), ("board", pod), ("counts", "total")]
+        [
+            ("strict", "1"),
+            ("board", pod),
+            ("include_non_tech", "true"),
+            ("counts", "total"),
+        ]
     ]
 
 
@@ -3441,6 +3448,7 @@ def test_requirements_filters_are_search_jobs_own():
         "max_years",
         "max_age_days",
         "operators",
+        "include_non_tech",
     ):
         assert mine[name] == search[name], name
 
@@ -3771,3 +3779,97 @@ def test_role_requirements_give_each_stances_share_of_the_sample():
         "sponsorship or requires citizenship in 130 (50%), offers relocation help in 13 "
         "(5%)." in text
     )
+
+
+# ---- the roles the classifier is confident are not tech (ADR-0349) ----
+
+
+def test_a_search_leaves_out_non_tech_roles_by_default_and_says_how_many():
+    space = FakeSpace(search=[_job(1)], facets=_facets(1, non_tech_left_out=59_523))
+    text = server.call(space, "search_jobs", {"query": "engineer"})
+    # Nothing is sent: the Space's default is what hides them.
+    assert all("include_non_tech" not in dict(p) for p in space.params_of(R.SEARCH))
+    assert (
+        "59,523 jobs HeadStart's classifier is confident are not tech (a cashier, a process "
+        "engineer) left out, as the site leaves them out (send include_non_tech true to "
+        "include them)"
+    ) in text
+
+
+def test_an_answer_says_nothing_of_non_tech_roles_where_the_space_left_none_out():
+    """A table with no stamp, or a request that included them, reports no count: an answer never
+    claims a hiding that did not happen."""
+    text = server.call(_search_space([_job(1)]), "search_jobs", {"query": "engineer"})
+    assert "not tech" not in text
+
+
+def test_include_non_tech_is_sent_to_both_routes_and_said():
+    space = _search_space([_job(1)])
+    text = server.call(
+        space, "search_jobs", {"query": "cashier", "include_non_tech": True}
+    )
+    for route in (R.SEARCH, R.FACETS):
+        assert ("include_non_tech", "true") in space.params_of(route)[0]
+    assert "non-tech roles included (include_non_tech)" in text
+    off = _search_space([_job(1)])
+    server.call(off, "search_jobs", {"query": "cashier", "include_non_tech": False})
+    assert all("include_non_tech" not in dict(p) for p in off.params_of(R.SEARCH))
+
+
+def test_nothing_left_but_non_tech_roles_says_so_and_how_to_see_them():
+    space = FakeSpace(search=[], facets=_facets(0, non_tech_left_out=5))
+    text = server.call(space, "search_jobs", {"query": "cashier"})
+    assert (
+        "0 jobs: the 5 that match are roles HeadStart's classifier is confident are not "
+        "tech, which are left out; send include_non_tech true to see them." in text
+    )
+
+
+def test_the_search_schema_offers_include_non_tech_as_a_switch_defaulting_off():
+    schema = server.BY_NAME["search_jobs"].input_schema["properties"][
+        "include_non_tech"
+    ]
+    assert schema["type"] == "boolean" and schema["default"] is False
+    assert "include_non_tech" in server.BY_NAME["search_jobs"].description
+
+
+def test_a_profile_says_how_many_of_its_roles_are_left_out_as_not_tech():
+    facets = {**_profile_facets(), "non_tech_left_out": 61}
+    space = _profile_space(facets=facets)
+    text = server.call(space, "company_profile", {"company": "Stripe"})
+    assert (
+        "61 more jobs on its Boards are roles HeadStart's classifier is confident are not "
+        "tech: search_jobs leaves them out unless include_non_tech is true, and so does this "
+        "profile" in text
+    )
+    plain = server.call(_profile_space(), "company_profile", {"company": "Stripe"})
+    assert "not tech" not in plain
+
+
+def test_a_requirements_answer_says_how_many_non_tech_postings_it_left_out():
+    """ADR-0349: the sample is thinned by the Space's default like a search, and says so."""
+    space = FakeSpace(requirements=_requirements(non_tech_left_out=3_100))
+    text = server.call(space, "role_requirements", {"query": "engineer"})
+    assert (
+        "3,100 jobs HeadStart's classifier is confident are not tech (a cashier, a process "
+        "engineer) left out, as the site leaves them out (send include_non_tech true to "
+        "include them)"
+    ) in text
+    assert all(
+        "include_non_tech" not in dict(p) for p in space.params_of(R.REQUIREMENTS)
+    )
+    plain = server.call(
+        FakeSpace(requirements=_requirements()),
+        "role_requirements",
+        {"query": "engineer"},
+    )
+    assert "not tech" not in plain
+
+
+def test_role_requirements_sends_include_non_tech_and_says_they_are_in():
+    space = FakeSpace(requirements=_requirements())
+    text = server.call(
+        space, "role_requirements", {"query": "cashier", "include_non_tech": True}
+    )
+    assert ("include_non_tech", "true") in space.params_of(R.REQUIREMENTS)[0]
+    assert "non-tech roles included (include_non_tech)" in text

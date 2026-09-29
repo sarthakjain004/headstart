@@ -47,10 +47,11 @@ SPACE_NAME = {
     "required_years_at_least": "required_years_at_least",
     "exclude_company": "exclude_company",
     "work_authorization": "work_authorization",
+    "include_non_tech": "include_non_tech",
 }
 #: Sent as the literal "true" `parse_filters` compares against; the company and the keyword are
 #: sent by their own rules below, and `max_age_days` 0 (any age) as nothing.
-FLAGS = ("remote", "has_salary")
+FLAGS = ("remote", "has_salary", "include_non_tech")
 _SENT_ELSEWHERE = (*FLAGS, "company", "keyword", "keyword_in")
 
 #: `max_age_days` when the caller sends none (ADR-0322): a relevance search led with Jobs posted
@@ -132,6 +133,17 @@ PROPERTIES: dict[str, dict[str, Any]] = {
         "description": (
             "Leaves out postings older than this many days: the posted date, else "
             "the day HeadStart first saw the job. 365 unless sent; 0 for any age."
+        ),
+    },
+    "include_non_tech": {
+        "type": "boolean",
+        "default": False,
+        "description": (
+            "Also list the jobs HeadStart's classifier is confident are not tech (a store "
+            "cashier, a plant's process engineer), which are left out unless this is true, "
+            "as the site leaves them out unless its 'Include non-tech roles' switch is on. "
+            "The answer says how many were left out. Send it for a role the user really "
+            "wants that is not software or tech."
         ),
     },
     "operators": {
@@ -299,13 +311,24 @@ def _operators_said(arguments: dict[str, Any], left_out: int | None) -> str | No
     return f"{dropped} left out{counted}"
 
 
+def non_tech_said(left_out: int) -> str:
+    """How many jobs the Space left out as not tech, in words: a search's scope line (ADR-0349)."""
+    return (
+        f"{left_out:,} jobs HeadStart's classifier is confident are not tech (a cashier, a "
+        "process engineer) left out, as the site leaves them out (send include_non_tech true "
+        "to include them)"
+    )
+
+
 def scope_line(
     arguments: dict[str, Any],
     scope: company_scope.CompanyScope | None,
     operators_left_out: int | None = None,
+    non_tech_left_out: int | None = None,
 ) -> str:
     """What the filters in ``arguments`` scoped the answer to, as the tools name them, with how
-    many jobs ``operators`` left out where the Space counted them (``operators_left_out``)."""
+    many jobs ``operators`` left out where the Space counted them (``operators_left_out``) and how
+    many the classifier's non-tech call did (``non_tech_left_out``, ADR-0349)."""
     said = []
     if scope is not None:
         if scope.company is not None:
@@ -393,4 +416,8 @@ def scope_line(
         )
     if operators := _operators_said(arguments, operators_left_out):
         said.append(operators)
+    if arguments.get("include_non_tech"):
+        said.append("non-tech roles included (include_non_tech)")
+    elif non_tech_left_out:
+        said.append(non_tech_said(non_tech_left_out))
     return "Scope: " + (" · ".join(said) if said else "the whole index") + "."
