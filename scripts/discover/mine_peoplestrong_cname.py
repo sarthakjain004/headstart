@@ -147,8 +147,8 @@ def _candidates(path: Path, out: Path, col: int, held: set[str]) -> list[str]:
     seen: set[str] = set()
     fresh = []
     for label in labels:
-        if label in done or label in held or label in seen:
-            continue
+        if len(label) > 63 or label in done or label in held or label in seen:
+            continue  # a DNS label is at most 63 bytes; a longer line cannot be a tenant
         seen.add(label)
         fresh.append(label)
     print(

@@ -337,3 +337,12 @@ def test_verify_gives_up_unknown_after_three_429s(monkeypatch):
 def test_verify_reads_a_failed_request_as_unknown(monkeypatch):
     _fetching(monkeypatch, OSError("timed out"))
     assert mine.verify("x", _Pace()) == ("x", "unknown", None)
+
+
+def test_candidates_drop_a_label_too_long_for_dns(tmp_path):
+    cands = tmp_path / "cands.txt"
+    cands.write_text(f"ok\n{'a' * 64}\n{'b' * 63}\n")
+    assert mine._candidates(cands, tmp_path / "none.csv", col=0, held=set()) == [
+        "ok",
+        "b" * 63,
+    ]
