@@ -530,6 +530,12 @@ def apply_sync(
         table.add(add_rows)
 
 
+#: A healthy ledger holds tens of thousands of Scrapable Boards. Below this the ledger looks broken or
+#: empty, so ``index prune`` refuses to act on it, and the Job facts shed no Board's Jobs as
+#: off-Board (ADR-0330).
+MIN_KEEP_BOARDS = 1000
+
+
 def live_keep_set(ledger_dir: str | Path) -> set[str]:
     """Board keys that should survive: every live ledger Board on an enabled ATS, each key exactly
     as its scraper's ``board_key()`` builds it — the real keys ids carry, which is what makes

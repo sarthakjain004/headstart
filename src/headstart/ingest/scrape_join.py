@@ -43,17 +43,13 @@ from headstart.ingest import (
     UNAUTHORITATIVE_BOARD_IDS_PATH,
     UNAUTHORITATIVE_BOARDS_PATH,
     board_dormancy,
+    board_failures,
     job_facts,
     observability,
     shard_speedup,
     write_id_list,
 )
-from headstart.ingest.index_plan import (
-    boards_by_canon,
-    live_keep_set,
-    resolve_board,
-    unauthoritative_among,
-)
+from headstart.ingest.index_plan import boards_by_canon, live_keep_set, resolve_board
 from headstart.ingest.observability import ShardReport
 
 _log = log.get(__name__, __spec__)
@@ -69,6 +65,7 @@ _SCRAPED_BOARDS = REPO_ROOT / "data" / "state" / "scraped_boards.json"
 _LEDGER = REPO_ROOT / "data" / "validate" / "liveness"
 _SPEEDUP = REPO_ROOT / "data" / "state" / "shard_speedup.csv"
 _HEALTH = REPO_ROOT / "data" / "state" / "scrape_health.json"
+_FAILURES = REPO_ROOT / "data" / "state" / "board_failures.csv"
 
 
 def _fragment_dirs(root: Path) -> list[Path]:
@@ -157,28 +154,23 @@ def _record_facts(
     facts_dir: Path,
     stamp: str,
     reports: list[ShardReport],
-    boards: set[str],
-    unauthoritative: set[str],
-    live: dict[str, str],
+    scope: job_facts.RunScope,
 ) -> None:
-    """Write the run's Job facts (ADR-0330), over the eviction scope ``index sync`` uses: the
-    Boards this union covered, less the Unauthoritative ones.
+    """Write the run's Job facts (ADR-0330).
 
     Never fatal. A run that cannot record its facts still has to publish its scrape, and
     ``record_run`` writes all or nothing, so the next run diffs against the Listed set this one
     left alone and records the changes then."""
-    path = scraped.close()
-    scope = {
-        lower_key(b) for b in boards - unauthoritative_among(boards, unauthoritative)
-    }
     try:
+        path = scraped.close()
+        if scraped.failure is not None:
+            raise scraped.failure
         run = job_facts.record_run(
             path,
             facts_dir,
             stamp,
             job_facts.board_reads(reports, scraped.board_lines, scope),
             scope,
-            live,
         )
     except Exception:  # noqa: BLE001 - the scrape must still publish; see the docstring
         _log.warning(
@@ -187,7 +179,7 @@ def _record_facts(
         )
         return
     finally:
-        path.unlink(missing_ok=True)
+        scraped.path.unlink(missing_ok=True)
     _log.info(
         f"Job facts: {run.listed} listed, {run.changed} changed, {run.unlisted} unlisted, "
         f"{run.off_board} off-Board, {run.reads} Board read(s); {run.still_listed} listed "
@@ -283,6 +275,13 @@ def main() -> int:
         "default: data/facts)",
     )
     ap.add_argument(
+        "--board-failures",
+        default=str(_FAILURES),
+        help="the board-failures ledger, whose Boards re-confirmed gone leave the Job facts' "
+        "Scrapable Boards as they leave `index prune`'s keep-set (ADR-0330; default: "
+        "data/state/board_failures.csv)",
+    )
+    ap.add_argument(
         "--expected-shards",
         type=int,
         default=0,
@@ -323,7 +322,7 @@ def main() -> int:
     dates = board_dormancy.PostedDates()
     facts_dir = Path(args.facts)
     stamp = job_facts.facts_stamp()
-    scraped = job_facts.ScrapedLines(facts_dir / job_facts.SCRATCH)
+    scraped = job_facts.ScrapedLines(facts_dir / job_facts.SCRAPED_LINES)
 
     total = 0
     for ats_file, sources in sorted(per_ats.items()):
@@ -389,7 +388,18 @@ def main() -> int:
     # Before the telemetry below, like the unauthoritative-Board write: this is the eviction
     # signal, and an empty file is the honest record of a run that joined nothing.
     write_scraped_boards(boards, Path(args.scraped_boards))
-    _record_facts(scraped, facts_dir, stamp, reports, boards, unauthoritative, live)
+    _record_facts(
+        scraped,
+        facts_dir,
+        stamp,
+        reports,
+        job_facts.RunScope.of(
+            boards,
+            unauthoritative,
+            live,
+            board_failures.load(args.board_failures),
+        ),
+    )
     _update_speedup(reports, Path(args.speedup_ledger))
     health = observability.ScrapeHealth.from_reports(
         reports, expected_reports=args.expected_shards or None

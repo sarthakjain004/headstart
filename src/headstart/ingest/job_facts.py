@@ -9,8 +9,9 @@ scraped line before the tech filter, so it hands each one to :class:`ScrapedLine
 
 * **Job facts** (``job_facts/{stamp}.parquet``): a row when a Job is first listed (``listed``),
   when its raw fields change (``changed``), when an authoritative read of its Board no longer lists
-  it (``unlisted``), and when its Board is no longer a Scrapable Board (``off_board``). Only
-  changes are written, so a quiet run writes little.
+  it (``unlisted``), and when its Board leaves the keep-set ``index prune`` sweeps against
+  (``off_board``); :class:`RunScope` holds that rule. Only changes are written, so a quiet run
+  writes little.
 * **Board reads** (``board_reads/{stamp}.parquet``): every Board the run read, and whether the read
   was authoritative.
 * **The Listed set** (``listed_jobs.parquet``): every currently listed id, its Board and a hash of
@@ -39,8 +40,12 @@ from typing import Literal
 
 from headstart import log
 from headstart.boards.board_identity import board_key_of, lower_key
-from headstart.ingest import REPO_ROOT
-from headstart.ingest.index_plan import resolve_board
+from headstart.ingest import REPO_ROOT, board_failures
+from headstart.ingest.index_plan import (
+    MIN_KEEP_BOARDS,
+    resolve_board,
+    unauthoritative_among,
+)
 from headstart.ingest.observability import ShardReport
 from headstart.jobs.job import Job
 
@@ -52,13 +57,10 @@ JOB_FACTS = "job_facts"
 BOARD_READS = "board_reads"
 #: This run's scraped lines, gathered while the union streams and deleted once the run's facts are
 #: written. Named ``.tmp`` so the ``merge`` upload's ``--exclude "*.tmp"`` never carries it.
-SCRATCH = "scraped_lines.parquet.tmp"
+SCRAPED_LINES = "scraped_lines.parquet.tmp"
 
-#: The rule that decides a Job is no longer listed, and the one decision a fact carries: an
-#: authoritative read of its Board missed it, in the eviction scope ``index sync`` uses
-#: (``index_plan.unauthoritative_among`` and ``resolve_board``, case-folded; ADR-0053, ADR-0161,
-#: ADR-0243), or its Board left the Scrapable Boards, as ``index prune``'s off-Board sweep reads
-#: it (ADR-0023). A change to either rule bumps this.
+#: The rule :class:`RunScope` applies, and the one decision a fact carries. A change to it bumps
+#: this.
 SCOPE_VERSION = 1
 
 Kind = Literal["listed", "changed", "unlisted", "off_board"]
@@ -75,7 +77,7 @@ _BOOL_FIELDS = frozenset(
     name for name in RAW_FIELDS if bool in typing.get_args(_HINTS[name])
 )
 #: The Listed set's columns: enough to diff the next run against.
-_LISTED = ("id", "board", "fields_hash")
+_LISTED_COLUMNS = ("id", "board", "fields_hash")
 
 _BATCH = 100_000
 
@@ -101,7 +103,7 @@ def _listed_schema():
     import pyarrow as pa
 
     schema = _schema()
-    return pa.schema([schema.field(name) for name in _LISTED])
+    return pa.schema([schema.field(name) for name in _LISTED_COLUMNS])
 
 
 def _raw_value(name: str, value: object) -> object:
@@ -111,11 +113,14 @@ def _raw_value(name: str, value: object) -> object:
 
 
 def fields_hash(record: Mapping) -> int:
-    """A signed 64-bit hash of ``record``'s raw fields and whether it carried a description,
-    stable across runs and machines. Only fields with a value take part, so a field added to
-    ``Job`` moves the hash only of the Jobs that state it."""
+    """A signed 64-bit hash of ``record``'s raw fields, stable across runs and machines. Only
+    fields with a value take part, so a field added to ``Job`` moves the hash only of the Jobs
+    that state it.
+
+    Whether the line carried a description takes no part. A Job whose text the description store
+    already holds is scraped without it (ADR-0048) and with it again on a re-fetch (ADR-0211), so
+    it would read as ``changed`` on every such run without anything about the posting moving."""
     values = {name: _raw_value(name, record.get(name)) for name in RAW_FIELDS}
-    values["has_description"] = bool(record.get("description"))
     joined = "\x1f".join(
         f"{name}={value}" for name, value in values.items() if value is not None
     )
@@ -129,34 +134,48 @@ def fields_hash(record: Mapping) -> int:
 class ScrapedLines:
     """Every scraped line's raw fields, gathered one at a time into a scratch file. Memory holds
     one batch of rows and the set of ids already seen; a line whose id was seen is skipped, as
-    ``corpus.iter_jobs`` skips it downstream."""
+    ``corpus.iter_jobs`` skips it downstream.
+
+    It never raises into the union that feeds it: the scrape must publish whether or not its facts
+    can be recorded. The first failure is kept in :attr:`failure`, and nothing is gathered after
+    it."""
 
     def __init__(self, path: Path) -> None:
-        import pyarrow.parquet as pq
-
-        path.parent.mkdir(parents=True, exist_ok=True)
         self.path = path
-        self._writer = pq.ParquetWriter(path, _schema(), compression="zstd")
+        self.failure: Exception | None = None
+        self._writer = None
         self._seen: set[str] = set()
         self._batch: dict[str, list] = {name: [] for name in _schema().names}
         #: Lines per Board, keyed case-folded, for each Board read's line count.
         self.board_lines: Counter[str] = Counter()
+        try:
+            import pyarrow.parquet as pq
+
+            path.parent.mkdir(parents=True, exist_ok=True)
+            self._writer = pq.ParquetWriter(path, _schema(), compression="zstd")
+        except Exception as exc:  # noqa: BLE001 - kept, never raised; see the class docstring
+            self.failure = exc
 
     def see(self, board: str, record: Mapping) -> None:
-        job_id = record["id"]
-        if job_id in self._seen:
+        if self.failure is not None:
             return
-        self._seen.add(job_id)
-        batch = self._batch
-        batch["id"].append(job_id)
-        batch["board"].append(board)
-        batch["fields_hash"].append(fields_hash(record))
-        for name in RAW_FIELDS:
-            batch[name].append(_raw_value(name, record.get(name)))
-        batch["has_description"].append(bool(record.get("description")))
-        self.board_lines[lower_key(board)] += 1
-        if len(batch["id"]) >= _BATCH:
-            self._flush()
+        try:
+            job_id = record["id"]
+            if job_id in self._seen:
+                return
+            self._seen.add(job_id)
+            batch = self._batch
+            batch["id"].append(job_id)
+            batch["board"].append(board)
+            batch["fields_hash"].append(fields_hash(record))
+            for name in RAW_FIELDS:
+                batch[name].append(_raw_value(name, record.get(name)))
+            batch["has_description"].append(bool(record.get("description")))
+            self.board_lines[lower_key(board)] += 1
+            if len(batch["id"]) >= _BATCH:
+                self._flush()
+        except Exception as exc:  # noqa: BLE001 - kept, never raised; see the class docstring
+            self.failure = exc
 
     def _flush(self) -> None:
         import pyarrow as pa
@@ -166,9 +185,70 @@ class ScrapedLines:
             self._batch = {name: [] for name in _schema().names}
 
     def close(self) -> Path:
-        self._flush()
-        self._writer.close()
+        """Finish the scratch file and return its path. A failure is kept like any other."""
+        try:
+            if self.failure is None:
+                self._flush()
+            if self._writer is not None:
+                self._writer.close()
+        except Exception as exc:  # noqa: BLE001 - kept, never raised; see the class docstring
+            self.failure = self.failure or exc
         return self.path
+
+
+@dataclass(frozen=True)
+class RunScope:
+    """What this run's reads say about the Jobs listed before it, and the rule behind
+    :data:`SCOPE_VERSION`. A listed Job the scrape did not return is:
+
+    * ``unlisted`` when its Board is in :attr:`authoritative`: the eviction scope ``index sync``
+      uses, the Boards the union covered less the Unauthoritative ones (ADR-0053, ADR-0161);
+    * ``off_board`` when its Board is not in :attr:`scrapable`: the keep-set ``index prune``
+      sweeps against, the Scrapable Boards less those whose gone-verdict parole re-confirmed
+      (ADR-0023, ADR-0206);
+    * still listed otherwise, since a Board this run did not read, or read short, is no evidence.
+
+    Ids are re-resolved through :attr:`live` each run and matched case-folded, as sync and prune
+    match them (ADR-0243). :attr:`scrapable` is None when the keep-set is under
+    :data:`~headstart.ingest.index_plan.MIN_KEEP_BOARDS`, where prune refuses to act too, or when
+    no ledger was loaded.
+    """
+
+    authoritative: frozenset[str]
+    scrapable: frozenset[str] | None
+    live: Mapping[str, str]
+
+    @classmethod
+    def of(
+        cls,
+        boards: set[str],
+        unauthoritative: Collection[str],
+        live: Mapping[str, str],
+        failures: dict[str, board_failures.Failure],
+    ) -> RunScope:
+        """The scope of a run whose union covered ``boards``; ``unauthoritative`` is case-folded,
+        ``live`` is ``index_plan.boards_by_canon`` of the keep-set and ``failures`` the loaded
+        board-failures ledger."""
+        authoritative = boards - unauthoritative_among(boards, unauthoritative)
+        keep = set(live.values()) - board_failures.reconfirmed_among(
+            live.values(), failures
+        )
+        return cls(
+            authoritative=frozenset(lower_key(b) for b in authoritative),
+            scrapable=frozenset(lower_key(b) for b in keep)
+            if len(keep) >= MIN_KEEP_BOARDS
+            else None,
+            live=live,
+        )
+
+    def absent_as(self, job_id: str) -> Kind | None:
+        """What a listed Job this run did not return has become, or None when it stays listed."""
+        board = lower_key(resolve_board(job_id, self.live))
+        if board in self.authoritative:
+            return "unlisted"
+        if self.scrapable is not None and board not in self.scrapable:
+            return "off_board"
+        return None
 
 
 @dataclass(frozen=True)
@@ -187,12 +267,20 @@ class BoardRead:
     seconds: float | None
 
 
+def _outcome(error: str | None, truncated: str | None) -> Outcome:
+    if error:
+        return "error"
+    if truncated:
+        return "truncated"
+    return "authoritative"
+
+
 def board_reads(
-    reports: Iterable[ShardReport], lines: Mapping[str, int], scope: Collection[str]
+    reports: Iterable[ShardReport], lines: Mapping[str, int], scope: RunScope
 ) -> list[BoardRead]:
     """Every Board a shard read this run, keyed by the scraper's ``{ats}:{slug}``. ``lines`` counts
-    each Board's scraped lines and ``scope`` holds the run's eviction scope, both case-folded. A
-    Board a shard never reached (its budget ran out first) is not a read, so it is not here."""
+    each Board's scraped lines, case-folded. A Board a shard never reached (its budget ran out
+    first) is not a read, so it is not here."""
     reads: list[BoardRead] = []
     for report in reports:
         keys = [
@@ -204,18 +292,21 @@ def board_reads(
             error = report.errors.get(key)
             truncated = report.truncated.get(key)
             reason = error or truncated
-            stated = report.observations.get(key, {}).get("stated_total")
+            # A malformed observation reads as none, as `observability` reads it (ADR-0154).
+            observation = report.observations.get(key)
+            stated = (
+                observation.get("stated_total")
+                if isinstance(observation, dict)
+                else None
+            )
             reads.append(
                 BoardRead(
                     scraper_key=key,
                     board=board,
-                    outcome="error"
-                    if error
-                    else "truncated"
-                    if truncated
-                    else "authoritative",
+                    outcome=_outcome(error, truncated),
                     reason=str(reason)[:300] if reason else None,
-                    in_scope=board is not None and lower_key(board) in scope,
+                    in_scope=board is not None
+                    and lower_key(board) in scope.authoritative,
                     lines=lines.get(lower_key(board), 0) if board else 0,
                     stated_total=stated if isinstance(stated, int) else None,
                     seconds=report.board_seconds.get(key),
@@ -279,17 +370,11 @@ def record_run(
     facts_dir: Path,
     stamp: str,
     reads: list[BoardRead],
-    scope: Collection[str],
-    live: Mapping[str, str],
+    scope: RunScope,
 ) -> RunFacts:
-    """Diff this run's scraped lines against the Listed set and write the run's facts.
-
-    ``scope`` is the run's eviction scope, case-folded. A listed id the scrape did not return is
-    ``unlisted`` when its Board is in it, and ``off_board`` when a ledger is loaded (``live``) and
-    its Board is not among the Scrapable Boards; either way it leaves the Listed set. Any other id
-    keeps its place, since a Board this run did not read, or read short, is no evidence that the
-    Job went. Ids are re-resolved through ``live`` each run and matched case-folded, as ``index
-    sync`` matches them.
+    """Diff this run's scraped lines against the Listed set and write the run's facts. A listed Job
+    the scrape did not return becomes what ``scope`` says (:meth:`RunScope.absent_as`), and leaves
+    the Listed set unless it stays listed.
 
     All or nothing: the Listed set is written last, and the run's fact files are removed if any
     write fails, so the next run diffs against the older set and writes these changes again.
@@ -301,7 +386,7 @@ def record_run(
     seen = pq.read_table(scraped)
     listed_path = facts_dir / LISTED_JOBS
     prior = (
-        pq.read_table(listed_path, columns=list(_LISTED))
+        pq.read_table(listed_path, columns=list(_LISTED_COLUMNS))
         if listed_path.exists()
         else _listed_schema().empty_table()
     )
@@ -317,20 +402,10 @@ def record_run(
     )
 
     gone = prior.join(seen.select(["id"]), keys="id", join_type="left anti")
-    gone_boards = [lower_key(resolve_board(i, live)) for i in gone["id"].to_pylist()]
-    unlisted = gone.filter(pa.array([b in scope for b in gone_boards], pa.bool_()))
-    off_board = gone.filter(
-        pa.array(
-            [bool(live) and b not in scope and b not in live for b in gone_boards],
-            pa.bool_(),
-        )
-    )
-    kept = gone.filter(
-        pa.array(
-            [b not in scope and (not live or b in live) for b in gone_boards],
-            pa.bool_(),
-        )
-    )
+    became = pa.array([scope.absent_as(i) for i in gone["id"].to_pylist()], pa.string())
+    unlisted = gone.filter(pc.equal(became, "unlisted"))
+    off_board = gone.filter(pc.equal(became, "off_board"))
+    kept = gone.filter(pc.is_null(became))
 
     def with_kind(rows, kind: Kind):
         return rows.append_column("kind", pa.array([kind] * rows.num_rows, pa.string()))
@@ -341,7 +416,7 @@ def record_run(
     def of_gone(rows, kind: Kind):
         columns = {
             name: rows[name]
-            if name in _LISTED
+            if name in _LISTED_COLUMNS
             else pa.nulls(rows.num_rows, seen.schema.field(name).type)
             for name in seen.schema.names
         }
@@ -372,7 +447,7 @@ def record_run(
         }
     )
     still = pa.concat_tables(
-        [kept.select(list(_LISTED)), seen.select(list(_LISTED))]
+        [kept.select(list(_LISTED_COLUMNS)), seen.select(list(_LISTED_COLUMNS))]
     ).sort_by("id")
 
     written: list[Path] = []

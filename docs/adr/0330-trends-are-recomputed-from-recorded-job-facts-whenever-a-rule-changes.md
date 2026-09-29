@@ -51,14 +51,15 @@ whenever a rule changes, so a rule change moves the whole history and draws no s
    and `job_facts` records under `data/facts/`:
    - **Job facts** (`job_facts/{stamp}.parquet`): one row when a Job is first listed, when its
      raw fields change, when an authoritative read of its Board no longer lists it (`unlisted`),
-     and when its Board leaves the Scrapable Boards (`off_board`, as `index prune` sweeps
-     off-Board rows). A row holds the raw fields every rule reads, which are every `Job` field but
+     and when its Board leaves the keep-set `index prune` sweeps against (`off_board`: the
+     Scrapable Boards less those whose gone-verdict parole re-confirmed, and never from a keep-set
+     under the 1,000 Boards prune refuses as broken). A row holds the raw fields every rule reads, which are every `Job` field but
      its id, ATS, fetch time and description (company, title, location, remote, department, url,
      posted_at, experience, employment type, salary, requisition), and whether the scrape carried
      a description.
    - **Board reads** (`board_reads/{stamp}.parquet`): every Board the run read, whether the read
      was authoritative, truncated or an error and why, whether its absences counted, the lines it
-     returned, the total it stated where its scraper measured one, and its seconds.
+     returned, the total it stated where its scraper reports one, and its seconds.
    - **The Listed set** (`listed_jobs.parquet`): each currently listed id with its Board and a
      hash of its raw fields. It is state, rewritten each run, and exists only so the next run can
      tell what changed without storing every id on every run.
@@ -111,12 +112,17 @@ The owner's other decisions (2026-09-29):
   and the next run diffs against the older Listed set, so no change is lost or counted twice.
 - **"Not listed" depends on a scope rule.** A Job is recorded as no longer listed only when an
   authoritative read of its Board missed it, or its Board left the Scrapable Boards. That is the
-  eviction scope `index sync` uses (ADR-0053, ADR-0161, shared through
-  `index_plan.unauthoritative_among`) and `index prune`'s off-Board sweep, and the facts record
-  its version (`scope_version`), because it is the one decision a fact carries.
-- **The stated total is recorded where a scraper measures one.** Every scraper that checks its
-  read against the Board's own total does so through `mark_truncated_unless_negligible`, which now
-  reports the total too. A hard cap or a surface with no total states none.
+  eviction scope `index sync` uses (ADR-0053, ADR-0161) and `index prune`'s off-Board sweep,
+  both built from the helpers those stages use (`index_plan.unauthoritative_among`,
+  `board_failures.reconfirmed_among`, `index_plan.MIN_KEEP_BOARDS`) in one place,
+  `job_facts.RunScope`. The facts record its version (`scope_version`), because it is the one
+  decision a fact carries.
+- **A description's presence does not make a Job `changed`.** A Job whose text the store holds is
+  scraped without it (ADR-0048) and with it again on a re-fetch (ADR-0211), so it would churn.
+- **The stated total is sparse.** Only Taleo Enterprise reports its Board's own total today. The
+  shared shortfall check (`mark_truncated_unless_negligible`) cannot stand in for it: detail-pass
+  callers pass the length of our own listing, and most call it only on a shortfall. Each scraper
+  reporting its listing's total is a follow-up.
 - **Fragments accumulate** at two files a run per directory. HF's 10,000-files-per-directory
   limit is years away. A monthly fold, like the description store's, comes before it.
 

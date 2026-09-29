@@ -63,6 +63,8 @@ def _run(
         str(out.parent / "scrape_health.json"),
         "--facts",
         str(out.parent / "facts"),
+        "--board-failures",
+        str(out.parent / "no-such-board-failures.csv"),
     ]
     try:
         assert js.main() == 0
@@ -641,6 +643,26 @@ def test_a_join_that_cannot_record_its_facts_still_joins(tmp_path, monkeypatch, 
 
     assert (tmp_path / "jobs" / "greenhouse.jsonl").exists()
     assert "could not record this run's Job facts" in caplog.text
+    assert not list((tmp_path / "facts").rglob("*.tmp"))
+
+
+def test_a_join_whose_scratch_writer_fails_still_joins(tmp_path, monkeypatch, caplog):
+    from headstart.ingest import job_facts
+
+    def fail(self):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(job_facts, "_BATCH", 1)
+    monkeypatch.setattr(job_facts.ScrapedLines, "_flush", fail)
+    frags = tmp_path / "frags"
+    _shard(frags, 0, {"greenhouse.jsonl": ['{"id": "greenhouse:acme:1"}']})
+
+    with caplog.at_level(logging.WARNING, logger="headstart.ingest.scrape_join"):
+        _run(frags, tmp_path / "jobs")
+
+    assert (tmp_path / "jobs" / "greenhouse.jsonl").exists()
+    assert "could not record this run's Job facts" in caplog.text
+    assert not (tmp_path / "facts" / job_facts.LISTED_JOBS).exists()
     assert not list((tmp_path / "facts").rglob("*.tmp"))
 
 

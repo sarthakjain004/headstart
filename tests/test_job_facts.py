@@ -39,24 +39,28 @@ def _job(job_id: str, title: str = "Backend Engineer", **fields) -> dict:
     }
 
 
+def _scope(authoritative: set[str], scrapable: set[str] | None = None) -> jf.RunScope:
+    return jf.RunScope(
+        authoritative=frozenset(lower_key(b) for b in authoritative),
+        scrapable=None
+        if scrapable is None
+        else frozenset(lower_key(b) for b in scrapable),
+        live={lower_key(b): b for b in scrapable or ()},
+    )
+
+
 def _run(
     tmp_path: Path,
     stamp: str,
     jobs: list[tuple[str, dict]],
     scope: set[str],
-    reads: list[jf.BoardRead] | None = None,
-    live: dict[str, str] | None = None,
+    scrapable: set[str] | None = None,
 ) -> jf.RunFacts:
     lines = jf.ScrapedLines(tmp_path / "scratch.parquet")
     for board, job in jobs:
         lines.see(board, job)
     return jf.record_run(
-        lines.close(),
-        tmp_path / "facts",
-        stamp,
-        reads or [],
-        {lower_key(b) for b in scope},
-        live or {},
+        lines.close(), tmp_path / "facts", stamp, [], _scope(scope, scrapable)
     )
 
 
@@ -107,12 +111,13 @@ def test_a_job_whose_raw_fields_moved_is_a_changed_fact_carrying_the_new_values(
     assert _facts(tmp_path, T2)[f"{BOARD_A}:1"]["department"] == "Data"
 
 
-def test_a_description_appearing_is_a_changed_fact(tmp_path):
+def test_a_description_appearing_or_going_is_not_a_fact(tmp_path):
+    """ADR-0048: a Job whose text the store already holds is scraped without it, and with it again
+    on a re-fetch, so its presence moves with our skip-list, not with the posting."""
     _run(tmp_path, T1, [(BOARD_A, _job(f"{BOARD_A}:1", description=None))], {BOARD_A})
     recorded = _run(tmp_path, T2, [(BOARD_A, _job(f"{BOARD_A}:1"))], {BOARD_A})
 
-    assert recorded.changed == 1
-    assert _facts(tmp_path, T2)[f"{BOARD_A}:1"]["has_description"] is True
+    assert recorded.changed == 0
 
 
 def test_a_description_edit_alone_is_not_a_fact(tmp_path):
@@ -180,27 +185,63 @@ def test_an_id_stored_under_another_casing_is_still_in_its_boards_scope(tmp_path
 def test_a_job_whose_board_left_the_scrapable_boards_is_off_board(tmp_path):
     """Like `index prune`'s off-Board sweep: a Board no run will read again must not keep its
     Jobs listed for good. A Board still Scrapable but unread keeps them."""
-    live = {BOARD_A: BOARD_A, BOARD_B: BOARD_B}
     _run(
         tmp_path,
         T1,
         [(BOARD_A, _job(f"{BOARD_A}:1")), (BOARD_B, _job(f"{BOARD_B}:2"))],
         {BOARD_A, BOARD_B},
-        live=live,
     )
-    recorded = _run(tmp_path, T2, [], set(), live={BOARD_A: BOARD_A})
+    recorded = _run(tmp_path, T2, [], set(), scrapable={BOARD_A})
 
     assert (recorded.unlisted, recorded.off_board) == (0, 1)
     assert _facts(tmp_path, T2)[f"{BOARD_B}:2"]["kind"] == "off_board"
     assert _listed(tmp_path) == {f"{BOARD_A}:1"}
 
 
-def test_with_no_ledger_loaded_nothing_is_off_board(tmp_path):
+def test_with_no_trusted_keep_set_nothing_is_off_board(tmp_path):
     _run(tmp_path, T1, [(BOARD_A, _job(f"{BOARD_A}:1"))], {BOARD_A})
-    recorded = _run(tmp_path, T2, [], set())
+    recorded = _run(tmp_path, T2, [], set(), scrapable=None)
 
     assert recorded.off_board == 0
     assert _listed(tmp_path) == {f"{BOARD_A}:1"}
+
+
+def _live(n: int) -> dict[str, str]:
+    boards = [f"greenhouse:co{i}" for i in range(n)]
+    return {lower_key(b): b for b in boards}
+
+
+def test_the_scope_is_the_boards_read_less_the_unauthoritative_ones_case_folded():
+    scope = jf.RunScope.of(
+        {"greenhouse:Acme", "lever:globex"}, {"lever:globex"}, {}, {}
+    )
+
+    assert scope.authoritative == {"greenhouse:acme"}
+
+
+def test_the_keep_set_is_prunes_less_boards_reconfirmed_gone(monkeypatch):
+    live = _live(jf.MIN_KEEP_BOARDS + 1)
+    monkeypatch.setattr(
+        jf.board_failures,
+        "reconfirmed_among",
+        lambda boards, failures: {"greenhouse:co0"},
+    )
+
+    scope = jf.RunScope.of(set(), set(), live, {})
+
+    assert scope.scrapable is not None
+    assert "greenhouse:co0" not in scope.scrapable
+    assert "greenhouse:co1" in scope.scrapable
+    assert scope.absent_as("greenhouse:co0:7") == "off_board"
+    assert scope.absent_as("greenhouse:co1:7") is None
+
+
+def test_a_keep_set_prune_would_refuse_sheds_nothing():
+    """`index prune` refuses a keep-set under MIN_KEEP_BOARDS as a broken ledger; so do the facts."""
+    scope = jf.RunScope.of(set(), set(), _live(jf.MIN_KEEP_BOARDS - 1), {})
+
+    assert scope.scrapable is None
+    assert scope.absent_as("lever:nowhere:1") is None
 
 
 def test_a_job_listed_again_after_it_went_is_listed_once_more(tmp_path):
@@ -250,6 +291,23 @@ def test_no_staged_file_is_left_behind(tmp_path):
     assert not list((tmp_path / "facts").rglob("*.tmp"))
 
 
+def test_a_scratch_writer_that_fails_keeps_the_failure_instead_of_raising(
+    tmp_path, monkeypatch
+):
+    lines = jf.ScrapedLines(tmp_path / "scratch.parquet")
+    monkeypatch.setattr(jf, "_BATCH", 1)
+
+    def fail():
+        raise OSError("disk full")
+
+    monkeypatch.setattr(lines, "_flush", fail)
+    lines.see(BOARD_A, _job(f"{BOARD_A}:1"))
+    lines.see(BOARD_A, _job(f"{BOARD_A}:2"))
+    lines.close()
+
+    assert isinstance(lines.failure, OSError)
+
+
 def test_a_failed_write_leaves_no_facts_and_the_older_listed_set(tmp_path, monkeypatch):
     """All or nothing: the next run diffs against the older set and writes these changes again,
     so a half-written run can neither lose a change nor record it twice."""
@@ -291,7 +349,7 @@ def test_a_failed_write_leaves_no_facts_and_the_older_listed_set(tmp_path, monke
 def test_a_board_read_records_its_outcome(report, outcome, reason, in_scope):
     report.observations[BOARD_A] = {"stated_total": 12}
     report.board_seconds[BOARD_A] = 1.5
-    scope = {BOARD_A} if in_scope else set()
+    scope = _scope({BOARD_A} if in_scope else set())
 
     (read,) = jf.board_reads([report], {BOARD_A: 3}, scope)
 
@@ -303,6 +361,15 @@ def test_a_board_read_records_its_outcome(report, outcome, reason, in_scope):
     )
     assert read.in_scope is in_scope
     assert (read.lines, read.stated_total, read.seconds) == (3, 12, 1.5)
+
+
+def test_a_malformed_observation_reads_as_no_stated_total():
+    """ADR-0154: `observability` reads a non-dict observation as none; so do the Board reads."""
+    report = ShardReport(boards_ok=[BOARD_A], observations={BOARD_A: "garbage"})
+
+    (read,) = jf.board_reads([report], {}, _scope({BOARD_A}))
+
+    assert read.stated_total is None
 
 
 def test_every_job_field_but_its_identity_time_and_text_is_a_raw_field():
