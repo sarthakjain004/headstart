@@ -2224,6 +2224,8 @@ def test_a_requirements_sample_leaves_out_the_operators_not_named(sampled, monke
     family = _requirements(sampled, family="data-engineering", operators="employer")
     assert (family["matching"], family["operators_left_out"]) == (1, 2)
     assert _requirements(sampled, q="data engineer")["operators_left_out"] is None
+
+
 # ---- work_authorization: text-derived stances as a filter (ADR-0333) ----
 
 

@@ -62,7 +62,7 @@ whatever `strict` says (the page never sends one); a stance asked before the rea
 up to 10 s, then is a 503 saying to try again shortly; a failed read is a 503 too, never an empty
 answer. It is in `facets.AGENT_ONLY`, so it can be the Blocking filter.
 
-**3. The answers say it** (agent contract 14). `/job` carries each Job's `work_authorization`:
+**3. The answers say it** (agent contract 16; ADR-0338 and ADR-0335 took 14 and 15). `/job` carries each Job's `work_authorization`:
 its stances and up to five `mentions`, the sentences about sponsorship, visas, work
 authorisation, citizenship or relocation (equal-opportunity sentences left out), read from the
 whole description, not the 12,000-character cut. `/requirements` counts each stance over the

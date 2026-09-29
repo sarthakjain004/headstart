@@ -1376,6 +1376,7 @@ class JobSearch:
             keeps_employers=keeps_employers,
         )
         return built
+
     def _check_work_authorization(self, stance: str) -> None:
         """Refuse a stance the rules do not know (:class:`ValueError`, whatever ``strict`` says:
         the page never sends one), and one asked before this process has read the descriptions
