@@ -3122,11 +3122,13 @@ def test_workday_leaves_instance_when_none_serves(monkeypatch):
 
 
 class _AliasResp:
-    """A settled `http.fetch` response, for `alias_key` — needs `.url` (where it landed) and
-    `.close()` (the real method streams and discards the body unread)."""
+    """A settled `http.fetch` response, for `alias_key` — needs `.url` (where it landed),
+    `.status_code` (the answer it settled on) and `.close()` (the real method streams and
+    discards the body unread)."""
 
-    def __init__(self, url):
+    def __init__(self, url, status_code=200):
         self.url = url
+        self.status_code = status_code
 
     def close(self):
         pass

@@ -14,26 +14,35 @@ ledger, every posting is served twice (#699).
 
 `dedupe_boards.py` could not find these. The default `alias_key` returns the host a Board lands
 on, `elockers.recruitee.com`, but a Recruitee slug is the bare label `elockers`. No key matched a
-live slug, so every redirect was reported as `migrated`. ADR-0111's docstring warns about exactly
-this failure.
+live slug, so every redirect was reported as `migrated`. `BaseScraper.alias_key`'s docstring
+warns about exactly this failure: the default's key must be comparable to the ATS's own slug.
 
 ## Decision
 
 **A Recruitee Board on a Live row whose offers API redirects to another Board on a Live row is
 buried onto it**, in `data/validate/aliases/recruitee.csv` with signal `redirect`. This is
-ADR-0222 applied to Recruitee, with two changes:
+ADR-0222 applied to Recruitee, with three changes:
 
 - **`RecruiteeScraper.alias_key_of_landing` returns the label.** A landing on
   `{label}.recruitee.com` keys as `{label}`, which is the ledger's own slug. A landing off
   Recruitee keeps its whole host. No slug matches that, so such a Board is reported and never
   buried.
-- **The scan runs with `--workers 4`, a new `dedupe_boards.py` flag.** Recruitee rate-limits per
-  client address. 24 concurrent requests drew 37 × 429 out of 48 (2026-09-29). A probe that ends
-  on a 429 settles on the label's own host, which reads as "no redirect". So a wide `--apply`
-  would silently drop the rows of every duplicate it failed to reach.
+- **A settled 429 or 5xx is no verdict.** Recruitee rate-limits per client address: 24
+  concurrent requests drew 37 × 429 out of 48 (2026-09-29). The fetch settles a 429 on the
+  label's own URL rather than raising, so the base `alias_key` keyed it as the label itself, "no
+  redirect", and a rate-limited `--apply` silently dropped the row of every duplicate it failed
+  to reach. `RecruiteeScraper.alias_key` returns None on a 429 or 5xx instead, which
+  `alias_ledger.resolve` reports as `unreachable`; a duplicate whose survivor is unreachable is
+  reported as `canonical-unconfirmed`. Re-measured on 48 buried labels at 24 workers
+  (2026-09-29): the base read 24 of them as "no redirect", and each of those 24 answered 302 to
+  its ledger survivor when re-read one at a time. The override read 43 correctly and reported the
+  other 5 as `unreachable`, none as "no redirect".
+- **The scan runs with `--workers 4`, a new `dedupe_boards.py` flag**, so few labels come back
+  unreachable. `--apply` still writes only what the scan resolved, and an unreachable label is
+  not buried, so a run is applied only when its summary shows no `unreachable`.
 
 The writer is `dedupe_boards.py --ats recruitee --workers 4 --apply`. Every row comes from the
-redirect scan, so `--apply` loses nothing. It runs by hand after every refresh of
+redirect scan, so `--apply` erases no row another script wrote. It runs by hand after every refresh of
 `data/validate/liveness/recruitee.csv`, and CLAUDE.md's landing rules carry the step. Nothing
 scrapes a buried label, so the scan is the only thing that notices one that stops redirecting.
 
@@ -84,7 +93,8 @@ yet they duplicate each other. There are 5 such groups covering 12 labels:
 
 Only `paylogic` and `seetickets` serve rows today, one copy each of one posting. The fix is to
 land the target label on a Live row. That is a liveness change, so it is not made here. Once the
-target is landed, the next scan buries the group onto it.
+target is landed, the next scan buries the group onto it. #907 tracks these groups, and #699's
+Workable account pairs with them.
 
 ## Consequences
 

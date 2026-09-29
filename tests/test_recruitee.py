@@ -3,6 +3,9 @@
 import json
 from pathlib import Path
 
+import pytest
+from test_scrapers import _AliasResp
+
 from headstart.scrapers.registry import get_scraper
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
@@ -39,23 +42,13 @@ def test_an_english_template_without_the_text_is_not_read():
     assert job.description.startswith("Wat ga je doen?")
 
 
-class _Landing:
-    """A settled response for `alias_key`: where the request landed, and a no-op `close`."""
-
-    def __init__(self, url):
-        self.url = url
-
-    def close(self):
-        pass
-
-
 def test_alias_key_is_the_label_a_redirect_lands_on(monkeypatch):
     """Measured 2026-09-29: `thesjefgroup.recruitee.com/api/offers/` answers 302 to
     `elockers.recruitee.com/api/offers/`. The key must be `elockers`, the ledger's own slug, or
     `dedupe_boards.py` labels every Board `migrated` and finds no duplicate."""
     monkeypatch.setattr(
         "headstart.network.http.fetch",
-        lambda method, url, **kw: _Landing(
+        lambda method, url, **kw: _AliasResp(
             "https://elockers.recruitee.com/api/offers/"
         ),
     )
@@ -64,7 +57,7 @@ def test_alias_key_is_the_label_a_redirect_lands_on(monkeypatch):
 
 def test_alias_key_of_a_board_nothing_redirects_is_its_own_slug(monkeypatch):
     monkeypatch.setattr(
-        "headstart.network.http.fetch", lambda method, url, **kw: _Landing(url)
+        "headstart.network.http.fetch", lambda method, url, **kw: _AliasResp(url)
     )
     assert get_scraper("recruitee", "elockers", "x").alias_key() == "elockers"
 
@@ -73,6 +66,21 @@ def test_alias_key_of_a_landing_off_recruitee_is_the_whole_host(monkeypatch):
     """No live slug matches a foreign host, so `alias_ledger.resolve` reports it as moved."""
     monkeypatch.setattr(
         "headstart.network.http.fetch",
-        lambda method, url, **kw: _Landing("https://careers.acme.com/api/offers/"),
+        lambda method, url, **kw: _AliasResp("https://careers.acme.com/api/offers/"),
     )
     assert get_scraper("recruitee", "acme", "x").alias_key() == "careers.acme.com"
+
+
+@pytest.mark.parametrize("status", [429, 500, 503])
+def test_alias_key_of_a_rate_limited_or_failing_label_is_no_verdict(
+    monkeypatch, status
+):
+    """Recruitee rate-limits per address (37 of 48 answered 429 at 24 concurrent requests,
+    2026-09-29), and a 429 is settled rather than raised, on the label's own URL. Keyed as its
+    own label, a buried duplicate read as "no redirect" and `--apply` dropped its row unreported.
+    None makes `alias_ledger.resolve` report it as `unreachable` instead."""
+    monkeypatch.setattr(
+        "headstart.network.http.fetch",
+        lambda method, url, **kw: _AliasResp(url, status_code=status),
+    )
+    assert get_scraper("recruitee", "thesjefgroup", "x").alias_key() is None

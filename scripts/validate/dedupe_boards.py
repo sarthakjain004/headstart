@@ -46,7 +46,8 @@ from headstart.scrapers.registry import SCRAPERS, company_from_row
 #: Probe width. These are one cheap header-only GET each against ~2,200 distinct hosts, so the
 #: bound is politeness to nobody in particular — no single origin sees more than a couple.
 #: Not so where every Board shares one origin's rate limit: Recruitee answered 37 of 48 requests
-#: 429 at this width, so its scan runs with ``--workers 4`` (ADR-0301).
+#: 429 at this width. Its `alias_key` reports such a Board unreachable rather than guessing, and
+#: its scan runs with ``--workers 4`` so few are (ADR-0301).
 _WORKERS = 24
 
 
@@ -66,9 +67,7 @@ def read_prefer(path: Path) -> set[str]:
     return prefer
 
 
-def probe_all(
-    scraper_cls, slugs: list[str], workers: int = _WORKERS
-) -> dict[str, str | None]:
+def probe_all(scraper_cls, slugs: list[str], workers: int) -> dict[str, str | None]:
     """Every Board's `alias_key`, printed as it lands.
 
     `as_completed`, not `map`: one Board behind a 30s timeout must not hold up the other 2,200,
@@ -102,7 +101,10 @@ def main() -> int:
     )
     ap.add_argument("--limit", type=int, help="probe only the first N live Boards")
     ap.add_argument(
-        "--workers", type=int, default=_WORKERS, help="concurrent probes (default 24)"
+        "--workers",
+        type=int,
+        default=_WORKERS,
+        help="concurrent probes (default %(default)s)",
     )
     args = ap.parse_args()
 
