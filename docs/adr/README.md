@@ -317,6 +317,8 @@ supersedes it and note the supersession in both.
 | [0347](0347-the-india-country-tag-reads-whole-words-and-the-shapes-only-india-writes.md) | The India country tag reads whole words and the shapes only India writes | 2026-09-29 |
 | [0348](0348-a-workday-listing-item-with-no-title-and-no-link-is-not-a-job.md) | A Workday listing item with no title and no link is not a Job | 2026-09-29 |
 | [0350](0350-experience-widenings-run-last-and-a-ceiling-an-education-an-age-or-a-window-is-not-a-floor.md) | Experience widenings run last, and a ceiling, an education, an age or a window is not a floor | 2026-09-29 |
+| [0352](0352-a-relevance-page-and-a-requirements-sample-take-a-few-postings-of-each-company.md) | A relevance page and a requirements sample take a few postings of each company | 2026-09-29 |
+| [0354](0354-an-eval-task-may-accept-but-never-require-the-path-its-tool-steers-away-from.md) | An eval task may accept, but never require, the path its tool steers away from (amends 0334) | 2026-09-29 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*

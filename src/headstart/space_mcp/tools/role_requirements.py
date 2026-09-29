@@ -141,7 +141,7 @@ def _skill_lines(counted: dict[str, Any]) -> list[str]:
     for skill in skills:
         grouped.setdefault(skill["kind"], []).append(
             f"{skill['skill']} {_share(skill['jobs'], described)} "
-            f"({skill['employers']:,} employers)"
+            f"({skill['employers']:,} employer{'' if skill['employers'] == 1 else 's'})"
         )
     lines += [
         f"  {kinds.get(kind, kind)}: {' · '.join(named)}"

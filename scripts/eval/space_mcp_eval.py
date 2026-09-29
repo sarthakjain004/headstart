@@ -1186,11 +1186,19 @@ def judge(
     return ("pass" if verdict.passed else "fail"), verdict.detail
 
 
+#: How long, in milliseconds, ``claude`` waits for the server to connect before a run starts.
+#: Waiting was not enough on a slow client network: 44 of 123 round-4 runs still started with
+#: the server "pending", and 0 of 15 did with this set (round-4 critique P1-4).
+MCP_CONNECT_TIMEOUT_MS = "60000"
+
+
 def run_env(env: dict[str, str], http_url: str | None) -> dict[str, str]:
     """The environment ``claude`` runs in. Claude Code 2.1.212's ``-p`` does not wait for an
     HTTP server to connect: the run starts with it "pending" and no tools, and every task fails
     with 0 calls (round-2 critique, 2026-09-29). ``MCP_CONNECTION_NONBLOCKING=false`` makes it
-    wait (ADR-0325)."""
+    wait (ADR-0325), and ``MCP_TIMEOUT`` for up to :data:`MCP_CONNECT_TIMEOUT_MS`, unless the
+    caller's environment sets its own."""
+    env = {"MCP_TIMEOUT": MCP_CONNECT_TIMEOUT_MS, **env}
     if http_url:
         return {**env, "MCP_CONNECTION_NONBLOCKING": "false"}
     return env

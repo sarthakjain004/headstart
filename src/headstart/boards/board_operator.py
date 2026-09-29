@@ -33,7 +33,8 @@ the top 100 as not an employer's, and the staffing firms and job boards the tab 
 89/83/78% of it — decreasing, because the tail is endless. On 2026-09-25's window the list then
 shipped flagged 86/72/61, and before that day's ten additions 59/49/42 (79/62/48 on
 2026-09-21's). On 2026-09-29's window it flags 28/23/20 (the hidden Operators 18/14/12), against 26/20/17 (16/11/8)
-before that day's entries. Those figures move with the list and must be
+before that day's entries; the MCP critique's round-4 entries of the same day name no company
+in the lens's top 100, so they leave these figures as they were. Those figures move with the list and must be
 re-measured when names are added: the 45-entry draft in the research doc measured 73/52/40, and
 quoting a number that describes a list nobody shipped is exactly the kind of borrowed fact this
 repo has been caught by before. Method:
@@ -299,6 +300,61 @@ STAFFING: Final[frozenset[str]] = frozenset(
         "dawninfotek",
         "acmehr",
         "angelandgenie",
+        # Round 4 of the MCP critique (2026-09-29, ADR-0335): the firms that led search rows
+        # and requirements samples as employers, each by five live postings, or every posting
+        # where it has fewer. "Our client" or an unnamed client (RemoteStar, WhyHireWrong?, Zero
+        # to One search, All About Expats, Cross Border Talents, RedTech, OnHires, Nakunj, Attain
+        # Talent, Flex On-Demand, Pakistan Recruitment, Huntress Talent, HRBaires, deCircle's
+        # client-prefixed titles, Hunt St, Workster: "partnering with… to recruit"); Nike roles in
+        # Beaverton (BizTek People); "on behalf of one of our prestigious Fortune 500… clients"
+        # (Knowfinity); an HCLTech posting (OctoRudra); a posting written as Claroty's
+        # (Globaldev); W2 rates and 6-12 month contracts (GovServicesHub, TheCorporate, KGS);
+        # "Permanent (Talpro)… CTC Offered" (Talpro); anonymised templates across a dozen
+        # cities (viraaj, Umanist, CLIQHR); AI-training contract work in eight countries (YO HR);
+        # and firms whose own sites say so: "a leading IT staffing company" (DigitalXNode), "a
+        # recruitment and consulting company" (Sperton), "nearshore staff augmentation" (Helix
+        # Workforce), "a niche recruitment company" (Sabenza IT), "recruiting, and deploying
+        # technology professionals" (STAFIDE), "we'll show up with applicants" (Hire Hangar),
+        # "we connect… offshore professionals… with global businesses" (Remotely), and Two95's
+        # client team details with "We also pay for referals". Joined forms where a part is a
+        # word or another name: "huntresstalent" (Huntress is a security company), "attaintalent"
+        # (Attain is a consultancy), "joinremotely", "sabenzait", "helixworkforce".
+        "digitalxnode",
+        "remotestar",
+        "sperton",
+        "hirehangar",
+        "whyhirewrong",
+        "umaniststaffingllc",
+        "helixworkforce",
+        "viraajhrsolutions",
+        "two95",
+        "knowfinityacademyllp",
+        "octorudrahrllp",
+        "zerotoonesearch",
+        "stafide",
+        "sabenzait",
+        "allaboutexpats",
+        "govserviceshub",
+        "worksterjobs",
+        "cliqhr",
+        "huntst",
+        "decircletalentpartner",
+        "crossbordertalents",
+        "redtechrecruitmentltd",
+        "onhires",
+        "biztekpeople",
+        "flexondemand",
+        "yohrconsultancy",
+        "pakistanrecruitment",
+        "huntresstalent",
+        "attaintalent",
+        "thecorporatellc",
+        "nakunj",
+        "kgstechnologygroupinc",
+        "joinremotely",
+        "hrbaires",
+        "globaldevgroup",
+        "talproindia",
     }
 )
 

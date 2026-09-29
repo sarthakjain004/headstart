@@ -98,7 +98,8 @@ def _one_place(one: Any, other: Any) -> bool:
     )
 
 
-def _copies(head: dict[str, Any], row: dict[str, Any]) -> bool:
+def copies(head: dict[str, Any], row: dict[str, Any]) -> bool:
+    """Whether ``row`` copies ``head``'s requisition, by one of the three kinds above."""
     stem = title_stem(head.get("title"))
     if not stem or stem != title_stem(row.get("title")):
         return False
@@ -152,7 +153,7 @@ def groups(rows: list[dict[str, Any]]) -> list[list[int]]:
     found: list[list[int]] = []
     for i, row in enumerate(rows):
         for group in found:
-            if _copies(rows[group[0]], row):
+            if copies(rows[group[0]], row):
                 group.append(i)
                 break
         else:

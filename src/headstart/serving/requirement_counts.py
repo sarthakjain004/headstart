@@ -7,7 +7,8 @@ requirements` picks them) and first makes each requisition count once (ADR-0332)
 company names nothing but its Board is shown under the Company directory's name
 (`company_name.with_directory_name`, ADR-0323's rule), and of the Jobs that copy one requisition
 (`jobs.requisition_copies`, the rule a search page lists them by) only the first read is counted.
-Then, per counted Job:
+Given ``per_company``, at most that many of one company's are counted (ADR-0352). Then, per
+counted Job:
 
 - **skills**: the tech skills its description mentions (`tech_skills`), each as a share of the Jobs
   that carry a description, with how many distinct employers mention it. A skill named only in one
@@ -131,7 +132,11 @@ def _employer(job: Mapping[str, Any]) -> str:
     return name or job["board"]
 
 
-def _companies(jobs: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
+def _companies(
+    jobs: list[Mapping[str, Any]], per_company: int | None
+) -> list[dict[str, Any]]:
+    """The companies with the most of ``jobs``, each with how many were sampled (``jobs``) and,
+    under ``per_company``, how many of those were counted (``counted``)."""
     counted: Counter[str] = Counter()
     first: dict[str, Mapping[str, Any]] = {}
     for job in jobs:
@@ -144,9 +149,27 @@ def _companies(jobs: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
             FROM_DIRECTORY: bool(first[key].get(FROM_DIRECTORY)),
             "board": first[key]["board"],
             "jobs": count,
+            **({"counted": min(count, per_company)} if per_company else {}),
         }
         for key, count in most_first(counted)[:COMPANIES_SHOWN]
     ]
+
+
+def _capped(
+    jobs: list[Mapping[str, Any]], per_company: int | None
+) -> list[Mapping[str, Any]]:
+    """``jobs`` with each employer's past its first ``per_company`` left out (ADR-0352): one
+    company's boilerplate would otherwise set the skills and years of the whole sample."""
+    if not per_company:
+        return jobs
+    taken: Counter[str] = Counter()
+    kept = []
+    for job in jobs:
+        key = _employer(job)
+        if taken[key] < per_company:
+            taken[key] += 1
+            kept.append(job)
+    return kept
 
 
 def _countries(jobs: list[Mapping[str, Any]]) -> tuple[list[dict[str, Any]], int]:
@@ -213,18 +236,24 @@ def summarize(
     vocabulary: Vocabulary,
     family_of: Callable[[str], str | None] | None = None,
     board_and_name: Callable[[str], tuple[str, str | None]] | None = None,
+    per_company: int | None = None,
 ) -> dict[str, Any]:
     """The counts over ``jobs``, the sampled Jobs with ``id`` and :data:`COLUMNS`, in the order
     sampled. ``board_and_name`` gives a Job id's Board and its Company directory name
     (`TrendHistory.board_and_name_of_job`). ``read`` is how many Jobs were read; ``distinct``
-    how many were counted, one per requisition, which every other count is over."""
+    how many were counted, one per requisition and at most ``per_company`` of one company's
+    (ADR-0352), which every other count is over; ``over_company_cap`` how many requisitions that
+    cap left out. ``companies`` still says how many of each company's were sampled."""
     read = [_on_its_board(job, board_and_name) for job in jobs]
-    jobs = [read[group[0]] for group in requisition_copies.groups(read)]
+    sampled = [read[group[0]] for group in requisition_copies.groups(read)]
+    jobs = _capped(sampled, per_company)
     skills, described = _skills(jobs, vocabulary)
     countries, no_country = _countries(jobs)
     counted: dict[str, Any] = {
         "read": len(read),
         "distinct": len(jobs),
+        "per_company": per_company,
+        "over_company_cap": len(sampled) - len(jobs),
         "described": described,
         "skills": skills,
         "kinds": vocabulary.kinds,
@@ -234,7 +263,7 @@ def summarize(
         "remote": sum(bool(job.get("remote")) for job in jobs),
         # Each text-derived stance (ADR-0333), over the Jobs with a description.
         "work_authorization": _work_authorization(jobs),
-        "companies": _companies(jobs),
+        "companies": _companies(sampled, per_company),
         "countries": countries,
         "no_country": no_country,
     }
