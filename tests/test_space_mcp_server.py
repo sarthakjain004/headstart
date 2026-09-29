@@ -1017,6 +1017,57 @@ def test_a_posting_is_read_whole_with_every_scraped_field_quoted():
     assert text.endswith("Data as of the trends tick 2026-09-28T06:23:08+00:00.")
 
 
+_HOURLY = (
+    "Salary Range: The estimated base salary range for this role is "
+    "USD$225.00 - USD$275.00 per hour. We include salary ranges where required."
+)
+
+
+def test_a_salary_read_from_an_hourly_rate_says_it_was_annualised():
+    """ADR-0337: the served table holds no period, so the description is read again."""
+    posting = _posting(
+        1,
+        ats="workday",
+        description=_HOURLY,
+        min_salary_annual=468_000,
+        max_salary_annual=572_000,
+        salary_currency="USD",
+        salary_source="regex",
+    )
+    text = server.call(_job_space([posting]), "get_job", {"ids": [posting["id"]]})
+    assert (
+        "Salary: read from the description as USD 468,000–572,000 a year, "
+        "annualised from an hourly rate at 2,080 hours a year."
+    ) in text
+
+
+def test_an_annual_or_disagreeing_salary_says_nothing_of_a_rate():
+    # A figure the description states a year.
+    annual = _posting(
+        1,
+        description="Salary: $120,000 - $150,000 a year.",
+        min_salary_annual=120_000,
+        max_salary_annual=150_000,
+        salary_currency="USD",
+        salary_source="regex",
+    )
+    # A served figure the re-read does not give (not re-derived yet, or a cut description).
+    stale = _posting(
+        2,
+        ats="workday",
+        description=_HOURLY,
+        min_salary_annual=572_000,
+        max_salary_annual=None,
+        salary_currency="USD",
+        salary_source="regex",
+    )
+    text = server.call(
+        _job_space([annual, stale]), "get_job", {"ids": [annual["id"], stale["id"]]}
+    )
+    assert "annualised" not in text
+    assert "Salary: read from the description as USD 572,000 a year." in text
+
+
 def test_a_missing_id_is_explained_by_the_sentence_the_space_uses():
     space = _job_space([_posting(1)])
     text = server.call(

@@ -859,3 +859,74 @@ def test_description_ceiling_over_thirty_is_dropped_and_floor_kept():
     assert from_description("5-30 years of experience") == ExperienceSpan(
         5, 30, "regex"
     )
+
+
+# --- ADR-0337: company history and time windows, discipline-named ladders ------------------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Monzo's intern posting, read 10+ before.
+        "our product offering has grown a lot in the last 10 years in the UK.",
+        "Position requires a TS/SCI and a polygraph within the last 5 years.",
+        "The Company has experienced rapid growth over the past 3 years and recently",
+        "For over 30 years, we have helped oil and gas companies build software.",
+        "For the past 20 years, we have powered many Digital Experiences.",
+        "With 25+ years of history, MSN has evolved into a premier content engineering team.",
+        "Celebrating 15 years of growth, Crown is a leading engineering firm.",
+    ],
+)
+def test_company_history_and_time_windows_are_not_requirements(text):
+    assert from_description(text) is None
+
+
+@pytest.mark.parametrize(
+    ("text", "years"),
+    [
+        # A flattened description loses its full stop: "We" opens the next sentence.
+        ("Experience Level: 8+ years We are seeking a Cloud Engineer", 8),
+        ("8+ years of work history in full stack production engineering", 8),
+        ("minimum 3 years of driving history required", 3),
+        ("3+ years of growth marketing experience", 3),
+        # "of the past" states a requirement; only in/over/during/within/throughout mark a window.
+        ("Minimum of the past 2 years working with M365 Administration", 2),
+        # The window no longer undercuts the stated floor.
+        (
+            (
+                "Minimum 8 years of experience related to the labor category with at least a "
+                "portion of the experience within the last 2 years."
+            ),
+            8,
+        ),
+    ],
+)
+def test_requirements_beside_the_history_idioms_still_read(text, years):
+    span = from_description(text)
+    assert span is not None and span.min_years == years
+
+
+def test_an_entry_word_outranks_associate():
+    """ADR-0337: titles holding both state a median of 1 year, the entry tier's."""
+    for title in (
+        "Associate Software Engineer - Intern",
+        "Associate Software Engineer (College Grad 2027)",
+        "Software Developer (Junior to Intermediate)",
+    ):
+        assert from_seniority(None, title) == ExperienceSpan(0, None, "seniority")
+    assert from_seniority(None, "Associate Software Engineer") == ExperienceSpan(
+        3, None, "seniority"
+    )
+
+
+@pytest.mark.parametrize(
+    ("title", "years"),
+    [
+        ("Software Engineering 5 - Ads Conversion Attribution", 7),
+        ("Software Engineering L5, Open Connect Platform", 7),
+        ("Software Engineering II-SUPPORT SERVICES-Applications-CTB", 3),
+        ("Specialist, Software Engineering 1", 0),
+    ],
+)
+def test_a_ladder_named_after_the_discipline_reads_as_its_level(title, years):
+    assert from_seniority(None, title) == ExperienceSpan(years, None, "seniority")

@@ -387,7 +387,8 @@ def test_an_abbreviated_work_level_is_labelled_for_the_filter():
     cases = {
         "PT 129 or Less Hours": "Part-time (PT 129 or Less Hours)",
         "FT": "Full-time (FT)",
-        "Regular FT": "Full-time (Regular FT)",
+        # The filter reads "regular" as full-time itself since ADR-0337, so no label is added.
+        "Regular FT": "Regular FT",
         "Full-time": "Full-time",
         "Variable": "Variable",
         "Software": "Software",  # no whole-word FT/PT
@@ -400,6 +401,7 @@ def test_an_abbreviated_work_level_is_labelled_for_the_filter():
     assert employment_type_filter.flags("Part-time (PT 129 or Less Hours)")[
         "is_part_time"
     ]
+    assert employment_type_filter.flags("Regular FT")["is_full_time"]
 
 
 def test_a_posting_served_twice_across_pages_counts_once(monkeypatch):

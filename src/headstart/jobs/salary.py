@@ -22,7 +22,7 @@ for company-tenure phrases.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 
 _MAX_PLAUSIBLE_ANNUAL = {
     "USD": 800_000,
@@ -123,6 +123,14 @@ _MIN_PLAUSIBLE_ANNUAL = {
 _HOURLY_TO_ANNUAL = 2080  # 40hr/wk * 52wk, the standard full-time-equivalent convention
 _DAILY_TO_ANNUAL = 260  # 5 days/wk * 52wk
 _WEEKLY_TO_ANNUAL = 52
+#: A Tier-2 period multiplier to the period it names (`SalarySpan.period`).
+_PERIOD_OF_MULTIPLIER = {
+    _HOURLY_TO_ANNUAL: "hour",
+    _DAILY_TO_ANNUAL: "day",
+    _WEEKLY_TO_ANNUAL: "week",
+    12: "month",
+    1: "year",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,6 +148,12 @@ class SalarySpan:
     max_annual: int | None
     currency: str | None
     source: str  # "field" | "regex" — no "seniority": see the module docstring
+    #: The period the description stated the figure in ("hour", "day", "month", or "year", which
+    #: is also what a figure with no period read nearby is taken as), so a reader can say an
+    #: annual figure was annualised from an hourly rate (ADR-0337). Tier 2 only: a field's own
+    #: text is served beside it and states its period itself, so Tier 1 leaves it None. Not part
+    #: of equality: two spans stating the same annual figure agree whatever they were stated in.
+    period: str | None = field(default=None, compare=False)
 
 
 def extract(
@@ -172,7 +186,11 @@ def extract(
     if parser is _field_zoho:
         return None
     stated = _bounded(found.min_annual, found.max_annual, code.group(1).upper())
-    return found if stated is None else replace(stated, source=found.source)
+    return (
+        found
+        if stated is None
+        else replace(stated, source=found.source, period=found.period)
+    )
 
 
 # --- Tier 1: parse Job.salary, a string we already formatted per-scraper -----------------------
@@ -1154,20 +1172,26 @@ _LABELED = re.compile(
                                             # its call site) rather than default-annual-guessing,
                                             # since nothing else here confirms this is even a wage
     )\s*
-    (?P<sym>@SYM@)?\s*
+    (?:(?:@CODES@)(?=\$))?(?P<sym>@SYM@)?\s*  # "USD$225.00", the code glued to its "$" (ADR-0337)
     (?:(?:@CODES@)\b\s*)?
     (?P<lo>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:[kK]|[lL]\b)?
     (?:\s*(?:@CODES@)\b)?
-    (?:\s*[-–—to]{1,3}\s*(?P<sym2>@SYM@)?\s*(?:(?:@CODES@)\b\s*)?
+    (?:\s*(?:-to[-‑]|[-–—to]{1,3})\s*
+       (?:(?:@CODES@)(?=\$))?(?P<sym2>@SYM@)?\s*(?:(?:@CODES@)\b\s*)?
        (?P<hi>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:[kK]|[lL]\b)?
        (?:\s*(?:@CODES@)\b)?)?
     """.replace("@CODES@", _CURRENCY_CODES).replace("@SYM@", _SYM),
     re.IGNORECASE | re.VERBOSE,
 )
 
+# The ceiling's side takes a doubled dash ("USD $23.00--$27.50"), "-to-" ("$80-to-$150"), and an
+# ISO code glued before its symbol ("USD$225.00 - USD$275.00 per hour", ADR-0337). Without them
+# the range failed and `_BARE_HOURLY_OR_DAILY` read the ceiling alone as the rate, serving a
+# $225-$275 hourly range as a floor of $572,000 a year: the low end lost, the high end called one.
 _BARE_RANGE = re.compile(
     rf"(?P<sym>{_SYM})\s*(?P<lo>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:[kK])?"
-    r"(?:\s*[-–—]\s*|\s+to\s+)"
+    r"(?:\s*[-–—]{1,2}\s*|\s*-to[-‑]\s*|\s+to\s+)"
+    rf"(?:(?:{_CURRENCY_CODES})(?=\$))?"
     rf"(?P<sym2>{_SYM})?\s*(?P<hi>\d(?:[\d,]*\d)?(?:\.\d+)?)\s*(?:[kK])?",
     re.IGNORECASE,
 )
@@ -1551,7 +1575,13 @@ def _span_from_match(
     span = _bounded(min(lo, hi) if hi else lo, max(lo, hi) if hi else None, currency)
     if span is None:
         return None
-    return SalarySpan(span.min_annual, span.max_annual, span.currency, "regex")
+    return SalarySpan(
+        span.min_annual,
+        span.max_annual,
+        span.currency,
+        "regex",
+        _PERIOD_OF_MULTIPLIER.get(mult),
+    )
 
 
 def _scan(text: str, pattern: re.Pattern) -> list[SalarySpan]:
@@ -1589,7 +1619,9 @@ def _scan_lpa(text: str) -> list[SalarySpan]:
         hi = round(float(gd["hi"]) * 100_000) if gd.get("hi") else None
         span = _bounded(min(lo, hi) if hi else lo, max(lo, hi) if hi else None, "INR")
         if span is not None:
-            found.append(SalarySpan(span.min_annual, span.max_annual, "INR", "regex"))
+            found.append(
+                SalarySpan(span.min_annual, span.max_annual, "INR", "regex", "year")
+            )
     return found
 
 
@@ -1611,6 +1643,7 @@ def _scan_level_bands(text: str) -> SalarySpan | None:
         max(s.max_annual or s.min_annual for s in spans),
         spans[0].currency,
         "regex",
+        spans[0].period if len({s.period for s in spans}) == 1 else None,
     )
 
 
