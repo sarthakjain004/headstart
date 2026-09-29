@@ -138,10 +138,10 @@ belong in README and CONTEXT.md, where `tests/test_board_counts.py` checks them.
   of the ledger. A front is landed whether or not its Backing Board is held — the opposite of
   Phenom's rule, by the owner's decision of 2026-09-26; each run logs its Front duplication
   instead.
-- **Happydance parks a front whose Backing Board is held, until the owner decides.** A Happydance
-  site (Ph.Creative) is a Career front like Radancy's (ADR-0264); its Board is its host. Whether to
-  land held-backed fronts (Radancy's rule) or not (Phenom's) is open, so they sit in
-  `PARKED_BOARDS` with the measured share in the ADR. Resolve the Backing Board by apply URL, and
+- **Happydance parks a front whose Backing Board is held.** A Happydance site (Ph.Creative) is a
+  Career front like Radancy's (ADR-0264); its Board is its host. Held-backed fronts follow Phenom's
+  rule, not Radancy's (owner, 2026-09-28): they sit in `PARKED_BOARDS` with the measured share in
+  the ADR. Resolve the Backing Board by apply URL, and
   by employer where the front takes the application itself (Greenhouse embeds share its job ids).
 - **WP Job Openings lands a site under the host its own REST API names.** Its Boards are
   companies' own WordPress sites (ADR-0266). Land hosts through

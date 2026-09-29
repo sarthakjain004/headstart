@@ -68,7 +68,7 @@ The Board a **Career front**'s posting mirrors, named by the posting's apply URL
 _Avoid_: assuming it is scraped — it may have no public listing (Intuit's), be login-walled, or be dead.
 
 **Front duplication**:
-The share of a **Career front**'s postings whose **Backing Board** is a **Scrapable Board**, so the index serves them twice. For Radancy it is logged each run and not gated — the owner's decision of 2026-09-26, open to revisit; Phenom instead parks every front whose Backing Board is held (CLAUDE.md §Landing rules). Happydance logs it like Radancy and, until the owner decides, parks the fronts whose Backing Board is held (ADR-0264).
+The share of a **Career front**'s postings whose **Backing Board** is a **Scrapable Board**, so the index serves them twice. For Radancy it is logged each run and not gated — the owner's decision of 2026-09-26, open to revisit; Phenom instead parks every front whose Backing Board is held (CLAUDE.md §Landing rules). Happydance logs it like Radancy but, like Phenom, parks the fronts whose Backing Board is held — the owner's decision of 2026-09-28 (ADR-0264).
 _Avoid_: reading it as a defect count — it is a measured, accepted cost.
 
 **Slug**:
