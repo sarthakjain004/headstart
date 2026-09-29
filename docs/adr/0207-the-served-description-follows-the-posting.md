@@ -9,7 +9,10 @@
 [ADR-0061](0061-refreshable-metadata.md), [ADR-0062](0062-drain-the-description-gap.md),
 [ADR-0089](0089-the-description-store-holds-text-not-verdicts.md),
 [ADR-0168](0168-delete-the-orphaned-blobs-dont-ask-for-them-to-be-collected.md),
-[ADR-0208](0208-a-failed-zoho-detail-keeps-the-held-description.md) (removes the Zoho flip first)
+[ADR-0208](0208-a-failed-zoho-detail-keeps-the-held-description.md) (removes the Zoho flip first) ·
+**Amended by:** [ADR-0211](0211-held-descriptions-are-re-fetched-on-a-seven-day-rotation.md)'s
+2026-09-29 amendment (one exception to "a different description replaces the held one": a fetch
+that differs only where held non-ASCII characters came back as `?` keeps the held text)
 
 ## Context
 

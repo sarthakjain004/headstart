@@ -1985,7 +1985,7 @@ def test_ripplehire_maps_department_posted_at_employment_type_salary_from_detail
     )
     j = jobs[0]
     assert j.department == "Technology"
-    assert j.posted_at == "23-Jun-2020"
+    assert j.posted_at == "2020-06-23"  # `jobPostingDate` "23-Jun-2020", as ISO
     assert j.employment_type == "Full time"  # jobTypeCustom3, not the coded jobType "R"
     assert j.salary == "Compensation range: $ 46,417.00 to 77,864.00 per year"
 
@@ -1997,7 +1997,7 @@ def test_ripplehire_maps_department_posted_at_employment_type_salary_from_detail
 
     j3 = jobs[2]
     assert j3.department == "Finance"
-    assert j3.posted_at == "01-Jan-2021"
+    assert j3.posted_at == "2021-01-01"
     assert j3.salary == "10-15 LPA"
 
 

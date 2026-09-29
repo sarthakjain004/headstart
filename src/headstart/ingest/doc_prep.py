@@ -62,7 +62,7 @@ META_FIELDS = (
 # declare — so anything added to `to_meta` without either landing in `index._schema()` or being
 # listed here breaks every add. Kept beside `to_meta` because that is where the temptation is.
 # `_derivations_version` is update_meta's resumable sweep checkpoint (ADR-0176). `doc_hash` is the
-# fingerprint of the text a row's vector encodes (ADR-0285).
+# fingerprint of the raw title and description a row's vector was built from (ADR-0285).
 PLANNER_ONLY_FIELDS = ("has_description", "_derivations_version", "doc_hash")
 
 #: What `update_meta` stamps as the `doc_hash` of a row whose vector is known to encode text it no
@@ -74,8 +74,10 @@ def doc_hash(job: dict) -> str:
     """A fingerprint of the text a Job's vector is built from: its title and description, as
     scraped (ADR-0285).
 
-    The raw fields, not :func:`build_doc`'s output. A change to how the Doc is assembled would
-    otherwise re-embed every Job at once, while an edit to the posting is what this tracks."""
+    Not a hash of the **Doc** (CONTEXT.md), despite the name: it reads the raw fields, not
+    :func:`build_doc`'s output. A change to how the Doc is assembled would otherwise re-embed every
+    Job at once, while an edit to the posting is what this tracks. The name stays because every
+    stored ``meta.jsonl`` row already carries it under this key."""
     text = (
         f"{(job.get('title') or '').strip()}\n{(job.get('description') or '').strip()}"
     )

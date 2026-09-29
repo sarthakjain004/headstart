@@ -270,10 +270,10 @@ class Reconciled(NamedTuple):
     rederive_ids: list[str]
     #: Fetches that differed from the held text only where a held non-ASCII character came back
     #: as ``?``. The held text was kept, and none of them is in ``learned`` or ``replaced``.
-    question_marked: int
+    kept_over_question_marks: int
 
 
-def _question_marked(held: str, fresh: str) -> bool:
+def _only_non_ascii_lost_to_question_marks(held: str, fresh: str) -> bool:
     """Whether ``fresh`` is ``held`` with some of its non-ASCII characters read back as ``?``,
     one for one, and no other change: a worse rendering of the held text, not an edit."""
     return (
@@ -301,7 +301,7 @@ def reconcile(
     """
     held = read_store(ats_dir)
     learned: list[dict] = []
-    filled = unrecorded = replaced = reverted = question_marked = 0
+    filled = unrecorded = replaced = reverted = kept_over_question_marks = 0
     if changes is None:
         changes = {}
 
@@ -319,12 +319,17 @@ def reconcile(
             job_id = job["id"]
             fresh = (job.get("description") or "").strip()
             before = held.get(job_id)
-            if fresh and before is not None and _question_marked(before, fresh):
+            if (
+                fresh
+                and before is not None
+                and _only_non_ascii_lost_to_question_marks(before, fresh)
+            ):
+                # A worse rendering of the held text, not an edit (ADR-0211's amendment).
                 job["description"] = before
-                question_marked += 1
+                kept_over_question_marks += 1
             elif fresh:
-                # Fresh text always wins: a re-fetch is more current than the store, and this is
-                # the only path by which an edited posting reaches it.
+                # Any other fresh text wins: a re-fetch is more current than the store, and this
+                # is the only path by which an edited posting reaches it.
                 if before != fresh:
                     learned.append({"id": job_id, "description": fresh})
                 if before is not None and before != fresh:
@@ -359,13 +364,13 @@ def reconcile(
         _write_fragment(ats_dir, learned)
     tmp.replace(jobs_path)
     return Reconciled(
-        filled,
-        len(learned),
-        replaced,
-        reverted,
-        unrecorded,
-        [r["id"] for r in learned],
-        question_marked,
+        filled=filled,
+        learned=len(learned),
+        replaced=replaced,
+        reverted=reverted,
+        unrecorded=unrecorded,
+        rederive_ids=[r["id"] for r in learned],
+        kept_over_question_marks=kept_over_question_marks,
     )
 
 
@@ -596,10 +601,11 @@ def _update_store() -> int:
             f"{ats}: replaced {done.replaced:,} held description(s) with different text, "
             f"{done.reverted:,} of them back to the text held before"
         )
-        if done.question_marked:
+        if done.kept_over_question_marks:
             _log.info(
-                f"{ats}: kept {done.question_marked:,} held description(s) over a fetch that "
-                "read their non-ASCII characters as '?' and changed nothing else (ADR-0211)"
+                f"{ats}: kept {done.kept_over_question_marks:,} held description(s) over a "
+                "fetch that read their non-ASCII characters as '?' and changed nothing else "
+                "(ADR-0211)"
             )
     write_changes(Path(args.changes), changes)
     due = held_refetch.plan(

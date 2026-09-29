@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import os
 import re
 from collections import defaultdict
 from pathlib import Path
@@ -56,11 +55,12 @@ def _served_rows(version: int | None):
     import numpy as np
     from huggingface_hub import get_token
 
-    os.environ.setdefault("HF_HUB_DISABLE_XET", "1")
     ds = lance.dataset(
         _TABLE, version=version, storage_options={"hf_token": get_token()}
     )
-    print(f"served table v{ds.version}, {ds.count_rows():,} rows", flush=True)
+    total = ds.count_rows()
+    print(f"served table v{ds.version}, {total:,} rows", flush=True)
+    read = 0
     for batch in ds.to_batches(columns=["id", "title", "vector"], batch_size=8192):
         ids = batch.column("id").to_pylist()
         titles = batch.column("title").to_pylist()
@@ -69,6 +69,8 @@ def _served_rows(version: int | None):
             dtype=np.float32,
         ).reshape(len(ids), -1)
         yield from zip(ids, titles, (row.tobytes() for row in flat), strict=True)
+        read += len(ids)
+        print(f"read {read:,} of {total:,} rows", flush=True)
 
 
 def main() -> int:

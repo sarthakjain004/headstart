@@ -3,7 +3,9 @@
 **Status:** accepted · **Date:** 2026-09-25 · **Amends:**
 [ADR-0048](0048-skip-details-we-already-hold.md) and
 [ADR-0050](0050-persist-descriptions-across-runs.md) (the skip-list no longer holds every held
-Job) · **Relates to:** [ADR-0207](0207-the-served-description-follows-the-posting.md) (an edit
+Job), and, by its 2026-09-29 amendment,
+[ADR-0207](0207-the-served-description-follows-the-posting.md) (a fetch that only read held
+non-ASCII characters back as `?` keeps the held text) · **Relates to:** [ADR-0207](0207-the-served-description-follows-the-posting.md) (an edit
 that is fetched reaches the table), [ADR-0089](0089-the-description-store-holds-text-not-verdicts.md),
 [ADR-0168](0168-delete-the-orphaned-blobs-dont-ask-for-them-to-be-collected.md)
 

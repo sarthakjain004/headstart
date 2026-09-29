@@ -89,3 +89,46 @@ re-embed may change it.
   said.
 - Once every row carries a fingerprint, the list and the ledger read are inert. The list can be
   deleted then.
+
+## Amendment (2026-09-29): the cap is spent across ATSes, and two false signals are fixed
+
+A code review of #849 found three gaps. Each was checked against the store's `meta.jsonl` and
+served table v45 (500,568 rows), both read off HF on 2026-09-29.
+
+**The cap was spent in corpus order, which is ATS-file order.** The first five runs after this
+shipped each deferred 13,726 to 19,549 edited Jobs past the cap. Replayed on the served table,
+14,114 rows carried a fingerprint that differs from the text they serve: SuccessFactors 9,070,
+Workday 1,911, WP Job Openings 1,511, Zoho 929, and 20 other ATSes 693 between them. Corpus order
+gave SuccessFactors 1,752 of the 2,000 and the ATSes filed before it the rest, so Workday, WP Job
+Openings and Zoho got none until SuccessFactors was drained. Ordering by the planner's Board
+priority alone would not change that: it gave SuccessFactors all 2,000, because its Boards also
+score highest.
+
+- **`embed_plan` now plans the edited Jobs after the scan, one ATS at a time in turn, and within
+  an ATS its highest-priority Boards first** (`_edits_in_turn`). On the same replay that gives
+  each of the four large ATSes about 327 a run and every smaller one all of its edits.
+- An edited Job that fails the English gate still does not count against the cap.
+
+**No description over a vector built from one was read as an edit.** A fetch that failed, with no
+held text to fill it, hashes the title alone, so the row was re-embedded title-only and then again
+by ADR-0050 once the text came back. `embed_plan` now reads such a row as unchanged. A row whose
+vector was built without a description (`has_description: false`) still compares, so a new title
+on a title-only vector is re-embedded. The served table cannot say how often this fired, because
+it keeps a row's earlier text when a run's corpus has none.
+
+**A title that changed before a row's first stamp was lost.** No ledger records a title change,
+so a row stamped from this run's text carried the new title's fingerprint over a vector of the
+old one. `update_meta` now stamps an unstamped row `"stale"` when the title this run scraped
+differs from the one the store held. 4,700 of the store's 524,287 rows were still unstamped.
+
+**Not changed: re-embeds of rows that are no longer served.** The review read the first runs,
+where `index sync` replaced 1,025 and 1,656 rows for 2,000 upgrades. The two latest runs replaced
+1,974 and 1,991, so the cap is not being spent on rows that are gone.
+
+**The per-run figure.** `_MAX_EDIT_REEMBEDS`'s comment said an ordinary run edits about 190,
+ADR-0207's steady rate for real edits outside Zoho. This ADR's 285 is the change ledger's average
+since 2026-09-24, bursts included. The comment now cites the 285.
+
+**The list and the ledger read may never go fully inert.** A row stays unstamped until its Board
+is read, and a Board no run reads again keeps its rows unstamped until they are evicted. Reading
+both each run costs little (the ledger is 430 KB), so they stay.

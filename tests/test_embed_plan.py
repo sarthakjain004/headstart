@@ -515,6 +515,64 @@ def test_a_row_stamped_stale_is_re_embedded(tmp_path, monkeypatch):
     assert _plan_upgrades(tmp_path, monkeypatch, [_JOB], meta) == [_JOB["id"]]
 
 
+def test_the_cap_is_spent_across_atses_in_turn(tmp_path, monkeypatch):
+    """A backlog on the ATS whose file sorts first used to spend the whole cap: on 2026-09-29,
+    SuccessFactors' 9,070 pending re-embeds left Workday, WP Job Openings and Zoho with none."""
+    pytest.importorskip("langdetect", reason=_NEEDS_LANGDETECT)
+    monkeypatch.setattr(pe, "_MAX_EDIT_REEMBEDS", 2)
+    backlog = [{**_JOB, "id": f"ashby:acme:{n}", "ats": "ashby"} for n in range(3)]
+    late = {**_JOB, "id": "zoho:acme:1", "ats": "zoho"}
+    jobs = [*backlog, late]
+    meta = "".join(_meta_row(j["id"], j["ats"], doc_hash="old") for j in jobs)
+    upgrades = _plan_upgrades(tmp_path, monkeypatch, jobs, meta)
+    assert late["id"] in upgrades
+    assert len(upgrades) == 2
+
+
+def test_within_an_ats_the_highest_priority_board_is_re_embedded_first(
+    tmp_path, monkeypatch
+):
+    pytest.importorskip("langdetect", reason=_NEEDS_LANGDETECT)
+    monkeypatch.setattr(pe, "_MAX_EDIT_REEMBEDS", 1)
+    monkeypatch.setattr(
+        pe,
+        "load_scores",
+        lambda _path: {"greenhouse:small": 1.0, "greenhouse:big": 9.0},
+    )
+    jobs = [
+        {**_JOB, "id": "greenhouse:small:1"},
+        {**_JOB, "id": "greenhouse:big:1"},
+    ]
+    meta = "".join(_meta_row(j["id"], "greenhouse", doc_hash="old") for j in jobs)
+    assert _plan_upgrades(tmp_path, monkeypatch, jobs, meta) == ["greenhouse:big:1"]
+
+
+def test_no_description_over_a_described_vector_is_not_an_edit(tmp_path, monkeypatch):
+    """A fetch that failed with no held text to fill it. Re-embedding would build a title-only
+    vector, and ADR-0050 would rebuild it again once the text came back."""
+    pytest.importorskip("langdetect", reason=_NEEDS_LANGDETECT)
+    # A title the English gate passes on its own, so only the edit rule can keep it off the list.
+    job = {
+        **_JOB,
+        "title": "Senior Software Engineer, Payments Platform and Distributed Systems",
+    }
+    meta = _meta_row(job["id"], "greenhouse", doc_hash=doc_hash(job))
+    unfetched = {**job, "description": ""}
+    assert _plan_upgrades(tmp_path, monkeypatch, [unfetched], meta) == []
+
+
+def test_a_retitled_title_only_vector_is_still_an_edit(tmp_path, monkeypatch):
+    """Built without a description and still without one: the title is all it encodes, so a new
+    title is a real edit."""
+    pytest.importorskip("langdetect", reason=_NEEDS_LANGDETECT)
+    embedded = {**_JOB, "title": "Senior Backend Software Engineer", "description": ""}
+    meta = _meta_row(
+        _JOB["id"], "greenhouse", has_description=False, doc_hash=doc_hash(embedded)
+    )
+    retitled = {**embedded, "title": "Staff Backend Software Engineer for Payments"}
+    assert _plan_upgrades(tmp_path, monkeypatch, [retitled], meta) == [_JOB["id"]]
+
+
 def test_edit_re_embeds_stop_at_the_cap(tmp_path, monkeypatch, caplog):
     """A scraper change can rewrite every description of an ATS at once; the rest wait for their
     Board's next read, still carrying a fingerprint that differs."""
