@@ -439,15 +439,15 @@ def build_doc(job: dict) -> str:
 # 142 move, all Tier 2: 120 none -> regex ("USD$110,000.00 - USD$138,000.00" at BlackRock,
 # Perseus, Arc'teryx) and 22 regain an end ("USD$225.00 - USD$275.00 per hour", served as a floor
 # of 572,000, is 468,000-572,000).
-# v24 (ADR-0347): `search_filters/india_gazetteer.py` reads "india" as a whole word, guards Hungary's
-# Hajdú-Bihar, Delhi's namesakes in New York and Louisiana and four city aliases hidden mid-word,
-# reads the ISO country code beside an Indian subdivision code, PIN or plant name, and adds 75
-# whole-word `TOWNS`, 12 aliases on cities already held, two state names and "Remote, IN" as a
-# whole string.
-# The range since the v23 bump at `4e3291c7` is `git log 4e3291c7..<the squash-merged change> --
-# src/headstart/search_filters/india_gazetteer.py`: this change alone (ADR-0322's Pakistan guard,
-# `78a77a6f`, precedes v23). `location` is unchanged on every row it moves, so `refresh_row`'s
-# fact resync never reaches them; only this sweep does. Measured old (main's `classify()`, 82,756
+# v24 (ADR-0347): `search_filters/india_gazetteer.py` reads "india" as a whole word (bar Little
+# India, Singapore), guards Hungary's Hajdú-Bihar, Delhi's namesakes in New York and Louisiana,
+# Madras, Oregon and four city aliases hidden mid-word, reads the ISO country code beside an Indian
+# subdivision code, PIN or plant name or after an "IND," prefix, and adds 76 whole-word `TOWNS`, 12
+# aliases on cities already held, two state names and "Remote, IN" as a whole string.
+# The range since the v23 bump at `4e3291c7` is `git log 4e3291c7..9650226d --
+# src/headstart/search_filters/india_gazetteer.py`: this change alone, three commits (ADR-0322's
+# Pakistan guard, `78a77a6f`, precedes v23). `location` is unchanged on every row it moves, so
+# `refresh_row`'s fact resync never reaches them; only this sweep does. Measured old (main's `classify()`, 82,756
 # rows tagged) vs new on all 500,167 rows of the served table read 2026-09-29 (v18), per ADR-0066:
 # 392 rows move, 339 null -> "IN" and 53 "IN" -> null. Gained: 172 on a `TOWNS` name (Mundra 24,
 # Sahnewal 9, Siliguri 8, Dadra 7), 68 on "Town, Plant, IN" (Singahalli 26, Cheyyar 14, Chakan 14),
