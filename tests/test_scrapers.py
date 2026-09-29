@@ -5770,6 +5770,22 @@ def test_successfactors_a_code_or_a_non_type_line_is_not_an_employment_type(body
     assert _page_fields(_sf_body_page(body))["employment_type"] is None
 
 
+def test_successfactors_department_and_location_labels_still_read_after_case_folding():
+    """`_label_value` folds case for every caller now; the department and city tokens must
+    read as before, in either case."""
+    from headstart.scrapers.successfactors import _page_fields
+
+    for department, city in (("Department:", "City:"), ("DEPARTMENT:", "CITY:")):
+        page = (
+            _sf_page("Engineer | Acme")
+            + _sf_label_span(department, "Platform")
+            + _sf_label_span(city, "Pune")
+        )
+        fields = _page_fields(page)
+        assert fields["department"] == "Platform"
+        assert fields["location"] and "Pune" in fields["location"]
+
+
 def test_successfactors_a_label_span_outranks_the_description_line():
     from headstart.scrapers.successfactors import _page_fields
 
