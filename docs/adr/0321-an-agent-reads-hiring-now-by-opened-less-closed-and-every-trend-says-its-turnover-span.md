@@ -204,7 +204,7 @@ hiring."
 - **Iteration task t04 now asks for the default Lens in its own words:** "Which companies opened
   more tech jobs than they closed this week?". The old "expanding … fastest" named Expansion's
   question.
-- **A new task, t27,** asks whether hiring rose between 1 and 7 September. It passes only if the
+- **A new task, t28,** asks whether hiring rose between 1 and 7 September. It passes only if the
   tool said it cannot tell and the answer passes that on.
 - **`trend_sign` checks the figure an answer states, not only its sign.** A stated hiring figure
   larger than everything opened and closed, plus the re-counting HeadStart sized, fails.
