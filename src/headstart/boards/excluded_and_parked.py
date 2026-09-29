@@ -390,7 +390,7 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         # Agro", "Accountant - 5ire", "Accountant - Lakshmi Interiors"), "TEST", "Bootstrap
         # Evanglist" and "Nanny", places such as "Chennai, Bihar", dated 2022-09 onward. Its
         # 2022-23 "Software Engineer" rows in Toronto led a "software engineer" search in Canada
-        # (the round-2 MCP critique's st04).
+        # (rows 1-3 on 2026-09-29).
         "zoho:hrpresales.zohorecruit.com",
         # Blackstone's own test sites; the second is named for what it serves. Workday slugs
         # ARE the careers URL, so these keys are longer than the rest.
