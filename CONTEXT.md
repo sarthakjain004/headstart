@@ -96,6 +96,10 @@ The employer listed on an ATS, behind a Board; a `CompanyRef` (`ats`, `slug`, `n
 The customer an ATS hosts, which may hold several **Board**s: Workday's `{company}` across its sites, a Taleo Enterprise host across its career sections, a Taleo Business Edition `org` across its `cws` sites, an ADP Workforce Now client `cid` across its career centers (ADR-0223); on most ATSes it is simply the **Slug**. Usually one **Company**'s, but a holding group's Tenant can carry its portfolio companies' Boards, and a Company on two ATSes has two Tenants.
 _Avoid_: "account" — that is a signed-in person (**Account**); reading the ledgers' `tenant` column as a Tenant — that column holds one Board's slug spelling, site included.
 
+**Twin host** (ADR-0307):
+A second Taleo Enterprise host serving one customer's career sections with the same requisition ids as another host, which is its **linked host**: the one the company's own careers site links to (`pruitthealthcareers.taleo.net` serves `pruitthealth.taleo.net`'s sections). Each host is still its own **Tenant**, so neither the per-Tenant alias rule (ADR-0186) nor the per-Tenant requisition rule (ADR-0223) joins them. The pairs are named by hand in `taleo_enterprise_subset_sections.TWIN_HOSTS`, and the alias ledger buries a twin host's section onto the linked host's section at the same path, or onto one that lists all its postings.
+_Avoid_: "employer's host" — `employer` is an **Operator** value; "account" — that is a signed-in person (**Account**).
+
 **Portal** (Avature):
 One of an Avature **Tenant**'s named sites on its host (`bloomberg.avature.net/careers`, `/internalcareers`, `jobs.bmc.com/oldcareersportal`), each with its own sitemap named in the host's `robots.txt`. Job ids are Tenant-wide: one id is one posting on every Portal listing it. A Portal whose job pages redirect to `/Login/` is a **non-public site**, as in **Requisition**.
 _Avoid_: "site" alone — Workday's word; and reading a Portal as a **Board** — an Avature Board is the whole Tenant, its Portals' sitemaps joined by id (ADR-0245).
