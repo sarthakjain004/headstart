@@ -1032,6 +1032,24 @@ PARKED_BOARDS: frozenset[str] = frozenset(
         "radancy:internal.jobs.chsinc.com",
         "radancy:internal.santanderjobsus.com",
         "radancy:internalcareers.primark.com",
+        # iCIMS internal portals whose job pages are employee-only (#810): each page answers "You
+        # must log in to access this page". All 20 internal-labelled iCIMS portals were measured on
+        # 2026-09-29. Three are walled: scsk12's (3 of 3 job pages sampled), and East Penn's
+        # `internal9v` (1 of 1) and `internala5` (2 of 2). Three stay because their sampled pages
+        # opened without a sign-in: beaumonthospital (0 of 3 walled), gnapartners (0 of 3) and
+        # knowledgeservices (0 of 1). The other 14 listed no posting, so none could be sampled, and
+        # they stay too.
+        # scsk12's portal lists 556 postings, and 555 sit under the same job id on the district's
+        # public portals: 252 on `instructional-scsk12` and 309 on `schoolsupportapply-scsk12`.
+        # ADR-0254's `subset-reqs` election buries an internal portal only onto one public portal
+        # that lists all of its postings. No single one does here, and one posting is
+        # internal-only, so unparked, those 555 would be read twice and served twice wherever they
+        # pass the tech filter. East Penn's three postings are on none of its 12 public portals,
+        # and none is a tech role.
+        # Un-park a portal if its job pages open to outside applicants.
+        "icims:internal-instructional-scsk12.icims.com",
+        "icims:internal9v-eastpennmanufacturing.icims.com",
+        "icims:internala5-eastpennmanufacturing.icims.com",
         # A front whose robots.txt is `Disallow: /` (2026-09-28): nothing on it may be read.
         # Un-park if its robots.txt opens the sitemap.
         "radancy:www.intel-jobs.com",
