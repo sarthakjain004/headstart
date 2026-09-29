@@ -640,20 +640,42 @@ def _gh_jid_matches_row(row: dict, url: str) -> bool:
     return jid == (row.get("id") or "").rsplit(":", 1)[-1]
 
 
+# ATSes whose links are sampled one row per Board across the whole query battery, not the top 3
+# of one query. A Lever Board whose hosted pages are off serves only dead links (ADR-0281). On
+# 2026-09-29 the top 3 rows reached 2 Lever Boards and missed all 55 such Boards; the battery
+# reached 243 of 1,310, 15 of them dead. So this catches that failure class, not every such Board.
+_PER_BOARD_ATSES = frozenset({"lever"})
+
+
+def _one_row_per_board(base: str, ats: str) -> list[dict]:
+    """The first row each Board of ``ats`` ranks for, across every query in :data:`QUERIES`."""
+    rows: dict[str, dict] = {}
+    for q in QUERIES:
+        try:
+            for r in _get(base, {"q": q, "ats": ats, "k": 100}):
+                rows.setdefault((r.get("id") or "").rsplit(":", 1)[0], r)
+        except Exception:  # noqa: BLE001, S112 - one failed query only narrows the sample
+            continue
+    return list(rows.values())
+
+
 def run_url_checks(base: str, atses: list[str], http: bool) -> list[dict]:
     """Per-ATS URL-shape validation over sampled results + optional live HTTP probes."""
     samples: dict[str, list[dict]] = {}
     for ats in atses:
+        if ats in _PER_BOARD_ATSES:
+            samples[ats] = _one_row_per_board(base, ats)
+            continue
         try:
             rows = _get(base, {"q": "software engineer", "ats": ats, "k": 5})
         except Exception:  # noqa: BLE001
             rows = []
-        samples[ats] = rows
+        samples[ats] = rows[:3]
 
     out = []
     for ats, rows in samples.items():
         pattern = URL_SHAPES.get(ats)
-        for r in rows[:3]:
+        for r in rows:
             url = r.get("url") or ""
             rec = {
                 "ats": ats,
