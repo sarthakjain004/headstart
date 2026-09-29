@@ -193,8 +193,6 @@ def test_http_url_keeps_only_web_links():
 def test_html_to_text_drops_style_and_script_blocks_with_their_content():
     """#876: a `<style>` block's rules survived tag stripping as words, and 756 served
     descriptions opened with CSS. The posting's own text around it is kept."""
-    from headstart.jobs.job import html_to_text
-
     blob = (
         "<style>.article__content {color: red;}</style><p>Build data pipelines.</p>"
         "<SCRIPT type='text/javascript'>var x = 1;</SCRIPT><p>Remote friendly.</p>"
@@ -205,3 +203,19 @@ def test_html_to_text_drops_style_and_script_blocks_with_their_content():
         html_to_text("&lt;style&gt;p {margin:0}&lt;/style&gt;&lt;p&gt;Hi&lt;/p&gt;")
         == "Hi"
     )
+
+
+def test_html_to_text_keeps_an_escaped_code_sample_in_markup():
+    """A posting that shows `<script>` as text escapes it; only a real block is dropped."""
+    blob = "<p>Wire it up: &lt;script&gt;init()&lt;/script&gt;.</p><script>track()</script>"
+    assert html_to_text(blob) == "Wire it up: init() ."
+
+
+def test_html_to_text_an_unclosed_style_does_not_take_the_text_up_to_a_later_block():
+    blob = (
+        "<style>p {margin:0}<p>Build data pipelines.</p>"
+        "<style>.x {color: red}</style><p>Remote friendly.</p>"
+    )
+    text = html_to_text(blob)
+    assert "Build data pipelines." in text and text.endswith("Remote friendly.")
+    assert "color" not in text

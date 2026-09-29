@@ -22,6 +22,24 @@ job page that lands on `/Error` is a closed posting, not a lost detail (:data:`_
 Internal portals land every job page on `/Login/` (12 of 12 on bloomberg and broadinstitute);
 their postings are skipped the same way, which is why portals named like one are read last.
 
+**An empty sitemap body is not an empty listing.** Avature answers a sitemap request with an
+empty 200 body at random (one listing of ea: 173 of ~340 reads, 2026-09-29), and a utility portal
+(`CalendarInvitation`, `timeslots`) answers one every run. A portal's locale sitemaps each list all
+its postings, so one that answered covers the portal. A public portal whose every read came back
+empty is settled by its `SearchJobs` page: gone (404) or landing on a login means it lists
+nothing; anything else leaves the listing unread (:meth:`AvatureScraper._why_listing_is_unread`).
+An unread listing that found nothing raises :class:`BoardUnreadable`, and one that found some is
+truncated, so neither run evicts a row (ADR-0053). `docs/avature/` has the measurements.
+
+**A posting is read at its English URL.** Each locale sitemap lists every posting under its own
+locale, with the other locales' URLs as `xhtml:link` alternates, so whichever locale answered
+first used to name the posting: ea's `en_US` sitemap read empty and 124 of its 126 served rows
+came from Spanish pages that failed the English gate. A `<loc>` naming no locale or an English one
+is kept; otherwise the posting's first alternate whose URL names an English locale (`en_US`,
+`en_GB`) is taken. A non-English `<loc>` stays only when no English alternate is stated
+(`manpowergroupco`). The locale is read off the URL's path, which each alternate's `hreflang`
+states too.
+
 **The tech gate runs on the URL slug's title.** No listing surface states a department (sitemap,
 RSS, search rows), so it is a title-only approximation. Over 244 titled pages: 52 tech, the gate
 kept 47 (90.4% recall) and no non-tech page; 3 misses are rule 4's department promotion
@@ -77,12 +95,19 @@ _DETAIL_WORKERS = 4
 
 _SITEMAP_LINE = re.compile(r"(?im)^Sitemap:\s*(\S+)")
 _LOC = re.compile(r"<loc>\s*([^<\s]+)\s*</loc>")
-_JOB_URL = re.compile(r"/JobDetail/([^/?#]+)/(\d+)/?$")
+#: A posting's URL, `…/JobDetail/{Title-Slug}/{id}`. A title with no Latin letter mints no slug:
+#: 28 of tsmc's 801 sitemap URLs are `…/JobDetail/389` ("製程整合工程師 (台南)", 2026-09-29).
+_JOB_URL = re.compile(r"/JobDetail/(?:([^/?#]+)/)?(\d+)/?$")
 #: A URL's locale segment, right after the host: `https://jobs.ea.com/es_ES/careers/…`.
 _LOCALE = re.compile(r"https?://[^/]+/([a-z]{2})_[A-Z]{2}/")
 _ALTERNATE_HREF = re.compile(r'<xhtml:link\b[^>]*\bhref="([^"]+)"')
 #: Portals whose pages redirect to a login, read last so a shared id keeps its public URL.
 _PRIVATE_PORTAL = re.compile(r"internal|employee|referral", re.IGNORECASE)
+#: A portal's `SearchJobs` statuses that say it is gone, so it lists no postings (#702's rule).
+_SEARCH_GONE = frozenset({400, 404, 410})
+#: Where an internal portal's `SearchJobs` lands: its own `/Login/`, or the tenant's SSO host
+#: (rgp's `rgp.okta.com/login/…`, monadelphous's `login.microsoftonline.com/…/saml2`).
+_LOGIN_LANDING = re.compile(r"login|saml", re.IGNORECASE)
 #: Where a job page redirects when it is not public: `/Error` for a closed posting (a 404 once
 #: followed), `/Login/` for a login-walled portal (then on to the tenant's SSO host).
 _NOT_PUBLIC = re.compile(r"/(?:Error|Login)/?(?:[?#].*)?$")
@@ -110,6 +135,11 @@ _LABEL_PAIRS = (
 )
 _DETAILS_BLOCK = re.compile(
     r'<article class="article article--details[^"]*"[^>]*>(.*?)</article>', re.DOTALL
+)
+#: workmyway's details block holds only a `<style>` block; its posting sits in collapsible
+#: `<details>` sections ("Role Highlights", "About the Role"), read when nothing before them is.
+_COLLAPSIBLE_DETAILS = re.compile(
+    r'<details class="article article--details[^"]*"[^>]*>(.*?)</details>', re.DOTALL
 )
 #: bmcrecruit keeps its body in a rich-text field row rather than a details block.
 _RICH_TEXT = re.compile(
@@ -165,9 +195,13 @@ class AvatureScraper(BaseScraper):
     """One Avature tenant, keyed by its host label (``bloomberg``)."""
 
     ats = "avature"
-    # The sitemap's own <loc>, which is where a posting is served: `{host}/[{locale}/]{portal}/
-    # JobDetail/{Title-Slug}/{id}`. Host-agnostic because vanity hosts serve it (jobs.bmc.com).
-    url_shape = r"https://[^/]+/(?:[a-z]{2}_[A-Z]{2}/)?[^/]+/JobDetail/[^/?#]+/\d+$"
+    # The sitemap URL a posting is served at, its `<loc>` or else its English alternate
+    # (:func:`listing_rows`): `{host}/[{locale}/]{portal}/JobDetail/[{Title-Slug}/]{id}`. The slug
+    # is absent for a title with no Latin letter (tsmc). Host-agnostic because vanity hosts
+    # serve it (jobs.bmc.com).
+    url_shape = (
+        r"https://[^/]+/(?:[a-z]{2}_[A-Z]{2}/)?[^/]+/JobDetail/(?:[^/?#]+/)?\d+$"
+    )
     has_detail_pass = True
     detail_workers = _DETAIL_WORKERS
     detail_streams = _DETAIL_WORKERS
@@ -175,8 +209,6 @@ class AvatureScraper(BaseScraper):
     pacer = _PACER
     #: The employer the fetched job pages agree on (`og:site_name`, else JSON-LD).
     _pages_company: str | None = None
-    #: Sitemap reads this scrape that answered an empty 200 body (:meth:`_sitemap_text`).
-    _empty_sitemaps: int = 0
 
     @staticmethod
     def slug_from(tenant: str, url: str) -> str:
@@ -212,36 +244,33 @@ class AvatureScraper(BaseScraper):
         response.raise_for_status()
         return response.text
 
-    def _sitemap_text(self, url: str) -> str:
-        """A sitemap or sitemap index, counting the reads that answered an empty 200 body.
+    def _why_listing_is_unread(self, empty_portals: list[str]) -> str | None:
+        """Why portals whose sitemaps all read empty may still hold postings, else None.
 
-        Avature answers one at random: ea's `careers` sitemap read 645,183 bytes, then 0, then 0
-        (2026-09-29), and one listing of ea came back empty on 173 of ~340 reads. A utility
-        portal (`CalendarInvitation`) answers 0 bytes every time, so an empty body alone cannot
-        say which; :meth:`_listing_was_lost` asks the portal's search page instead."""
-        text = self._get_text(url)
-        if not text.strip():
-            self._empty_sitemaps += 1
-        return text
-
-    def _listing_was_lost(self, portals: list[str]) -> str | None:
-        """The public portal whose search page links postings, when every sitemap read empty.
-
-        A job portal's `SearchJobs` page links its first postings as `/JobDetail/` URLs (ea 20,
-        unicredit 15, mantech 6, bupaanz 6 on 2026-09-29), while a utility portal answers 404
-        and an internal one lands on `/Login/`, linking none. Asked only for a Board whose
-        listing came back empty after an empty sitemap body, so it costs nothing otherwise."""
-        for index_url in portals:
-            if not index_url.endswith("sitemap_index.xml") or _PRIVATE_PORTAL.search(
-                index_url
-            ):
-                continue
+        Each portal's `SearchJobs` page decides, and only two answers say a portal lists
+        nothing: the page is gone (404) or lands on a login (:data:`_LOGIN_LANDING`). Of 1,199
+        search pages read on Avature Boards listing nothing (2026-09-29), 1,027 were gone and
+        103 landed on a login. Anything else leaves the listing unread: a page linking postings (ea
+        20, mantech 6), one stating results it renders client-side (maximus "402 results", no
+        link), one handing off to the employer's own site (emiratesjobs's `careersmarketplace`,
+        whose 1,470-posting sitemap read empty), and one that did not answer — Avature's own
+        406 wall, a 429, a 5xx, a 202 (#702). Asked only for portals that read empty, so a run
+        whose sitemaps all answered costs nothing more."""
+        for index_url in empty_portals:
             search = index_url.rsplit("/", 1)[0] + "/SearchJobs"
             response = self._fetch(
                 "GET", search, headers={"User-Agent": USER_AGENT}, timeout=60
             )
-            if response.status_code == 200 and "/JobDetail/" in (response.text or ""):
-                return search
+            status, landed = response.status_code, str(response.url or search)
+            if status in _SEARCH_GONE or (
+                status == 200 and _LOGIN_LANDING.search(landed)
+            ):
+                continue
+            if status != 200:
+                return f"{search} answered HTTP {status}"
+            if "/JobDetail/" in (response.text or ""):
+                return f"{search} links postings"
+            return f"{search} answered at {landed}, which is no login"
         return None
 
     def fetch_raw(self) -> Any:
@@ -259,7 +288,8 @@ class AvatureScraper(BaseScraper):
             self.mark_truncated("robots.txt names no sitemap")
             return []
         listed: dict[str, dict[str, str]] = {}
-        self._empty_sitemaps = 0
+        # Public portals whose sitemaps all answered an empty body this run (:func:`_read_empty`).
+        empty_portals: list[str] = []
         # L'Oréal's portals each redirect their index to one shared index, so its child
         # sitemaps would otherwise be read once per portal against a 1 request/s budget.
         read_sitemaps: set[str] = set()
@@ -267,30 +297,41 @@ class AvatureScraper(BaseScraper):
             if not index_url.endswith("sitemap_index.xml"):
                 continue  # the root `/sitemap.xml` lists only the favicon
             own: list[dict[str, str]] = []
-            for sitemap in _LOC.findall(self._sitemap_text(index_url)):
+            index_xml = self._get_text(index_url)
+            sitemaps: list[str] = []
+            for sitemap in _LOC.findall(index_xml):
                 if sitemap in read_sitemaps:
                     continue
                 read_sitemaps.add(sitemap)
-                for row in listing_rows(self._sitemap_text(sitemap)):
+                sitemaps.append(self._get_text(sitemap))
+                for row in listing_rows(sitemaps[-1]):
                     if row["id"] not in listed:
                         listed[row["id"]] = row
                         own.append(row)
+            if _read_empty(index_xml, sitemaps) and not _PRIVATE_PORTAL.search(
+                index_url
+            ):
+                empty_portals.append(index_url)
             if own and _PRIVATE_PORTAL.search(index_url) and self._login_walled(own[0]):
                 # Bloomberg's `internalcareers` lists 193 ids no public portal does; fetching
                 # each to learn it redirects to /Login/ cost 103 of 191 job pages a run.
                 for row in own:
                     del listed[row["id"]]
         rows = list(listed.values())
-        if not rows and self._empty_sitemaps:
-            # An empty body is not an empty listing: mantech, 420 served rows, read one such run
-            # in 31 (2026-09-27/28), and two in a row would have evicted every row (ADR-0083).
-            lost = self._listing_was_lost(portals)
-            if lost:
-                raise BoardUnreadable(
-                    f"{self.board_key()}: {self._empty_sitemaps} sitemap read(s) answered an "
-                    f"empty body and none listed a posting, but {lost} links postings — "
-                    "unread, not empty"
-                )
+        # An empty body is not an empty listing. mantech (420 served rows) read empty in 1 run
+        # of 31 (2026-09-27/28), and two such runs evict every row (ADR-0083). deloitteus's
+        # `careers` read empty while its `careersDOT` listed 45 of its ~1,300 ids, so a partial
+        # listing is as unread as an empty one.
+        why = self._why_listing_is_unread(empty_portals) if empty_portals else None
+        if why and not rows:
+            raise BoardUnreadable(
+                f"{self.board_key()}: {len(empty_portals)} portal(s) answered empty "
+                f"sitemaps and none listed a posting, but {why} — unread, not empty"
+            )
+        if why:
+            self.mark_truncated(
+                f"{len(empty_portals)} portal(s) answered empty sitemaps, but {why}"
+            )
         if not rows:
             self._log.info(
                 f"{self.board_key()}: no job pages in {len(portals)} portal sitemaps"
@@ -401,6 +442,20 @@ def _location(response: Any) -> str:
     )
 
 
+def _read_empty(index_xml: str, sitemaps: list[str]) -> bool:
+    """Whether a portal's sitemaps answered nothing this run: its index, or every child sitemap
+    read from it, came back as an empty 200 body.
+
+    Avature answers one at random: ea's `careers` sitemap read 645,183 bytes, then 0, then 0
+    (2026-09-29), and one listing of ea came back empty on 173 of ~340 reads. One child that
+    answered is enough, because a portal's locale sitemaps each list all its postings (tsmc's
+    four list the same 801 ids). A utility portal (`CalendarInvitation`, `timeslots`) reads
+    empty every run; :meth:`AvatureScraper._why_listing_is_unread` tells it apart."""
+    if not index_xml.strip():
+        return True
+    return bool(sitemaps) and not any(sitemap.strip() for sitemap in sitemaps)
+
+
 def _moved_job_page(url: str, response: Any) -> str | None:
     """Where a job page moved to another job page — cyclecarriage's sitemap names `/en_US/…`
     URLs that 302 to the same path without the locale — else None. Redirects are not followed
@@ -420,19 +475,24 @@ def listing_rows(sitemap_xml: str) -> list[dict[str, str]]:
         match = _JOB_URL.search(loc)
         if not match or match.group(2) in rows:
             continue
-        url = loc if _in_english(loc) else english.get(match.group(2), loc)
+        # A `<loc>` naming no locale is the tenant's default page and is kept; only an explicit
+        # English locale counts for an alternate (:func:`_locale_language`).
+        language = _locale_language(loc)
+        url = loc if language in (None, "en") else english.get(match.group(2), loc)
         rows[match.group(2)] = {
             "id": match.group(2),
             "url": url,
-            "slug_title": _JOB_URL.search(url).group(1).replace("-", " "),
+            # No slug means a title with no Latin letter, which the tech gate and the tech
+            # filter's English vocabulary both reject; the posting is still listed.
+            "slug_title": (_JOB_URL.search(url).group(1) or "").replace("-", " "),
         }
     return list(rows.values())
 
 
-def _in_english(url: str) -> bool:
-    """Whether a URL names no locale (the tenant's default) or an English one (`en_GB`)."""
+def _locale_language(url: str) -> str | None:
+    """The language of the locale a URL names (`es` for `…/es_ES/careers/…`), None for none."""
     locale = _LOCALE.match(url)
-    return not locale or locale.group(1) == "en"
+    return locale.group(1) if locale else None
 
 
 def _english_alternates(sitemap_xml: str) -> dict[str, str]:
@@ -446,14 +506,13 @@ def _english_alternates(sitemap_xml: str) -> dict[str, str]:
     english: dict[str, str] = {}
     for href in _ALTERNATE_HREF.findall(sitemap_xml):
         match = _JOB_URL.search(href)
-        locale = _LOCALE.match(href)
-        if match and locale and locale.group(1) == "en":
+        if match and _locale_language(href) == "en":
             english.setdefault(match.group(2), href)
     return english
 
 
 def _plain_text(fragment: str) -> str:
-    return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", fragment))).strip()
+    return html_to_text(fragment) or ""
 
 
 def _labelled(
@@ -467,18 +526,24 @@ def _labelled(
     return None
 
 
+#: A page-chrome suffix on metlife's `og:title`: "| Apply Now" (`en_US`), "| Postuler" (`fr_FR`).
+_CALL_TO_ACTION = re.compile(r"\s*\|\s*(?:apply now|postuler)\s*$", re.IGNORECASE)
+
+
 def _page_title(og_title: str | None, ld_title: str) -> str | None:
-    """`og:title`, unless it wraps the posting's own JSON-LD title in page chrome.
+    """`og:title` without a call to action, unless it wraps the JSON-LD title in page chrome.
 
     metlife's `og:title` is "Technology Data Analyst | Apply Now" while its JSON-LD says
-    "Technology Data Analyst" (80 served rows, #876). Tenants whose `og:title` holds the whole
+    "Technology Data Analyst" (80 served rows, #876). Its call to action goes whatever the
+    JSON-LD says: 15 of those 80 state a JSON-LD title worded otherwise ("Head of Platform |
+    Apply Now" against "AVP, Head of Platform") or none. Tenants whose `og:title` holds the whole
     title with no JSON-LD one (mgl's "Developer | Equities Algorithmic Trading") or states the
     same one (emiratesjobs) keep it."""
     if og_title and ld_title:
         og_key, ld_key = _title_key(og_title), _title_key(ld_title)
         if ld_key and ld_key != og_key and ld_key in og_key:
             return ld_title
-    return og_title or ld_title or None
+    return _CALL_TO_ACTION.sub("", og_title or "") or ld_title or None
 
 
 def _title_key(title: str) -> str:
@@ -498,11 +563,13 @@ def page_fields(page: str) -> dict[str, Any]:
             labels.setdefault(
                 _plain_text(label).rstrip(":").strip(), _plain_text(value)
             )
-    body = (
-        ld.get("description")
-        or "\n".join(_DETAILS_BLOCK.findall(page))
-        or "\n".join(v for v in _RICH_TEXT.findall(page) if len(_plain_text(v)) > 200)
-        or next(iter(_MAIN.findall(page)), None)
+    # The first surface with text wins, not the first with markup: a block of CSS alone is none.
+    bodies = (
+        ld.get("description"),
+        "\n".join(_DETAILS_BLOCK.findall(page)),
+        "\n".join(v for v in _RICH_TEXT.findall(page) if len(_plain_text(v)) > 200),
+        "\n".join(_COLLAPSIBLE_DETAILS.findall(page)),
+        next(iter(_MAIN.findall(page)), None),
     )
     remote_text = _labelled(labels, _REMOTE)
     return {
@@ -517,6 +584,6 @@ def page_fields(page: str) -> dict[str, Any]:
         "employment_type": ld.get("employment_type") or _labelled(labels, _EMPLOYMENT),
         "posted_at": ld.get("posted_at") or None,
         "remote": ld.get("remote") or (is_remote(remote_text) if remote_text else None),
-        "description": html_to_text(body) if body else None,
+        "description": next(filter(None, map(html_to_text, bodies)), None),
         "requisition": requisition_of(_labelled(labels, _REQUISITION)),
     }
