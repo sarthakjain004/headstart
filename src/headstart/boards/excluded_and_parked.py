@@ -33,9 +33,9 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         # Emirates Group's Avature SIT copy, read 2026-09-29: `emiratesgroupcareers` lists 2,313
         # sitemap ids that include "TEST OUTSTATION ROLE" and "ONB UAT ..." rows, and its
         # `careersmarketplace/SearchJobs` redirects to `emiratesgroupcareers.sit.emirates.dev`, an
-        # environment host behind a login. Its held sibling `avature:emiratesjobs` redirects to
-        # the production site `www.emiratesgroupcareers.com`. The label carries no marker for
-        # `_AVATURE_NONPROD`; the redirect chain is the evidence.
+        # environment host behind a login. Its held sibling `avature:emiratesjobs` redirects, via
+        # `external.emiratesgroupcareers.com`, to the production site `www.emiratesgroupcareers.com`.
+        # The label carries no marker for `_AVATURE_NONPROD`; the redirect chain is the evidence.
         "avature:emiratesgroupcareers",
         # Jobvite's own automation tenant, found by reading its board rather than its slug:
         # `jobs.jobvite.com/jvauto` titles itself "Jobvite Automation Careers" and serves exactly

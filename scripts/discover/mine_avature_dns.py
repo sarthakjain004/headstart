@@ -7,6 +7,8 @@ MX and TXT: `v=spf1 redirect=spf.avature.net`), while a provisioned tenant answe
 2026-09-29). So an answered A query proves a provisioned host, and NOERROR with no answer proves
 the absence. `eightfold_dns_sweep.py` reads that second case as inconclusive and retries it four
 times, which is right for eightfold.ai (a made-up label NXDOMAINs there) and 4x too slow here.
+The UDP client (`_query_packet`, `_Client`, `_ask`, the semaphore skeleton of `sweep`) is adapted
+from that script and reads the CNAME target as well.
 
 A provisioned host is not a Board: it may be a test instance (`sandboxtql`), a second name for
 another tenant, or a tenant with no public career site. `check_liveness.py avature` settles all
