@@ -1,7 +1,8 @@
 # Hand-curated company names, keyed by board_key (ADR-0212). An entry here overrides every other
 # name source, at scrape time (the served `company`) and on the Hot and Trends tabs. It is for
-# Boards that state no name anywhere we read, and for joining one employer's Boards into one
-# company; `evidence` says where a person read this one.
+# Boards whose name no source we read states, or states only cut short or wrong, and for joining
+# one employer's Boards into one company. Every name is read from the Board's own pages, never
+# recalled; `evidence` says where a person read this one.
 #
 # An entry is also the company directory's cross-ATS identity (ADR-0185): Boards sharing a name
 # here are one company there, and their counts are summed. So a pair whose Boards mirror each
@@ -554,10 +555,12 @@ workday:wwecorp/private_postings,TKO Group Holdings,"og:description ""TKO Group 
 workday:wwecorp/TKO,TKO Group Holdings,"og:description ""TKO Group Holdings, Inc. (NYSE: TKO)""; sidebar logo alt ""TKO Logo"""
 workday:wycokck/RECExternalCareers,Unified Government of Wyandotte County,"postings' hiringOrganization ""Unified Government of Wyandotte County"""
 # Boards still unnamed or misnamed on served table v298 (#703), biggest first by served rows, each
-# read from the Board's own pages on 2026-09-29. A front over a Board curated above is given its
-# own brand spelling, not that Board's name, so the directory does not sum a mirrored pair:
-# avature:boozallen serves workday:bah/BAH_Jobs, radancy:www.disneycareers.com serves
-# workday:disney/disneycareer. For the same reason smartrecruiters:Bertelsmann-Jobs, which lists
+# read from the Board's own pages on 2026-09-29. A front over a Board whose Tenant is curated above
+# is given its own brand spelling, not that name, so the directory does not sum a mirrored pair
+# (ADR-0185 joins Boards on a Tenant or a curated name): avature:boozallen serves
+# workday:bah/BAH_Jobs ("Booz Allen Hamilton"), and radancy:www.disneycareers.com serves
+# workday:disney/disneycareer, whose Tenant is named by workday:disney/disneycareerdc's "The Walt
+# Disney Company". For the same reason smartrecruiters:Bertelsmann-Jobs, which lists
 # the same postings as the SuccessFactors Board below (title and city pairs, 2026-09-29), is not
 # here; it states "Bertelsmann-Jobs" itself.
 avature:boozallen,Booz Allen,"job 115617 (R0226192) on careers.boozallen.com: logo aria-label ""Booz Allen Logo"", JSON-LD hiringOrganization ""Booz Allen Hamilton""; a front over workday:bah/BAH_Jobs (Apply 302s there, 7 of 7 req ids match), so not given that Board's curated name (2026-09-29)"
@@ -620,9 +623,13 @@ workday:aampower/AAM-Career-Site,Dauch Corporation,"og:description ""Dauch Corpo
 workday:sutterhealth/SH,Sutter Health,"og:description ""Working at Sutter Health""; the cascade gave ""Sutter"" from its hospitals' names (2026-09-29)"
 workday:jamfsoftware/Jamf,Jamf,"og:description ""Jamf is a culmination of passion, commitment and really smart people""; postings' hiringOrganization ""JAMF Software, LLC"" (2026-09-29)"
 workday:vhr_otsuka/MegaFood,MegaFood,"og:description ""MegaFood has been crafting high-quality""; postings' hiringOrganization ""FoodState, Inc."" (2026-09-29)"
+workday:sutterhealth/PH2,Sutter Health,"og:description ""Working at Sutter Health Sutter Health values and supports""; og:title ""Preferential Hire""; its one posting's hiringOrganization is ""Sansum Clinic"", a Sutter affiliate (2026-09-29)"
+workday:osv_tifec/SportingKC,Sporting Kansas City,"og:description ""At Sporting Kansas City, we strive to win championships"" and ""Sporting Kansas City is an equal opportunity employer""; 7 of 7 postings' hiringOrganization ""OnGoal, LLC"" (2026-09-29)"
+workday:aampower/Interim-Dauch-Career-Site,AAM,"og:description ""AAM designs, engineers and manufactures Driveline and Metal Forming technologies"" and ""We are AAM""; postings' hiringOrganization are plant codes (""159 El Carmen Manufacturing Facility"", ""366 GKN Powder Metallurgy GmbH""). Its sibling AAM-Career-Site states ""Dauch Corporation"" and is curated so above (2026-09-29)"
 # Boards still serving an empty company or their humanised tenant on served table v320 (#703),
-# each read from the Board's own pages on 2026-09-29. Oracle: the Boards whose default site titles
-# itself as a page and whose settings state no SEO name (ADR-0302). Five Taleo Enterprise sections
+# each read from the Board's own pages on 2026-09-29. Oracle: the Boards whose default site's title
+# the guards refuse (a page label, a separator, a template word) and whose settings state no SEO
+# name of their own (ADR-0302). Five Taleo Enterprise sections
 # list the same requisitions as a section of another host. Only the kept host's section is here:
 # the twin host's is buried in data/validate/aliases/taleo_enterprise.csv (ADR-0307), onto
 # hyundaicapital (careerglobalhc), aa010 (elsewedyelectric), hkmu's two sections (ouhk's) and
@@ -752,4 +759,11 @@ lever:cobaltrobotics,Cobalt Robotics,"Hosted board page 404s on both Lever insta
 lever:eleks,ELEKS,"All 22 postings in the postings API write ""ELEKS"" (e.g. 149909f5 ""ELEKS Software Engineering and Development Office is looking for ...""), never ""Eleks""; the hosted board's title reads ""Eleks"" (2026-09-29)"
 lever:smart-working-solutions,Smart Working,"Hosted board titles itself ""Smart Working Solutions""; 17 of 18 postings open ""About Smart Working ... At Smart Working, we believe ..."" (e.g. 904069e0) (2026-09-29)"
 bamboohr:d1g1t,d1g1t,"/careers/company-info result.name is ""d1g1t""; ADR-0212's digit-run rule leaves the tenant no humanised name, so the Board served an empty company (2026-09-29)"
-pinpoint:3173,Spence & Partners,"12 of 14 postings in postings.json carry division ""Spence & Partners"" and their text reads ""At Spence""; the account titles itself ""Careers at 3173"" (2026-09-29)"
+pinpoint:3173,3173,"The board titles itself ""Jobs at 3173 | 3173 Careers"" (og:title ""Careers at 3173""); its 14 postings sit in three divisions, ""Spence & Partners"" (12), ""3173"" (1, Business Analyst: ""change initiatives across 3173"") and ""Mantle"" (1, Software Developer); the group is 3173, not its Spence division (2026-09-29)"
+# Boards the code review of #862, #872 and #878 found misnamed on served table v45 (2026-09-29): a
+# cascade run cut short or a raw ledger tenant, each read from the Board's own pages that day.
+workday:musc/MUSC,Medical University of South Carolina,"og:description ""Thank you for wanting to be part of the Medical University of South Carolina team""; 8 of 8 postings' hiringOrganization ""C002 Medical University Hospital Authority (MUHA)"", which the cascade cut to ""Medical University"" (2026-09-29)"
+workday:ssrmining/SSR_Mining_Careers,SSR Mining,"og:description ""SSR Mining Inc. is a leading, free cash flow focused intermediate gold company""; postings' hiringOrganization ""SGO Mining Inc."" and ""Marigold Mining Company"", which the cascade cut to ""Mining"" (2026-09-29)"
+workday:integralads/PublicaCareers,Integral Ad Science,"6 of 6 postings' hiringOrganization are Integral Ad Science entities (""Integral Ad Science, Inc."", ""Integral Ad Science GmbH"", ""Integral Ad Science UK Ltd.""), which the cascade cut to ""Integral Ad""; og:description ""a career with Publica!"" names its IAS product brand. Named after the Board's company, as idexcorp/IDEX_Careers is above, and so its Tenant's directory entry stays Integral Ad Science (2026-09-29)"
+workday:tamus/System-wide_External,Texas A&M University System,"og:title ""The Texas A&M University System Job Search"" and og:description ""The Texas A&M University System is one of the largest systems of higher education""; postings' hiringOrganization name its members (""Texas A&M University - Victoria"", ""Texas A&M University - Corpus Christi"", ""Texas A&M Agrilife Research""), which the cascade read as the one member ""Texas A&M University"" (2026-09-29)"
+workday:ing/jvsgblcor,ING,"20 of its 21 served postings name ING in their text (REQ-10121422 ""ING is hiring a Medior/Senior Java Engineer!"", REQ-10121744 ""Discover ING Hubs Romania""); its sibling site ICSGBLCOR titles itself ""ING Careers""; the site itself answers 403 today, so its postings as last scraped (2026-09-24) are the evidence (2026-09-29)"

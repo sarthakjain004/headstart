@@ -285,6 +285,27 @@ def test_a_separator_that_survives_the_wrapper_is_refused():
     )
 
 
+@pytest.mark.parametrize("ats", ["eightfold", "gem", "jobvite", "keka"])
+@pytest.mark.parametrize(
+    ("title", "expected"),
+    [
+        # gem served these three with the " -" left on, 2026-09-29
+        ("mimic robotics - Careers", "mimic robotics"),
+        ("DataDay Technology Solutions - Careers", "DataDay Technology Solutions"),
+        # Workday's og:title, whose own reader had fixed this for itself alone (#862)
+        ("Louisiana State University - Careers", "Louisiana State University"),
+        # the other separators the same wrapper can carry
+        ("Acme | Careers", "Acme"),
+        ("Acme – Careers", "Acme"),
+        ("Acme: Careers", "Acme"),
+    ],
+)
+def test_the_careers_wrapper_takes_its_separator_off_with_it(ats, title, expected):
+    """A hyphen or colon before "Careers" used to stay on the name, where `_SEPARATORS`, which
+    wants a space after a hyphen, let it through; a pipe or dash refused the whole name."""
+    assert from_title(ats, title, "x") == expected
+
+
 def test_a_title_long_enough_to_be_prose_is_refused():
     """`_MAX_LEN` was untested: raising it to 500 left the suite green.
 

@@ -102,9 +102,17 @@ _PAGE_TITLE = re.compile(
 #: "Hill Minimal 112022", "UW Candidate Experience with Application Error Message", "Lazard Career
 #: Confidential", "Explore RH Careers"). Refused rather than trimmed: a doubtful name falls to the
 #: curated map, where a wrong one would be served.
+#:
+#: The same labels in other languages, each a title or SEO name one of the 1,753 Oracle Boards
+#: served on 2026-09-29: "Magalu Carreiras", "Sitio de experiencia de candidatos", "Portal de
+#: Empleo", "Bolsa de Trabajo Tajín", "Sito Carriere BPER", "Site carrière externe sodiaal",
+#: "UNIA Karriereseite", "Werken bij Profource", "AG_SitioExterno". And "SEO Optimization", the
+#: placeholder `iaiigs` left in its SEO name.
 _LEFTOVER = re.compile(
     r"career\s*site|candidate experience|minimal|^jobs\b|\bjobs$|error|confidential"
-    r"|^explore\b",
+    r"|^explore\b"
+    r"|carreiras?\b|\bcarrera\b|\bcarri[eè]re|karriere|\bempleos?\b|bolsa de trabajo"
+    r"|(?:\b|_)sitio|\bsito\b|werken bij|\bseo\b",
     re.IGNORECASE,
 )
 #: The template writes the site name into ``<title>`` as a JavaScript string: ``\'``, ``\/`` and
@@ -243,7 +251,7 @@ class OracleScraper(BaseScraper):
 
     def company_from_page(self, page: str | None) -> str | None:
         """The site's name, JavaScript-unescaped, else the SEO organization name the site's
-        settings state (ADR-0217).
+        settings state (ADR-0302).
 
         The title goes first because it is the brand ("Nokia" against "Nokia Corporation"). The
         settings are one more GET, made only when the title names no one. Where the tenant set no
@@ -255,11 +263,11 @@ class OracleScraper(BaseScraper):
         if title:
             title = _JS_UNICODE.sub(lambda m: chr(int(m.group(1), 16)), title)
             title = title.replace("\\'", "'").replace("\\/", "/")
-        return self._site_name(title) or self._seo_name(page)
+        return self._guarded_name(title) or self._seo_name(page)
 
-    def _site_name(self, text: str | None) -> str | None:
-        """A name the site states, unless it or what a wrapper left is a page label
-        (:data:`_PAGE_TITLE`, :data:`_LEFTOVER`)."""
+    def _guarded_name(self, text: str | None) -> str | None:
+        """A name the site states in its title or SEO name, unless it or what a wrapper left is a
+        page label (:data:`_PAGE_TITLE`, :data:`_LEFTOVER`)."""
         if not text or _PAGE_TITLE.match(text):
             return None
         name = company_name.from_title(self.ats, text, self.slug)
@@ -292,7 +300,7 @@ class OracleScraper(BaseScraper):
             or seo.strip() == (app.get("siteName") or "").strip()
         ):
             return None
-        return self._site_name(seo.strip())
+        return self._guarded_name(seo.strip())
 
     def url(self) -> str:
         # No `siteNumber`: it filters the Board down to one site, and omitting it returns the
