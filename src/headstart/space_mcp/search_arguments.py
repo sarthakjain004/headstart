@@ -1,6 +1,6 @@
 """The Search filters as the Space MCP server's tools take them: each filter argument's schema,
 the name the Space reads it by, the query string it becomes, and how an answer says it.
-`search_jobs` takes every one and `role_requirements` a subset (ADR-0331), so a filter reads the
+`search_jobs` takes every one and `role_requirements` a subset (ADR-0332), so a filter reads the
 same way in both.
 """
 

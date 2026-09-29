@@ -1004,7 +1004,7 @@ class TrendHistory:
 
     def board_and_name_of_job(self, job_id: str) -> tuple[str, str | None]:
         """The Board holding ``job_id`` and the Company directory's name for its company, or the
-        id's `board_of` guess and None when no directory Board holds it (ADR-0331). The Board is
+        id's `board_of` guess and None when no directory Board holds it (ADR-0332). The Board is
         matched among the directory's own keys (`board_end`), so an id whose native part carries a
         colon names its real Board, never a phantom one (ADR-0049)."""
         folded = self._folded_company_of()

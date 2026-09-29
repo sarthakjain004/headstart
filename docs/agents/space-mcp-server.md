@@ -411,7 +411,7 @@ of them, for a career switcher's "what does a data engineer typically need" (ADR
   the rule a search page groups them by (ADR-0323). The answer's first line says which, over how
   many, of how many: "counted over 263 distinct postings, of 514,163 postings that the filters
   admit, copies included (300 postings read; 37 copies of one counted once)" (a local copy of the
-  served table, 2026-09-29; ADR-0331). A query does not narrow, so that total is every
+  served table, 2026-09-29; ADR-0332). A query does not narrow, so that total is every
   posting the filters admit; the answer gives the similarity range of the sample instead.
 - **Filters.** `company`, `country`, `india_place`, `location`, `remote` and `max_years`, the same
   schema as `search_jobs`' and read the same way.

@@ -1,5 +1,5 @@
 """The order a served list of counts takes: most first, ties by name, so equal counts read the same
-on every call. `/companies/locations` (ADR-0275) and `/requirements` (ADR-0331) both list theirs so.
+on every call. `/companies/locations` (ADR-0275) and `/requirements` (ADR-0332) both list theirs so.
 """
 
 from __future__ import annotations

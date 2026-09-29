@@ -6,7 +6,7 @@ postings rather than by reading five of them: the tech skills their descriptions
 minimum years they state, their salaries, how many are remote, and where and at whom they are.
 The Space picks the sample (the postings closest to `query`, or a category's newest), counts each
 requisition once however many Boards or countries copy it, and names a Board that names no company
-by the Company directory's name (ADR-0331). This module only sends the arguments, which are the
+by the Company directory's name (ADR-0332). This module only sends the arguments, which are the
 Search filters `search_jobs` takes, read by the same rules (`search_arguments`), and says what was
 counted, over how many, of how many.
 Descriptions are scraped text, so the answer carries none of it: counts, the vocabulary's own
@@ -19,11 +19,11 @@ from typing import Any
 
 from headstart.mcp_protocol.messages import ToolFailure
 from headstart.space_mcp import (
-    company_names,
     company_scope,
     role_families,
     scraped_text,
     search_arguments,
+    shown_company,
 )
 from headstart.space_mcp.space_client import SpaceClient, SpaceRoute
 from headstart.space_mcp.space_tool import SpaceTool
@@ -172,7 +172,7 @@ def _salary_line(counted: dict[str, Any]) -> str:
 
 def _company_line(counted: dict[str, Any]) -> str:
     named = " · ".join(
-        company_names.said(c, SHORT_FIELD)
+        shown_company.said(c, SHORT_FIELD)
         + f" (key {scraped_text.quoted(c['board'], 300)}) {c['jobs']:,}"
         for c in counted["companies"]
     )

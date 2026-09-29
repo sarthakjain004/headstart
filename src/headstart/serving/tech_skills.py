@@ -33,7 +33,7 @@ beside this module (`pyproject.toml` force-includes it), else ``config/`` in the
 directory, which is the repository on a checkout and ``/app`` in the Space's image. This walk is one
 of several copies of the same config locator (`space_mcp/role_families`, `search_filters/fx`,
 `boards/company_name` and others); making them one helper touches modules outside this view, so it
-is left to its own change (ADR-0331).
+is left to its own change (ADR-0332).
 """
 
 from __future__ import annotations

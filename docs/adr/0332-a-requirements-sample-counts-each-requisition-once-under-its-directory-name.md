@@ -1,4 +1,4 @@
-# ADR-0331: A requirements sample counts each requisition once, under its directory name
+# ADR-0332: A requirements sample counts each requisition once, under its directory name
 
 **Status:** accepted · **Date:** 2026-09-29 · **Amends:**
 [ADR-0324](0324-an-agent-reads-what-a-roles-postings-ask-for-counted-over-a-sample.md) (the
@@ -51,8 +51,8 @@ string and scope line) live in `space_mcp/search_arguments.py`; the cache is `jo
 `serving/count_ranking.most_first`, which `location_counts` also uses; each family's ids and the
 current families travel as one `RoleAssignments`.
 
-**Agent contract 10**: the JSON change is contract, so `_AGENT_API_VERSION` and `AGENT_API` rise
-together (ADR-0324's route was 7, ADR-0323 having taken 6, ADR-0321 8 and ADR-0322 9).
+**Agent contract 11**: the JSON change is contract, so `_AGENT_API_VERSION` and `AGENT_API` rise
+together (ADR-0324's route was 7, ADR-0323 having taken 6, ADR-0321 8, ADR-0322 9 and ADR-0331 10).
 
 ## Measurement
 

@@ -603,7 +603,7 @@ def test_a_tick_written_from_a_given_replay_is_the_one_written_unaided(tmp_path)
 
 def test_a_jobs_board_and_directory_name_come_from_the_directorys_own_keys(tmp_path):
     """A Workday native id can carry a colon ("REQ: 228"), where `board_of` guesses a Board that
-    does not exist; the directory's own keys name the real one (ADR-0049, ADR-0331)."""
+    does not exist; the directory's own keys name the real one (ADR-0049, ADR-0332)."""
     (tmp_path / "company_directory.json").write_text(
         json.dumps(
             {

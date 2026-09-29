@@ -279,7 +279,7 @@ MAX_SCOPED_BOARDS = 200
 LOCATIONS_SHOWN = 10
 MAX_LOCATIONS = 50
 
-#: How many Jobs :meth:`JobSearch.requirements` reads for its sample, fixed (ADR-0331). At 300, a share
+#: How many Jobs :meth:`JobSearch.requirements` reads for its sample, fixed (ADR-0332). At 300, a share
 #: near 50% is known to about 6 points either way (95%), which a "most asked for" list needs.
 REQUIREMENTS_SAMPLE = 300
 #: How many of a query's closest Jobs a requirements view reads to find its sample within one

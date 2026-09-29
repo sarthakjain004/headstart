@@ -1,5 +1,5 @@
 """What a sample of served Jobs asks for — `headstart.serving.requirement_counts` (ADR-0324,
-ADR-0331).
+ADR-0332).
 
 Contracts: each requisition counted once (only the first Job that copies it), a Job whose company
 names only its Board shown under the directory's name; skills as a share of the counted Jobs that

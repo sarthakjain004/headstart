@@ -1,6 +1,6 @@
 # ADR-0324: An agent reads what a role's postings ask for, counted over a sample
 
-**Status:** accepted, amended by [ADR-0331](0331-a-requirements-sample-counts-each-requisition-once-under-its-directory-name.md) · **Date:** 2026-09-29 · **Relates to:**
+**Status:** accepted, amended by [ADR-0332](0332-a-requirements-sample-counts-each-requisition-once-under-its-directory-name.md) · **Date:** 2026-09-29 · **Relates to:**
 [ADR-0253](0253-an-agent-reads-the-spaces-read-routes-through-a-read-scoped-token.md) (the agent
 contract), [ADR-0258](0258-the-spaces-read-routes-answer-anyone.md) (the public read routes),
 [ADR-0267](0267-the-space-hosts-the-mcp-server-at-a-url-anyone-can-add.md) (the hosted server),

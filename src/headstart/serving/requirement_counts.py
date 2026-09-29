@@ -3,7 +3,7 @@
 
 A career switcher asks "what does a data engineer need", and the honest answer is a count over
 Jobs, not a paraphrase of one. :func:`summarize` takes the sampled Jobs (:meth:`JobSearch.
-requirements` picks them) and first makes each requisition count once (ADR-0331): a Job whose
+requirements` picks them) and first makes each requisition count once (ADR-0332): a Job whose
 company names nothing but its Board is shown under the Company directory's name
 (`company_name.with_directory_name`, ADR-0323's rule), and of the Jobs that copy one requisition
 (`jobs.requisition_copies`, the rule a search page lists them by) only the first read is counted.

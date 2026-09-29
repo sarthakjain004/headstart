@@ -85,7 +85,7 @@ def test_the_shipped_vocabulary_loads_from_config_and_names_each_skill_once(ship
         ("Excel in a fast-paced team", set(), {"Excel"}),
         ("Advanced Excel and Power BI", {"Excel", "Power BI"}, set()),
         ("Mobile device management (MDM) with Intune", {"Intune"}, set()),
-        # ADR-0331's re-measured terms.
+        # ADR-0332's re-measured terms.
         ("Program PLC and HMI logic", {"PLC"}, set()),
         ("QLC and PLC NAND for datacenter storage", set(), {"PLC"}),
         ("Mixed-signal processing circuits", set(), {"Signal processing"}),
