@@ -196,12 +196,35 @@
     {
       "id": "t13",
       "prompt": "Find software engineering jobs in Germany that mention visa sponsorship.",
-      "verifier": "mentions",
+      "verifier": "any_of",
       "expect": {
-        "all": [["description"]],
-        "tool_results_all": ["Descriptions are stored for"]
+        "checks": [
+          {
+            "verifier": "sponsorship_polarity",
+            "expect": {"at_least": 1}
+          },
+          {
+            "verifier": "all_of",
+            "expect": {
+              "checks": [
+                {
+                  "verifier": "mentions",
+                  "expect": {
+                    "all": [["description"]],
+                    "any": ["refus", "rather than offer", "not offer", "not sponsor", "no sponsorship", "n't sponsor", "n't offer"],
+                    "tool_results_all": ["Descriptions are stored for"]
+                  }
+                },
+                {
+                  "verifier": "sponsorship_polarity",
+                  "expect": {"at_least": 0, "said_ok": true}
+                }
+              ]
+            }
+          }
+        ]
       },
-      "why": "ADR-0274: visa terms live in descriptions, which not every job has. The search must look for the keyword in descriptions (the only way its answer carries the 'Descriptions are stored for N of M' line), and the final answer must pass on that the keyword could only match jobs with a stored description."
+      "why": "Judged on truth, not on one path (round-3 review SP7, ADR-0333). Path 1, the work_authorization offers_sponsorship filter or checked jobs: the answer names at least one job, and none of them fails sponsorship_polarity's reading of whether it offers sponsorship (a person's label, else a negation check of the eval's own). Path 2, the description keyword (ADR-0274): its answer must say the keyword could only match jobs with a stored description (the search carries 'Descriptions are stored for N of M'), must say that a description mentioning sponsorship may refuse it rather than offer it, and any job it names that does not offer sponsorship must be named on a line saying so. An answer that reports keyword matches as jobs offering sponsorship fails both paths."
     },
     {
       "id": "t14",
@@ -470,8 +493,8 @@
       "id": "t36",
       "prompt": "I'm an international student finishing a computer science degree and will need a work visa. Find me three software engineering jobs in the United States that offer visa sponsorship.",
       "verifier": "sponsorship_polarity",
-      "expect": {"refusal": "refuses_sponsorship", "at_least": 1},
-      "why": "Round-3 critique P0-1 (ADR-0333): a keyword search for 'sponsorship' in descriptions led with jobs refusing it (36 of 40 sampled did), and t13 passed while checking only that a description search ran. The verifier judges the answer's truth, not its arguments: every row the search_jobs and get_job calls listed is read back from /job, and no job the answer names may be one whose whole description the Space reads as refusing sponsorship (refuses_sponsorship, 0.97 precision on 660 hand-read descriptions). The work_authorization offers_sponsorship filter is the way to pass; a keyword answer passes only if every job it names was checked."
+      "expect": {"at_least": 1},
+      "why": "Round-3 critique P0-1 (ADR-0333): a keyword search for 'sponsorship' in descriptions led with jobs refusing it (36 of 40 sampled did), and t13 passed while checking only that a description search ran. The verifier judges the answer's truth, not its arguments, and apart from the Space's own rules, so it can see their errors (round-3 review SP8): every row the search_jobs and get_job calls listed is read back from /job, and no job the answer names may be one that does not offer sponsorship. A job in the 660 descriptions a person labelled for ADR-0333 (tests/fixtures/work_authorization_labelled.jsonl) is judged by its label, offers or mixed passing; any other by a plain negation check ('no', 'not', 'without', 'refuse', 'citizenship required') within five words of a sponsorship word in the sentences /job quotes. It catches a labelled job labelled refuses or none, and an unlabelled one whose quoted sponsorship sentence negates. It cannot catch an unlabelled job whose refusal no quoted sentence states, and it fails a right answer whose job offers sponsorship in a sentence that also negates ('no matter your visa status, we sponsor'). The work_authorization offers_sponsorship filter is the way to pass; a keyword answer passes only if every job it names offers it."
     }
   ],
   "heldout_sha256": "801e7149bc71c42e7b346dcf089ea20f87d1e0035d989b3dba8ffb50fe055e4d"

@@ -793,14 +793,15 @@ def test_title_keyword_rows_checks_the_arguments_first(ev):
 
 # --- sponsorship_polarity ------------------------------------------------------------------
 
-_POLARITY_EXPECT = {"refusal": "refuses_sponsorship", "at_least": 1}
+_POLARITY_EXPECT = {"at_least": 1}
 
 
 def _stance_space(*jobs):
-    """`/job` answering ``jobs``, as (id, title, company, stances), to every read."""
+    """`/job` answering ``jobs``, as (id, title, company, mentions), to every read. The stances
+    the Space reads are left out: the verdict does not read them (round-3 review SP8)."""
     served = [
-        {"id": i, "title": t, "company": c, "work_authorization": {"stances": s}}
-        for i, t, c, s in jobs
+        {"id": i, "title": t, "company": c, "work_authorization": {"mentions": m}}
+        for i, t, c, m in jobs
     ]
     return FakeSpace({SpaceRoute.JOB: {"jobs": served, "missing": []}})
 
@@ -810,9 +811,14 @@ _POLARITY_JOBS = (
         "teamtailor:threemagmbh:07fb",
         "Backend Engineer",
         "Threema AG",
-        ["offers_sponsorship"],
+        ["We sponsor H-1B visas for this role."],
     ),
-    ("ashby:webai:daf8", "Platform Engineer", "webAI", ["refuses_sponsorship"]),
+    (
+        "ashby:webai:daf8",
+        "Platform Engineer",
+        "webAI",
+        ["Visa sponsorship is not available for this position."],
+    ),
     ('ashby:webai:"quoted"', "Data Engineer", "webAI", []),
 )
 
@@ -836,8 +842,8 @@ def test_sponsorship_polarity_passes_an_answer_naming_only_jobs_that_do_not_refu
 
     assert verdict.passed, verdict.detail
     assert (
-        "names 1 of the 3 jobs read back; none states refuses_sponsorship"
-        in verdict.detail
+        "names 1 of the 3 jobs read back; each offers sponsorship as far as the eval "
+        "reads it" in verdict.detail
     )
 
 
@@ -855,9 +861,76 @@ def test_sponsorship_polarity_fails_an_answer_naming_a_job_that_refuses(ev):
     verdict = ev.verify_sponsorship_polarity(_POLARITY_EXPECT, transcript, space)
 
     assert not verdict.passed
-    assert "1 of them state refuses_sponsorship: 'Platform Engineer' at 'webAI'" in (
-        verdict.detail
+    assert (
+        "1 of them do not offer sponsorship: 'Platform Engineer' at 'webAI' (says 'Visa "
+        "sponsorship is not available for this position.')" in verdict.detail
     )
+
+
+@pytest.mark.parametrize(
+    ("mention", "offers"),
+    [
+        ("We're unable to offer visa sponsorship for this role", False),
+        ("Please note that we currently don’t sponsor visas.", False),
+        ("U.S. citizenship is required for this role.", False),
+        ("Visa sponsorship is available for this position.", True),
+        (
+            (
+                "We support visa sponsorship and relocation within Europe, where it makes "
+                "the difference between hiring the right person and not."
+            ),
+            True,
+        ),
+    ],
+)
+def test_sponsorship_polarity_reads_only_a_negation_near_a_sponsorship_word(
+    ev, mention, offers
+):
+    job = {"id": "lever:acme:1", "work_authorization": {"mentions": [mention]}}
+    assert (ev._not_offering(job, {}) is None) is offers
+
+
+def test_sponsorship_polarity_takes_a_persons_label_over_any_reading(ev):
+    """A labelled job is judged by its label (#947's fixture), whatever its sentences say."""
+    labelled_refusing = "workday:pae/Amentum_Careers:R0166374"
+    labelled_offering = "ashby:clera:8dcd8b07-459d-46f0-a93c-d9c82f7820b6"
+    space = _stance_space(
+        (labelled_refusing, "Field Engineer", "Amentum", ["We sponsor visas."]),
+        (labelled_offering, "ML Engineer", "Clera", ["No visa? No problem."]),
+    )
+    rows = f'1. "Field Engineer"\n   id "{labelled_refusing}"\n2. "ML Engineer"\n   id "{labelled_offering}"'
+
+    def verdict(answer):
+        transcript = _transcript(
+            ev, [("search_jobs", {"keyword": "visa"}, rows, False)], answer=answer
+        )
+        return ev.verify_sponsorship_polarity(_POLARITY_EXPECT, transcript, space)
+
+    assert verdict("ML Engineer at Clera sponsors visas.").passed
+    refused = verdict("Field Engineer at Amentum sponsors visas.")
+    assert not refused.passed and "(labelled refuses by hand)" in refused.detail
+
+
+def test_sponsorship_polarity_with_said_ok_passes_a_job_reported_as_not_offering(ev):
+    """A keyword answer may name a job that refuses, on a line saying so; one naming it as a
+    match with no such word still fails."""
+    expect = {"at_least": 0, "said_ok": True}
+    space = _stance_space(*_POLARITY_JOBS)
+
+    def verdict(answer):
+        transcript = _transcript(
+            ev,
+            [("search_jobs", {"keyword": "sponsorship"}, _RUST_ROWS, False)],
+            answer=answer,
+        )
+        return ev.verify_sponsorship_polarity(expect, transcript, space)
+
+    assert verdict(
+        "Backend Engineer at Threema AG offers it.\n"
+        "Platform Engineer at webAI mentions it but refuses sponsorship."
+    ).passed
+    assert not verdict("Matches: Platform Engineer at webAI.").passed
+    assert verdict("50 jobs mention sponsorship.").passed
 
 
 def test_sponsorship_polarity_fails_an_answer_naming_no_job(ev):
@@ -1007,7 +1080,13 @@ def test_the_iteration_tasks_use_known_verifiers_and_real_arguments(ev):
     arguments = {tool.name: set(tool.input_schema["properties"]) for tool in REGISTRY}
 
     assert [t["id"] for t in tasks] == [f"t{n:02d}" for n in range(1, len(tasks) + 1)]
-    assert {t["verifier"] for t in tasks} == set(ev.VERIFIERS)
+
+    def used(check):
+        """The verifier ``check`` names, and those its ``checks`` combine, at any depth."""
+        nested = (check.get("expect") or {}).get("checks") or []
+        return {check["verifier"]}.union(*(used(c) for c in nested))
+
+    assert set().union(*(used(t) for t in tasks)) == set(ev.VERIFIERS)
     for task in tasks:
         assert task["prompt"].strip() and task["why"].strip()
         if task["verifier"] in ("search_args", "tool_args"):
@@ -1297,6 +1376,18 @@ def test_a_run_with_no_tools_is_scored_error_not_fail(ev, monkeypatch, tmp_path)
 
 
 # --- the new verifier shapes (ADR-0334) -------------------------------------------------------
+
+
+def test_all_of_passes_only_when_every_check_passes(ev):
+    expect = {
+        "checks": [
+            {"verifier": "mentions", "expect": {"all": ["Citi"]}},
+            {"verifier": "mentions", "expect": {"all": ["37"]}},
+        ]
+    }
+    assert ev.verify_all_of(expect, _transcript(ev, answer="Citi has 37."), None).passed
+    failed = ev.verify_all_of(expect, _transcript(ev, answer="Citi has 12."), None)
+    assert not failed.passed and failed.detail.startswith("check 2 (mentions)")
 
 
 def test_any_of_passes_on_the_first_path_that_passes_and_names_every_miss(ev):

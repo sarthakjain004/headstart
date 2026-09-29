@@ -75,11 +75,12 @@ def _years(low: Any, high: Any) -> str:
 
 #: How a figure the description stated per hour, day, week or month is said to have been
 #: annualised, by `salary.SalarySpan.period` (ADR-0337).
+_A_YEAR = salary_extraction.PERIODS_A_YEAR
 _ANNUALISED_FROM = {
-    "hour": "an hourly rate at 2,080 hours a year",
-    "day": "a daily rate at 260 days a year",
-    "week": "a weekly rate at 52 weeks a year",
-    "month": "a monthly figure at 12 a year",
+    "hour": f"an hourly rate at {_A_YEAR['hour']:,} hours a year",
+    "day": f"a daily rate at {_A_YEAR['day']:,} days a year",
+    "week": f"a weekly rate at {_A_YEAR['week']:,} weeks a year",
+    "month": f"a monthly figure at {_A_YEAR['month']:,} a year",
 }
 
 

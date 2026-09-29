@@ -21,11 +21,11 @@ from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from threading import Lock
-from typing import Any, get_args
+from typing import Any
 from urllib.parse import urlsplit
 
 from headstart import log
-from headstart.boards.board_operator import Operator
+from headstart.boards.board_operator import OPERATORS
 from headstart.embedding_conventions import encode_query
 from headstart.jobs import work_authorization
 from headstart.search_filters import (
@@ -48,6 +48,7 @@ from headstart.search_filters.compiler import (
     board_clause,
     board_pattern_clause,
     build_filter,
+    ids_in_clause,
     with_extra,
 )
 from headstart.serving import (
@@ -390,10 +391,6 @@ def scoped_boards_clause(args) -> str | None:
     return board_clause(boards, exclude=False)
 
 
-#: Who posts a Board (`boards.board_operator`): the values ``operators=`` keeps (ADR-0335).
-OPERATORS: tuple[str, ...] = get_args(Operator)
-
-
 def asked_operators(args: Mapping[str, str]) -> frozenset[str] | None:
     """The Operators ``operators=`` keeps (comma-separated), or None when it names none, or all
     of them, which keeps every row. An Operator not in :data:`OPERATORS` is a
@@ -559,7 +556,7 @@ def scoped_jobs_clause(
                 "category hand-off refused: %d ids > %d", len(ids), MAX_FAMILY_IDS
             )
             raise ValueError(f"at most {MAX_FAMILY_IDS} jobs in one category hand-off")
-        return _ids_in_clause(ids) if ids else "id IN ('')"
+        return ids_in_clause(ids)
     return None
 
 
@@ -594,11 +591,6 @@ def _ids_on_boards(pool: Sequence[str], prefixes: list[str]) -> list[str]:
             ids.append(pool[at])
             at += 1
     return ids
-
-
-def _ids_in_clause(ids: list[str]) -> str:
-    """``id IN (…)`` over ``ids``, each quote doubled."""
-    return "id IN (" + ", ".join("'" + i.replace("'", "''") + "'" for i in ids) + ")"
 
 
 #: What a family table leaves out of the served table's columns (ADR-0322): the vector, 768
@@ -1130,7 +1122,8 @@ class JobSearch:
         #: The family tables a category across the whole index reads (ADR-0322); the app sets
         #: them once it has loaded the role assignments. None: ``family=`` needs ``board=``.
         self.families: FamilyTables | None = None
-        self.operator_boards = None
+        self._operator_boards: dict[str, tuple[str, ...]] | None = None
+        self._operators_wheres: dict[frozenset[str], _OperatorsWhere] = {}
         # Facets ignore the semantic query and the served table is immutable for this process's
         # lifetime (the Space restarts when a new table lands). Cache only the parsed structured
         # filters, bounded so arbitrary public requests cannot grow memory without limit.
@@ -1307,16 +1300,21 @@ class JobSearch:
     @property
     def operator_boards(self) -> Mapping[str, tuple[str, ...]] | None:
         """Each Operator's Boards that hold a served row, from the Company directory the Hiring
-        now tab ranks (ADR-0335); the app sets it. A Board no entry names is an employer's, as
-        `board_operator.classify` defaults. None: ``operators=`` cannot be applied."""
+        now tab ranks (ADR-0335), as :meth:`load_operator_boards` last kept them. A Board no entry
+        names is an employer's, as `board_operator.classify` defaults. None: ``operators=``
+        cannot be applied."""
         return self._operator_boards
 
-    @operator_boards.setter
-    def operator_boards(self, boards: Mapping[str, Collection[str]] | None) -> None:
+    def load_operator_boards(
+        self, boards: Mapping[str, Collection[str]] | None
+    ) -> None:
+        """Keep each Operator's ``boards`` that hold a served row, found by one scan of the
+        served table; the app calls it once the Company directory is loaded (ADR-0335). None
+        leaves ``operators=`` unappliable."""
         # Only the Boards this table serves: each one named is one more alternative every row's
         # id is matched against, and the directory names Boards long since empty. Keeping the
         # 33 of 101 with a row halved the newest-first page's cost (253 to 109 ms, 2026-09-29).
-        self._operators_wheres: dict[frozenset[str], _OperatorsWhere] = {}
+        self._operators_wheres = {}
         if boards is None:
             self._operator_boards = None
             return
@@ -1376,6 +1374,14 @@ class JobSearch:
             keeps_employers=keeps_employers,
         )
         return built
+
+    def _narrowed_by_operators(
+        self, args: Mapping[str, str], where: str | None
+    ) -> tuple[_OperatorsWhere | None, str | None]:
+        """:meth:`_operators_where`, and ``where`` narrowed by it (``where`` itself when it
+        keeps every row). A caller counting what ``operators=`` left out keeps ``where``."""
+        operators = self._operators_where(args)
+        return operators, with_extra(where, operators.kept) if operators else where
 
     def _check_work_authorization(self, stance: str) -> None:
         """Refuse a stance the rules do not know (:class:`ValueError`, whatever ``strict`` says:
@@ -1499,10 +1505,8 @@ class JobSearch:
         # `operators=` narrows every count, and what it left out is the total without it, less
         # the total with it: a count the scalar indexes answer, where counting the left-out
         # Boards' rows would match every id again (ADR-0335).
-        operators = self._operators_where(args)
         unkept = extra_where
-        if operators:
-            extra_where = with_extra(extra_where, operators.kept)
+        operators, extra_where = self._narrowed_by_operators(args, unkept)
         # `operators` too: a list leaving nothing out keeps the where-clause as it was, and
         # still answers with its count.
         cache_key = (filters, extra_where, only_total, _family_asked(args), operators)
@@ -1559,19 +1563,29 @@ class JobSearch:
         self, args: Mapping[str, str], filters: SearchFilters, extra_where: str | None
     ) -> int:
         """How many rows ``filters`` admit under ``extra_where``, read as :meth:`run` reads
-        them: the family table for a category, a description keyword's rows once found, else
-        the served table. The total alone: no option and no Blocking filter."""
-        scope = self._family_scope(args, filters)
-        table = scope.rows if scope else self._table
-        if scope:
-            where = with_extra(
-                build_filter(scope.filters, self.capabilities), extra_where
-            )
-        elif reads_descriptions(filters, self.capabilities):
-            where = self._description_matches.where(filters, extra_where)
-        else:
-            where = with_extra(build_filter(filters, self.capabilities), extra_where)
+        them (:meth:`_table_and_where`). The total alone: no option and no Blocking filter."""
+        _, table, where = self._table_and_where(args, filters, extra_where)
         return table.count_rows(filter=where) if where else table.count_rows()
+
+    def _table_and_where(
+        self, args: Mapping[str, str], filters: SearchFilters, extra_where: str | None
+    ) -> tuple[_FamilyScope | None, Any, str | None]:
+        """The category a request names across the whole index, the table its rows are read
+        from and their where-clause: the family table for a category (ADR-0322), a description
+        keyword's rows once found (ADR-0320), else the served table."""
+        scope = self._family_scope(args, filters)
+        if scope:
+            where = build_filter(scope.filters, self.capabilities)
+            return scope, scope.rows, with_extra(where, extra_where)
+        if reads_descriptions(filters, self.capabilities):
+            # Its rows found once, and shared with the facet counts (ADR-0320).
+            return (
+                None,
+                self._table,
+                self._description_matches.where(filters, extra_where),
+            )
+        where = build_filter(filters, self.capabilities)
+        return None, self._table, with_extra(where, extra_where)
 
     def _query_vector(self, query: str) -> Any:
         with self._query_vector_cache_lock:
@@ -1608,26 +1622,17 @@ class JobSearch:
         ranked = bool(query or like)
         _int = _int_arg(args)
         filters = self.parse_filters(args)
-        if operators := self._operators_where(args):
-            extra_where = with_extra(extra_where, operators.kept)
+        _, extra_where = self._narrowed_by_operators(args, extra_where)
         # Narrowed as `facets` narrows it, so both ask the same where-clause.
         narrowed = with_extra(extra_where, _other_than(like)) if like else extra_where
         # A category across the whole index reads its family table (ADR-0322): a browse lists
         # from it, and a ranked search asks the served table, which holds the vectors, to rank
         # exactly the family table's matching rows by id.
-        scope = self._family_scope(args, filters)
-        table = scope.rows if scope else self._table
-        if scope:
-            where = with_extra(build_filter(scope.filters, self.capabilities), narrowed)
-            if ranked:
-                ids = _matching_ids(table, where).to_pylist()
-                where = _ids_in_clause(ids) if ids else "id IN ('')"
-                table = self._table
-        elif reads_descriptions(filters, self.capabilities):
-            # Its rows found once, and shared with the facet counts (ADR-0320).
-            where = self._description_matches.where(filters, narrowed)
-        else:
-            where = with_extra(build_filter(filters, self.capabilities), narrowed)
+        scope, table, where = self._table_and_where(args, filters, narrowed)
+        if scope and ranked:
+            ids = _matching_ids(table, where).to_pylist()
+            where = ids_in_clause(ids)
+            table = self._table
         # Whitelisted to a column name, never taken from the query string — this reaches an
         # ORDER BY. An unknown value is no sort at all, which is the existing behaviour.
         sort = SORT_COLUMNS.get((args.get("sort") or "").strip())
@@ -1900,7 +1905,7 @@ class JobSearch:
             _checked_job_id(job_id, "id")
         rows = (
             self._table.search()
-            .where(_ids_in_clause(wanted))
+            .where(ids_in_clause(wanted))
             .select([*self.job_projection])
             .limit(len(wanted))
             .to_list()
@@ -1912,7 +1917,7 @@ class JobSearch:
         table does not hold it. 12 ms on the table above."""
         rows = (
             self._table.search()
-            .where(_ids_in_clause([job_id]))
+            .where(ids_in_clause([job_id]))
             .select(["vector"])
             .limit(1)
             .to_list()
@@ -1996,10 +2001,8 @@ class JobSearch:
         where = with_extra(
             build_filter(filters, self.capabilities), scoped_boards_clause(args)
         )
-        operators = self._operators_where(args)
         unkept = where
-        if operators:
-            where = with_extra(where, operators.kept)
+        operators, where = self._narrowed_by_operators(args, unkept)
         cache_key = (filters, where, query, family, operators)
         cached = _cache_get(
             self._requirements_cache,
@@ -2139,7 +2142,7 @@ class JobSearch:
         columns = ["id", *(c for c in requirement_counts.COLUMNS if c in names)]
         rows = (
             self._table.search()
-            .where(_ids_in_clause(ids))
+            .where(ids_in_clause(ids))
             .select(columns)
             .limit(len(ids))
             .to_list()

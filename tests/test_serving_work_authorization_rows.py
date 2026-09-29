@@ -58,11 +58,6 @@ def test_each_stance_names_its_jobs(tmp_path):
         "lever:b:3",
         "lever:o'c:5",
     ]
-    assert rows.counts() == {
-        "offers_sponsorship": 2,
-        "refuses_sponsorship": 2,
-        "offers_relocation": 2,
-    }
 
 
 def test_a_stance_no_job_holds_keeps_nothing(tmp_path):
@@ -76,7 +71,7 @@ def test_a_table_without_descriptions_is_read_at_once_and_holds_none(tmp_path):
     rows = WorkAuthorizationRows(table)
     rows.start()
     assert rows.wait(0)
-    assert rows.counts() == {}
+    assert _kept(table, rows.clause(work_authorization.OFFERS_SPONSORSHIP)) == []
 
 
 def test_a_read_not_started_is_not_ready(tmp_path):

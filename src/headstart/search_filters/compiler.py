@@ -200,6 +200,17 @@ def _escape_like(term: str) -> str:
     return term.replace("'", "''")
 
 
+def ids_in_clause(ids: Collection[str]) -> str:
+    """``id IN (…)`` over ``ids``, each quote doubled; a clause keeping nothing for none.
+
+    Not :func:`_escape_like`'s escaping, and deliberately: this is an equality test, where ``%``
+    and ``_`` are ordinary characters, so escaping them would stop a real id containing one from
+    matching itself."""
+    if not ids:
+        return "id IN ('')"
+    return "id IN (" + ", ".join("'" + i.replace("'", "''") + "'" for i in ids) + ")"
+
+
 def board_clause(boards: Collection[str], *, exclude: bool) -> str | None:
     """A where-clause over whole Boards, or None when there are none to name (ADR-0171).
 
