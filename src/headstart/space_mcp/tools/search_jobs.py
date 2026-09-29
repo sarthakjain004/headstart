@@ -230,17 +230,23 @@ def _age(day: str, today: date) -> str:
     return f" ({days / 365.25:.1f} years ago: over a year old)"
 
 
-def _employment_type(raw: Any) -> str:
-    """The type as the employer wrote it, beside the `employment_type` values it counts as."""
-    kinds = [
-        value
-        for value, rule in employment_type_filter.RULES.items()
-        if rule.matches(str(raw))
+def _employment_type(raw: Any, title: Any) -> str | None:
+    """The type as the employer wrote it, beside the `employment_type` values the filter counts
+    it as (`employment_type_filter.flags`, which the index writes): each marked where the title,
+    not the type, gave it, and full-time marked where it is only the default for a type no rule
+    reads (ADR-0341). None for a row that states no type and whose title gives none."""
+    rules = employment_type_filter.RULES
+    text = str(raw or "")
+    read = [value for value, rule in rules.items() if rule.matches(text)]
+    from_title = [
+        f"{value}, from the title"
+        for value, rule in rules.items()
+        if value not in read and rule.matches(text, str(title or ""))
     ]
-    return (
-        f"type {scraped_text.quoted(raw, TYPE_FIELD)} "
-        f"({', '.join(kinds) or 'no employment_type value'})"
-    )
+    if not raw:
+        return f"type not stated ({'; '.join(from_title)})" if from_title else None
+    said = read + from_title or ["full-time, by default"]
+    return f"type {scraped_text.quoted(raw, TYPE_FIELD)} ({'; '.join(said)})"
 
 
 def _facts(row: dict[str, Any], today: date, experience_filtered: bool) -> list[str]:
@@ -248,8 +254,8 @@ def _facts(row: dict[str, Any], today: date, experience_filtered: bool) -> list[
     facts = [scraped_text.quoted(row.get("location"), SHORT_FIELD)]
     if row.get("remote"):
         facts.append("remote")
-    if row.get("employment_type"):
-        facts.append(_employment_type(row["employment_type"]))
+    if kind := _employment_type(row.get("employment_type"), row.get("title")):
+        facts.append(kind)
     if row.get("min_years") is not None:
         facts.append(f"{row['min_years']}+ yrs")
     elif experience_filtered:
@@ -439,11 +445,14 @@ def _coverage_line(arguments: dict[str, Any], facets: dict[str, Any]) -> str | N
 def _matched(total: int, arguments: dict[str, Any]) -> str:
     """The headline's count. A ranking is named in it, since the total was once read as the
     number of jobs like the query when it counted every job the filters allow."""
+    matched = f"{total:,} " + (
+        "job matches these filters" if total == 1 else "jobs match these filters"
+    )
     if (arguments.get("similar_to") or "").strip():
-        return f"{total:,} jobs match these filters; similar_to only ranks them and does not narrow this count."
+        return f"{matched}; similar_to only ranks them and does not narrow this count."
     if (arguments.get("query") or "").strip():
-        return f"{total:,} jobs match these filters; the query only ranks them and does not narrow this count."
-    return f"{total:,} jobs match these filters."
+        return f"{matched}; the query only ranks them and does not narrow this count."
+    return f"{matched}."
 
 
 def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:

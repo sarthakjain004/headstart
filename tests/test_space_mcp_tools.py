@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
 from typing import Any
 
 import pytest
@@ -118,6 +119,21 @@ def test_the_instructions_tell_the_model_to_retry_an_edge_failure():
     for words in ("Hugging Face error page", "500", "502", "only reads", "up to twice"):
         assert words in sentence, words
     assert len(sentence) <= 200
+
+
+#: Every key a tool's listing or the server's instructions give as an example, each one the
+#: Company directory holds: all checked against the live `/companies/lookup` on 2026-09-29.
+#: Round-4 critique P2-3: the example 'lever:razorpay' was no Board the directory holds, and
+#: find_company said so. A new example key is checked there before it joins this set.
+_EXAMPLE_KEYS_THE_DIRECTORY_HOLDS = {"greenhouse:stripe", "ashby:openai"}
+
+
+def test_every_example_key_is_one_the_directory_holds():
+    said = server.INSTRUCTIONS + json.dumps(
+        [tool.listing() for tool in REGISTRY], ensure_ascii=False
+    )
+    examples = set(re.findall(r"'([a-z_]+:[^'\s]+)'", said))
+    assert examples == _EXAMPLE_KEYS_THE_DIRECTORY_HOLDS
 
 
 def test_a_tools_budget_is_under_the_clients_warning(tool):

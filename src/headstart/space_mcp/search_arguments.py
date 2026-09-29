@@ -7,6 +7,7 @@ holds what only a filter narrows by (ADR-0338).
 
 from __future__ import annotations
 
+import difflib
 import re
 from typing import Any
 
@@ -85,7 +86,7 @@ PROPERTIES: dict[str, dict[str, Any]] = {
         "description": (
             "A company name, matched as the site's company box matches (any company name "
             "containing the text), or a Board key from an earlier answer such as "
-            "'lever:razorpay'. In search_jobs beside `category` it needs a directory "
+            "'ashby:openai'. In search_jobs beside `category` it needs a directory "
             "company: a key such as 'greenhouse:stripe', or an exact name."
         ),
     },
@@ -177,9 +178,28 @@ STANCE_WORDS = {
 
 def read_country(asked: Any) -> Any:
     """The code a caller's country means — "UK", "USA", "Germany" (ADR-0322) — or ``asked``
-    unchanged, for the schema's enum to refuse with the codes it knows."""
-    code = country_filter.code_for(asked) if isinstance(asked, str) else None
-    return code or asked
+    unchanged when it is not a string, for the schema to refuse. A string no code, name or
+    abbreviation matches is refused here, with the listed country its spelling is closest to
+    ("Germny" is DE) and `location` for a country the filter does not list, in place of every
+    code the enum holds (round-4 critique P2-4)."""
+    if not isinstance(asked, str):
+        return asked
+    if code := country_filter.code_for(asked):
+        return code
+    by_name = {name.casefold(): code for code, name in country_filter.options()}
+    near = difflib.get_close_matches(asked.strip().casefold(), by_name, n=1, cutoff=0.8)
+    guess = (
+        f" Did you mean {by_name[near[0]]} ({country_filter.name(by_name[near[0]])})?"
+        if near
+        else ""
+    )
+    raise ToolFailure(
+        f"`country` {scraped_text.quoted(asked, 60)} is not a country the filter lists.{guess} "
+        "For a country it does not list, send its name as `location`, which matches the "
+        "text of a job's location. `country` takes an ISO 3166-1 alpha-2 code such as US, "
+        f"GB, DE or IN, or a listed country's English name; the schema lists all "
+        f"{len(country_filter.CODES)}."
+    )
 
 
 #: What a query holds that only a filter narrows by (ADR-0338), each with the filter to use:
@@ -268,7 +288,9 @@ def _operators_said(arguments: dict[str, Any], left_out: int | None) -> str | No
     if kept is None:
         return None
     dropped = " and ".join(_OPERATOR_WORDS[op] for op in OPERATORS if op not in kept)
-    counted = "" if left_out is None else f": {left_out:,} jobs"
+    counted = (
+        "" if left_out is None else f": {left_out:,} job{'' if left_out == 1 else 's'}"
+    )
     if kept == DEFAULT_OPERATORS:
         return (
             f"{dropped} left out, as the site's Hiring now tab hides them{counted} (name "

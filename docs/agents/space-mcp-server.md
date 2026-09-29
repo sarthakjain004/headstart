@@ -501,6 +501,9 @@ server changes.
    recorded with `scripts/eval/record_space_mcp_eval_calls.py`: `tests/test_space_mcp_eval.py`
    replays it, so a change to a tool's output that breaks a verifier fails its own PR (ADR-0334).
    Re-record when a tool starts reading the Space differently; the replay names the URL it lacks.
+   A task may accept a path its tool's description steers away from ("For X use `a`, never
+   `b`"), as one `any_of` path, but may never require it: the same test fails a task that does
+   (ADR-0354).
 6. A new parameter on `/search` or `/facets` goes into `job_search.REQUEST_PARAMETERS` too:
    `strict=1`, which every tool sends, refuses a name that set does not hold (ADR-0334).
 
