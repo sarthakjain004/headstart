@@ -14,7 +14,8 @@ def test_flags_preserve_the_existing_overlapping_substring_rules():
         "is_contract": True,
         "is_internship": False,
     }
-    assert flags(None) == dict.fromkeys((rule.column for rule in RULES.values()), False)
+    # no rule reads an unstated type; the filter defaults it to full-time (ADR-0341)
+    assert not any(rule.matches(None) for rule in RULES.values())
 
 
 def test_international_is_not_an_internship():
@@ -124,14 +125,14 @@ def test_raw_values_that_read_as_none_are_mapped_where_unambiguous():
         assert flags(value) == full, value
     assert flags("HOURLY_PT")["is_part_time"] is True
     assert flags("Regular Part-Time")["is_full_time"] is False
-    assert flags("Second Shift (afternoon)")["is_full_time"] is False
+    assert RULES["full-time"].matches("Second Shift (afternoon)") is False
     assert flags("Fixed Term")["is_contract"] is True
     assert flags("fulltime_fixed_term") == {**full, "is_contract": True}
     assert flags("Co-op")["is_internship"] is True
     # Left unread: ambiguous at the source. ("Temporary" and "F" were here until ADR-0340 read
     # them: Temporary as contract, F as a whole value.)
     for value in ("OTHER", "Employee"):
-        assert not any(flags(value).values()), value
+        assert not any(rule.matches(value) for rule in RULES.values()), value
 
 
 def test_an_underscore_term_is_escaped_in_its_like_pattern():
@@ -215,3 +216,89 @@ def test_no_flag_is_a_response_field():
 
     served = set(RESULT_COLUMNS) | set(JOB_DETAIL_COLUMNS)
     assert served.isdisjoint(rule.column for rule in RULES.values())
+
+
+def test_a_job_that_states_no_type_is_full_time():
+    """ADR-0341: 145,355 served rows (29.1%) state nothing, and whole ATSes never do (Greenhouse,
+    Eightfold, Teamtailor, Zwayam, Cornerstone, ClearCompany). Their descriptions say "part-time"
+    1.1% of the time against 0.8% for stated full-time rows and 22.1% for stated part-time rows,
+    so the Full-time filter passes them."""
+    full = {
+        "is_full_time": True,
+        "is_part_time": False,
+        "is_contract": False,
+        "is_internship": False,
+    }
+    for value in (None, "", "   ", "OTHER", "Remote", "Hybrid", "Employee"):
+        assert flags(value) == full, value
+
+
+def test_a_stated_type_is_never_defaulted_to_full_time():
+    assert flags("Part time")["is_full_time"] is False
+    assert flags("Contract")["is_full_time"] is False
+    assert flags("Intern")["is_full_time"] is False
+    assert flags("Freelance")["is_full_time"] is False
+    # a title that says intern is evidence too, so an unstated intern is not full-time
+    assert flags(None, "Software Engineering Intern") == {
+        "is_full_time": False,
+        "is_part_time": False,
+        "is_contract": False,
+        "is_internship": True,
+    }
+    # the other filters stay positive-only
+    for value in (None, "OTHER"):
+        result = flags(value)
+        assert not (
+            result["is_part_time"] or result["is_contract"] or result["is_internship"]
+        )
+
+
+def test_the_sql_fallback_agrees_on_unstated_values():
+    """A table without the flag columns answers Full-time from `RAW_CLAUSES`; it must give the
+    same verdict as `flags` (with no title, the one thing the fallback cannot read)."""
+    import sqlite3
+
+    from headstart.search_filters.employment_type_filter import RAW_CLAUSES
+
+    db = sqlite3.connect(":memory:")
+    values = (
+        None,
+        "",
+        "OTHER",
+        "Remote",
+        "Part time",
+        "Contract",
+        "Intern",
+        "Full time",
+        "Temporary",
+        "F",
+        "Regular Part-Time",
+        "Freelance",
+        "fulltime_fixed_term",
+    )
+    for value in values:
+        for etype, rule in RULES.items():
+            (sql,) = db.execute(
+                f"SELECT {RAW_CLAUSES[etype]} FROM (SELECT ? AS employment_type)",
+                (value,),
+            ).fetchone()
+            assert bool(sql) is flags(value)[rule.column], (value, etype)
+
+
+def test_the_full_time_clause_is_the_raw_rule_or_no_other_type():
+    from headstart.search_filters.employment_type_filter import RAW_CLAUSES
+
+    assert RAW_CLAUSES["part-time"] == RULES["part-time"].raw_clause()
+    assert RAW_CLAUSES["full-time"].startswith("(" + RULES["full-time"].raw_clause())
+    assert "coalesce(employment_type, '')" in RAW_CLAUSES["full-time"]
+    assert clause("full-time", False) == RAW_CLAUSES["full-time"]
+    assert clause("full-time", True) == "is_full_time = true"
+
+
+def test_reads_as_a_type_needs_positive_evidence():
+    from headstart.search_filters.employment_type_filter import reads_as_a_type
+
+    for value in ("Part time", "Regular", "Temporary", "F", "Intern"):
+        assert reads_as_a_type(value) is True, value
+    for value in (None, "", "PT 129 or Less Hours", "Variable", "OTHER"):
+        assert reads_as_a_type(value) is False, value

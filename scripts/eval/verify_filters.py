@@ -252,10 +252,16 @@ def _title_has_words(title: str | None, words: str) -> bool:
     return True
 
 
-def _etype_ok(value: str | None, canonical: str) -> bool:
-    """The raw value satisfies the filter's own rule, so a served row whose materialized flag
-    disagrees with its text is caught (the rules grew past a restatement here, ADR-0337)."""
-    return employment_type_filter.RULES[canonical].matches(value)
+def _etype_ok(value: str | None, canonical: str, title: str | None = None) -> bool:
+    """The row satisfies the filter's own rule, so a served row whose materialized flag
+    disagrees with its text is caught (the rules grew past a restatement here, ADR-0337).
+    Full-time also takes a row no rule reads as any type (ADR-0341), and the title counts."""
+    rule = employment_type_filter.RULES[canonical]
+    if rule.matches(value, title):
+        return True
+    return canonical == "full-time" and not any(
+        other.matches(value, title) for other in employment_type_filter.RULES.values()
+    )
 
 
 def run_checks(base: str, atses: list[str]) -> list[dict]:
@@ -479,7 +485,9 @@ def run_checks(base: str, atses: list[str]) -> list[dict]:
             (
                 f"etype={etype}",
                 {"q": "software engineer", "etype": etype, "k": 30},
-                lambda r, e=etype: _etype_ok(r.get("employment_type"), e),
+                lambda r, e=etype: _etype_ok(
+                    r.get("employment_type"), e, r.get("title")
+                ),
                 "",
             )
         )
@@ -647,7 +655,7 @@ def run_checks(base: str, atses: list[str]) -> list[dict]:
             lambda r: (
                 # Same correction as the standalone has_salary case above.
                 r.get("min_salary_annual") is not None
-                and _etype_ok(r.get("employment_type"), "full-time")
+                and _etype_ok(r.get("employment_type"), "full-time", r.get("title"))
             ),
             "",
         )

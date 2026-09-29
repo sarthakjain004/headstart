@@ -41,7 +41,7 @@ columns exist. Python and SQL still agree on every raw value.
 Against ADR-0337's rules on the audited table 10,970 rows change, all additions: `is_internship` 3,000
 to 12,350, `is_contract` 12,571 to 13,321, `is_full_time` 330,365 to 331,407. Existing rows pick this up
 through `_refresh_metadata`, which rewrites a row whose served flags differ from what the rules now
-compute (delete then add, about 25 KB of vector each): roughly 0.3 GB once. No schema change.
+compute (delete then add): about 65 MB once (a served row averages 5.9 KB; a vector is 3 KB). No schema change.
 
 Still unchanged here: a row whose source states no type (145,355 rows, 29.1%) matches none of the four
 filters. That is decided in ADR-0341.
