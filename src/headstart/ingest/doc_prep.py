@@ -485,7 +485,23 @@ def build_doc(job: dict) -> str:
 # 9,518 rows, all none or seniority -> regex and none where the first two passes still answer;
 # ADR-0079's smallest floor is untouched. Hand-read at 25 rows a class: 23, 25 and 22 right for the three
 # widenings and 17 to 24 for the guards that move an answer (the table and the misses are in ADR-0350).
-DERIVATIONS_VERSION = 25
+# v26 (ADR-0357): `jobs/experience.py` answers a description stating several requirements with its
+# overall one (the largest required floor; the smallest alternative path where it offers one; a
+# preferred-section clause only when nothing else is stated) instead of ADR-0079's smallest, refuses
+# the employer's own tenure ("we bring more than 15 years"), and reads Netflix's titles on its own
+# ladder (L4 3, L5 5, L6 9); `jobs/salary.py`'s `placed`, applied in `derived_meta` and
+# `update_meta`, drops an INR figure below 500,000 a year on a job every place of which is outside
+# India. The range since the v25 bump at `0977989e` is `git log 0977989e..fa36bc41 --
+# src/headstart/jobs/experience.py src/headstart/jobs/salary.py src/headstart/ingest/derived_meta.py
+# src/headstart/ingest/update_meta.py`: this change alone, one commit. Measured old (v25's
+# `extract()` at `da572951`) vs new on the served table at version 326, 499,841 rows, read off HF on
+# 2026-09-29 with the description store pulled the same day, per ADR-0066: experience moves on 54,824
+# rows, none at the field tier: regex floors rise on 54,301, regex ceilings alone change on 421, one
+# regex floor falls, regex -> none 7 and regex -> seniority 3 (employer tenure), none -> seniority 16
+# and seniority 75 (Netflix's ladder: 73 fall, 2 rise). Senior-titled rows passing `max_years: 1`
+# fall from 6,435 to 3,273 (Google's "Senior" titles 149 to 0). Salary: 19 INR rows placed wholly
+# abroad lose their figure (Knowfinity's US "100000-130000 INR per-year"; monthly Gulf pay).
+DERIVATIONS_VERSION = 26
 
 
 def to_meta(job: dict) -> dict:

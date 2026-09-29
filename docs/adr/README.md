@@ -319,6 +319,7 @@ supersedes it and note the supersession in both.
 | [0350](0350-experience-widenings-run-last-and-a-ceiling-an-education-an-age-or-a-window-is-not-a-floor.md) | Experience widenings run last, and a ceiling, an education, an age or a window is not a floor | 2026-09-29 |
 | [0352](0352-a-relevance-page-and-a-requirements-sample-take-a-few-postings-of-each-company.md) | A relevance page and a requirements sample take a few postings of each company | 2026-09-29 |
 | [0354](0354-an-eval-task-may-accept-but-never-require-the-path-its-tool-steers-away-from.md) | An eval task may accept, but never require, the path its tool steers away from (amends 0334) | 2026-09-29 |
+| [0357](0357-stated-experience-is-the-postings-overall-requirement.md) | Stated experience is the posting's overall requirement, and a rupee figure answers to the place (amends 0079) | 2026-09-29 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*
