@@ -53,13 +53,15 @@ closures were counted, however little it grew. Measured on the Space's `/hot` fo
 
 ## Measured
 
-`/hot` ranked with and without the rule on the HF state of 2026-09-29 06:19:
+`/hot` ranked with and without the rule on the HF state of 2026-09-29 09:25, which the Space
+served (its `/hot` matched the ranking without the rule, row for row):
 
-- Rate: the 30 rows with a net of 0 or less left, and 30 companies with rates of 10–13% entered at
-  the bottom. No row with a net of 0 or less is left. The new top five are Starbucks (70%, +50),
-  RadNet (48%, +10), Twenty (46%, +5), o-reilly-auto-parts (43%, +14) and AgileEngine (43%, +101).
-- `not_growing` is 446 of the 2,196 companies ranked.
-- Expansion and Volume are identical, row for row.
+- Rate: the 31 rows with a net of 0 or less left (CSB, Jobgether, Envision Employment Solutions,
+  Bluelight Consulting, Clera and 26 more), and 31 companies with rates of 10–13% entered at the
+  bottom. No row with a net of 0 or less is left. The new top five are Starbucks (70%, +50), RadNet
+  (48%, +10), Twenty (46%, +5), AgileEngine (44%, +100) and o-reilly-auto-parts (43%, +14).
+- `not_growing` is 457 of the 2,221 companies ranked, and `closures_uncounted` 345.
+- Expansion, Opened less closed and Volume are identical, row for row.
 
 ## Alternatives considered
 
@@ -78,5 +80,5 @@ closures were counted, however little it grew. Measured on the Space's `/hot` fo
 
 - Rate can list fewer than 100 rows when fewer companies grew in a week.
 - A company can grow its net by re-counting that netting could not size and still rank. AgileEngine
-  read +101 on 309 opened and 323 closed. That is Expansion's weakness too, and `hiring_now` flags
+  read +100 on 311 opened and 326 closed. That is Expansion's weakness too, and `hiring_now` flags
   such a row as not backed by its postings opened.
