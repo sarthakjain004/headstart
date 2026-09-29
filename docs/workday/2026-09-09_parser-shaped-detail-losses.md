@@ -15,6 +15,13 @@ request *shape* would be fixable where host flakiness would not.
 `unparseable` is ~1 in 40,000 and sits below what any probe run here could detect; no change.
 HTTP 500 is host health, already bounded by ADR-0100's breaker; no change.
 
+> **Amended 2026-09-29 ([ADR-0348](../adr/0348-a-workday-listing-item-with-no-title-and-no-link-is-not-a-job.md)).**
+> The cost of a stub is not zero any more. §1 traces a stub to an "Untitled" Job that
+> `tech_filter.classify` drops, which held while a Workday Job had no department. ADR-0252 (2026-09-28)
+> gives an item read inside a one-family slice that family, so on Walmart's pinned Technology slice a
+> stub read `Technology` and was served: 43 of 860 items on 2026-09-29, 41 served rows (48 across five
+> Boards). `parse` now skips an item with no title and no `externalPath`. The measurements below stand.
+
 ## 0. The brief's own figures did not reproduce — read these instead
 
 The investigation was commissioned quoting 866 class-occurrences, split `no externalPath` 139 /
