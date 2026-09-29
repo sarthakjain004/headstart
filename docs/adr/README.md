@@ -286,6 +286,7 @@ supersedes it and note the supersession in both.
 | [0305](0305-an-abstained-row-whose-title-names-a-developer-is-software-engineering.md) | An abstained row whose title names a developer is software engineering | 2026-09-29 |
 | [0306](0306-a-hidden-family-is-counted-and-folded-into-other-never-listed.md) | A hidden family is counted and folded into Other, never listed | 2026-09-29 |
 | [0307](0307-a-taleo-section-its-twin-host-mirrors-is-buried-onto-the-linked-host.md) | A Taleo section its twin host mirrors is buried onto the linked host | 2026-09-29 |
+| [0308](0308-facet-counts-under-a-keyword-run-over-its-rows-read-once-into-memory.md) | Facet counts under a keyword run over its rows, read once into memory | 2026-09-29 |
 | [0320](0320-a-description-keywords-rows-are-found-once-literal-first-and-named-by-row-id.md) | A description keyword's rows are found once, literal first, and named by row id | 2026-09-29 |
 | [0321](0321-an-agent-reads-hiring-now-by-opened-less-closed-and-every-trend-says-its-turnover-span.md) | An agent reads Hiring now by opened less closed, and every trend view states its turnover span first | 2026-09-29 |
 | [0323](0323-an-agent-sees-one-posting-once-under-a-company-name.md) | An agent sees one posting once, under a company's name, and a company's places by country | 2026-09-29 |

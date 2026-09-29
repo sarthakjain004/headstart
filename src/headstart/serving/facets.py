@@ -27,12 +27,14 @@ so the strip's cost is dominated by whichever filter is active rather than by ho
 counts — see ADR-0024's 2026-09-06 amendment, which cut that clause from 267 ``LIKE``s to 10
 ``regexp_like``s for this reason. They are issued through one
 :class:`ThreadPoolExecutor` because LanceDB's counting happens in Rust with the GIL released, so
-the wall cost is roughly the slowest count rather than their sum.
+the wall cost is roughly the slowest count rather than their sum. The strip grows with the ATS
+list, one count per ATS. A keyword is the exception to all of this: its rows are read once into
+memory and the counts run there (ADR-0308).
 
 Exposed as one function, :func:`counts`, which takes the parsed :class:`headstart.search_filters.compiler.
 SearchFilters` and the table's :class:`headstart.search_filters.compiler.IndexCapabilities` (ADR-0149) and returns
 every number the UI needs. Splitting the two is what keeps the per-option rebuild below cheap to
-reason about: every one of the ~46 counts varies only ``filters``, through
+reason about: every count varies only ``filters``, through
 :func:`dataclasses.replace`, while ``capabilities`` — the ATS/currency whitelists and which
 migration-only columns exist — passes through unchanged. It takes no query — see above; there is
 deliberately nowhere to pass one.
@@ -188,32 +190,28 @@ def counts(
         # not a row
         add(dimension, None, "Any", **{dimension: None})
 
-    # The Keyword filter is applied ONCE (#834). Every count here keeps each filter but the one
-    # dimension it varies, so the rows matching the keyword and every other filter are read up
-    # front, and each count that keeps the keyword runs over them, compiled without it:
+    # The Keyword filter is applied ONCE (#834, ADR-0308). Every count here keeps each filter but
+    # the one dimension it varies, so the rows matching the keyword and every other filter are
+    # read up front, and each count that keeps the keyword runs over them, compiled without it:
     # `(A AND keyword AND B)` over the table is `(A AND B)` over those rows, by the same engine, so
     # every count is the one the list would show. Counted the other way, each of ~80 counts re-ran
     # its `LIKE` over the description column, and one request took 103 s on the Space's two vCPUs.
     # A lone total (ADR-0274) is one count, which reading the rows first would only lengthen.
-    keyword = (
-        None
-        if only_total
-        else build_filter(
-            SearchFilters(kw=filters.kw, kw_in=filters.kw_in), capabilities
-        )
+    reads_keyword_rows = not only_total and bool(
+        build_filter(SearchFilters(kw=filters.kw, kw_in=filters.kw_in), capabilities)
     )
-    unkeyed_count = {"kw": None, "kw_in": None} if keyword else {}
+    lift_keyword = {"kw": None, "kw_in": None} if reads_keyword_rows else {}
     # Without the keyword's rows read first, every count is of the table itself.
-    count_where = where_for if keyword else table_where_for
+    count_where = where_for if reads_keyword_rows else table_where_for
 
     # `total` rides the same pool rather than being counted first — it is one more count, and
     # serialising it ahead of the rest would add its latency to every request for no reason.
     counted = (
         []
         if only_total
-        else [(d, v, lbl, count_where(**ov, **unkeyed_count)) for d, v, lbl, ov in plan]
+        else [(d, v, lbl, count_where(**ov, **lift_keyword)) for d, v, lbl, ov in plan]
     )
-    total_where = count_where(**unkeyed_count)
+    total_where = count_where(**lift_keyword)
     with ThreadPoolExecutor(max_workers=_WORKERS) as pool:
         # The Keyword filter's disclaimer (ADR-0104): of the rows the *other* filters match, how
         # many carry a description at all. Not a facet — there is no option to pick — but the
@@ -223,7 +221,7 @@ def counts(
         # has a description by construction — and the rail would read "N of N" on a table where
         # almost nothing has text. None while the column does not exist yet, which the UI reads
         # as "not available", distinct from a genuine zero.
-        unkeyed = table_where_for(kw=None, kw_in=None)
+        without_keyword = table_where_for(kw=None, kw_in=None)
         keyword_scope = filters.kw_in or KEYWORD_DEFAULT_SCOPE
         needs_description_coverage = bool(
             filters.kw
@@ -235,25 +233,27 @@ def counts(
                 pool.submit(
                     _count,
                     table,
-                    _with_description(unkeyed, capabilities.has_description_stored),
+                    _with_description(
+                        without_keyword, capabilities.has_description_stored
+                    ),
                 ),
-                pool.submit(_count, table, unkeyed),
+                pool.submit(_count, table, without_keyword),
             )
             if capabilities.has_description and needs_description_coverage
             else None
         )
         # Read while the coverage counts, which lift the keyword, run over the whole table.
-        keyed = (
+        count_table = (
             _keyword_rows(
                 table,
                 table_where_for(**dict.fromkeys(listed)),
                 [total_where, *(c[3] for c in counted)],
             )
-            if keyword
+            if reads_keyword_rows
             else table
         )
-        totals = pool.submit(_count, keyed, total_where)
-        results = list(pool.map(lambda c: _count(keyed, c[3]), counted))
+        totals = pool.submit(_count, count_table, total_where)
+        results = list(pool.map(lambda c: _count(count_table, c[3]), counted))
 
     facets: dict[str, list[dict[str, Any]]] = {}
     for (dimension, value, label, _), n in zip(counted, results, strict=True):
@@ -265,12 +265,13 @@ def counts(
     return {
         "total": total,
         "facets": facets,
-        # Only a listed dimension's recount is inside the rows read; any other counts the table.
+        # Only a listed dimension's recount is inside the rows read; any other counts the table,
+        # the keyword with it, once per active filter (ADR-0308).
         "blocking": _blocking(
             filters,
             total,
             lambda key, unset: (
-                _count(keyed, count_where(**{key: unset}, **unkeyed_count))
+                _count(count_table, count_where(**{key: unset}, **lift_keyword))
                 if key in listed
                 else _count(table, table_where_for(**{key: unset}))
             ),
@@ -293,22 +294,30 @@ def _count(table: Any, where: str | None) -> int:
     return table.count_rows(filter=where) if where else table.count_rows()
 
 
-def _keyword_rows(table: Any, read: str, wheres: list[str | None]) -> Any:
-    """The rows ``read`` matches, as an in-memory table holding every column ``wheres`` name.
+# A quoted SQL string, a doubled quote inside it included: the compiler writes every user term
+# and Board key as one, with its quotes doubled.
+_SQL_STRING = re.compile(r"'(?:[^']|'')*'")
+
+
+def _keyword_rows(table: Any, rows_where: str, count_wheres: list[str | None]) -> Any:
+    """The rows ``rows_where`` matches, as an in-memory table holding every column
+    ``count_wheres`` name.
 
     One scan of the keyword's columns, the description among them, in place of one per count.
-    Only the named columns are kept, never the description or the vector, so even a keyword
-    matching most of the table stays small: "engineer" in titles or descriptions matched 406,954
-    of 514,163 rows. A name inside a quoted term only keeps one more column. Each call connects
-    its own in-memory database, so concurrent requests never share a table.
+    Only the columns the counts name are kept, never the description or the vector, so even a
+    keyword matching most of the table stays small: "engineer" in titles or descriptions matched
+    406,954 of 514,163 rows, 25 MB. Names are looked for outside quoted terms only (ADR-0308):
+    looked for inside them too, hiding the Board ``ashby:vector`` copied the 768-float vector of
+    every row read, 1,293 MB. Each call connects its own in-memory database, so concurrent
+    requests never share a table.
     """
-    named = " ".join(w for w in wheres if w)
+    named = _SQL_STRING.sub("''", " ".join(w for w in count_wheres if w))
     columns = [
         c for c in table.schema.names if re.search(rf"\b{re.escape(c)}\b", named)
     ]
     # The row id is asked for and dropped: LanceDB 0.36 cannot plan a read whose filter names
     # rows by `_rowid` (ADR-0320) unless the id is in the plan, and a memory table cannot hold it.
-    rows = table.search().where(read).with_row_id(True).select(columns).to_arrow()
+    rows = table.search().where(rows_where).with_row_id(True).select(columns).to_arrow()
     rows = rows.drop_columns(["_rowid"])
     return lancedb.connect("memory://").create_table("keyword_rows", data=rows)
 
@@ -365,9 +374,9 @@ def _blocking(
     doing no work anyway. It drops each active filter in turn and keeps the one that recovers
     the most rows; ``None`` when nothing matched even with every filter dropped, because then
     no filter is to blame and saying one is would be a lie. ``recount(key, unset)`` counts the
-    request with that one filter set to ``unset``. Every recount keeps ``extra_where`` (the
-    Account clause) applied, as :func:`counts` does for the total: a filter whose removal only
-    recovers rows the Account clause hides would remove nothing on screen.
+    request with that one filter set to ``unset``, and must keep the Account clause (ADR-0171)
+    applied, as :func:`counts` does for the total: a filter whose removal only recovers rows the
+    Account clause hides would remove nothing on screen.
     """
     if total:
         return None
