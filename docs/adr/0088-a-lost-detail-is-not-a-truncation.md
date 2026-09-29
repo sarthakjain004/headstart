@@ -64,6 +64,11 @@ equivalent reporting, whose shape this mirrors),
 > separately and logs it rather than assuming the shape holds everywhere.
 > `docs/workday/2026-09-09_parser-shaped-detail-losses.md`.
 
+> **Amended 2026-09-29 ([ADR-0348](0348-a-workday-listing-item-with-no-title-and-no-link-is-not-a-job.md)).**
+> *`tech_filter` no longer drops that Job, so `parse` does.* ADR-0252 gave an item read inside a
+> one-family slice its family, and a stub on a pinned Board then read `Technology` and passed the
+> gate: 48 rows were served as "Untitled". `parse` now makes no Job of a stub.
+
 ## Context
 
 `workday:ngc/Northrop_Grumman_External_Site` reported `3536/3691 details missing` (95.8%) in run
