@@ -892,6 +892,41 @@ def site_is_non_public(site: str) -> bool:
     return any(token in site for token in _NON_PUBLIC_SITE_TOKENS)
 
 
+def duplicate_ranks(
+    job_ids: Iterable[str],
+    keep: set[str],
+    *,
+    site_jobs: dict[str, int] | None = None,
+    requisitions: Mapping[str, str] | None = None,
+    backing: Mapping[str, Iterable[str]] | None = None,
+) -> dict[str, tuple[tuple[str, str], tuple]]:
+    """``{id: (its duplicate group, its rank in it)}`` for every id on a live Board, under
+    :func:`plan_prune`'s rules: of any members of a group present together, the lowest rank is
+    the one ``plan_prune`` keeps. Its Board is :func:`_survivor_board`'s pick, and within that
+    Board it is the id carrying the live casing, then the smallest id. A Restatement folds a
+    group's copies into one Job over time with it (ADR-0330)."""
+    live = boards_by_canon(keep)
+    job_ids = list(job_ids)
+    copies = _backing_copies(job_ids, live, requisitions or {}, backing or {})
+    ranks: dict[str, tuple[tuple[str, str], tuple]] = {}
+    for job_id in job_ids:
+        placed = _placement(job_id, live, copies)
+        if placed is None:
+            continue
+        group, canon = placed
+        ranks[job_id] = (
+            group,
+            (
+                *_survivor_precedence(canon),
+                -(site_jobs or {}).get(canon, 0),
+                canon,
+                not job_id.startswith(live[canon] + ":"),
+                job_id,
+            ),
+        )
+    return ranks
+
+
 #: Which rule took a duplicate row out, as :func:`plan_prune` names it and the dedup
 #: eviction ledger records it (ADR-0210); :func:`alias_rules` adds ``alias:{signal}``. One
 #: Tenant rule covers every ATS in :data:`_TENANT_REQUISITION_ATSES`, but Workday's removals keep

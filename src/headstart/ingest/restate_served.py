@@ -17,8 +17,9 @@ applies to the whole past alike:
   the Board posts again starts ``revived``.
 
 Each counted version becomes a **served interval**, ``[served_from, served_to)`` in runs, with
-``served_to`` None while it still counts. Duplicate groups apply to these intervals in the step
-after this one.
+``served_to`` None while it still counts. Last, :func:`fold_duplicates` folds each duplicate group
+``index prune`` would collapse into one Job over time (``dedup_group``), counting only the member
+prune keeps at each moment.
 
 Runs inside a Restatement; it is not a pipeline stage.
 """
@@ -203,3 +204,70 @@ def clip_dormant(served, periods: Mapping[str, list[tuple[str, str | None]]]):
     return pa.Table.from_pylist(
         out, schema=served.schema.append(pa.field("starts_as", pa.string()))
     )
+
+
+def fold_duplicates(served, ranks: Mapping[str, tuple[tuple[str, str], tuple]]):
+    """``served`` with each duplicate group folded into one Job over time, and a ``dedup_group``
+    naming it on every row. ``ranks`` is ``index_plan.duplicate_ranks`` over the served ids: at every
+    moment only the lowest-ranked member being served counts, the one ``index prune`` keeps. A cut
+    piece ends ``superseded`` and the member taking over starts ``superseding``, so the group
+    counts as one Job across the handover. An id on no live Board is a group of its own."""
+    import pyarrow as pa
+
+    rows = served.to_pylist()
+    groups: dict[str, list[dict]] = {}
+    for row in rows:
+        group, _ = ranks.get(row["id"], ((row["id"], ""), ()))
+        row["dedup_group"] = "#".join(group) if group[1] else group[0]
+        groups.setdefault(row["dedup_group"], []).append(row)
+
+    out: list[dict] = []
+    for members in groups.values():
+        if len({row["id"] for row in members}) == 1:
+            out.extend(members)
+            continue
+        out.extend(_fold(members, ranks))
+    schema = served.schema.append(pa.field("dedup_group", pa.string()))
+    if not out:
+        return served.slice(0, 0).append_column("dedup_group", pa.nulls(0, pa.string()))
+    return pa.Table.from_pylist(out, schema=schema)
+
+
+def _fold(members: list[dict], ranks) -> list[dict]:
+    """One group's rows cut so that only its best-ranked served member counts at each moment."""
+    bounds = sorted(
+        {row["served_from"] for row in members}
+        | {row["served_to"] for row in members if row["served_to"] is not None}
+    )
+    pieces: list[list] = []  # [row, start, end]
+    for k, start in enumerate(bounds):
+        end = bounds[k + 1] if k + 1 < len(bounds) else None
+        present = [
+            row
+            for row in members
+            if row["served_from"] <= start
+            and (row["served_to"] is None or row["served_to"] > start)
+        ]
+        if not present:
+            continue
+        best = min(present, key=lambda row: (ranks[row["id"]][1], row["served_from"]))
+        if pieces and pieces[-1][0] is best and pieces[-1][2] == start:
+            pieces[-1][2] = end
+        else:
+            pieces.append([best, start, end])
+    folded = []
+    for row, start, end in pieces:
+        folded.append(
+            row
+            | {
+                "served_from": start,
+                "served_to": end,
+                "ended_as": row["ended_as"]
+                if end == row["served_to"]
+                else "superseded",
+                "starts_as": row.get("starts_as")
+                if start == row["served_from"]
+                else "superseding",
+            }
+        )
+    return folded

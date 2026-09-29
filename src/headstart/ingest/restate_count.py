@@ -54,17 +54,22 @@ def _plus(stamp: str, delta: timedelta) -> str:
     return (datetime.fromisoformat(stamp) + delta).isoformat()
 
 
+def _job(row: Mapping) -> str:
+    """What counts as one Job: its duplicate group once folded, else its id."""
+    return row.get("dedup_group") or row["id"]
+
+
 def tick_counts(
     served, runs: list[str], first_reads: Mapping[str, str], place: Place
 ) -> Iterator[tuple[str, dict[Key, int], Counter[Key]]]:
     """``(run, levels, turnover)`` for each run in ``runs``, oldest first. ``levels`` holds every
     non-zero ``(board, metric, family, band)`` count at the run; ``turnover`` its Opened, Closed
     and Recounted. ``first_reads`` maps a case-folded Board to the first run that read it."""
-    rows = sorted(served.to_pylist(), key=lambda r: (r["id"], r["served_from"]))
+    rows = sorted(served.to_pylist(), key=lambda r: (_job(r), r["served_from"]))
     groups = [place(row) for row in rows]
     first_listed: dict[str, str] = {}
     for row in rows:
-        first_listed.setdefault(row["id"], row["served_from"])
+        first_listed.setdefault(_job(row), row["served_from"])
 
     # Level changes as (when, key, delta), applied at the first run at or after `when`: a Job
     # stops being `new` at a moment that is rarely a run's own stamp.
@@ -82,7 +87,7 @@ def tick_counts(
         if end is not None:
             changes.append((end, stock, -1))
         if group is not None:
-            new_until = _plus(first_listed[row["id"]], NEW_WINDOW)
+            new_until = _plus(first_listed[_job(row)], NEW_WINDOW)
             if start < new_until:
                 changes.append((start, (board, "new", *group), +1))
                 changes.append(
@@ -93,15 +98,15 @@ def tick_counts(
                     )
                 )
 
-        before = rows[i - 1] if i and rows[i - 1]["id"] == row["id"] else None
+        before = rows[i - 1] if i and _job(rows[i - 1]) == _job(row) else None
         after = (
             rows[i + 1]
-            if i + 1 < len(rows) and rows[i + 1]["id"] == row["id"]
+            if i + 1 < len(rows) and _job(rows[i + 1]) == _job(row)
             else None
         )
         if before is not None and before["served_to"] == start:
             old = groups[i - 1]
-            if old != group:
+            if (before["board"], old) != (board, group):
                 if old is not None:
                     event(start, before["board"], RECOUNTED_OUT, old)
                 if group is not None:

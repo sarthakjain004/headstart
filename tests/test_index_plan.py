@@ -1489,3 +1489,56 @@ def test_requisitions_on_workday_rows_leave_adr_0187_unchanged():
     assert plan_sync(
         *args, site_jobs=_SITE_JOBS, requisitions=stamps, backing=_BACKING
     ) == plan_sync(*args, site_jobs=_SITE_JOBS)
+
+
+_RANKED_CASES = {
+    "case-variant": (
+        ["workday:co/Site:R1", "workday:co/site:R1"],
+        {"workday:co/site"},
+        {},
+        {},
+    ),
+    "workday-tenant": ([f"{_SUB}:R-100", f"{_MAIN}:R-100"], {_MAIN, _SUB}, {}, {}),
+    "tenant-requisition": (
+        [
+            f"{_TENANT_BOARDS['taleo_be'][1]}:5706",
+            f"{_TENANT_BOARDS['taleo_be'][0]}:5706",
+        ],
+        set(_TENANT_BOARDS["taleo_be"][:2]),
+        {},
+        {},
+    ),
+    "backing-requisition": (
+        [f"{_EF}:1099", f"{_MAIN}:R-100"],
+        {_EF, _MAIN},
+        {f"{_EF}:1099": "R-100", f"{_MAIN}:R-100": "R-100"},
+        _BACKING,
+    ),
+    "no duplicate": (
+        ["greenhouse:acme:4001", "greenhouse:acmeeu:4001"],
+        {"greenhouse:acme", "greenhouse:acmeeu"},
+        {},
+        {},
+    ),
+}
+
+
+@pytest.mark.parametrize("case", sorted(_RANKED_CASES))
+def test_the_lowest_ranked_member_of_each_group_is_the_one_prune_keeps(case):
+    """ADR-0330: a Restatement folds duplicates by rank, so the ranking must pick exactly what
+    `plan_prune` keeps."""
+    from headstart.ingest.index_plan import duplicate_ranks
+
+    ids, keep, reqs, backing = _RANKED_CASES[case]
+    off, dup = plan_prune(
+        ids, keep, site_jobs=_SITE_JOBS, requisitions=reqs, backing=backing
+    )
+    ranks = duplicate_ranks(
+        ids, keep, site_jobs=_SITE_JOBS, requisitions=reqs, backing=backing
+    )
+    best: dict = {}
+    for job_id, (group, rank) in ranks.items():
+        if group not in best or rank < ranks[best[group]][1]:
+            best[group] = job_id
+
+    assert set(best.values()) == set(ids) - set(off) - set(dup)

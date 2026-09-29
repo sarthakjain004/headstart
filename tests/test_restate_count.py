@@ -41,6 +41,13 @@ def _place(row) -> tuple[str, str] | None:
     return DE if "Data" in title else SE
 
 
+#: A shard names a Workday Board by its careers URL; `board_key_of` turns it into the Board key.
+_SCRAPER_KEYS = {
+    "workday:acme/External": "workday:https://acme.wd1.myworkdayjobs.com/External",
+    "workday:acme/Campus": "workday:https://acme.wd1.myworkdayjobs.com/Campus",
+}
+
+
 def _record(facts: Path, stamp: str, jobs, read: set[str]) -> None:
     lines = jf.ScrapedLines(facts / jf.SCRAPED_LINES)
     for board, job in jobs:
@@ -49,7 +56,9 @@ def _record(facts: Path, stamp: str, jobs, read: set[str]) -> None:
         authoritative=frozenset(lower_key(b) for b in read), keep_set=None, live={}
     )
     reads = jf.board_reads(
-        [ShardReport(boards_ok=sorted(read))], lines.board_lines, scope
+        [ShardReport(boards_ok=sorted(_SCRAPER_KEYS.get(b, b) for b in read))],
+        lines.board_lines,
+        scope,
     )
     jf.record_run(lines.close(), facts, stamp, reads, scope)
     (facts / jf.SCRAPED_LINES).unlink(missing_ok=True)
@@ -65,7 +74,8 @@ def _ticks(tmp_path: Path, steps):
     )
     first_reads: dict[str, str] = {}
     for row in reads.to_pylist():
-        first_reads.setdefault(lower_key(row["board"]), row["run"])
+        if row["board"] is not None:
+            first_reads.setdefault(lower_key(row["board"]), row["run"])
     return list(rc.tick_counts(served, rr.runs(facts), first_reads, _place))
 
 
@@ -156,3 +166,81 @@ def test_a_job_counts_as_new_for_seven_days_after_it_was_first_listed(tmp_path):
 
     # listed on the 1st: new on the 1st, 3rd and 6th, not on the 9th or 12th
     assert new == [1, 1, 1, 0, 0]
+
+
+MAIN, SUB = "workday:acme/External", "workday:acme/Campus"
+SITE_JOBS = {"workday:acme/external": 900, "workday:acme/campus": 40}
+
+
+def _folded_ticks(tmp_path: Path, steps):
+    """The Workday tenant's two sites, one requisition: `index prune` keeps the External copy."""
+    from headstart.ingest.index_plan import boards_by_canon, duplicate_ranks
+
+    facts = tmp_path / "facts"
+    keep = {MAIN, SUB}
+    for stamp, (jobs, read) in zip(RUNS, steps, strict=False):
+        _record(facts, stamp, jobs, read)
+    reads = rr.board_reads(facts)
+    live = boards_by_canon(keep)
+    served = rs.served_intervals(
+        rr.job_versions(facts),
+        reads,
+        is_tech=lambda t, d: True,
+        live=live,
+        keep_set=None,
+    )
+    ranks = duplicate_ranks(served["id"].to_pylist(), keep, site_jobs=SITE_JOBS)
+    folded = rs.fold_duplicates(served, ranks)
+    first_reads: dict[str, str] = {}
+    for row in reads.to_pylist():
+        if row["board"] is not None:
+            first_reads.setdefault(lower_key(row["board"]), row["run"])
+    return list(rc.tick_counts(folded, rr.runs(facts), first_reads, _place))
+
+
+def _stock(ticks, i: int) -> dict:
+    _, levels, _ = ticks[i]
+    return {k: n for k, n in levels.items() if k[1] == "stock"}
+
+
+def test_two_copies_of_one_requisition_count_once_on_the_site_prune_keeps(tmp_path):
+    ticks = _folded_ticks(
+        tmp_path,
+        [([(SUB, _job(f"{SUB}:R-100")), (MAIN, _job(f"{MAIN}:R-100"))], {MAIN, SUB})],
+    )
+
+    assert _stock(ticks, 0) == {(MAIN, "stock", *SE): 1}
+
+
+def test_the_kept_copy_arriving_later_takes_over_without_a_closure(tmp_path):
+    ticks = _folded_ticks(
+        tmp_path,
+        [
+            ([(SUB, _job(f"{SUB}:R-100"))], {MAIN, SUB}),
+            ([(SUB, _job(f"{SUB}:R-100")), (MAIN, _job(f"{MAIN}:R-100"))], {MAIN, SUB}),
+        ],
+    )
+
+    assert _stock(ticks, 1) == {(MAIN, "stock", *SE): 1}
+    assert _metric(ticks, 1, rc.CLOSED) == Counter()
+    assert _metric(ticks, 1, rc.OPENED) == Counter()
+    assert _metric(ticks, 1, rc.RECOUNTED_OUT) == Counter(
+        {(SUB, rc.RECOUNTED_OUT, *SE): 1}
+    )
+    assert _metric(ticks, 1, rc.RECOUNTED_IN) == Counter(
+        {(MAIN, rc.RECOUNTED_IN, *SE): 1}
+    )
+
+
+def test_a_copy_left_when_the_kept_one_goes_still_counts_the_posting(tmp_path):
+    ticks = _folded_ticks(
+        tmp_path,
+        [
+            ([(SUB, _job(f"{SUB}:R-100")), (MAIN, _job(f"{MAIN}:R-100"))], {MAIN, SUB}),
+            ([(SUB, _job(f"{SUB}:R-100"))], {MAIN, SUB}),
+            ([(SUB, _job(f"{SUB}:R-100"))], {MAIN, SUB}),
+        ],
+    )
+
+    assert _stock(ticks, 2) == {(SUB, "stock", *SE): 1}
+    assert sum(_metric(ticks, 2, rc.CLOSED).values()) == 0
