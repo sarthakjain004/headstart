@@ -932,7 +932,7 @@ def test_a_caller_cannot_claim_the_in_process_mark_with_a_header(auth_app, monke
 
 # ---- the app's own mark on every reply (ADR-0253) ----
 
-_OWN_REPLY = "app; agent-api=11"
+_OWN_REPLY = "app; agent-api=12"
 
 
 def test_a_routes_own_answer_is_marked(auth_app):
@@ -4938,6 +4938,56 @@ def test_the_index_leaves_out_the_runs_a_companys_line_leaves_out(
             assert all(s["turnover"]["opened"][j] is None for s in index["series"]), ts
     if query:  # comparable: HPE's run-3 turnover is out, Citi's one-site Board's stays
         assert opened[2] == 5
+
+
+_READ_EXPERIENCE = (
+    "we read experience and salary from job posts more accurately, so some jobs moved to a "
+    "different experience level"
+)
+_SPOT_DUPLICATES = (
+    "we got better at spotting the same job posted twice, so some jobs were added to or "
+    "dropped from the counts"
+)
+
+
+@pytest.mark.parametrize(
+    ("changed", "fields", "software"),
+    [
+        # An extraction change re-sorts levels and opens or closes nothing: its run stays in.
+        (
+            [_READ_EXPERIENCE],
+            ["derivations_version"],
+            {"opened": 7, "closed": 7, "net": 0},
+        ),
+        # With duplicate removal too, HPE's two sites come out Board by Board in both views.
+        (
+            [_READ_EXPERIENCE, _SPOT_DUPLICATES],
+            ["derivations_version", "dedup_version"],
+            {"opened": 5, "closed": 0, "net": 5},
+        ),
+    ],
+)
+def test_a_categorys_turnover_is_the_same_in_the_index_and_in_its_own_view(
+    company_trends, trends_app, monkeypatch, tmp_path, changed, fields, software
+):
+    """A category's opened and closed are one figure whichever view reads it (ADR-0336): the
+    index's line for it, and its own view's first row, over the same runs. Its level lines alone
+    leave out the run an extraction change re-sorted them on, whose jump they take out whole.
+    Before, the category's view left that run out of its first row too, and AI/ML read 1,654
+    opened as a line of the index and 1,254 as its own view over the same 3.6 days."""
+    _with_turnover(trends_app, monkeypatch, tmp_path, _HPE_TURNOVER)
+    epoch = {"ts": _T3, "changed": changed, "fields": fields}
+    monkeypatch.setattr(trends_app._HISTORY, "_epochs", [epoch])
+    index = company_trends.get("/trends").get_json()
+    lines = {r["name"]: r["move"]["turnover"] for r in index["reading"]["lines"]}
+    assert lines["software-engineering"] == software
+    for family, turnover in lines.items():
+        view = company_trends.get(f"/trends?family={family}").get_json()
+        assert view["reading"]["reconciles"], family
+        assert view["reading"]["total"]["move"]["turnover"] == turnover, family
+        assert view["turnover_left_out"] == index["turnover_left_out"], family
+        for level in view["reading"]["lines"]:
+            assert level["move"]["turnover"]["opened"] == 0, (family, level["name"])
 
 
 def test_no_turnover_off_openings(company_trends, trends_app, monkeypatch, tmp_path):

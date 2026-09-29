@@ -716,7 +716,9 @@ def _keep_static_for_the_boot(response):
 # 11: /requirements counts one Job per requisition under `jobs` keys, names a Board that names no
 # company by the directory, and says its `read`, `distinct`, `sample_size` and `category_window`
 # (ADR-0332).
-_AGENT_API_VERSION = 11
+# 12: /trends gives a category's opened and closed as the index's line for it, in the category's
+# own view too; only its level lines leave out an extraction change's runs (ADR-0336).
+_AGENT_API_VERSION = 12
 
 
 @app.after_request

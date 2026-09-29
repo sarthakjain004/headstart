@@ -1368,6 +1368,51 @@ def test_trends_lead_with_postings_opened_and_closed_and_never_call_the_rest_hir
     assert "netted" not in text and "steps_at" not in text
 
 
+@pytest.mark.parametrize(
+    ("levels", "said"),
+    [
+        # The levels leave out a re-sorting run the category keeps: said, with both figures.
+        (
+            [(300, 400), (100, 150)],
+            (
+                "The levels add up to 400 opened and 550 closed, not the first row's 1,654 "
+                "and 1,821: each level also leaves out the runs an experience-reading change "
+                "re-sorted levels on, which the first row keeps."
+            ),
+        ),
+        # Levels that add up to the first row need no sentence.
+        ([(1_000, 1_000), (654, 821)], None),
+    ],
+)
+def test_a_level_breakdown_says_where_its_levels_add_up_to_less_than_the_category(
+    levels, said
+):
+    """ADR-0336: a category's own view reads the same opened and closed as its line in the
+    whole index (AI/ML read 1,654 and 1,254). Its levels leave out more runs, and the answer
+    says so rather than let the two sums pass for one figure."""
+    total = _move(
+        31_365, 36_368, 5_003, turnover={"opened": 1_654, "closed": 1_821, "net": -167}
+    )
+    lines = [
+        _line(
+            f"b{i}",
+            f"Band {i}",
+            _move(100, 100, 0, turnover={"opened": o, "closed": c, "net": o - c}),
+        )
+        for i, (o, c) in enumerate(levels)
+    ]
+    space = FakeSpace(
+        trends=_trends(lines, total=_line("__total__", "", total), marked=[])
+    )
+    text = server.call(space, "read_trends", {"category": "ai-ml-data-science"})
+    assert "By level" in text
+    assert "1,654 opened, 1,821 closed, net -167." in text
+    if said:
+        assert said in text
+    else:
+        assert "The levels add up to" not in text
+
+
 def test_lines_rank_by_their_net_and_a_cut_says_how_to_see_them_all():
     text = server.call(
         FakeSpace(trends=_trends(_category_lines(12))), "read_trends", {}

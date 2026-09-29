@@ -170,15 +170,15 @@ def moves_lines(fields, bands: bool) -> bool:
     )
 
 
-def left_out_runs(
-    epochs: list[dict], stamps: list[str], bands: bool
-) -> tuple[set[int], set[int]]:
+def left_out_runs(epochs: list[dict], stamps: list[str]) -> tuple[set[int], set[int]]:
     """The charted runs a company's whole line leaves out of its hiring: ``(for every Board, for
     a Board duplicate removal can move)``. A counting change that moves lines leaves out its run
     and the run after it; a duplicate-removal change alone does so only where it can move a
     Board. A change on the window's first run is already in every line's start. The index's
     turnover leaves these out Board by Board, so it is the sum of what every company's view
-    shows (ADR-0227)."""
+    shows (ADR-0227). An extraction change is none of them: it re-sorts a category's levels,
+    never its total, so a category keeps its turnover whichever view reads it, and only its
+    level lines leave that run out (`_hiring_turnover`, ADR-0336)."""
     every: set[int] = set()
     touched: set[int] = set()
     for epoch in epochs:
@@ -187,7 +187,7 @@ def left_out_runs(
         i = stamps.index(epoch["ts"])
         fields = epoch.get("fields") or []
         runs = {j for j in (i, i + 1) if j < len(stamps)}
-        if moves_lines(fields, bands):
+        if moves_lines(fields, bands=False):
             every |= runs
         elif _DEDUP in fields:
             touched |= runs
@@ -345,6 +345,8 @@ def _notes(answer: dict, served: bool = False) -> list[dict]:
             "source": None,
             "touched": [],
             "bands_only": False,
+            # a change that re-sorts a category's levels, on a Level breakdown (ADR-0336)
+            "re_sorts_levels": False,
             "dedup_only": False,
             "whole_only": False,
             # each line's own size, where a step is known line by line (the index's Found
@@ -420,6 +422,7 @@ def _notes(answer: dict, served: bool = False) -> list[dict]:
                 f in LINE_MOVING_FIELDS or f in (_DEDUP, NEW_BECAME_INFLOW)
                 for f in fields
             ),
+            "re_sorts_levels": bands and _DERIVATIONS in fields,
             "dedup_only": dedup_only,
             "kind": "duplicates" if dedup_only and metric == "new" else "counting",
         }
@@ -879,6 +882,15 @@ def _hiring_turnover(view: _View, line: _Line) -> dict[str, int] | None:
             if jump and jump.lift is None:
                 left.update(range(last + 1, j + 1))
             last = j
+    elif line.name != _TOTAL:
+        # The Space left out every other change's runs Board by Board (`left_out_runs`). An
+        # extraction change's whole jump comes out of a level line, so its runs' turnover does
+        # too; the category's own line keeps it, as the index's line for it does (ADR-0336).
+        left = {
+            view.notes[k]["i"]
+            for k in _line_notes(view, line)
+            if view.notes[k]["re_sorts_levels"]
+        }
     opened = closed = 0
     seen = False
     for j, v in enumerate(turnover["opened"]):

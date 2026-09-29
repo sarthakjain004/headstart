@@ -1521,7 +1521,7 @@ class TrendHistory:
         # own line leaves out, so the index's opened and closed are the sum of what every
         # company's view shows.
         left_out: tuple[set[int], set[int]] = (
-            netting.left_out_runs(epochs, stamps, key == "band")
+            netting.left_out_runs(epochs, stamps)
             if company_of is None
             else (set(), set())
         )
