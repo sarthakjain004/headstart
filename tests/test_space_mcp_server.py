@@ -826,7 +826,8 @@ def test_one_posting_on_two_boards_under_two_spellings_is_listed_once():
         ),
     ]
     text = server.call(_search_space(rows), "search_jobs", {"query": "x"})
-    assert "first city and countries under another spelling of the company" in text
+    assert "first city and countries under another spelling of the company;" in text
+    assert "countries and stated pay under a shorter or longer name of it" in text
     assert 'also #2: 0.88 "Eversource Energy" · "Berlin, CT; Westwood, MA;' in text
     # Another place under the other spelling is not the same posting.
     assert ' 3. 0.87 "IT Associate Software Engineer" · "Eversource Energy"' in text
