@@ -190,6 +190,6 @@ gap, recorded in ADR-0223.
 
 ## Amendment (2026-09-29): a twin host's sections are compared too (#888)
 
-The cross-host pairs under Consequences are one tenant answering under two hosts. The same writer
-now buries a twin host's section onto the employer's host's section that lists all its reqs, for
-the pairs named in its `TWIN_HOSTS`: [ADR-0307](0307-a-taleo-section-its-twin-host-mirrors-is-buried-onto-the-linked-host.md).
+Each cross-host pair under Consequences is one Taleo customer served under two hosts. The same
+writer now buries a twin host's section onto its linked host's section at the same path, or onto
+one that lists all its reqs, for the pairs named in its `TWIN_HOSTS`: [ADR-0307](0307-a-taleo-section-its-twin-host-mirrors-is-buried-onto-the-linked-host.md).
