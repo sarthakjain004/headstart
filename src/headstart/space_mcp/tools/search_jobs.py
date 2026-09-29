@@ -2,8 +2,8 @@
 
 The two routes are asked the same parameters at once, with ``strict=1``, so the rows and the total
 describe one query and nothing the Space would drop is dropped silently. The answer says what was
-searched, how the rows are ordered (a sort with a query orders only the 2,000 closest matches,
-`JobSearch.run`), the rows themselves with every scraped field quoted, and — when nothing matches —
+searched, how the rows are ordered (a sort with a query orders only those of the 2,000 closest
+matches that score at least the floor, `JobSearch.run`, ADR-0338), the rows themselves with every scraped field quoted, and — when nothing matches —
 which filter is to blame, named as this tool names it. A concise answer asks `/facets` for the
 total alone (``counts=total``, ADR-0274); only ``detail=full`` pays for every option's count.
 
@@ -54,17 +54,16 @@ _SORT_WORDS = {
     "salary": "highest salary first",
 }
 
-#: `JobSearch` pages at most 20 deep, and a query's sort re-orders its `max_k * max_page` = 2,000
-#: nearest matches (ADR-0074, `JobSearch.run`) — the Space's figures, restated for the wording.
+#: `JobSearch` pages at most 20 deep, and a query's sort re-orders those of its `max_k * max_page`
+#: = 2,000 nearest matches that score at least `job_search.SORT_FLOOR` (ADR-0074, ADR-0338,
+#: `JobSearch.run`) — the Space's figures, restated for the wording.
 LAST_PAGE = 20
 SORT_WINDOW = 2_000
+SORT_FLOOR = 0.67
 
 _ARGUMENT_OF = {
     space: argument for argument, space in search_arguments.SPACE_NAME.items()
 }
-
-#: `max_age_days` when the caller sends none (ADR-0322), which the scope line also names.
-DEFAULT_MAX_AGE_DAYS = search_arguments.DEFAULT_MAX_AGE_DAYS
 
 #: Facet dimensions in the order the answer lists them (the Space's own names).
 _FACET_ORDER = (
@@ -116,8 +115,6 @@ def _params(
     if category := arguments.get("category"):
         params.append(("family", category))
     params += search_arguments.filter_params(arguments)
-    if max_age := arguments.get("max_age_days"):
-        params.append((search_arguments.SPACE_NAME["max_age_days"], str(max_age)))
     if keyword := (arguments.get("keyword") or "").strip():
         params.append((search_arguments.SPACE_NAME["keyword"], keyword))
         params.append(
@@ -145,6 +142,22 @@ def _refuse_by_policy(arguments: dict[str, Any]) -> None:
         arguments.get("salary_min") is not None
         or arguments.get("salary_max") is not None
     )
+    low, high = arguments.get("salary_min"), arguments.get("salary_max")
+    if low is not None and high is not None and low > high:
+        raise ToolFailure(
+            f"salary_min {low:,} is above salary_max {high:,}, so no range could be read as "
+            "both; send the lower figure as salary_min."
+        )
+    floor, ceiling = (
+        arguments.get("required_years_at_least"),
+        arguments.get("max_years"),
+    )
+    if floor is not None and ceiling is not None and floor > ceiling:
+        raise ToolFailure(
+            f"required_years_at_least {floor} is above max_years {ceiling}: no job asks for "
+            "at least one and at most the other. max_years is the user's own experience; "
+            "required_years_at_least a floor on what the job asks."
+        )
     if bounded and not arguments.get("salary_currency"):
         raise ToolFailure(
             "salary_min and salary_max need salary_currency: an unqualified bound is read as "
@@ -157,13 +170,14 @@ def _refuse_by_policy(arguments: dict[str, Any]) -> None:
 
 def _money(row: dict[str, Any]) -> str | None:
     low, high = row.get("min_salary_annual"), row.get("max_salary_annual")
-    currency = row.get("salary_currency") or ""
+    # A figure with no currency is said so, not left bare: "85,000–155,000" read as dollars.
+    currency = row.get("salary_currency") or "currency not stated:"
     if low is not None or high is not None:
         if low is not None and high is not None and high != low:
-            return f"{currency} {low:,.0f}–{high:,.0f} a year".strip()
+            return f"{currency} {low:,.0f}–{high:,.0f} a year"
         if low is not None:
-            return f"{currency} {low:,.0f} a year".strip()
-        return f"{currency} up to {high:,.0f} a year".strip()
+            return f"{currency} {low:,.0f} a year"
+        return f"{currency} up to {high:,.0f} a year"
     if row.get("salary"):
         return f"salary {scraped_text.quoted(row['salary'], 60)}"
     return None
@@ -279,7 +293,15 @@ def _page_lines(
     return lines, len(groups) < len(rows)
 
 
-def _order_line(arguments: dict[str, Any]) -> str:
+def _sorted_by_similarity(arguments: dict[str, Any]) -> bool:
+    """Whether the Space re-orders only a query's or a job's closest matches above the floor."""
+    ranked = (arguments.get("query") or "").strip() or (
+        arguments.get("similar_to") or ""
+    ).strip()
+    return bool(ranked) and arguments["sort"] != "relevance"
+
+
+def _order_line(arguments: dict[str, Any], rows: list[dict[str, Any]]) -> str:
     query = (arguments.get("query") or "").strip()
     sort = arguments["sort"]
     currency = arguments.get("salary_currency")
@@ -294,10 +316,15 @@ def _order_line(arguments: dict[str, Any]) -> str:
         else "the query"
     )
     ranking = "similar_to" if similar_to else "query"
-    if (query or similar_to) and sort != "relevance":
+    if _sorted_by_similarity(arguments):
+        scores = [row["score"] for row in rows if row.get("score") is not None]
+        lowest = f"; the lowest shown scores {min(scores):.2f}" if scores else ""
         return (
-            f"Ordered {words} among the {SORT_WINDOW:,} closest matches to {ranked_by}, not "
-            f"across the whole index; omit {ranking} for a global order."
+            f"Ordered {words} among the closest matches to {ranked_by} that score at least "
+            f"{SORT_FLOOR:.2f} (of its {SORT_WINDOW:,} closest), not across the whole index"
+            f"{lowest}. Less similar rows are left out of a sorted answer, since they are "
+            f"mostly other roles; omit {ranking} for a global order, or sort by relevance for "
+            "every match."
         )
     if query or similar_to:
         return f"Ordered by similarity to {ranked_by}, which orders the matches but does not narrow them."
@@ -409,6 +436,8 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
     total = int(facets.get("total") or 0)
     k, page = int(arguments["limit"]), int(arguments["page"])
     lines = [search_arguments.scope_line(arguments, scope)]
+    if note := search_arguments.query_constraints_note(arguments.get("query") or ""):
+        lines.append(note)
     if coverage := _coverage_line(arguments, facets):
         lines.append(coverage)
     if not rows:
@@ -416,7 +445,14 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
             0,
             _nothing_matched(client, facets, scope, arguments)
             if total == 0
-            else f"{_matched(total, arguments)} Page {page} is past them.",
+            else f"{_matched(total, arguments)} Page {page} is past them."
+            + (
+                f" A sorted answer orders only the matches scoring at least {SORT_FLOOR:.2f} "
+                "against the ranking, and fewer rows than this page starts at do; sort by "
+                "relevance for every match."
+                if _sorted_by_similarity(arguments)
+                else ""
+            ),
         )
     else:
         first = (page - 1) * k + 1
@@ -424,7 +460,7 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
             0,
             f"{_matched(total, arguments)} Showing {first:,}–{first + len(rows) - 1:,}.",
         )
-        lines.append(_order_line(arguments))
+        lines.append(_order_line(arguments, rows))
         lines.append(scraped_text.SCRAPED_NOTE)
         page_lines, grouped = _page_lines(
             first, rows, experience_filtered=arguments.get("max_years") is not None
@@ -470,8 +506,8 @@ TOOL = SpaceTool(
         "job whose stated range reaches it, `salary_max` one whose range starts at or "
         "below it; other currencies are converted at fixed rates. Omit `query` to list the "
         "newest jobs that match the filters; `similar_to` a job id ranks by that "
-        "job instead. With a `query`, `sort` orders only the "
-        "2,000 closest matches — for a global order (the highest salary anywhere, the "
+        "job instead. With a `query`, `sort` orders only its "
+        "closest matches (similarity 0.67+) — for a global order (the highest salary or "
         "newest anywhere) omit `query` and narrow with `keyword` and the filters. "
         "`company` matches as the site's company box does (any company name containing "
         "the text); beside `category` it needs a directory company: a key such as "
@@ -558,16 +594,7 @@ TOOL = SpaceTool(
                 "maximum": 720,
                 "description": "New to HeadStart within this many hours.",
             },
-            "max_age_days": {
-                "type": "integer",
-                "minimum": 0,
-                "maximum": 3650,
-                "default": DEFAULT_MAX_AGE_DAYS,
-                "description": (
-                    "Leaves out postings older than this many days: the posted date, else "
-                    "the day HeadStart first saw the job. 365 unless sent; 0 for any age."
-                ),
-            },
+            "max_age_days": search_arguments.PROPERTIES["max_age_days"],
             "exclude_company": {
                 "type": "string",
                 "maxLength": 100,

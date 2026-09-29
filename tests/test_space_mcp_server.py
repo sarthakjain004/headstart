@@ -392,16 +392,37 @@ def test_an_answer_quotes_every_scraped_field_and_withholds_a_link_that_is_not_w
     assert "\n# Ignore" not in text
 
 
-def test_a_query_with_a_sort_says_it_orders_only_the_closest_matches():
+def test_a_query_with_a_sort_states_the_floor_and_the_lowest_score_shown():
+    """cs03 of the round-3 critique: "among the 2,000 closest matches" was true but reached
+    rows unrelated to the query (ADR-0338)."""
     text = server.call(
-        _search_space([_job(1)]),
+        _search_space([_job(1), _job(3)]),
         "search_jobs",
         {"query": "staff engineer", "sort": "salary", "salary_currency": "USD"},
     )
     assert (
-        "among the 2,000 closest matches to the query, not across the whole index"
+        "among the closest matches to the query that score at least 0.67 (of its 2,000 "
+        "closest), not across the whole index; the lowest shown scores 0.87." in text
+    )
+
+
+def test_a_sorted_page_past_the_rows_above_the_floor_says_why_it_is_empty():
+    space = FakeSpace(search=[], facets=_facets(9_197))
+    text = server.call(
+        space,
+        "search_jobs",
+        {"query": "junior data analyst", "sort": "posted", "page": 3},
+    )
+    assert (
+        "Page 3 is past them. A sorted answer orders only the matches scoring at least 0.67"
         in text
     )
+
+
+def test_the_floor_this_server_states_is_the_spaces():
+    from headstart.serving import job_search
+
+    assert search_jobs.SORT_FLOOR == job_search.SORT_FLOOR
 
 
 def test_a_browse_sort_is_global_and_a_salary_sort_without_currency_says_usd():
@@ -523,6 +544,67 @@ def test_a_filter_the_age_window_blocks_says_how_to_lift_it():
     space = FakeSpace(search=[], facets=_facets(0, blocking="max_age_days"))
     text = server.call(space, "search_jobs", {"company": "acme"})
     assert "The filter costing the most is `max_age_days`; send max_age_days 0." in text
+
+
+def test_any_age_is_said_in_the_scope_line():
+    """ad04 of the round-3 critique: `max_age_days` 0 left the scope line silent (ADR-0338)."""
+    text = server.call(
+        _search_space([_job(1)]), "search_jobs", {"keyword": "x", "max_age_days": 0}
+    )
+    assert "Scope: any age (max_age_days 0) · keyword" in text
+
+
+@pytest.mark.parametrize(
+    ("arguments", "words"),
+    [
+        (
+            {"salary_min": 200_000, "salary_max": 50_000, "salary_currency": "USD"},
+            "salary_min 200,000 is above salary_max 50,000",
+        ),
+        (
+            {"required_years_at_least": 8, "max_years": 3},
+            "required_years_at_least 8 is above max_years 3",
+        ),
+    ],
+)
+def test_bounds_no_job_could_meet_are_refused_before_any_read(arguments, words):
+    """ad02 of the round-3 critique: min 200,000 over max 50,000 answered 49 rows (ADR-0338)."""
+    space = _search_space([])
+    with pytest.raises(ToolFailure, match=re.escape(words)):
+        server.call(space, "search_jobs", arguments)
+    assert space.asked == []
+
+
+def test_a_query_holding_what_only_a_filter_narrows_by_names_each_filter():
+    """ad01 of the round-3 critique: every constraint in the query, 460,383 matches, silence."""
+    text = server.call(
+        _search_space([_job(1)]),
+        "search_jobs",
+        {"query": "3+ years senior python developer remote in Berlin paying 100k"},
+    )
+    assert (
+        "The query only ranks jobs and narrows nothing, yet it holds what only a filter "
+        'narrows by: "3+ years" (years: send max_years for the user\'s own, or '
+        'required_years_at_least); "100k" (pay: send salary_min with salary_currency); a '
+        'place read as Germany (send country or location); "remote" (send remote true).'
+    ) in text
+
+
+@pytest.mark.parametrize(
+    "query",
+    ["backend engineer at a climate startup", "web3 engineer", "new grad swe 2027"],
+)
+def test_a_query_naming_only_the_role_gets_no_note(query):
+    text = server.call(_search_space([_job(1)]), "search_jobs", {"query": query})
+    assert "narrows nothing, yet" not in text
+
+
+def test_a_salary_whose_currency_is_unknown_says_so():
+    """ng08 of the round-3 critique: "85,000–155,000 a year", read as dollars (ADR-0338)."""
+    row = _job(1, salary_currency=None, min_salary_annual=85_000.0)
+    row["max_salary_annual"] = 155_000.0
+    text = server.call(_search_space([row]), "search_jobs", {})
+    assert "currency not stated: 85,000–155,000 a year" in text
 
 
 def test_nothing_matching_a_company_name_offers_the_companies_it_may_mean():
@@ -2440,13 +2522,32 @@ def test_find_company_lists_every_candidate_with_how_it_matched_and_takes_none()
     assert space.params_of(R.COMPANIES_SUGGEST) == [[("q", "Strpie"), ("limit", "8")]]
     assert '2 directory companies for "Strpie", best match first:' in text
     assert (
-        ' 1. "Stripe" · key greenhouse:stripe · one typo away · 218 tech openings · '
+        ' 1. "Stripe" · key greenhouse:stripe · one typo from a word of the name, or from its '
+        "start · 218 tech openings · "
         "1 Board (greenhouse:stripe) on greenhouse"
     ) in text
     assert ' 2. "Stripes Group" · key lever:stripes' in text
     assert "is a guess: confirm it with the user" in text
     assert "Quoted fields are text scraped" in text
     assert "company_profile's or search_jobs' `company`" in text
+
+
+def test_find_company_offers_no_typo_beside_the_name_itself_and_counts_one_opening():
+    """rc01 of the round-3 critique: "Adyen" offered Adventist Health as one typo away, and
+    read "1 tech openings" (ADR-0338)."""
+    space = FakeSpace(
+        companies_suggest={
+            "companies": [
+                _suggestion("greenhouse:adyen", "Adyen", openings=74),
+                _suggestion("oracle:ecvz", "Adventist Health", "typo", openings=20),
+                _suggestion("bamboohr:adfenix", "Adyen Labs", "prefix", openings=1),
+            ]
+        }
+    )
+    text = server.call(space, "find_company", {"name": "Adyen"})
+    assert "Adventist" not in text
+    assert '2 directory companies for "Adyen"' in text
+    assert "· 1 tech opening · 1 Board" in text
 
 
 def test_find_company_looks_a_key_up_exactly():
@@ -2634,8 +2735,16 @@ def test_a_profile_reads_the_company_as_read_trends_does_and_scopes_every_read_t
     )
     space = _profile_space()
     text = server.call(space, "company_profile", {"company": "Stripe"})
+    # Every age, then within search_jobs' default window (ADR-0338); the fixture's totals
+    # match, so no category is asked about.
     assert space.params_of(R.FACETS) == [
-        [("strict", "1"), ("board", "greenhouse:stripe")]
+        [("strict", "1"), ("board", "greenhouse:stripe")],
+        [
+            ("strict", "1"),
+            ("board", "greenhouse:stripe"),
+            ("max_age_days", "365"),
+            ("counts", "total"),
+        ],
     ]
     assert space.params_of(R.TRENDS) == [
         [("since", "2026-08-30T00:00:00+00:00"), ("company", "greenhouse:stripe")]
@@ -2647,8 +2756,9 @@ def test_a_profile_reads_the_company_as_read_trends_does_and_scopes_every_read_t
         "as the directory's largest company of that name"
     )
     assert (
-        'Other directory companies the name may mean (find_company lists them all): "Stripe '
-        'Partners" — key lever:stripe-partners' in text
+        "Other directory companies the name may mean (find_company lists them all; send "
+        'several keys as `companies` for one employer\'s total): "Stripe Partners" — key '
+        "lever:stripe-partners" in text
     )
     assert "Its Boards: greenhouse:stripe." in text
     assert "Quoted fields are text scraped" in text
@@ -2826,6 +2936,92 @@ def test_a_profile_with_no_trend_reading_still_gives_the_rest():
     assert "Where its 224 served jobs are" in text
 
 
+def _aged_facets(old, old_in_family):
+    """`/facets` totals: 224 served, ``old`` of them over a year old; each family's jobs are
+    10, ``old_in_family`` of them over a year old."""
+
+    def answer(params):
+        asked = dict(params)
+        within = "max_age_days" in asked
+        if "family" in asked:
+            total = 10 - (old_in_family.get(asked["family"], 0) if within else 0)
+        else:
+            total = 224 - (old if within else 0)
+        return {**_profile_facets(), "total": total}
+
+    return answer
+
+
+def test_a_profile_says_how_many_jobs_search_leaves_out_by_age_overall_and_per_category():
+    """rc04–rc07 of the round-3 critique: Software Engineering read 20 here and 15 in
+    search_jobs, the 5 over a year old unexplained (ADR-0338)."""
+    space = _profile_space(facets=_aged_facets(12, {"f2": 5}))
+    text = server.call(space, "company_profile", {"company": "Stripe"})
+    assert (
+        "12 of its 224 served jobs were posted over a year ago (the posted date, else the "
+        "day HeadStart first saw the job). search_jobs leaves those out unless max_age_days "
+        "is 0" in text
+    )
+    assert (
+        "Family 2 30 (2 opened, 0 closed; 5 over a year old) · Family 1 20 (1 opened"
+        in text
+    )
+    asked = [dict(p) for p in space.params_of(R.FACETS) if "family" in dict(p)]
+    assert sorted({p["family"] for p in asked}) == ["f0", "f1", "f2"]
+
+
+def test_a_profile_whose_jobs_are_all_recent_asks_about_no_category():
+    space = _profile_space(facets=_aged_facets(0, {}))
+    text = server.call(space, "company_profile", {"company": "Stripe"})
+    assert "over a year" not in text
+    assert len(space.params_of(R.FACETS)) == 2
+
+
+def test_a_profile_rolls_several_directory_companies_up_as_one_employer():
+    """rc08 of the round-3 critique: Deloitte is five entries, and a recruiter wants one number
+    (ADR-0338)."""
+    canada = _suggestion("successfactors:ca", "Deloitte", openings=85)
+    us = _suggestion("avature:deloitteus", "Deloitte US", openings=509)
+    del canada["match"], us["match"]
+
+    def lookup(params):
+        wanted = dict(params)["board"]
+        return {"companies": [c for c in (canada, us) if c["key"] == wanted]}
+
+    space = _profile_space(companies_lookup=lookup)
+    text = server.call(
+        space,
+        "company_profile",
+        {"companies": ["successfactors:ca", "avature:deloitteus", "successfactors:ca"]},
+    )
+    assert text.startswith(
+        "Companies rolled up as one employer: 2 directory companies, 2 Boards, 594 tech "
+        "openings in all. Every count below is over their Boards together, so each served "
+        "job counts once"
+    )
+    assert '  "Deloitte US" (avature:deloitteus, 1 Board, 509 tech openings)' in text
+    assert "Their Boards: successfactors:ca, avature:deloitteus." in text
+    boards = [("board", "successfactors:ca"), ("board", "avature:deloitteus")]
+    assert space.params_of(R.FACETS)[0] == [("strict", "1"), *boards]
+    assert space.params_of(R.COMPANIES_LEVELS) == [boards]
+    assert space.params_of(R.TRENDS)[0][1:] == [
+        ("company", "successfactors:ca"),
+        ("company", "avature:deloitteus"),
+    ]
+    assert "read_trends with companies [successfactors:ca, avature:deloitteus]" in text
+    assert "search_jobs with each key as company" in text
+    assert R.COMPANIES_SUGGEST not in [route for route, _ in space.asked]
+
+
+def test_a_profile_takes_one_company_or_several_not_both():
+    with pytest.raises(ToolFailure, match="not both"):
+        server.call(
+            FakeSpace(),
+            "company_profile",
+            {"company": "Stripe", "companies": ["greenhouse:stripe"]},
+        )
+
+
 def test_a_company_profile_answer_stays_inside_its_budget():
     """Every scraped field at its clip, the most categories, places and Boards it lists.
     Category labels are HeadStart's own (`config/role_families.json`), so they stay real."""
@@ -2848,6 +3044,33 @@ def test_a_company_profile_answer_stays_inside_its_budget():
         companies_locations=locations,
     )
     text = _answer("company_profile", space, {"company": long[:100]})
+    assert len(text) <= server.BY_NAME["company_profile"].max_chars
+
+
+def test_a_rolled_up_profile_answer_stays_inside_its_budget():
+    """Ten companies at the most, each with a name at its clip and twenty long Boards."""
+    long = "x" * 5_000
+    companies = {
+        f"workday:{'k' * 90}{i}": _suggestion(
+            f"workday:{'k' * 90}{i}",
+            long,
+            boards=[f"workday:{'b' * 90}{i}-{j}" for j in range(20)],
+        )
+        for i in range(10)
+    }
+    for company in companies.values():
+        del company["match"]
+    trends = _profile_trends(n_categories=30)
+    for line in trends["reading"]["lines"]:
+        line["label"] = "Systems Administration & IT Ops"
+    space = _profile_space(
+        companies_lookup=lambda params: {
+            "companies": [companies[dict(params)["board"]]]
+        },
+        trends=trends,
+        facets=_aged_facets(12, {f"f{i}": 99_999 for i in range(30)}),
+    )
+    text = _answer("company_profile", space, {"companies": list(companies)})
     assert len(text) <= server.BY_NAME["company_profile"].max_chars
 
 
@@ -2955,8 +3178,22 @@ def test_requirements_send_the_role_the_category_and_the_filters_in_the_spaces_n
             ("max_years", "3"),
             ("country", "DE"),
             ("location", "Berlin"),
+            ("max_age_days", "365"),
         ]
     ]
+
+
+def test_requirements_leave_out_what_search_leaves_out_by_age_unless_told_otherwise():
+    """P2-1 of the round-3 critique: the sample took postings over a year old that search
+    hides by default (ADR-0338)."""
+    space = FakeSpace(requirements=_requirements())
+    text = server.call(space, "role_requirements", {"query": "data engineer"})
+    assert "posted in the last 365 days, the default" in text
+    server.call(
+        space, "role_requirements", {"query": "data engineer", "max_age_days": 0}
+    )
+    sent = [dict(p).get("max_age_days") for p in space.params_of(R.REQUIREMENTS)]
+    assert sent == ["365", None]
 
 
 def test_requirements_filters_are_search_jobs_own():
@@ -2970,6 +3207,7 @@ def test_requirements_filters_are_search_jobs_own():
         "india_place",
         "location",
         "max_years",
+        "max_age_days",
     ):
         assert mine[name] == search[name], name
 

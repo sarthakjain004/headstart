@@ -23,9 +23,12 @@ MATCH_WORDS = {
     "alias": "a known alias of this company",
     "prefix": "the name starts with it",
     "words": "every word starts a word of the name",
-    "typo": "one typo away",
+    "typo": "one typo from a word of the name, or from its start",
     "joined": "the name with spaces ignored",
 }
+
+#: The matches that name the company typed: its own name, or an alias of it.
+_NAMED = ("exact", "alias")
 
 #: The matches that are a guess, to be confirmed with the user rather than relied on.
 _GUESSES = ("prefix", "words", "typo", "joined")
@@ -49,7 +52,7 @@ def _candidate(number: int, company: company_scope.DirectoryCompany) -> str:
     count = len(company.board_keys)
     return (
         f"{number:>2}. {scraped_text.quoted(company.label, COMPANY_FIELD)} · key {company.key} · {matched} · "
-        f"{company.openings:,} tech openings · {count} Board{'' if count == 1 else 's'} "
+        f"{company.tech_openings()} · {count} Board{'' if count == 1 else 's'} "
         f"({boards}) on {', '.join(company.atses) or 'an ATS'}"
     )
 
@@ -59,6 +62,9 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
     if not name:
         raise ToolFailure("find_company needs `name`: the company to look up.")
     found, read_as = company_scope.find(client, name, int(arguments["limit"]))
+    # Beside the name itself, a typo is another company: "Adyen" offered Adventist Health.
+    if any(company.match in _NAMED for company in found):
+        found = [company for company in found if company.match != "typo"]
     lines = [f"{read_as}."] if read_as else []
     if not found:
         lines.append(
