@@ -110,6 +110,7 @@ from headstart.boards.board_identity import board_key, lower_key
 from headstart.boards.company_ref import CompanyRef
 from headstart.scrapers import registry
 from headstart.scrapers.adp_recruiting import SLUG as ADP_RECRUITING_SLUG
+from headstart.scrapers.zwayam import API_HOSTS as ZWAYAM_API_HOSTS
 
 try:
     import dns.resolver
@@ -1125,6 +1126,8 @@ def get(url: str, cap: int = PAGE_CAP) -> tuple[str, str, str]:
 def post_json(url: str, headers: dict, body) -> tuple[dict | None, str]:
     """One bounded public listing POST; stop shared-API probing after a throttle response."""
     host = urlsplit(url).hostname or ""
+    # Zwayam's API clusters share one per-IP quota, so a wall on either bans both (ADR-0303).
+    quota_hosts = ZWAYAM_API_HOSTS if host in ZWAYAM_API_HOSTS else (host,)
     with _post_host_gate(host):
         if host in _post_banned:
             return None, "throttled"
@@ -1134,9 +1137,9 @@ def post_json(url: str, headers: dict, body) -> tuple[dict | None, str]:
                 url, headers=headers, timeout=7, verify=certifi.where(), **kwargs
             )
             if response.status_code == 429 or (
-                host == "public.zwayam.com" and response.status_code == 403
+                host in ZWAYAM_API_HOSTS and response.status_code == 403
             ):
-                _post_banned.add(host)
+                _post_banned.update(quota_hosts)
             if response.status_code != 200:
                 return None, f"http{response.status_code}"
             data = response.json()
