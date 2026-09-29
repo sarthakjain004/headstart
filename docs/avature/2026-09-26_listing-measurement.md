@@ -94,7 +94,9 @@ sibling portal `careersnz` too (4 of 4), so they are closed, not misfiled.
   "FULL_TIME" → full-time; "Part time", "PART_TIME" → part-time; "Contract" → contract;
   "Regular Employee" (EA's "Worker Type") → no flag. A "Job Type" label was dropped from the
   vocabulary: dfiretailgroup and deloittece state "Store", "Store Support Centre" and "Non
-  Consulting" under it.
+  Consulting" under it. It is read again since #946, but only when its value says an employment type
+  (`_EMPLOYMENT_IF_TYPED`), as are "Post Type", "Hire Type", "Pay Class", "Position Type" and
+  "Working time" ("40 hours per week", "Rotation", "Professional" are not types).
 - **Location (Q17)**: 185 pages yield one; none names several places (no `;` or `|` list in any
   value), so one value per posting is what the tenants state.
 - **Language (Q23)** of the 233 descriptions (langdetect): en 203 (87%), de 17, ko 5, it 3, hu 2,

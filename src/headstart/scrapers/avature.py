@@ -61,7 +61,9 @@ requests: eight concurrent fetches sharing the `ScustomPortal` cookie ran at 1.4
 carry JSON-LD, 19 label/value rows in one of two class schemes, 2 neither. Labels are the
 tenant's own words in its own language ("Business Area", "Región", "勤務地"). So the page is read
 through the stable surfaces first — `og:title`, `og:site_name`, JSON-LD — and the label rows
-only through a small vocabulary (:data:`_LOCATION`, :data:`_DEPARTMENT`, :data:`_EMPLOYMENT`).
+only through a small vocabulary (:data:`_LOCATION`, :data:`_DEPARTMENT`, :data:`_EMPLOYMENT`,
+and for labels that also carry non-type values :data:`_EMPLOYMENT_IF_TYPED`, which reads a value
+only when :data:`_EMPLOYMENT_VALUE` says it is an employment type).
 """
 
 from __future__ import annotations
@@ -133,7 +135,7 @@ _LABEL_PAIRS = (
         r"<span[^>]*>(.*?)</span>\s*</p>",
         re.DOTALL,
     ),
-    # bravura and colorado.
+    # `<p class="fieldSetLabel">` then `<div class="fieldSetValue">`: bravura and colorado.
     re.compile(
         r'class="fieldSetLabel[^"]*"[^>]*>(.*?)</p>\s*'
         r'<div[^>]*class="fieldSetValue[^"]*"[^>]*>(.*?)</div>',
@@ -183,24 +185,26 @@ _EMPLOYMENT = (
         r"|worker type|tipo de empleo",
         re.IGNORECASE,
     ),
+    # Anchored, unlike the first: these name the idea whole, and "position type" or "working time"
+    # inside a longer label ("Planned working time", "Ruling position type") would not.
     re.compile(
-        r"^(?:type of contract|position type|employment class"
-        r"|full[- ]?time ?/ ?part[- ]?time)\b",
+        r"^(?:type of contract|employment class|full[- ]?time ?/ ?part[- ]?time)\b",
         re.IGNORECASE,
     ),
 )
 _EMPLOYMENT_IF_TYPED = (
     re.compile(
-        r"^(?:job|post|hire) type\b|^pay class\b|^working (?:time|pattern|schedule)\b",
+        r"^(?:job|post|hire|position) type\b|^pay class\b"
+        r"|^working (?:time|pattern|schedule)\b",
         re.IGNORECASE,
     ),
 )
 #: What an employment type's value says, for the labels that also carry other kinds of value
 #: ("Job Type": "Experienced", "Store Support Centre", "Non Consulting"; "Working time": "40 hours
-#: per week", "Rotation" on vanoord, 2026-09-29).
+#: per week", "Rotation" on vanoord; "Position Type": "Professional" on volvogroup, 2026-09-29).
 _EMPLOYMENT_VALUE = re.compile(
     r"\b(?:full|part)[- ]?time\b|\bpermanent\b|\bcontract|\btemporary\b|\bintern(?:ship)?\b"
-    r"|\bregular\b|\bcasual\b|\bseasonal\b|\bfreelance\b",
+    r"|\bregular\b|\bcasual\b|\bseasonal\b|\bfreelance\b|\bfixed[- ]term\b|\bemployee\b",
     re.IGNORECASE,
 )
 #: A title stated as a label, where `og:title` is empty (bradyplus: "Name").
@@ -599,6 +603,7 @@ def page_fields(page: str) -> dict[str, Any]:
         next(iter(_MAIN.findall(page)), None),
     )
     remote_text = _labelled(labels, _REMOTE)
+    typed_labels = {k: v for k, v in labels.items() if _EMPLOYMENT_VALUE.search(v)}
     return {
         "title": _page_title(og.get("title"), _plain_text(str(ld.get("title") or "")))
         or _labelled(labels, _TITLE),
@@ -610,10 +615,7 @@ def page_fields(page: str) -> dict[str, Any]:
         or None,
         "employment_type": ld.get("employment_type")
         or _labelled(labels, _EMPLOYMENT)
-        or _labelled(
-            {k: v for k, v in labels.items() if _EMPLOYMENT_VALUE.search(v)},
-            _EMPLOYMENT_IF_TYPED,
-        ),
+        or _labelled(typed_labels, _EMPLOYMENT_IF_TYPED),
         "posted_at": ld.get("posted_at") or None,
         "remote": ld.get("remote") or (is_remote(remote_text) if remote_text else None),
         "description": next(filter(None, map(html_to_text, bodies)), None),
