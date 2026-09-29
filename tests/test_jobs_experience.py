@@ -790,24 +790,58 @@ def test_seniority_leaves_the_rest_of_the_manager_vocabulary_alone():
     assert from_seniority(None, "Software Development Manager") is None
 
 
-# --- the smallest stated requirement wins (ADR-0079, #163) ---------------------------------------
-# Which requirement a multi-requirement description reports used to be decided by position — the
-# leftmost match of the first matching pattern. It is now decided by value: the smallest floor,
-# because the Search filter keeps `min_years <= your_years` and no candidate should lose a job they
-# qualify for. Measured over the 339,192-description store: 39,208 answers move down (median -3,
-# mean -3.7), 977 appear where there were none, none is lost, and exactly one moves up.
+# --- the overall stated requirement wins (ADR-0079, ADR-0357) -----------------------------------
+# Which requirement a multi-requirement description reports used to be decided by position, then
+# by the smallest floor (ADR-0079). It is now the posting's overall requirement (ADR-0357): the
+# largest of the stacked clauses a candidate must all meet, the smallest of the alternative paths a
+# candidate meets one of, and a preferred clause only when nothing else is stated.
 
 
-def test_the_smallest_stated_requirement_wins():
-    # AND-stacked: the posting wants both, so the smaller floor is deliberately over-inclusive —
-    # the alternative hides the job from a candidate holding every year of one requirement.
+def test_the_largest_stacked_requirement_wins():
+    # AND-stacked: the posting wants both, so the candidate needs the larger. The smallest reading
+    # served Google's senior roles as "1+ yrs" to a new graduate's search (round-4 critique P0-1).
     assert from_description(
         "5+ years of experience building distributed systems, including 2+ years of technical "
         "leadership experience"
-    ) == ExperienceSpan(2, None, "regex")
+    ) == ExperienceSpan(5, None, "regex")
     assert from_description(
         "7+ years in software engineering with 2+ years in a people management role"
+    ) == ExperienceSpan(7, None, "regex")
+    assert from_description(
+        "Minimum qualifications: Bachelor's degree or equivalent practical experience. 5 years "
+        "of experience with software development in one or more programming languages. 3 years "
+        "of experience testing, maintaining, or launching software products. 1 year of "
+        "experience with software design and architecture."
+    ) == ExperienceSpan(5, None, "regex")
+
+
+def test_a_preferred_requirement_counts_only_when_nothing_else_is_stated():
+    assert from_description(
+        "Basic Qualifications - 3+ years of non-internship professional software development "
+        "experience Preferred Qualifications - 8+ years of full software development life cycle "
+        "experience"
+    ) == ExperienceSpan(3, None, "regex")
+    assert from_description(
+        "Bachelor's Degree plus 2 years of related work experience (Required) 4-7 years "
+        "Experience as a Technical Writer. (Preferred)"
     ) == ExperienceSpan(2, None, "regex")
+    assert from_description(
+        "Preferred qualifications: 5+ years of experience with Kubernetes"
+    ) == ExperienceSpan(5, None, "regex")
+
+
+def test_levels_in_one_posting_are_alternatives():
+    # A posting hiring at several levels states one requirement per level; each is a way in.
+    assert from_description(
+        "Junior engineers (2-3 years of experience) Sr. engineers (4+ years of experience)."
+    ) == ExperienceSpan(2, 3, "regex")
+
+
+def test_an_age_is_not_a_requirement():
+    assert from_description(
+        "3+ years of relevant experience. At least 18 years of age. Legally authorized to work "
+        "in the United States."
+    ) == ExperienceSpan(3, None, "regex")
 
 
 def test_an_or_alternative_answers_at_its_cheaper_path():
@@ -827,7 +861,7 @@ def test_the_winning_span_keeps_its_own_ceiling():
     # A floor from one sentence carrying a ceiling from another describes no posting anyone wrote.
     assert from_description(
         "8 to 12 years of experience overall, with 2-4 years of experience in Kubernetes"
-    ) == ExperienceSpan(2, 4, "regex")
+    ) == ExperienceSpan(8, 12, "regex")
 
 
 def test_a_requirement_inside_a_longer_match_is_still_a_candidate():
@@ -1108,3 +1142,123 @@ def test_a_degree_substitution_is_not_the_requirement():
     assert from_description(
         "Requires a bachelor's degree and 5+ years of relevant experience, additional years of experience may be considered in lieu of a degree"
     ) == _regex(5)
+
+
+# --- alternatives, sections and guards under the overall reading (ADR-0357) ----------------------
+
+
+def test_an_education_ladder_answers_at_its_cheapest_rung():
+    assert from_description(
+        "Basic Qualifications: Master's degree OR Bachelor's degree and 2 years of Engineering "
+        "experience OR Associate's degree and 6 years of Engineering experience OR High school "
+        "diploma / GED and 8 years of Engineering experience"
+    ) == ExperienceSpan(2, None, "regex")
+    assert from_description(
+        "12+ years related experience (8+ years with a Master's degree)."
+    ) == ExperienceSpan(8, None, "regex")
+    assert from_description(
+        "Option 1: Bachelor's degree in computer science and 3 years' experience in software "
+        "engineering. Option 2: 5 years' experience in software engineering."
+    ) == ExperienceSpan(3, None, "regex")
+
+
+def test_a_masters_or_a_lesser_qualification_rung_is_an_alternative():
+    assert from_description(
+        "BS in a related engineering discipline; and 5 years of related experience working in "
+        "Quality. MS in a related engineering discipline and 4 years of related experience"
+    ) == ExperienceSpan(4, None, "regex")
+    assert from_description(
+        "Higher vocational training in a relevant discipline with 3 years post-related "
+        "experience. Or a secondary educational qualification with 5 years post-related "
+        "experience."
+    ) == ExperienceSpan(3, None, "regex")
+    assert from_description(
+        "Minimum 2 years experience preferred 4 years experience in IT Support."
+    ) == ExperienceSpan(2, None, "regex")
+
+
+def test_years_offered_instead_of_a_credential_leave_the_general_requirement():
+    assert from_description(
+        "4+ years of experience in Civil Engineering or a related field. California PE "
+        "registration in Civil Engineering, or 8+ years of AE experience."
+    ) == ExperienceSpan(4, None, "regex")
+    assert from_description(
+        "Basic Qualifications - 4+ years of Information Technology (IT) experience, or Bachelor's "
+        "degree in computer science - 2+ years of people management experience"
+    ) == ExperienceSpan(2, None, "regex")
+
+
+def test_a_range_from_zero_opens_the_posting_only_as_general_experience():
+    # A way in for a newcomer, whatever the other levels ask.
+    assert from_description(
+        "We are actively seeking multiple levels: Junior: 0 - 3 years of experience + Bachelor's "
+        "Degree Journeyman: 4 - 7 years of experience Senior: 8+ years of experience"
+    ) == ExperienceSpan(0, 3, "regex")
+    # One skill's range from 0 inside a stacked list is not a way in.
+    assert from_description(
+        "Overall 10+ years of experience, including: 5+ years of software engineering "
+        "experience. 0-5 years of (people, process, technical) leadership experience."
+    ) == ExperienceSpan(10, None, "regex")
+    assert from_description(
+        "5-8 years of software developer experience. 0-2 years experience creating "
+        "containerized microservice applications"
+    ) == ExperienceSpan(5, 8, "regex")
+
+
+def test_a_ceiling_answers_when_every_floor_is_preferred():
+    assert from_description(
+        "Requirements: Up to 5 years of experience managing survey projects. "
+        "Preferred Qualifications: 7+ years of progressive project management experience"
+    ) == ExperienceSpan(0, 5, "regex")
+
+
+def test_less_than_n_years_is_a_ceiling():
+    assert from_description("Experience Less than 3 years") == ExperienceSpan(
+        0, 3, "regex"
+    )
+    assert from_description(
+        "You have less than two years of engineering experience."
+    ) == ExperienceSpan(0, 2, "regex")
+    assert from_description("no less than 5 years of experience") == ExperienceSpan(
+        5, None, "regex"
+    )
+
+
+def test_the_employers_own_tenure_is_not_a_requirement():
+    assert from_description(
+        "We bring more than 15 years of experience to every project. 3+ years of Java "
+        "experience required."
+    ) == ExperienceSpan(3, None, "regex")
+    assert from_description(
+        "Our ideal candidate has 5+ years of experience."
+    ) == ExperienceSpan(5, None, "regex")
+
+
+def test_a_range_whose_dash_was_lost_to_encoding_keeps_its_floor():
+    assert from_description(
+        "an Enterprise Architect with 11?15 years of experience in designing systems"
+    ) == ExperienceSpan(11, 15, "regex")
+
+
+def test_netflix_titles_read_on_netflixs_own_ladder():
+    # Netflix's postings that state a number state medians of 3, 5 and 9 at L4, L5 and L6.
+    assert extract(None, None, "Software Engineer (L4) - CKG", "Netflix") == (
+        ExperienceSpan(3, None, "seniority")
+    )
+    assert extract(None, None, "Business Security Partner (L5)", "Netflix") == (
+        ExperienceSpan(5, None, "seniority")
+    )
+    assert extract(None, None, "Creative Tech Researcher 5", "Netflix") == (
+        ExperienceSpan(5, None, "seniority")
+    )
+    assert extract(None, None, "Staff Software Engineer (L6)", "Netflix") == (
+        ExperienceSpan(9, None, "seniority")
+    )
+    # Another employer's titles keep the shared mapping, and a stated number still wins.
+    assert extract(None, None, "Software Engineer (L4) - CKG", "Acme") == (
+        ExperienceSpan(7, None, "seniority")
+    )
+    assert extract(None, None, "Business Security Partner (L5)", "Acme") is None
+    assert extract(
+        None, "5+ years of experience", "Software Engineer (L4)", "Netflix"
+    ) == ExperienceSpan(5, None, "regex")

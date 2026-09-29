@@ -14,12 +14,13 @@ LLM tier is another ``from_*`` chained in :func:`extract`. Keeping each tier pur
 thing unit-testable without I/O.
 
 Six things about Tier 2 are load-bearing and easy to undo by accident (ADR-0060, ADR-0066,
-ADR-0079, ADR-0350):
+ADR-0079, ADR-0350, ADR-0357):
 
-* **The smallest stated requirement wins**, so :func:`_scan` collects every surviving match and
-  selects; it must not return the first one it finds. A description stating several is read at its
-  most permissive, because the Search filter keeps `min_years <= your_years` and the alternatives are as
-  often a cheaper *path* to the same job ("12+ years, or 10+ with a PhD") as an extra demand.
+* **The overall requirement wins** (ADR-0357, amending ADR-0079's smallest), so :func:`_scan`
+  collects every surviving match and selects; it must not return the first one it finds. Stacked
+  clauses are read at their largest ("5 years of software development … 1 year of software
+  design" is 5), alternative paths at their smallest ("12+ years, or 10+ with a PhD" is 10), and a
+  clause under a "Preferred qualifications" heading only when nothing else is stated.
 * **Ranges are tried before single values**, because a single-value pattern will otherwise match at
   a range's ceiling and report it as the floor ("2-4 years" served as 4+).
 * **Every pattern carries its own guard flag.** A pattern that cannot fire without the literal word
@@ -180,8 +181,8 @@ _FOLD = str.maketrans(
 # ("3+ years of production-grade C++ and/or Rust experience" — 37 characters, answering nothing at
 # 30). It sat at 30 only while `_scan` answered with the leftmost match: a wider gap then also
 # decided *which* requirement a multi-requirement description reported, measured at 2,690 jobs,
-# mean +5.7 years. `_scan` now answers with the smallest stated floor regardless of position
-# (ADR-0079), so the width buys recall and nothing else.
+# mean +5.7 years. `_scan` now selects among every stated floor regardless of position (ADR-0079,
+# ADR-0357), so the width buys recall and nothing else.
 # `'` and `"` are here as the *targets* of `_FOLD`, which turns the curly forms into them before
 # any of this runs; `·` and `•` are the bullet characters boards actually emit. The curly forms
 # themselves are deliberately absent — folding means they can never reach a Tier-2 pattern.
@@ -453,8 +454,9 @@ _NARRATIVE_AFTER = re.compile(r"^\s*(?:[Aa][Gg][Oo]\b|at\s+[A-Z])")
 # The leading `\b` is load-bearing: `_DIGITS_OR_WORDS` spells numbers out, and without a boundary
 # any word *ending* in one supplies a floor — "GET THE JOB DONE - 5+ years" read 1-5 off "d-ONE",
 # "Everyone - 6+ years" read 1-6, "on the phone - 8+ years" read 1-8.
+# `?` is an en dash some boards' encoding lost ("11?15 years", Persistent Systems, ADR-0357).
 _RANGE_TAIL = re.compile(
-    r"\b" + _DIGITS_OR_WORDS + r"\s*(?:-|~|to|or|and)\s*$", re.IGNORECASE
+    r"\b" + _DIGITS_OR_WORDS + r"\s*(?:-|~|\?|to|or|and)\s*$", re.IGNORECASE
 )
 
 
@@ -541,6 +543,18 @@ _WINDOW_BEFORE = re.compile(
     r"(?:\d{1,3}\s*(?:-|to)\s*)?$",
     re.IGNORECASE,
 )
+# "We bring more than 15 years of experience to every project", "our team has over 20 years": the
+# employer's own tenure, read immediately before the number like `_WINDOW_BEFORE`. It lost to any
+# real requirement while the smallest floor answered; the largest answers now (ADR-0357). "You
+# bring 5+ years", "we're looking for 5+ years" and "our ideal candidate has 5+ years" are
+# requirements and keep theirs.
+_EMPLOYER_TENURE_BEFORE = re.compile(
+    r"\b(?:we|our\s+(?:founding\s+|leadership\s+)?(?:team|company|firm|founders?|leadership|"
+    r"consultants|experts|staff|people|organi[sz]ation|business|group|agency))\s+"
+    r"(?:have|has|bring|brings|boasts?)\s+"
+    r"(?:(?:well\s+)?over|more\s+than|nearly|almost|about|around|some)?\s*$",
+    re.IGNORECASE,
+)
 
 
 # "up to N years" states a *ceiling*, so reading it as `min_years` inverts the posting — a job open
@@ -624,6 +638,228 @@ def _collapse_paren_number(match: re.Match) -> str:
     return digits.ljust(len(match.group(0)))
 
 
+# --- Choosing the overall requirement among the stated ones (ADR-0357) --------------------------
+# A description states several requirements, and they relate in one of three ways. Read on the
+# served table (2026-09-29), stacked clauses dominate: "8+ years of professional software
+# engineering experience, with 5+ years building distributed systems", Google's "5 years of
+# experience with software development … 1 year of experience with software design". A candidate
+# must meet every one, so the posting's requirement is the largest. Alternative paths are the
+# second shape: "Bachelor's degree and 2 years … OR Associate's degree and 6 years", "12+ years
+# (8+ years with a Master's degree)"; a candidate meets one, so the requirement is the smallest,
+# which is ADR-0079's reason for reading every description that way. The third is a clause under a
+# "Preferred qualifications" heading, which is no requirement at all while another is stated.
+
+#: A degree named in the clause before a number: that clause is one rung of an education ladder.
+_DEGREE = re.compile(
+    r"\b(?:bachelors?|masters?|ph\.?\s?d|doctora\w*|associate'?s?\s+degree|high\s+school|ged|"
+    r"diploma|b\.?s\.?|b\.?a\.?|b\.?tech|m\.?tech|m\.s\.|ms(?=\s+(?:in|degree))|degree)\b",
+    re.IGNORECASE,
+)
+#: An advanced degree, before the number or after it in its clause ("8+ years with a Master's
+#: degree"): a path that trades the degree for years, so its clause is always an alternative. Not
+#: "Scrum Master" or "master data", which are skills.
+_ADVANCED_DEGREE = re.compile(
+    r"(?<!scrum\s)\b(?:masters?(?!\s+data)|ph\.?\s?d|doctora\w*|m\.tech|m\.s\.|"
+    r"ms(?=\s+(?:in|degree)))\b",
+    re.IGNORECASE,
+)
+#: "or" immediately before the number, allowing a list mark, a degree phrase and "at least": "OR 9+
+#: years", "or 2. A bachelor's degree and 5 years", "or Master's degree and 3 years".
+_OR_BEFORE = re.compile(
+    r"\bor\s+(?:\(?\d\)?\.?\s+)?"
+    r"(?:(?:with\s+)?(?:an?\s+)?(?:[\w']+\s+){1,2}(?:degree|qualification|diploma)\s+"
+    r"(?:\w+\s+){0,6}?(?:with|and|plus|\+)\s+)?"
+    r"(?:at\s+least|a\s+minimum\s+of|minimum(?:\s+of)?)?\s*$",
+    re.IGNORECASE,
+)
+#: "Degrees may be substituted for years of experience: 8 years", "in lieu of a degree",
+#: "Alternatively, … plus 5 years", "Option 2: 5 years' experience".
+_SUBSTITUTE = re.compile(
+    r"\b(?:substitut\w*|in\s+lieu|alternatively|option\s*\d)\b", re.IGNORECASE
+)
+#: Years offered in place of a credential named after them: "4+ years of Information Technology
+#: (IT) experience, or Bachelor's degree in computer science".
+_OR_CREDENTIAL_AFTER = re.compile(
+    r"[^.;]{0,80}?\bor\s+(?:an?\s+)?(?:bachelor|master|ph\.?\s?d|associate'?s?\s+degree|"
+    r"(?:\w+\s+)?degree|equivalent\s+(?:degree|education))",
+    re.IGNORECASE,
+)
+#: A level's own parenthetical in a posting hiring at several: "Junior engineers (2-3 years)",
+#: "Software Engineer 4 (9-15 years)".
+_LEVEL_LABEL = re.compile(
+    r"\b(?:junior|jr|senior|sr|mid[\s-]?level|intermediate|lead|staff|principal|associate|"
+    r"(?:engineer|developer|analyst|scientist)\s*(?:[1-5]|i{1,3}|iv|v)|level\s*\w+)\b"
+    r"[^()]{0,25}\(\s*$",
+    re.IGNORECASE,
+)
+#: A range from 0 stated of experience in general, not of one skill: "0-3 years of relevant
+#: experience", "0 - 3 years of experience + Bachelor's Degree", never "0-5 years of (people,
+#: process) leadership experience" or "0-2 years experience creating containerized services".
+_GENERAL_EXPERIENCE_AFTER = re.compile(
+    r"[\d\s~-]{0,8}(?:to\s+\d{1,2}\s*)?\+?\s*(?:years?|yrs?)'?\s+(?:of\s+)?(?:[\w-]+\s+){0,2}?"
+    r"(?:experience|exp)\b(?!\s+(?:with|in|on|using|\w+ing)\b)",
+    re.IGNORECASE,
+)
+#: An entry level named beside a range from 0 in a posting hiring at several levels: "Junior: 0 - 3
+#: years", "0-2 years experience for level 1", "0-3 years of experience in a junior role".
+_ENTRY_LEVEL_NEAR = re.compile(
+    r"\b(?:junior|entry|associate|graduate|fresher|level\s*(?:1|i)\b)", re.IGNORECASE
+)
+#: Headings that open a section of wanted-but-not-required qualifications, and the ones that
+#: open a required section. The later of the two before a number decides which it is under.
+_PREFERRED_HEADING = re.compile(
+    r"\b(?:preferred|desired|desirable|additional|bonus|optional)\s+(?:qualifications?|skills?|"
+    r"experience|requirements?|attributes)\b|\bnice[\s-]to[\s-]haves?\b|\bgood[\s-]to[\s-]have\b|"
+    r"\bbonus\s+points\b|\bpluses\b|\bpreferred\s*:|\bideally,?\s+you\b",
+    re.IGNORECASE,
+)
+_REQUIRED_HEADING = re.compile(
+    r"\b(?:basic|minimum|required|mandatory|essential|key)\s+(?:qualifications?|skills?|"
+    r"experience|requirements?)\b|\brequirements?\s*:|\bmust[\s-]haves?\b|"
+    r"\bwhat\s+you(?:'ll|\s+will)\s+need\b|\bwho\s+you\s+are\b|\byou\s+(?:have|bring)\s*:",
+    re.IGNORECASE,
+)
+#: A clause tagged "(Preferred)" after its number, or ending on "preferred": "4-7 years Experience
+#: as a Technical Writer. (Preferred)", "5+ years of professional experience in application
+#: development preferred.". A skill named preferred at a clause's end ("…, Go preferred.") is read
+#: the same way; that errs toward admitting a candidate, which is the side ADR-0079 chose.
+_TAGGED_PREFERRED = re.compile(
+    r"[^.;()]{0,120}?(?:[.;]?\s*\(\s*(?:preferred|desired|optional|a\s+plus|nice\s+to\s+have)\s*\)"
+    r"|\b(?:is\s+|are\s+|strongly\s+|highly\s+)?(?:preferred|desired|a\s+plus)\s*(?:[.;)]|$))",
+    re.IGNORECASE,
+)
+#: "Minimum 2 years experience preferred 4 years experience in IT Support": the second is wanted.
+_PREFERRED_BEFORE = re.compile(
+    r"\b(?:preferred|ideally|desired)\s*:?\s*$", re.IGNORECASE
+)
+#: How far back from a number its clause may reach for a degree, and forward for an advanced one.
+_CLAUSE_BEFORE, _CLAUSE_AFTER = 140, 60
+_CLAUSE_END = re.compile(r"[.;)]\s")
+
+
+class _Stated(NamedTuple):
+    """One surviving Tier-2 match: its span, where its number starts, whether it is an "up to N"
+    ceiling rather than a floor, and where a range's second number starts."""
+
+    span: ExperienceSpan
+    at: int
+    ceiling: bool
+    top_at: int | None = None
+
+
+def _last_end(pattern: re.Pattern[str], text: str, before: int) -> int:
+    return max((m.end() for m in pattern.finditer(text, 0, before)), default=-1)
+
+
+def _preferred(text: str, at: int) -> bool:
+    """Whether the number at ``at`` sits under a preferred heading, follows "preferred" or is
+    tagged "(Preferred)"."""
+    preferred = _last_end(_PREFERRED_HEADING, text, at)
+    return (
+        preferred > _last_end(_REQUIRED_HEADING, text, at)
+        or bool(_TAGGED_PREFERRED.match(text, at))
+        or bool(_PREFERRED_BEFORE.search(text, max(0, at - 15), at))
+    )
+
+
+def _alternatives(text: str, stated: list[_Stated]) -> list[_Stated]:
+    """The spans that are alternative paths to the job, or [] when the description states none.
+
+    A span is one when its clause names a degree, an advanced degree follows it, "or" or a
+    substitution introduces it, or it is a level's parenthetical; the span just before an "or" is
+    the first path. A range from 0 of experience in general, or beside an entry level, is always
+    one: the posting names a way in for a newcomer, whatever its other levels ask ("Junior: 0 - 3
+    years … Senior: 8+ years"). The
+    description states alternatives when these disagree on the floor, or one names an advanced
+    degree (a lone "Master's with 10+ years" beside "18+ years") or starts at 0."""
+    starts = sorted({f.at for f in stated})
+    keyed: list[_Stated] = []
+    offered_instead: list[_Stated] = []
+    decisive = False
+    ordered = sorted(stated, key=lambda f: f.at)
+    for n, found in enumerate(ordered):
+        earlier = [s for s in starts if s < found.at]
+        start = max(found.at - _CLAUSE_BEFORE, earlier[-1] + 1 if earlier else 0)
+        before = text[start : found.at]
+        after = text[found.at : found.at + _CLAUSE_AFTER]
+        cut = _CLAUSE_END.search(after)
+        after = after[: cut.start()] if cut else after
+        its_advanced = bool(
+            _ADVANCED_DEGREE.search(before) or _ADVANCED_DEGREE.search(after)
+        )
+        introduced_by_or = bool(
+            _OR_BEFORE.search(text, max(0, found.at - 90), found.at)
+            or _SUBSTITUTE.search(before)
+            or _OR_CREDENTIAL_AFTER.match(text, found.at)
+        )
+        opens = (
+            found.span.min_years == 0
+            and not found.ceiling
+            and bool(
+                _GENERAL_EXPERIENCE_AFTER.match(text, found.at)
+                or _ENTRY_LEVEL_NEAR.search(
+                    text[max(0, found.at - 40) : found.at + _CLAUSE_AFTER]
+                )
+            )
+        )
+        if (
+            its_advanced
+            or introduced_by_or
+            or opens
+            or _DEGREE.search(before)
+            or _LEVEL_LABEL.search(text, max(0, found.at - 60), found.at)
+        ):
+            keyed.append(found)
+            decisive = decisive or its_advanced or opens
+        if introduced_by_or and not found.ceiling:
+            offered_instead.append(found)
+        if introduced_by_or and n and ordered[n - 1].at != found.at:
+            keyed.append(ordered[n - 1])
+    if decisive or len({f.span.min_years for f in keyed}) >= 2:
+        return keyed
+    if offered_instead:
+        # Years offered in place of a credential ("PE registration, or 8+ years of AE
+        # experience") beside a requirement every candidate meets ("4+ years of experience"):
+        # the credential's holder needs only the latter, so both are ways in.
+        rest = [f for f in stated if f not in keyed and not f.ceiling]
+        if rest:
+            return keyed + [max(rest, key=lambda f: f.span.min_years)]
+    return []
+
+
+def _overall(text: str, stated: list[_Stated]) -> ExperienceSpan | None:
+    """The posting's overall requirement among everything :func:`_scan` found (ADR-0357).
+
+    The smallest alternative path when the description states alternatives, else the largest
+    required floor; a clause under a preferred heading counts only when every floor is under one.
+    An "up to N" ceiling answers only when it is an alternative path ("or a Master's degree with up
+    to 3 years") or no required floor is stated, so privacy boilerplate ("kept for up to 2 years")
+    no longer outvotes a stated requirement (ADR-0079's consequence). Ties keep pattern order, so a
+    range still beats a single value at the same floor."""
+    # A range's second number read again alone is not a requirement of its own: "three (3) to
+    # five (5) years", collapsed to digits, leaves the "5" too far from the "3" for `_RANGE_TAIL`.
+    tops = {s.top_at for s in stated if s.top_at is not None}
+    stated = [s for s in stated if s.at not in tops]
+    floors = [s for s in stated if not s.ceiling]
+    if not floors:
+        return min(
+            (s.span for s in stated), key=lambda span: span.min_years, default=None
+        )
+    required = [s for s in stated if not _preferred(text, s.at)]
+    if not any(not s.ceiling for s in required):
+        # Every floor is preferred: a required "up to N" is the requirement, else the floors are.
+        ceilings = [s.span for s in required]
+        if ceilings:
+            return min(ceilings, key=lambda span: span.min_years)
+        required = floors
+    alternatives = _alternatives(text, required)
+    if alternatives:
+        return min(alternatives, key=lambda s: s.span.min_years).span
+    return max(
+        (s for s in required if not s.ceiling), key=lambda s: s.span.min_years
+    ).span
+
+
 def from_description(text: str | None) -> ExperienceSpan | None:
     """Tier 2 — mine the description with experience-anchored regex (for sources without a field).
 
@@ -644,15 +880,15 @@ def from_description(text: str | None) -> ExperienceSpan | None:
 def _scan(
     text: str, patterns: list[_Tier2Pattern], third: bool = False
 ) -> ExperienceSpan | None:
-    """One pass of the Tier-2 patterns over already-folded text, answered by its smallest floor.
+    """One pass of the Tier-2 patterns over already-folded text, answered by its overall floor.
 
-    Every match that survives the guards is collected and the **smallest** `min_years` among them
-    wins (ADR-0079), rather than whichever the leftmost pattern reached first. Its own `max_years`
-    travels with it: a floor from one sentence paired with a ceiling from another describes nothing
-    anybody wrote. Selecting rather than returning early is what lets `_GAP` be as wide as recall
-    wants, since position no longer decides the answer.
+    Every match that survives the guards is collected and :func:`_overall` chooses among them
+    (ADR-0079, ADR-0357), rather than whichever the leftmost pattern reached first. The chosen
+    span's own `max_years` travels with it: a floor from one sentence paired with a ceiling from
+    another describes nothing anybody wrote. Selecting rather than returning early is what lets
+    `_GAP` be as wide as recall wants, since position no longer decides the answer.
     """
-    spans: list[ExperienceSpan] = []
+    stated: list[_Stated] = []
     for pattern, guarded in patterns:
         # Every occurrence, so a rejected match falls through to the next one — "Founded 12 years
         # ago. Requires 5+ years building …" still yields 5 rather than nothing. Resumed from just
@@ -689,6 +925,8 @@ def _scan(
                 continue
             if _WINDOW_BEFORE.search(
                 text[max(0, match.start(1) - 30) : match.start(1)]
+            ) or _EMPLOYER_TENURE_BEFORE.search(
+                text[max(0, match.start(1) - 45) : match.start(1)]
             ):
                 continue
             if lo > _MAX_PLAUSIBLE_REQUIREMENT:
@@ -718,7 +956,9 @@ def _scan(
                 # write a 150 no other path can produce (ADR-0072).
                 top = hi if hi is not None else lo
                 if top <= _MAX_PLAUSIBLE_REQUIREMENT:
-                    spans.append(ExperienceSpan(0, top, "regex"))
+                    stated.append(
+                        _Stated(ExperienceSpan(0, top, "regex"), match.start(1), True)
+                    )
                 continue
             if hi is None:
                 # Recover the floor when this match is a range's ceiling ("2-4 years" -> 2, not 4).
@@ -737,8 +977,17 @@ def _scan(
                 continue
             if hi is not None and (hi < lo or hi > _MAX_PLAUSIBLE_YEARS):
                 hi = None
-            spans.append(ExperienceSpan(lo, hi, "regex"))
-    return min(spans, key=lambda span: span.min_years, default=None)
+            stated.append(
+                _Stated(
+                    ExperienceSpan(lo, hi, "regex"),
+                    match.start(1),
+                    False,
+                    match.start(2)
+                    if match.lastindex and match.lastindex >= 2
+                    else None,
+                )
+            )
+    return _overall(text, stated)
 
 
 # --- Tier 3 (fallback): map a seniority label to a floor-years estimate --------------------------
@@ -842,14 +1091,38 @@ _LEVEL_YEARS = {
 }
 
 
+# One employer's own level ladder, where it disagrees with `_LEVEL_YEARS` (ADR-0357). Netflix titles
+# every role by level, "Software Engineer (L5)" or "Software Engineer 5", including role nouns
+# `_LEVEL` does not hold ("Business Security Partner (L5)", "Creative Tech Researcher 5"). Its
+# postings that state a number state medians of 3, 5 and 9 years at L4, L5 and L6 (n=11, 35, 21;
+# served table, 2026-09-29), where `_LEVEL_YEARS` gives 7, 7 and nothing, and "(LN)" titles at
+# other employers state 6, 5 and 10. A ladder is the employer's, so it is keyed by company and
+# holds only levels its postings measure; another employer joins with its own medians.
+_COMPANY_LADDERS = {"netflix": {"4": 3, "5": 5, "6": 9}}
+_LADDER_LEVEL = re.compile(
+    r"\(\s*L\s*([1-9])\s*\)|\b[A-Za-z]+\s+([1-9])(?=\s*(?:$|[,(\u2013\u2014-]))"
+)
+
+
+def _company_level(title: str | None, company: str | None) -> ExperienceSpan | None:
+    """The floor ``company``'s own ladder gives the level in ``title``, when it has one."""
+    ladder = _COMPANY_LADDERS.get((company or "").strip().lower())
+    match = _LADDER_LEVEL.search(title or "") if ladder else None
+    years = ladder.get(match.group(1) or match.group(2)) if match else None
+    return None if years is None else ExperienceSpan(years, None, "seniority")
+
+
 def from_seniority(
-    field: str | None, title: str | None = None
+    field: str | None, title: str | None = None, company: str | None = None
 ) -> ExperienceSpan | None:
     """Tier 3 (fallback) — map a seniority label to a floor-years estimate, from the source's field
-    (else the title). Word labels first ("Senior"), then a numeric/roman level suffix ("Engineer II")."""
+    (else the title). The employer's own ladder first (Netflix's "(L5)"), then word labels
+    ("Senior"), then a numeric/roman level suffix ("Engineer II")."""
     text = f"{field or ''} {title or ''}"
     if not text.strip():
         return None
+    if (own := _company_level(title, company)) is not None:
+        return own
     for pattern, years in _SENIORITY:
         if pattern.search(text):
             return ExperienceSpan(years, None, "seniority")
@@ -860,14 +1133,18 @@ def from_seniority(
 
 
 def extract(
-    field: str | None, description: str | None, title: str | None = None
+    field: str | None,
+    description: str | None,
+    title: str | None = None,
+    company: str | None = None,
 ) -> ExperienceSpan | None:
     """Run the cascade: a concrete number from the structured field, then from the description, and
-    only if neither yields one, a floor estimate from the seniority label (field or title). Concrete
-    numbers always win over the seniority fallback (per ADR-0018). None if nothing matches.
+    only if neither yields one, a floor estimate from the seniority label (field or title, read on
+    ``company``'s own ladder where it has one). Concrete numbers always win over the seniority
+    fallback (per ADR-0018). None if nothing matches.
     """
     return (
         from_field(field)
         or from_description(description)
-        or from_seniority(field, title)
+        or from_seniority(field, title, company)
     )
