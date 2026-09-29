@@ -1417,7 +1417,7 @@ _PRUNE_OFF_BOARD = (("personio", 1000), ("zoho", 200), ("workable", 4))
 def _index_prune(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """`index prune --apply` over a table holding both of ADR-0023's classes at once.
 
-    The keep-set is four-figure because `_MIN_KEEP_BOARDS` refuses to prune below 1,000 Boards —
+    The keep-set is four-figure because `MIN_KEEP_BOARDS` refuses to prune below 1,000 Boards —
     so this is the one count in this file the emitter itself will not let a fixture shrink.
 
     A duplicate is one job under two Board casings, and which row survives is the ledger's
@@ -1858,6 +1858,7 @@ def test_pipeline_reports_fresh_coverage_beside_each_publication_receipt():
         "embedding_store",
         "lancedb_index",
         "description_store",
+        "job_facts",
         "pipeline_state",
     ):
         assert f"'{key}=not_reached'" in workflow
@@ -2449,7 +2450,7 @@ CONTRACT: tuple[Line, ...] = (
             "CONTEXT.md's counting vocabulary. This pattern said `live Boards` — a phrase CLAUDE.md "
             "forbids — and matched nothing. `index_plan` also emits a `keep-set:` line, but under "
             "the `[index_plan]` tag and saying `Scrapable Board(s)`, so it cannot collide. The "
-            "count is four-figure because `_MIN_KEEP_BOARDS` aborts the prune below 1,000"
+            "count is four-figure because `MIN_KEEP_BOARDS` aborts the prune below 1,000"
         ),
         emit=_index_prune,
         heavy=True,

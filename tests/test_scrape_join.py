@@ -61,6 +61,10 @@ def _run(
         str(ledger or out.parent / "no-such-ledger"),
         "--scrape-health",
         str(out.parent / "scrape_health.json"),
+        "--facts",
+        str(out.parent / "facts"),
+        "--board-failures",
+        str(out.parent / "no-such-board-failures.csv"),
     ]
     try:
         assert js.main() == 0
@@ -560,6 +564,106 @@ def test_the_ids_an_unauthoritative_board_returned_are_recorded(tmp_path):
 
     recorded = (tmp_path / "unauthoritative_board_ids.txt").read_text(encoding="utf-8")
     assert recorded.split() == ["freshteam:abnhire:1", "freshteam:abnhire:2"]
+
+
+def test_the_join_records_the_runs_job_facts_over_the_eviction_scope(
+    tmp_path, monkeypatch
+):
+    """ADR-0330. Every line is a Job fact, tech or not, and a Job goes unlisted only where the
+    run's read of its Board was authoritative: a short read is no evidence, as it is for sync."""
+    import pyarrow.parquet as pq
+
+    from headstart.ingest import job_facts
+
+    def lines(*ids: str) -> list[str]:
+        return [json.dumps({"id": i, "title": "Engineer"}) for i in ids]
+
+    frags = tmp_path / "frags"
+    _shard(
+        frags,
+        0,
+        {
+            "greenhouse.jsonl": lines(
+                "greenhouse:acme:1", "greenhouse:acme:2", "greenhouse:big:3"
+            )
+        },
+    )
+    observability.write_shard(
+        frags / "shard-0", ShardReport(boards_ok=["greenhouse:acme", "greenhouse:big"])
+    )
+    monkeypatch.setattr(job_facts, "facts_stamp", lambda: "2026-09-29T06:00:00+00:00")
+    _run(frags, tmp_path / "jobs")
+
+    # The next run: acme dropped its id 2, big was read short and returned nothing.
+    frags2 = tmp_path / "frags2"
+    _shard(frags2, 0, {"greenhouse.jsonl": lines("greenhouse:acme:1")})
+    observability.write_shard(
+        frags2 / "shard-0",
+        ShardReport(
+            boards_ok=["greenhouse:acme", "greenhouse:big"],
+            truncated={"greenhouse:big": "listing cap"},
+        ),
+    )
+    monkeypatch.setattr(job_facts, "facts_stamp", lambda: "2026-09-29T07:00:00+00:00")
+    _run(frags2, tmp_path / "jobs")
+
+    facts_dir = tmp_path / "facts"
+    runs = sorted((facts_dir / job_facts.JOB_FACTS).glob("*.parquet"))
+    assert len(runs) == 2
+    last = pq.read_table(runs[-1]).to_pylist()
+    assert [(row["id"], row["kind"]) for row in last] == [
+        ("greenhouse:acme:2", "unlisted")
+    ]
+    listed = set(pq.read_table(facts_dir / job_facts.LISTED_JOBS)["id"].to_pylist())
+    assert listed == {"greenhouse:acme:1", "greenhouse:big:3"}
+    reads = pq.read_table(max((facts_dir / job_facts.BOARD_READS).glob("*.parquet")))
+    assert dict(
+        zip(reads["scraper_key"].to_pylist(), reads["outcome"].to_pylist())
+    ) == {
+        "greenhouse:acme": "authoritative",
+        "greenhouse:big": "truncated",
+    }
+    assert not list(facts_dir.rglob("*.tmp"))
+
+
+def test_a_join_that_cannot_record_its_facts_still_joins(tmp_path, monkeypatch, caplog):
+    """ADR-0330: the scrape must still publish. The facts are written all or nothing, so the
+    next run records these changes against the Listed set this one left alone."""
+    from headstart.ingest import job_facts
+
+    def fail(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(job_facts, "record_run", fail)
+    frags = tmp_path / "frags"
+    _shard(frags, 0, {"greenhouse.jsonl": ['{"id": "greenhouse:acme:1"}']})
+
+    with caplog.at_level(logging.WARNING, logger="headstart.ingest.scrape_join"):
+        _run(frags, tmp_path / "jobs")
+
+    assert (tmp_path / "jobs" / "greenhouse.jsonl").exists()
+    assert "could not record this run's Job facts" in caplog.text
+    assert not list((tmp_path / "facts").rglob("*.tmp"))
+
+
+def test_a_join_whose_scratch_writer_fails_still_joins(tmp_path, monkeypatch, caplog):
+    from headstart.ingest import job_facts
+
+    def fail(self):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(job_facts, "_BATCH", 1)
+    monkeypatch.setattr(job_facts.ScrapedLines, "_flush", fail)
+    frags = tmp_path / "frags"
+    _shard(frags, 0, {"greenhouse.jsonl": ['{"id": "greenhouse:acme:1"}']})
+
+    with caplog.at_level(logging.WARNING, logger="headstart.ingest.scrape_join"):
+        _run(frags, tmp_path / "jobs")
+
+    assert (tmp_path / "jobs" / "greenhouse.jsonl").exists()
+    assert "could not record this run's Job facts" in caplog.text
+    assert not (tmp_path / "facts" / job_facts.LISTED_JOBS).exists()
+    assert not list((tmp_path / "facts").rglob("*.tmp"))
 
 
 def test_the_join_names_the_shards_whose_reports_never_arrived(caplog):

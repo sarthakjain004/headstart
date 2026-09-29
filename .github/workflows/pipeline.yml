@@ -615,6 +615,11 @@ jobs:
           # store: update_descriptions then numbered its fragment 0001 for every ATS, and the
           # merge's additive upload overwrote the store's own 0001s with it.
           python -m headstart.ingest.state_fetch 'data/descriptions/*'
+          # The Listed set (ADR-0330): the ids the Job facts were last diffed against. Only the
+          # set, never the facts themselves, which no stage reads back. Fails closed like the
+          # lines above: an empty set on a dataset that holds one would record every listed Job
+          # as newly listed.
+          python -m headstart.ingest.state_fetch 'data/facts/listed_jobs.parquet'
       - name: Download all scrape fragments
         # continue-on-error: take whatever fragments exist. If every scrape shard died before
         # uploading, the join still proceeds and degrades to a safe no-op — an empty data/jobs
@@ -692,6 +697,7 @@ jobs:
             data/jobs/tech
             data/state
             data/descriptions
+            data/facts
           retention-days: 1
 
   # ── Stage 4: the embed fan-out (unchanged from Phase 1). Each shard embeds its assigned Docs into
@@ -967,6 +973,7 @@ jobs:
             'embedding_store=not_reached' \
             'lancedb_index=not_reached' \
             'description_store=not_reached' \
+            'job_facts=not_reached' \
             'pipeline_state=not_reached' > "$publication_status"
           publication_state() {
             printf '%s=%s\n' "$1" "$2" >> "$publication_status"
@@ -996,8 +1003,8 @@ jobs:
             for delay in $delays; do
               "$@" && return 0
               # Plain stdout, not `::warning::`. ADR-0039's budget is 10 annotations per *step*,
-              # and this function runs once per store, four stores to a step: at six attempts each
-              # a retrying warning would emit up to 24 and GitHub would drop the overflow —
+              # and this function runs once per store, five stores to a step: at six attempts each
+              # a retrying warning would emit up to 30 and GitHub would drop the overflow —
               # including the `giving up` line, which is last and is the one worth keeping.
               echo "hf upload attempt ${attempt}/${total} failed; retrying in ${delay}s"
               sleep "$delay"
@@ -1021,10 +1028,10 @@ jobs:
           # later fetch tell a genuine first run from an emptied dataset — the hole ADR-0030 names
           # and leaves open. Written into data/state/, so the upload below carries it and no new
           # write point exists to keep in lockstep.
-          # Never fatal: the four uploads below matter more than the witness that describes them.
+          # Never fatal: the five uploads below matter more than the witness that describes them.
           # A failure here leaves the PRIOR witness in place, which names roots this dataset still
           # holds — stale in the safe direction. Under `bash -e` an unguarded failure would sink
-          # all four uploads instead.
+          # all five uploads instead.
           python -m headstart.ingest.state_witness publish \
             || echo "::warning::could not publish the state witness; the prior one stands"
           publish embedding_store hf upload "$HF_DATASET" data/embeddings/jobs data/embeddings/jobs \
@@ -1062,11 +1069,26 @@ jobs:
           # was fetched or changed, and there is nothing of this run's to publish.
           if [ "$CORPUS" != success ]; then
             publication_state description_store skipped
+            publication_state job_facts skipped
             publication_state pipeline_state skipped
             exit 0
           fi
           publish description_store hf upload "$HF_DATASET" data/descriptions data/descriptions \
             --repo-type dataset --commit-message "nightly: description store"
+          # The run's Job facts with the Listed set they were diffed against, in one commit
+          # (ADR-0330): a failed upload loses both, and the next run diffs against the older set,
+          # so no change is lost or counted twice. Additive: each run adds its own fragments and
+          # replaces only the Listed set. Before data/state, whose witness must not claim a root
+          # this upload failed to write.
+          # Skipped when the run recorded nothing: a first run whose facts failed has no Listed set
+          # to carry, the artifact then holds no data/facts, and `hf upload` of a missing folder
+          # raises, which under `bash -e` would keep data/state from publishing too.
+          if [ -n "$(find data/facts -type f ! -name '*.tmp' 2>/dev/null | head -n 1)" ]; then
+            publish job_facts hf upload "$HF_DATASET" data/facts data/facts \
+              --repo-type dataset --exclude "*.tmp" --commit-message "nightly: job facts"
+          else
+            publication_state job_facts skipped
+          fi
           # data/state LAST, because it carries the witness (ADR-0095). The property is that the
           # witness is never committed BEFORE the roots it vouches for: if an upload above fails,
           # `bash -e` stops here and the new witness is simply never published, leaving the prior
@@ -1092,6 +1114,7 @@ jobs:
               "embedding_store": "not reached",
               "lancedb_index": "not reached",
               "description_store": "not reached",
+              "job_facts": "not reached",
               "pipeline_state": "not reached",
           }
           status_path = Path(os.environ["RUNNER_TEMP"]) / "headstart-publication-status"
@@ -1125,7 +1148,7 @@ jobs:
           # Per store, on stdout — not only in the step summary. Until 2026-09-16 a failed
           # publication printed `complete publication: NO` and nothing else, so which of the four
           # stores died had to be reconstructed from the *position* of the retry warnings in the
-          # log. Four lines make the next failure self-describing.
+          # log. A line per store makes the next failure self-describing.
           for key, value in states.items():
               print(f"publication {key.replace('_', ' ')}: {value}", flush=True)
           print(f"complete publication: {'yes' if complete else 'NO'}", flush=True)
@@ -1143,8 +1166,8 @@ jobs:
       # because the old step printed a prediction and never re-read the number. The logic lives in
       # a module so it can be tested; being inline here is why it never was.
       - name: Reclaim dataset storage when blobs are orphaned
-        # `always()`, not the implicit `success()`: `Upload index state` pushes four separate
-        # commits, so a failure on the fourth leaves the dataset grown with the reclaim skipped —
+        # `always()`, not the implicit `success()`: `Upload index state` pushes five separate
+        # commits, so a failure on the last leaves the dataset grown with the reclaim skipped —
         # precisely the state moving it here was meant to prevent.
         if: always() && needs.scrape-plan.outputs.run == 'true'
         # Never fail the run for want of reclaimed space; the data is already uploaded. The module

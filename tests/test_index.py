@@ -1247,7 +1247,7 @@ def test_sync_refuses_to_build_on_a_base_it_cannot_explain(tmp_path, monkeypatch
 
 
 def _prune_args(tmp_path, monkeypatch):
-    """`prune` past its keep-set floor. `_MIN_KEEP_BOARDS` is 1,000 and building that many ledger
+    """`prune` past its keep-set floor. `MIN_KEEP_BOARDS` is 1,000 and building that many ledger
     rows would test the ledger loader, not this — so the keep-set is stubbed at the seam, wide
     enough to clear the floor and containing the table's own Board."""
     monkeypatch.setattr(
@@ -1354,7 +1354,7 @@ def test_prune_collapses_a_served_workday_requisition_onto_the_site_the_ledger_r
     )  # no ledger: both
     _write_workday_ledger(tmp_path / "liveness")
     args = _prune_args(tmp_path, monkeypatch)
-    floor = idx.live_keep_set  # the stub, wide enough to clear `_MIN_KEEP_BOARDS`
+    floor = idx.live_keep_set  # the stub, wide enough to clear `MIN_KEEP_BOARDS`
     monkeypatch.setattr(
         idx, "live_keep_set", lambda ledger: {_BIG, _SMALL} | floor(ledger)
     )
@@ -1372,7 +1372,7 @@ def _pair_boards(monkeypatch):
         "load",
         lambda: {"jobs.acme.com": ("workday:acme/careers",)},
     )
-    floor = {f"lever:f{i}" for i in range(1200)}  # clears `_MIN_KEEP_BOARDS`
+    floor = {f"lever:f{i}" for i in range(1200)}  # clears `MIN_KEEP_BOARDS`
     monkeypatch.setattr(
         idx,
         "live_keep_set",
