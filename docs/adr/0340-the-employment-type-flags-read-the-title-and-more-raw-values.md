@@ -20,7 +20,7 @@ against 0.8%; stated part-time rows say it 22.1%), so the values are what they l
 
 ## Decision
 
-`EmploymentTypeRule` gains two ways to match. `equals` lists whole values (lowercased, not trimmed:
+`EmploymentTypeRule` gains two ways to match. `whole_values` lists whole values (lowercased, not trimmed:
 Lance's SQL has no `trim`) for codes too short to be a substring: `f` or `ft` would match "soft" and
 "left". `title_pattern` is a whole-word pattern searched in the title when the raw value does not
 match; only `is_internship` has one, `\bintern(?:ship)?s?\b`, so "International", "Internal" and
@@ -29,7 +29,10 @@ match; only `is_internship` has one, `\bintern(?:ship)?s?\b`, so "International"
 The rules widen as measured: full-time gains `regular` (unless `part`, like `permanent`), and the
 whole values `salaried_ft`, `hourly_ft`, `f`, `ft`, `fte`, `cdi`, `tiempo completo`, `全职`;
 part-time gains `salaried_pt`, `hourly_pt`; contract gains `temporary` and `fixed`. Hours and
-duration stack, so "fulltime_fixed_term" is full-time and contract.
+duration stack, so "fulltime_fixed_term" is full-time and contract. `fixed` is a bare substring on
+purpose: of 826 served values containing it all but two say "term", and the two are contractual
+("contractor (fixed rate)", "fixed contract"). `salaried_pt` and `hourly_pt` (29 rows) ride along
+with their full-time twins.
 
 `flags(value, title)` takes the title; `_served_meta` passes it. The SQL fallback (`raw_clause`, used
 by a table without the columns and by the migration) stays value-only: a title is not something the

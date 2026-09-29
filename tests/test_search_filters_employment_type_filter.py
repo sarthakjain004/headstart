@@ -81,6 +81,13 @@ def test_raw_clauses_agree_with_the_python_flags():
         "fulltime_fixed_term",
         "HOURLY_PT",
         "全职",
+        "F",
+        "ft",
+        "CDI",
+        "Tiempo completo",
+        "Fixed Term",
+        "HOURLY_FT",
+        "Regular Part-time",
     )
     for value in values:
         for rule in RULES.values():
@@ -186,3 +193,25 @@ def test_the_title_cue_does_not_reach_the_sql_fallback():
     """A table that predates the columns keeps the raw-value clause; the title is not a column
     the fallback can pattern-match, and the materialized flag is what carries the cue."""
     assert "title" not in RULES["internship"].raw_clause()
+
+
+def test_the_index_hands_the_title_to_the_flags():
+    """`_served_meta` is the one place every written row's flags come from (new rows, refreshed
+    rows, and the comparison `_refresh_metadata` rewrites a stale row on): the title must reach
+    `flags`, or an intern-titled row would be rewritten with the old verdict on every run."""
+    from headstart.ingest.index import _served_meta
+
+    row = _served_meta(
+        {"employment_type": "Full time", "title": "Software Engineering Intern"}, None
+    )
+    assert row["is_internship"] is True and row["is_full_time"] is True
+    plain = _served_meta({"employment_type": "Full time", "title": "Engineer"}, None)
+    assert plain["is_internship"] is False
+
+
+def test_no_flag_is_a_response_field():
+    """The flags are index columns, not API fields: `/search` and `/job` project explicit lists."""
+    from headstart.serving.job_search import JOB_DETAIL_COLUMNS, RESULT_COLUMNS
+
+    served = set(RESULT_COLUMNS) | set(JOB_DETAIL_COLUMNS)
+    assert served.isdisjoint(c for rule in RULES.values() for c in [rule.column])
