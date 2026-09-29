@@ -341,6 +341,8 @@ def main() -> int:
         if edited >= _MAX_EDIT_REEMBEDS:
             deferred += 1
         elif not is_english(job.get("title") or "", job.get("description") or ""):
+            # An edit is always an embedded Job, so a failing one is listed to drop (ADR-0286).
+            non_english.append(job["id"])
             dropped += 1
         else:
             upgrades.append(job["id"])
