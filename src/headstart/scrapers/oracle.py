@@ -111,7 +111,7 @@ _PAGE_TITLE = re.compile(
 _LEFTOVER = re.compile(
     r"career\s*site|candidate experience|minimal|^jobs\b|\bjobs$|error|confidential"
     r"|^explore\b"
-    r"|carreiras?\b|\bcarrera\b|\bcarri[eè]re|karriere|\bempleos?\b|bolsa de trabajo"
+    r"|carreiras?\b|\bcarri[eè]re|karriere|\bempleos?\b|bolsa de trabajo"
     r"|(?:\b|_)sitio|\bsito\b|werken bij|\bseo\b",
     re.IGNORECASE,
 )
