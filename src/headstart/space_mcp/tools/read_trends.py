@@ -5,11 +5,11 @@ and closed, never the change in openings listed (ADR-0272).
 start and latest openings, the counting steps the reading could size ("not hiring"), the rest it
 calls hiring, and the postings opened and closed (turnover, ADR-0227). That rest is not hiring.
 With no company picked nothing was sized at all, so a 30-day whole-index window read "hiring
-+111,851" while its postings opened and closed netted −514; since ADR-0270 the index's counting
-changes are sized, but its found Boards and duplicate removals are not. So this answer leads with
-turnover, reports the change in openings listed separately, and names what neither turnover nor a
-sized step explains as change HeadStart could not size, with the window's counting changes, each
-label once. Where turnover is missing or partial it says so. The drawing arrays (``netted``,
++111,851" while its postings opened and closed netted −514; since ADR-0270 and ADR-0304 the
+index's counting changes and Boards found are sized, but not its duplicate removals. So this
+answer leads with turnover, reports the change in openings listed separately, and names what
+neither turnover nor a sized step explains as change HeadStart could not size, with the window's
+counting changes, each label once. Where turnover is missing or partial it says so. The drawing arrays (``netted``,
 ``steps_at``, ``reference``, ``points``, ``day_markers``) are left out, which takes a 406 kB
 payload down to a few hundred words. A reading that fails the Space's arithmetic check is still
 reported, saying so; one the Space could not read at all reports no figures.
@@ -260,16 +260,28 @@ def _rank(line: dict[str, Any]) -> int:
     return abs(move["latest"] - move["start"])
 
 
-def _rest_contains(payload: dict[str, Any], picked: bool, changes: _Changes) -> str:
+def _rest_contains(
+    payload: dict[str, Any], picked: bool, changes: _Changes, window: dict[str, str]
+) -> str:
     """What change HeadStart could not size can hold, in this view: a company's line has its
-    found Boards and duplicate removals sized, the index's has neither, and comparable coverage
-    leaves found Boards out."""
+    found Boards and duplicate removals sized; the index's has its found Boards sized from the
+    first per-Board count on (ADR-0304), under openings, but not its duplicate removals; and
+    comparable coverage leaves found Boards out."""
+    ledger = payload.get("ledger_start")
     if picked:
         held = ["a Board dropped or read differently from before"]
     elif payload.get("coverage") == "comparable":
         held = ["Boards dropped", "duplicate postings removed"]
-    else:
+    elif payload.get("metric") == "new":
         held = ["Boards found or dropped", "duplicate postings removed"]
+    elif ledger and window["from"] < ledger:
+        held = [
+            f"Boards found before per-Board counting began on {ledger[:10]}",
+            "Boards dropped or read differently",
+            "duplicate postings removed",
+        ]
+    else:
+        held = ["Boards dropped or read differently", "duplicate postings removed"]
     if changes.unsized:
         held.append(
             "counting changes not sized here ("
@@ -364,7 +376,7 @@ def _total(
         )
     elif move.get("turnover") or new:
         explained.append("HeadStart sized none of it as re-counting")
-    contains = _rest_contains(payload, bool(labels), changes)
+    contains = _rest_contains(payload, bool(labels), changes, window)
     if split.rest and split.net is not None:
         explained.append(
             f"the other {_signed(split.rest)}, the unsized rest, is not a hiring figure: "

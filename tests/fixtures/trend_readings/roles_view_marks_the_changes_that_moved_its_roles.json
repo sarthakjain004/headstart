@@ -231,7 +231,8 @@
     "boards": null,
     "sizes": {
      "watch:llm": 16
-    }
+    },
+    "drawn": true
    }
   ],
   "day_markers": [

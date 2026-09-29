@@ -41,14 +41,14 @@
       "prompt": "Is Stripe hiring more or less than it was two weeks ago?",
       "verifier": "trend_sign",
       "expect": {"companies": ["Stripe"], "category": null, "days": 14},
-      "why": "Plan §9 checks the sign of hiring, which ADR-0272 makes postings opened less closed. The verifier reads /trends for Stripe over 14 days itself and compares the sign of reading.total.move.turnover.net (the netted hiring where the reading has no net) with the direction the answer states; a net within 5% of everything opened and closed may also be called flat."
+      "why": "Plan §9 checks the sign of hiring, which ADR-0272 makes postings opened less closed. The verifier reads /trends for Stripe over 14 days itself and compares the sign of reading.total.move.turnover.net (the netted hiring where the reading has no net) with the direction the answer states; a net within 5% of everything opened and closed may also be called flat. Round-2 critique P1-4 (ADR-0325): where opened and closed cover only part of the window, the answer must say so, naming the day counting began or the days counted."
     },
     {
       "id": "t04",
       "prompt": "Which companies are expanding their tech hiring fastest this week?",
       "verifier": "hot_top",
       "expect": {"lens": "expansion", "top": 5},
-      "why": "Plan §9: the top five equal /hot's, hidden Operators out. The verifier reads /hot itself, drops the hidden_by_default Operators, and needs at least four of the top five named."
+      "why": "Plan §9: the top five equal /hot's, hidden Operators out. The verifier reads /hot itself, drops the hidden_by_default Operators, and needs at least four of the top five named. Round-2 critique P1-3 (ADR-0325): the first company the answer names among the hiring_now rows must not be one the tool flagged as re-counting."
     },
     {
       "id": "t05",
@@ -94,7 +94,7 @@
     {
       "id": "t08",
       "prompt": "Find remote contract roles with \"Rust\" in the job title.",
-      "verifier": "search_args",
+      "verifier": "title_keyword_rows",
       "expect": {
         "tool": "search_jobs",
         "must": {
@@ -103,9 +103,10 @@
           "keyword": {"op": "contains", "value": "rust"},
           "keyword_in": {"op": "in", "value": [null, "title"]}
         },
-        "query_must_not_contain": ["remote", "contract", "title"]
+        "query_must_not_contain": ["remote", "contract", "title"],
+        "word": "rust"
       },
-      "why": "Plan §9 checks keyword. \"Rust in the title\" is keyword Rust in the title (the default scope), with remote and employment_type contract as filters. Rust may also appear in query, which describes the role."
+      "why": "Plan §9 checks keyword. \"Rust in the title\" is keyword Rust in the title (the default scope), with remote and employment_type contract as filters. Rust may also appear in query, which describes the role. Round-2 critique P1-8 (ADR-0325): the arguments alone passed while 15 of 24 rows were 'Trust' and 'Thrusters', so every row the call returned is read back from /job and must have Rust where a word starts in its title, the keyword's own rule (ADR-0299)."
     },
     {
       "id": "t09",
@@ -187,7 +188,7 @@
       "prompt": "Is tech hiring across the whole index rising or falling over the last month?",
       "verifier": "trend_sign",
       "expect": {"companies": [], "category": null, "days": 30},
-      "why": "ADR-0272: on 2026-09-29 the whole index's openings listed rose +111,851 over 30 days while postings opened and closed netted -514, and nothing in that rise was sized, so it was re-counting, not hiring. The answer must take its direction from postings opened and closed, which the verifier reads from /trends itself; a net within 5% of everything opened and closed may also be called flat."
+      "why": "ADR-0272: on 2026-09-29 the whole index's openings listed rose +111,851 over 30 days while postings opened and closed netted -514, and nothing in that rise was sized, so it was re-counting, not hiring. The answer must take its direction from postings opened and closed, which the verifier reads from /trends itself; a net within 5% of everything opened and closed may also be called flat. It must also say that opened and closed cover only part of the 30 days, as t03's must (ADR-0325)."
     },
     {
       "id": "t16",

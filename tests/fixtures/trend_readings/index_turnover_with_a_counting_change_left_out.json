@@ -263,7 +263,8 @@
     "boards": null,
     "sizes": {
      "__total__": 400
-    }
+    },
+    "drawn": true
    }
   ],
   "day_markers": [

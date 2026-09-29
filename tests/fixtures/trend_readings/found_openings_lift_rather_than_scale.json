@@ -224,7 +224,8 @@
     "boards": 2,
     "sizes": {
      "greenhouse:acme": 200
-    }
+    },
+    "drawn": true
    }
   ],
   "day_markers": [

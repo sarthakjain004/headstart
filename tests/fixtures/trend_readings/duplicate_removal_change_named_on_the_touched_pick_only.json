@@ -296,7 +296,8 @@
     "sizes": {
      "greenhouse:acme": 20,
      "eightfold:micron": -20
-    }
+    },
+    "drawn": true
    }
   ],
   "day_markers": [

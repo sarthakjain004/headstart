@@ -105,7 +105,7 @@ def check_jobs(
     """
     from headstart.scrapers.phenom import PhenomScraper
     from headstart.scrapers.workday import WorkdayScraper
-    from headstart.scrapers.zwayam import body_error_code, search_request
+    from headstart.scrapers.zwayam import API_HOSTS, body_error_code, search_request
 
     if ats not in {"zwayam", "phenom", "workday", "greenhouse"}:
         return "not-implemented-for-provider", []
@@ -113,10 +113,22 @@ def check_jobs(
         return "no-source-job-urls", []
     apply_redirects: dict[str, str] = {}
     followed = False
+    # Zwayam's page 0 is asked of each API cluster in the scraper's order until one holds the
+    # Board, as the scraper does; the others answer a clean `data: null` for it (ADR-0303). That
+    # cluster then serves every later page.
+    zwayam_clusters = API_HOSTS
     for page in range(min(max(max_pages, 1), 3)):
         if ats == "zwayam":
-            endpoint, headers, body = search_request(tenant, page * 10)
-            data, error = post(endpoint, headers, body)
+            for api_host in zwayam_clusters:
+                endpoint, headers, body = search_request(tenant, page * 10, api_host)
+                data, error = post(endpoint, headers, body)
+                if not (
+                    isinstance(data, dict)
+                    and body_error_code(data) is None
+                    and data.get("data") is None
+                ):
+                    break
+            zwayam_clusters = (api_host,)
             if data and body_error_code(data) is not None:
                 return "api-error", []
         elif ats == "phenom":

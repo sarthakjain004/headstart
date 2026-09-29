@@ -108,6 +108,16 @@ def test_the_instructions_stay_under_the_clients_cut():
     assert len(server.INSTRUCTIONS) <= server.INSTRUCTIONS_LIMIT
 
 
+def test_the_instructions_tell_the_model_to_retry_an_edge_failure():
+    """ADR-0325: Hugging Face's edge answers some hosted calls with its own page, which says 500
+    under an HTTP 502, and no MCP client retries a failed POST."""
+    sentence = server.EDGE_RETRY_INSTRUCTION
+    assert sentence in server.INSTRUCTIONS
+    for words in ("Hugging Face error page", "500", "502", "only reads", "up to twice"):
+        assert words in sentence, words
+    assert len(sentence) <= 200
+
+
 def test_a_tools_budget_is_under_the_clients_warning(tool):
     assert 0 < tool.max_chars <= space_tool.ANSWER_CEILING_CHARS
 

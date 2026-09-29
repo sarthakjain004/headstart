@@ -270,7 +270,8 @@
     "boards": null,
     "sizes": {
      "workday:amd/x": 500
-    }
+    },
+    "drawn": true
    }
   ],
   "day_markers": [

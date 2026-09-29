@@ -1,0 +1,449 @@
+{
+ "description": "With no pick the Boards first counted inside the window come out of each line by the openings they brought it, sized from the Board-delta ledger (ADR-0304): Software Engineering's +80 and +30 and Web's +40. They land on nearly every run, so they are one Marked change, dated at their first run and drawn nowhere; no line breaks at them. On a counting change's run the found openings are theirs and the rest the change's. Two openings on one run are left in the line.",
+ "answer_input": {
+  "stamps": [
+   "2026-09-20T00:00:00+00:00",
+   "2026-09-21T00:00:00+00:00",
+   "2026-09-22T00:00:00+00:00",
+   "2026-09-23T00:00:00+00:00",
+   "2026-09-24T00:00:00+00:00",
+   "2026-09-25T00:00:00+00:00"
+  ],
+  "totals": [
+   10000,
+   10000,
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "series": [
+   {
+    "name": "software-engineering",
+    "label": "software-engineering",
+    "points": [
+     1000,
+     1010,
+     1110,
+     1115,
+     945,
+     940
+    ],
+    "latest": 940
+   },
+   {
+    "name": "web-development",
+    "label": "web-development",
+    "points": [
+     500,
+     505,
+     540,
+     540,
+     520,
+     522
+    ],
+    "latest": 522
+   },
+   {
+    "name": "data-engineering",
+    "label": "data-engineering",
+    "points": [
+     300,
+     300,
+     302,
+     304,
+     304,
+     305
+    ],
+    "latest": 305
+   }
+  ],
+  "epochs": [
+   {
+    "ts": "2026-09-24T00:00:00+00:00",
+    "changed": [
+     "we got better at spotting tech jobs, so some jobs were added to or dropped from the counts"
+    ],
+    "fields": [
+     "tech_filter_version"
+    ]
+   }
+  ],
+  "metric": "stock",
+  "coverage": "all",
+  "new_window_days": 7,
+  "family": null,
+  "split_by": "family",
+  "companies": [],
+  "discovered": [
+   {
+    "ts": "2026-09-22T00:00:00+00:00",
+    "company": null,
+    "boards": 3,
+    "openings": 120,
+    "lines": {
+     "software-engineering": 80,
+     "web-development": 40
+    }
+   },
+   {
+    "ts": "2026-09-23T00:00:00+00:00",
+    "company": null,
+    "boards": 1,
+    "openings": 2,
+    "lines": {
+     "data-engineering": 2
+    }
+   },
+   {
+    "ts": "2026-09-24T00:00:00+00:00",
+    "company": null,
+    "boards": 2,
+    "openings": 30,
+    "lines": {
+     "software-engineering": 30
+    }
+   }
+  ],
+  "evicted": [],
+  "pick_series": {},
+  "pick_parts": {},
+  "pick_turnover": {},
+  "counted_since": {},
+  "non_tech": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "watch_parents": [],
+  "uncounted": [],
+  "company_totals": {}
+ },
+ "reading": {
+  "window": {
+   "from": "2026-09-20T00:00:00+00:00",
+   "to": "2026-09-25T00:00:00+00:00"
+  },
+  "picked": false,
+  "total": {
+   "name": "__total__",
+   "label": "",
+   "whole_company": false,
+   "estimated": false,
+   "move": {
+    "start": 1800,
+    "latest": 1767,
+    "hiring": 39,
+    "not_hiring": [
+     {
+      "change": "found@window",
+      "kind": "found_boards",
+      "label": "5 more job sites found through Sep 25",
+      "size": 150
+     },
+     {
+      "change": "counting@2026-09-24T00:00:00+00:00",
+      "kind": "counting",
+      "label": "we got better at spotting tech jobs, so some jobs were added to or dropped from the counts",
+      "size": -222
+     }
+    ],
+    "not_hiring_total": -72,
+    "percent": 2.256944444444444,
+    "percent_withheld": null,
+    "span_days": 5.0,
+    "per_week": 55,
+    "turnover": null,
+    "share": {
+     "start": 17.07509881422925,
+     "latest": 17.669999999999998,
+     "denominator_start": 10120,
+     "denominator_latest": 10000,
+     "percent": 3.4840277777777615
+    }
+   },
+   "netted": [
+    1728,
+    1743,
+    1760,
+    1767,
+    1767,
+    1767
+   ],
+   "steps_at": [
+    4,
+    5
+   ],
+   "index_base": 1728,
+   "arrived_by": null,
+   "points": [
+    1800,
+    1815,
+    1952,
+    1959,
+    1769,
+    1767
+   ]
+  },
+  "lines": [
+   {
+    "name": "software-engineering",
+    "label": "software-engineering",
+    "whole_company": false,
+    "estimated": false,
+    "move": {
+     "start": 1000,
+     "latest": 940,
+     "hiring": 35,
+     "not_hiring": [
+      {
+       "change": "found@window",
+       "kind": "found_boards",
+       "label": "5 more job sites found through Sep 25",
+       "size": 110
+      },
+      {
+       "change": "counting@2026-09-24T00:00:00+00:00",
+       "kind": "counting",
+       "label": "we got better at spotting tech jobs, so some jobs were added to or dropped from the counts",
+       "size": -205
+      }
+     ],
+     "not_hiring_total": -95,
+     "percent": 3.867403314917127,
+     "percent_withheld": null,
+     "span_days": 5.0,
+     "per_week": 49,
+     "turnover": null,
+     "share": {
+      "start": 8.942687747035572,
+      "latest": 9.4,
+      "denominator_start": 10120,
+      "denominator_latest": 10000,
+      "percent": 5.113812154696146
+     }
+    },
+    "netted": [
+     905,
+     915,
+     935,
+     940,
+     940,
+     940
+    ],
+    "steps_at": [
+     4,
+     5
+    ],
+    "index_base": 905,
+    "arrived_by": null
+   },
+   {
+    "name": "web-development",
+    "label": "web-development",
+    "whole_company": false,
+    "estimated": false,
+    "move": {
+     "start": 500,
+     "latest": 522,
+     "hiring": 0,
+     "not_hiring": [
+      {
+       "change": "found@window",
+       "kind": "found_boards",
+       "label": "5 more job sites found through Sep 25",
+       "size": 40
+      },
+      {
+       "change": "counting@2026-09-24T00:00:00+00:00",
+       "kind": "counting",
+       "label": "we got better at spotting tech jobs, so some jobs were added to or dropped from the counts",
+       "size": -18
+      }
+     ],
+     "not_hiring_total": 22,
+     "percent": 0.0,
+     "percent_withheld": null,
+     "span_days": 5.0,
+     "per_week": 0,
+     "turnover": null,
+     "share": {
+      "start": 5.158102766798419,
+      "latest": 5.220000000000001,
+      "denominator_start": 10120,
+      "denominator_latest": 10000,
+      "percent": 1.2000000000000128
+     }
+    },
+    "netted": [
+     522,
+     527,
+     522,
+     522,
+     522,
+     522
+    ],
+    "steps_at": [
+     4,
+     5
+    ],
+    "index_base": 522,
+    "arrived_by": null
+   },
+   {
+    "name": "data-engineering",
+    "label": "data-engineering",
+    "whole_company": false,
+    "estimated": false,
+    "move": {
+     "start": 300,
+     "latest": 305,
+     "hiring": 4,
+     "not_hiring": [
+      {
+       "change": "counting@2026-09-24T00:00:00+00:00",
+       "kind": "counting",
+       "label": "we got better at spotting tech jobs, so some jobs were added to or dropped from the counts",
+       "size": 1
+      }
+     ],
+     "not_hiring_total": 1,
+     "percent": 1.3289036544850499,
+     "percent_withheld": null,
+     "span_days": 5.0,
+     "per_week": 6,
+     "turnover": null,
+     "share": {
+      "start": 2.974308300395257,
+      "latest": 3.05,
+      "denominator_start": 10120,
+      "denominator_latest": 10000,
+      "percent": 2.544850498338867
+     }
+    },
+    "netted": [
+     301,
+     301,
+     303,
+     305,
+     305,
+     305
+    ],
+    "steps_at": [
+     4,
+     5
+    ],
+    "index_base": 301,
+    "arrived_by": null
+   }
+  ],
+  "other": null,
+  "charted": 3,
+  "company_lines": [
+   {
+    "name": "__total__",
+    "label": "All tech roles",
+    "whole_company": false,
+    "estimated": false,
+    "move": {
+     "start": 1800,
+     "latest": 1767,
+     "hiring": 39,
+     "not_hiring": [
+      {
+       "change": "found@window",
+       "kind": "found_boards",
+       "label": "5 more job sites found through Sep 25",
+       "size": 150
+      },
+      {
+       "change": "counting@2026-09-24T00:00:00+00:00",
+       "kind": "counting",
+       "label": "we got better at spotting tech jobs, so some jobs were added to or dropped from the counts",
+       "size": -222
+      }
+     ],
+     "not_hiring_total": -72,
+     "percent": 2.256944444444444,
+     "percent_withheld": null,
+     "span_days": 5.0,
+     "per_week": 55,
+     "turnover": null,
+     "share": {
+      "start": 17.07509881422925,
+      "latest": 17.669999999999998,
+      "denominator_start": 10120,
+      "denominator_latest": 10000,
+      "percent": 3.4840277777777615
+     }
+    },
+    "netted": [],
+    "steps_at": [],
+    "index_base": null,
+    "arrived_by": null
+   }
+  ],
+  "breakdown": {
+   "closing": null
+  },
+  "marked_changes": [
+   {
+    "id": "found@window",
+    "kind": "found_boards",
+    "ts": "2026-09-22T00:00:00+00:00",
+    "label": "5 more job sites found through Sep 25",
+    "fields": [],
+    "changed": [],
+    "company": null,
+    "boards": 5,
+    "sizes": {
+     "__total__": 150
+    },
+    "drawn": false
+   },
+   {
+    "id": "counting@2026-09-24T00:00:00+00:00",
+    "kind": "counting",
+    "ts": "2026-09-24T00:00:00+00:00",
+    "label": "we got better at spotting tech jobs, so some jobs were added to or dropped from the counts",
+    "fields": [
+     "tech_filter_version"
+    ],
+    "changed": [
+     "we got better at spotting tech jobs, so some jobs were added to or dropped from the counts"
+    ],
+    "company": null,
+    "boards": null,
+    "sizes": {
+     "__total__": -222
+    },
+    "drawn": true
+   }
+  ],
+  "day_markers": [
+   {
+    "day": "2026-09-24",
+    "at": "2026-09-24T00:00:00+00:00",
+    "changes": [
+     "counting@2026-09-24T00:00:00+00:00"
+    ]
+   }
+  ],
+  "reference": [
+   10120,
+   10120,
+   10000,
+   10000,
+   10000,
+   10000
+  ],
+  "openings": 1767,
+  "served_jobs": null,
+  "non_tech_jobs": null,
+  "reconciles": true,
+  "violations": []
+ }
+}

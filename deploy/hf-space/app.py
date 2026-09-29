@@ -78,6 +78,7 @@ from headstart.serving import (
 )
 from headstart.space_mcp import server as space_mcp_server
 from headstart.space_mcp import space_client
+from headstart.space_mcp.tools import search_jobs as space_mcp_search_jobs
 from headstart.trends import hot_ranking, line_reading, trend_history
 
 DATASET = os.environ.get("HF_DATASET", "imPoseidon/headstart-index")
@@ -1780,6 +1781,18 @@ _MCP_AT_ONCE_EACH = 2
 _MCP_PLACES = concurrency_limit.ConcurrencyLimit(_MCP_AT_ONCE, _MCP_AT_ONCE_EACH)
 _MCP_PLACE_WAIT_S = 10
 
+# A description-keyword search takes one place of its own, and there is one (ADR-0325). It is
+# CPU-bound: 16-18 s alone on the Space and 29-36 s beside another (measured 2026-09-29), so a
+# second at once finishes neither sooner, and under a cold cache both pass the 45 s deadline.
+# Out of the 4 places above, it never holds one for a fast call to queue behind: a fast search
+# took 5.2 s alone and 7.7 s beside a scan. It waits 10 s like any call, then is told to retry
+# in about the time one scan takes.
+_MCP_SCANS_AT_ONCE = 1
+_MCP_SCAN_PLACES = concurrency_limit.ConcurrencyLimit(
+    _MCP_SCANS_AT_ONCE, _MCP_SCANS_AT_ONCE
+)
+_MCP_SCAN_RETRY_S = 20
+
 # Each distinct Origin `/mcp` has received this boot, logged once, so the first real connection
 # shows what Anthropic's clients send. Bounded, since the header is the caller's to write.
 _MCP_ORIGINS_SEEN: set[str] = set()
@@ -1804,6 +1817,24 @@ def _note_mcp_origin(origin: str | None, address: str) -> None:
         f"{'allowed' if allowed else 'refused'}, "
         f"from Anthropic's range: {_from_anthropic(address)}",
         flush=True,
+    )
+
+
+def _scans_descriptions(body: bytes) -> bool:
+    """Whether this `/mcp` POST is a search_jobs call matching its keyword in descriptions
+    (ADR-0325), read from the body before the protocol module reads it. A body that does not
+    parse is not one; the protocol module refuses it."""
+    try:
+        message = json.loads(body)
+    except ValueError:
+        return False
+    params = message.get("params") if isinstance(message, dict) else None
+    return (
+        isinstance(params, dict)
+        and message.get("method") == "tools/call"
+        and params.get("name") == "search_jobs"
+        and isinstance(params.get("arguments"), dict)
+        and space_mcp_search_jobs.scans_descriptions(params["arguments"])
     )
 
 
@@ -1836,7 +1867,17 @@ def mcp():
             f"retry in {wait_s} s.",
             wait_s,
         )
-    refused = _MCP_PLACES.take(caller, _MCP_PLACE_WAIT_S)
+    places = _MCP_SCAN_PLACES if _scans_descriptions(body) else _MCP_PLACES
+    refused = places.take(caller, _MCP_PLACE_WAIT_S)
+    if refused and places is _MCP_SCAN_PLACES:
+        return _mcp_refusal(
+            body,
+            503,
+            f"HeadStart runs {_MCP_SCANS_AT_ONCE} description-keyword search at a time, and "
+            f"another is running; retry in about {_MCP_SCAN_RETRY_S} s, or match the keyword "
+            "in titles (keyword_in: title), which is fast.",
+            _MCP_SCAN_RETRY_S,
+        )
     if refused is concurrency_limit.Refused.CALLER:
         return _mcp_refusal(
             body,
@@ -1854,7 +1895,7 @@ def mcp():
             request.headers, body, _MCP_SERVER, _MCP_ORIGINS
         )
     finally:
-        _MCP_PLACES.give_back(caller)
+        places.give_back(caller)
     return Response(out, status, headers)
 
 
@@ -2025,9 +2066,10 @@ def _log_the_request(response):
 #
 # 16 threads on the Space's 2 vCPUs. No more than two requests can compute at once, so the other
 # threads are there to wait: a résumé read waits on the router for up to 120 s, each Saved set or
-# Profile write on an HF commit, and a `/mcp` request up to 10 s for one of its 4 places. With
-# every `/mcp` place taken and four more queued, 8 threads are still left for the page. The
-# development server started a thread per connection with no bound. Waitress reads each request
+# Profile write on an HF commit, and a `/mcp` request up to 10 s for one of its 4 places or its
+# one description-scan place (ADR-0325). With all 5 taken and four more queued, 7 threads are
+# still left for the page. The development server started a thread per connection with no
+# bound. Waitress reads each request
 # whole before a thread takes it, so a client that never finishes sending holds a connection,
 # not a thread: 40 such clients cost the development server 41 threads and waitress none
 # (measured locally, 2026-09-29).

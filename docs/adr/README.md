@@ -271,7 +271,7 @@ supersedes it and note the supersession in both.
 | [0273](0273-a-country-filter-matches-every-way-a-location-names-a-country.md) | A country filter matches every way a location names a country | 2026-09-29 |
 | [0274](0274-an-agent-asks-facets-for-the-total-alone-and-names-a-category-in-its-own-words.md) | An agent asks `/facets` for the total alone, and names a category in its own words | 2026-09-29 |
 | [0275](0275-an-agent-looks-a-company-up-and-reads-its-hiring-profile.md) | An agent looks a company up and reads its hiring profile | 2026-09-29 |
-| [0276](0276-a-hosted-mcp-call-ends-at-its-deadline-and-no-caller-holds-every-place.md) | A hosted MCP call ends at its deadline, and no caller holds every place | 2026-09-29 |
+| [0276](0276-a-hosted-mcp-call-ends-at-its-deadline-and-no-caller-holds-every-place.md) | A hosted MCP call ends at its deadline, and no caller holds every place (places amended by 0325) | 2026-09-29 |
 | [0277](0277-an-agent-reads-a-posting-by-id-and-finds-jobs-like-one.md) | An agent reads a posting by id, and finds jobs like one | 2026-09-29 |
 | [0285](0285-a-vector-is-rebuilt-when-its-postings-text-changes.md) | A vector is rebuilt when its posting's text changes | 2026-09-29 |
 | [0290](0290-a-merge-deploys-the-space-only-when-it-changes-what-the-space-loads.md) | A merge deploys the Space only when it changes what the Space loads | 2026-09-29 |
@@ -280,8 +280,10 @@ supersedes it and note the supersession in both.
 | [0299](0299-a-keyword-word-matches-where-a-word-starts-and-quotes-keep-a-phrase.md) | A keyword word matches where a word starts, and quotes keep a phrase together | 2026-09-29 |
 | [0302](0302-an-oracle-board-whose-title-names-no-one-is-named-by-its-sites-seo-name.md) | An Oracle Board whose title names no one is named by its site's SEO name | 2026-09-29 |
 | [0303](0303-a-zwayam-board-is-read-from-the-api-cluster-that-holds-it.md) | A Zwayam Board is read from the API cluster that holds it | 2026-09-29 |
+| [0304](0304-the-index-view-takes-boards-found-out-of-each-line-by-its-own-openings.md) | The index view takes Boards found out of each line by its own openings | 2026-09-29 |
 | [0305](0305-an-abstained-row-whose-title-names-a-developer-is-software-engineering.md) | An abstained row whose title names a developer is software engineering | 2026-09-29 |
 | [0306](0306-a-hidden-family-is-counted-and-folded-into-other-never-listed.md) | A hidden family is counted and folded into Other, never listed | 2026-09-29 |
+| [0325](0325-the-model-retries-an-edge-failure-and-a-description-scan-runs-alone.md) | The model retries an edge failure, a description scan runs alone, and the hosted eval waits for its server | 2026-09-29 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*

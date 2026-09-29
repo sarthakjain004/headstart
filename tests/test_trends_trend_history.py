@@ -217,6 +217,34 @@ def test_comparable_coverage_serves_the_removals_on_its_cohorts_boards_only(tmp_
     assert history.unnetted_answer(comparable)["evicted"] == [cohorts]
 
 
+def test_the_index_sizes_each_board_found_by_the_line_it_lands_in(tmp_path):
+    """A Board first counted after the window's first run lands its backlog in the index's lines
+    at once; the answer sizes it line by line from the Board's first deltas (ADR-0304). The
+    ledger's first tick is every Board's baseline, not a Board found."""
+    _write_ticks(tmp_path)
+    history = TrendHistory.load(tmp_path, _NO_CONFIG)
+    found = [
+        {
+            "ts": _stamp(3),
+            "company": None,
+            "boards": 1,
+            "openings": 1,
+            "lines": {"software-engineering": 1},
+        }
+    ]
+    assert history.unnetted_answer(TrendQuestion())["discovered"] == found
+    by_level = history.unnetted_answer(TrendQuestion(family="software-engineering"))
+    assert [f["lines"] for f in by_level["discovered"]] == [{"entry": 1}]
+    # Not a Board of the ATS picked, not in a comparable cohort, and not under New.
+    for question in (
+        TrendQuestion(ats=("greenhouse",)),
+        TrendQuestion(coverage="comparable"),
+        TrendQuestion(metric="new"),
+        TrendQuestion(since=_stamp(3)),
+    ):
+        assert history.unnetted_answer(question)["discovered"] == [], question
+
+
 def test_an_unreadable_ledger_is_an_empty_history(tmp_path):
     directory = tmp_path / "role_trend_board_deltas"
     directory.mkdir()

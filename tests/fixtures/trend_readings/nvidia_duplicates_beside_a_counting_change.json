@@ -299,7 +299,8 @@
     "boards": null,
     "sizes": {
      "eightfold:jobs.nvidia.com": 41
-    }
+    },
+    "drawn": true
    },
    {
     "id": "removed@2026-09-15T00:00:00+00:00/eightfold:jobs.nvidia.com",
@@ -312,7 +313,8 @@
     "boards": null,
     "sizes": {
      "eightfold:jobs.nvidia.com": -2041
-    }
+    },
+    "drawn": true
    }
   ],
   "day_markers": [
