@@ -1,17 +1,21 @@
 """One `hiring_now` answer: the Space's Hot ranking (`trends.hot_ranking`), one Lens of it.
 
-The Space ranks every Company directory entry once at boot, over the trailing week, on three
-Lenses; this answer lists one of them, in the site's order, with the site's numbers. The Operators
-the Hot tab hides by default (staffing firms and job boards, ADR-0238) are the ones `/hot` names in
+The Space ranks every Company directory entry once at boot, over the trailing week, on four
+Lenses; this answer lists one of them, with the site's numbers. The Operators the Hot tab hides by
+default (staffing firms and job boards, ADR-0238) are the ones `/hot` names in
 ``hidden_by_default``, so the page and this answer read one list; what was left out, and why, is
 said rather than silently applied.
 
-A row's ``net`` is its trend's "hiring": the change in openings less the counting steps the
-reading could size, so re-counting it could not size stays in (ADR-0272). Bosch Group led
-Expansion at net +439 with 23 postings opened and 32 closed. So each row states opened less closed
-beside its net, a row whose net is more than its postings opened and closed could make is flagged
-as mostly re-counting, and on the Rate lens a row whose base is too small to read is flagged too.
-The rows are never re-ranked, so the numbers and their order match the page.
+The default Lens is `opened_less_closed` (ADR-0321): postings opened less postings closed, for
+companies whose closures were counted on every Board, so its figure holds no re-counting. A row's
+``net`` is its trend's "hiring": the change in openings less the counting steps the reading could
+size, so re-counting it could not size stays in (ADR-0272). Bosch Group led Expansion at net +442
+with 23 postings opened and 33 closed. So each row states opened less closed beside its net, and
+every Lens flags the same artifacts: a net more than its postings opened and closed could make, a
+company whose closures went uncounted, more postings opened than are open now, and on Rate a base
+too small to read. On the site's three older Lenses a flagged row is listed after the unflagged
+ones, each group in the site's order, and every row then gives its place on the page; Opened less
+closed ranks by a figure no flag questions, so it keeps its order.
 """
 
 from __future__ import annotations
@@ -31,7 +35,14 @@ COMPANY_FIELD = 60
 #: 2016% off 25.
 SMALL_BASE_FLOORS = 2
 
+#: The Lens answered unless another is asked for: the one whose figure holds no re-counting.
+DEFAULT_LENS = "opened_less_closed"
+
 _LENS_WORDS = {
+    DEFAULT_LENS: (
+        "postings opened less postings closed, only for companies whose closures were counted "
+        "on every Board, largest first"
+    ),
     "expansion": (
         "the site's net change in tech openings, less the counting steps it could size; "
         "re-counting it could not size stays in, so read it beside opened and closed"
@@ -39,6 +50,10 @@ _LENS_WORDS = {
     "volume": "postings opened",
     "rate": "postings opened as a share of the company's openings now",
 }
+
+_UNBACKED = "net not backed by postings opened: mostly re-counting, not hiring"
+#: Said per row in two words; the line under the rows says what it means.
+_UNCOUNTED_CLOSURES = "closures not counted"
 
 
 def _change(value: int | None) -> str:
@@ -79,30 +94,33 @@ def _unbacked(row: dict[str, Any], pace: float) -> bool:
 
 
 def _flags(row: dict[str, Any], lens: str, pace: float, min_stock: int) -> list[str]:
-    flags = []
-    if _unbacked(row, pace):
+    """Every artifact check, on every Lens (ADR-0321). Only a small base is Rate's alone: it
+    questions a share, which no other Lens ranks by."""
+    flags = [_UNBACKED] if _unbacked(row, pace) else []
+    stock, opened = row.get("stock") or 0, row.get("opened")
+    if lens == "rate" and stock and stock < SMALL_BASE_FLOORS * min_stock:
         flags.append(
-            "net not backed by postings opened: mostly re-counting, not hiring"
+            f"small base: at {stock:,} openings each posting opened moves the rate "
+            f"{100 / stock:.0f} points"
         )
-    stock = row.get("stock") or 0
-    if lens == "rate" and stock:
-        if stock < SMALL_BASE_FLOORS * min_stock:
-            flags.append(
-                f"small base: at {stock:,} openings each posting opened moves the rate "
-                f"{100 / stock:.0f} points"
-            )
-        if (row.get("rate") or 0) > 100:
-            flags.append("more postings opened than are open now")
+    if stock and (opened or 0) > stock:
+        flags.append("more postings opened than are open now")
+    if opened and row.get("closed") is None:
+        flags.append(_UNCOUNTED_CLOSURES)
     return flags
 
 
-def _row(rank: int, row: dict[str, Any], flags: list[str]) -> str:
+def _row(
+    rank: int, row: dict[str, Any], flags: list[str], site_rank: int | None
+) -> str:
     rate = "not counted" if row.get("rate") is None else f"{row['rate']}%"
     opened, closed = row.get("opened"), row.get("closed")
     both = opened is not None and closed is not None
     partly = row.get("closures_uncounted_boards") or 0
     return (
-        f"{rank:>2}. {scraped_text.quoted(row.get('company'), COMPANY_FIELD)} · key "
+        f"{rank:>2}. "
+        + (f"site #{site_rank} · " if site_rank else "")
+        + f"{scraped_text.quoted(row.get('company'), COMPANY_FIELD)} · key "
         f"{row.get('key')} · "
         f"{row.get('operator')} · {row.get('stock', 0):,} open now · net "
         f"{_change(row.get('net'))} · opened {_count(opened)} · closed {_count(closed)}"
@@ -118,9 +136,64 @@ def _row(rank: int, row: dict[str, Any], flags: list[str]) -> str:
     )
 
 
+def _not_ranked(
+    lens: str, counts: dict[str, Any], hidden_here: int, hidden: set[str]
+) -> str:
+    """What the ranking left out, and why, as one line."""
+    left_out = [
+        f"{counts.get('too_new', 0):,} counted for under 3 days",
+        (
+            f"{counts.get('below_min_stock', 0):,} with fewer than "
+            f"{counts.get('min_stock', 25)} openings"
+        ),
+        f"{counts.get('unnamed', 0):,} Boards no directory company holds",
+    ]
+    if lens in ("rate", DEFAULT_LENS):
+        left_out.append(
+            f"{counts.get('closures_uncounted', 0):,} whose closures were not counted, so "
+            "their postings opened may be the same postings listed again"
+        )
+    if lens == DEFAULT_LENS:
+        left_out.append(
+            f"{counts.get('closures_partly_uncounted', 0):,} whose closures went uncounted on "
+            "some of their Boards, so their closed runs low"
+        )
+    if hidden_here:
+        left_out.append(
+            f"{hidden_here} {' and '.join(sorted(hidden))} rows hidden, as the site's tab hides "
+            "them (include_hidden_operators shows them)"
+        )
+    return (
+        f"Ranked {counts.get('ranked', 0):,} companies; not ranked: "
+        + "; ".join(left_out)
+        + "."
+    )
+
+
+def in_answer_order(
+    hot: dict[str, Any], lens: str, limit: int, show_hidden: bool = False
+) -> list[tuple[int, dict[str, Any], list[str]]]:
+    """The rows an answer lists, in its order, each as ``(its place on the page, row, flags)``:
+    the first ``limit`` rows the page shows on ``lens``, and on the site's older Lenses the
+    flagged ones after the rest. The evaluation judges a ranking answer by this order."""
+    hidden = set(hot.get("hidden_by_default") or ())
+    ranked = hot.get("lenses", {}).get(lens) or []
+    rows = [r for r in ranked if show_hidden or r.get("operator") not in hidden]
+    pace = _pace(hot.get("window") or {})
+    min_stock = (hot.get("counts") or {}).get("min_stock", 25)
+    shown = [
+        (site_rank, row, _flags(row, lens, pace, min_stock))
+        for site_rank, row in enumerate(rows[:limit], start=1)
+    ]
+    if lens == DEFAULT_LENS:
+        return shown
+    # A flag questions the figure the site's older Lenses rank by, so a flagged row goes last;
+    # sorted() is stable, so each group keeps the site's order.
+    return sorted(shown, key=lambda item: bool(item[2]))
+
+
 def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
     lens = arguments["lens"]
-    limit = int(arguments["limit"])
     show_hidden = bool(arguments.get("include_hidden_operators"))
     hot = client.read(SpaceRoute.HOT)
     hidden = set(hot.get("hidden_by_default") or ())
@@ -129,11 +202,16 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
     window = hot.get("window") or {}
     counts = hot.get("counts") or {}
     pace = _pace(window)
+    in_order = in_answer_order(hot, lens, int(arguments["limit"]), show_hidden)
+    moved = [site_rank for site_rank, _, _ in in_order] != list(
+        range(1, len(in_order) + 1)
+    )
     lines = [
         (
             f"Hiring now, {lens}: {_LENS_WORDS[lens]}, over "
-            f"{str(window.get('base'))[:10]} → {str(window.get('to'))[:10]}, in the site's "
-            "order. Whole tech index."
+            f"{str(window.get('base'))[:10]} → {str(window.get('to'))[:10]}"
+            + ("" if lens == DEFAULT_LENS else ", in the site's order")
+            + ". Whole tech index."
         ),
         scraped_text.SCRAPED_NOTE,
     ]
@@ -144,50 +222,36 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
             f"HeadStart began counting them: {_days(began, window['to']):.1f} of the window's "
             f"{_days(window['base'], window['to']):.1f} days."
         )
-    unbacked = small = 0
-    for rank, row in enumerate(rows[:limit], start=1):
-        flags = _flags(row, lens, pace, counts.get("min_stock", 25))
-        unbacked += _unbacked(row, pace)
-        small += any(flag.startswith("small base") for flag in flags)
-        lines.append(_row(rank, row, flags))
+    if moved:
+        lines.append(
+            "Flagged rows are listed after the unflagged ones, each group in the site's order; "
+            "site #N is the row's place on the page."
+        )
+    lines += [
+        _row(rank, row, flags, site_rank if moved else None)
+        for rank, (site_rank, row, flags) in enumerate(in_order, start=1)
+    ]
     if not rows:
         lines.append("No company qualified on this Lens this week.")
-    if unbacked:
+    flagged = [flag for _, _, flags in in_order for flag in flags]
+    if unbacked := flagged.count(_UNBACKED):
         lines.append(
             f"{unbacked} of these rows have a net larger than their postings opened and "
             "closed could make, even at their pace over the whole window: that net is "
             "re-counting HeadStart could not size, not hiring, so report their opened and "
             "closed instead."
         )
-    if small:
+    if uncounted := flagged.count(_UNCOUNTED_CLOSURES):
+        lines.append(
+            f"{uncounted} of these rows had their closures go uncounted: their postings "
+            "opened may be the same postings listed again, so read them beside open now."
+        )
+    if small := sum(flag.startswith("small base") for flag in flagged):
         lines.append(
             f"{small} of these rows rank on a small base, where a few postings move the rate "
             "far: weigh them by their postings opened, not the percentage."
         )
-    left_out = [
-        f"{counts.get('too_new', 0):,} counted for under 3 days",
-        (
-            f"{counts.get('below_min_stock', 0):,} with fewer than "
-            f"{counts.get('min_stock', 25)} openings"
-        ),
-        f"{counts.get('unnamed', 0):,} Boards no directory company holds",
-    ]
-    if lens == "rate":
-        left_out.append(
-            f"{counts.get('closures_uncounted', 0):,} whose closures were not counted, so "
-            "their postings opened may be the same postings listed again"
-        )
-    hidden_here = len(ranked) - len(rows)
-    if hidden_here:
-        left_out.append(
-            f"{hidden_here} {' and '.join(sorted(hidden))} rows hidden, as the site's tab hides "
-            "them (include_hidden_operators shows them)"
-        )
-    lines.append(
-        f"Ranked {counts.get('ranked', 0):,} companies; not ranked: "
-        + "; ".join(left_out)
-        + "."
-    )
+    lines.append(_not_ranked(lens, counts, len(ranked) - len(rows), hidden))
     lines.append(
         "There is no per-category ranking; for who is growing in one category, use read_trends "
         "with category and the companies to compare."
@@ -201,15 +265,19 @@ TOOL = SpaceTool(
     name="hiring_now",
     title="Which companies are hiring hardest this week",
     description=(
-        "Companies ranked over the trailing week on one Lens, in the site's order; a row "
-        "flagged 'not backed by postings opened' is mostly re-counting, not hiring, so report "
-        "its postings opened and closed, not its net. Lenses: `expansion` (net change in tech "
-        "openings, less the counting steps HeadStart could size; it can still hold re-counting, "
-        "so every row also gives postings opened and closed), `volume` (postings opened) or "
-        "`rate` (postings opened as a share of the company's openings now; a small base is "
-        "flagged). Whole tech index; companies under 25 openings or counted for under 3 days "
-        "are not ranked. Each row's operator says who posts: employer (the company itself, and "
-        "any company not on HeadStart's curated list), services (an IT services firm posting "
+        "Companies ranked over the trailing week on one Lens. The default, "
+        "`opened_less_closed`, ranks postings opened less postings closed, only for companies "
+        "whose closures were counted on every Board: the one Lens with no re-counting in its "
+        "figure, so lead with it for who is hiring. The site's other Lenses: `expansion` (net "
+        "change in tech openings, less the counting steps HeadStart could size; it can still "
+        "hold re-counting), `volume` (postings opened) or `rate` (postings opened as a share of "
+        "the company's openings now). Every row gives postings opened and closed, and is "
+        "flagged where its net is not backed by them (mostly re-counting: report its opened and "
+        "closed), its closures went uncounted, it opened more postings than are open now, or, "
+        "on rate, its base is small; on expansion, volume and rate flagged rows are listed "
+        "last. Whole tech index; companies under 25 openings or counted for under 3 days are "
+        "not ranked. Each row's operator says who posts: employer (the company itself, and any "
+        "company not on HeadStart's curated list), services (an IT services firm posting "
         "client work it staffs with its own engineers), staffing (a staffing agency posting "
         "its clients' contracts) or aggregator (a job board re-posting other companies' jobs). "
         "Staffing and aggregator rows are left out unless asked for, as on the site. Each row "
@@ -220,8 +288,8 @@ TOOL = SpaceTool(
         "properties": {
             "lens": {
                 "type": "string",
-                "enum": ["expansion", "volume", "rate"],
-                "default": "expansion",
+                "enum": [DEFAULT_LENS, "expansion", "volume", "rate"],
+                "default": DEFAULT_LENS,
             },
             "limit": {
                 "type": "integer",
@@ -240,5 +308,6 @@ TOOL = SpaceTool(
         "Use hiring_now for which companies are expanding or opening the most roles this week."
     ),
     answer=answer,
-    max_chars=20_000,
+    # 50 rows at their longest, each with every flag, measured 20,811 characters (ADR-0321).
+    max_chars=25_000,
 )

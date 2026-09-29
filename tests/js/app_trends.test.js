@@ -2587,6 +2587,17 @@ test('the index gets a hiring net from its turnover, and table columns too', () 
   assert.match(nodes['trends-verdict'].innerHTML, /about 10 more closed than opened — about 40 opened, 50 closed\./);
 });
 
+test('Opening more than closing leads with opened less closed and gives both counts', () => {
+  // ADR-0321: the Lens ranks only companies whose closures were counted on every Board, so a
+  // row always has both counts.
+  const { t } = loadApp();
+  const wipro = { net: 68, opened: 344, closed: 251, stock: 2891, rate: 12, opened_less_closed: 93 };
+  const m = t.hotMeasure.opened_less_closed(wipro);
+  assert.equal(m.big, '+93');
+  assert.match(m.unit, /more tech roles opened than closed this week/);
+  assert.equal(m.sub, '344 opened · 251 closed · 2891 open now');
+});
+
 test('a Hot row shows the week’s opened and closed, and Volume leads with opened', () => {
   const { t } = loadApp();
   const amazon = { net: -3, opened: 1396, closed: 1399, stock: 9081, rate: 15 };

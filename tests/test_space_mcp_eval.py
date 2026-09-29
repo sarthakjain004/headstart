@@ -635,6 +635,32 @@ def test_flagged_headline_reads_only_the_rows_hiring_now_printed(ev):
     assert ev.flagged_headline(suffix) is None
 
 
+def test_hot_top_judges_the_order_hiring_now_lists_so_a_disowned_leader_is_not_needed(
+    ev,
+):
+    """ADR-0321: on the site's older Lenses a flagged row is listed after the unflagged ones,
+    so an answer that leads with real rows names the tool's top five, not the page's."""
+    space = _hot_space()
+    rows = space.answers[SpaceRoute.HOT]["lenses"]["expansion"]
+    # Acme's net is re-counting: +442 on 23 opened and 33 closed.
+    rows[0].update(stock=958, net=442, opened=23, closed=33)
+    answer = "Borealis Data, Cobalt Payments, Dune Analytics, Ember Health and Fjord Security."
+    verdict = ev.verify_hot_top(
+        {"lens": "expansion", "top": 5}, _transcript(ev, answer=answer), space
+    )
+    assert verdict.passed, verdict.detail
+    assert "Acme Robotics" not in verdict.detail
+
+
+def test_flagged_headline_reads_a_row_that_gives_its_place_on_the_page(ev):
+    """ADR-0321: a reordered row starts "site #N · "."""
+    moved = _HIRING_NOW.replace(' 1. "Acme', ' 3. site #1 · "Acme')
+    transcript = _transcript(
+        ev, [("hiring_now", {}, moved, False)], "Acme Robotics leads."
+    )
+    assert ev.flagged_headline(transcript) == "Acme Robotics"
+
+
 # --- title_keyword_rows --------------------------------------------------------------------
 
 _RUST_ROWS = r"""3 jobs match these filters. Showing 1–3.

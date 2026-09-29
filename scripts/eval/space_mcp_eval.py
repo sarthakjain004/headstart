@@ -76,7 +76,7 @@ from headstart.space_mcp.space_client import (
     SpaceRoute,
 )
 from headstart.space_mcp.space_tool import ANSWER_CEILING_CHARS
-from headstart.space_mcp.tools import REGISTRY
+from headstart.space_mcp.tools import REGISTRY, hiring_now
 
 ITERATION_TASKS = _ROOT / "scripts" / "eval" / "space_mcp_eval_tasks.json"
 ARTIFACTS = _ROOT / "experiment" / "space-mcp-eval" / "artifacts"
@@ -556,10 +556,11 @@ def _named(answer: str, row: dict[str, Any]) -> bool:
     )
 
 
-#: A hiring_now row as the tool prints it: rank, quoted company, key, then the rest, where
-#: `_HOT_FLAG` marks a row the tool itself says is not hiring.
+#: A hiring_now row as the tool prints it: rank, its place on the page when reordered (ADR-0321),
+#: quoted company, key, then the rest, where `_HOT_FLAG` marks a row the tool itself says is not
+#: hiring.
 _HOT_ROW = re.compile(
-    r'^\s*\d+\. ("(?:[^"\\]|\\.)*") · key (\S+) · (.*)$', re.MULTILINE
+    r'^\s*\d+\. (?:site #\d+ · )?("(?:[^"\\]|\\.)*") · key (\S+) · (.*)$', re.MULTILINE
 )
 _HOT_FLAG = " · FLAG "
 
@@ -603,16 +604,14 @@ def flagged_headline(transcript: Transcript) -> str | None:
 def verify_hot_top(
     expect: dict[str, Any], transcript: Transcript, space: Space
 ) -> Verdict:
-    """At least N-1 of /hot's top N on the Lens named, after the Operators the Hiring now tab
-    hides, and the answer does not lead with a row the tool flagged."""
+    """At least N-1 of the top N on the Lens named, in the order hiring_now lists them: /hot's,
+    after the Operators the Hiring now tab hides, and on the site's older Lenses with the rows a
+    flag disowns after the rest (ADR-0321); and the answer does not lead with a row the tool
+    flagged."""
     lens, top = expect.get("lens") or "expansion", int(expect.get("top") or 5)
     hot = space.read(SpaceRoute.HOT)
-    hidden = set(hot.get("hidden_by_default") or ())
-    rows = [
-        row
-        for row in (hot.get("lenses") or {}).get(lens) or []
-        if row.get("operator") not in hidden
-    ][:top]
+    limit = hiring_now.TOOL.input_schema["properties"]["limit"]["default"]
+    rows = [row for _, row, _ in hiring_now.in_answer_order(hot, lens, limit)][:top]
     need = max(len(rows) - 1, 0)
     named = [row["company"] for row in rows if _named(transcript.final_answer, row)]
     headline = flagged_headline(transcript)
