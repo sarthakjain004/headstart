@@ -31,7 +31,7 @@ employer the Board's own postings state (5 detail payloads read per Board).
 | `siteSettings` `seoConfiguration.name`, where it differs from `siteName` | 3 | 3 |
 | `recruitingCESites` `SeoOrganizationName`, any site | 5 | 3 |
 | `siteSettings` talent-community title ("Join the {X} Talent Community") | 17 | 10 |
-| `recruitingCESites` names of the other sites | 22 | about 6 |
+| `recruitingCESites` names of the other sites | 23 | 2 |
 
 - **The SEO name repeats the site name unless the tenant set one.** The template fills it with
   the site's own name, so 710 of the 751 named Oracle Boards read the same day carry the title
@@ -42,7 +42,7 @@ employer the Board's own postings state (5 detail payloads read per Board).
   title guards (`from_title`, `_PAGE_TITLE`, `_LEFTOVER`) turn them into "The Kroger Co.",
   "Macy's" and "St. Olaf College".
 - **Other sites name subsidiaries, communities and test copies.** `hcwx` (RPM International)
-  lists 22 brand sites; one carries the SEO name "TCI Powder Coatings". `eexs` lists 90 senior-living
+  lists 22 brand sites; one carries the SEO name "TCI Powder Coatings". `eexs` lists 95 senior-living
   communities, and `eiej` spells its own name "REDCON Constructionr". Other sites also carry
   names like "sample for testing", "Duplicate" and "Staff and Faculty".
 - **The talent-community box needs a pattern, and the pattern reads prose.** It gives "Ascendion
