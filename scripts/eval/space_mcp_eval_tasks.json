@@ -513,6 +513,13 @@
       "verifier": "sponsorship_polarity",
       "expect": {"at_least": 1},
       "why": "Round-3 critique P0-1 (ADR-0333): a keyword search for 'sponsorship' in descriptions led with jobs refusing it (36 of 40 sampled did), and t13 passed while checking only that a description search ran. The verifier judges the answer's truth, not its arguments, and apart from the Space's own rules, so it can see their errors (round-3 review SP8): every row the search_jobs and get_job calls listed is read back from /job, and no job the answer names may be one that does not offer sponsorship. A job in the 660 descriptions a person labelled for ADR-0333 (tests/fixtures/work_authorization_labelled.jsonl) is judged by its label, offers or mixed passing; any other by a plain negation check ('no', 'not', 'without', 'refuse', 'citizenship required') within five words of a sponsorship word in the sentences /job quotes. It catches a labelled job labelled refuses or none, and an unlabelled one whose quoted sponsorship sentence negates. It cannot catch an unlabelled job whose refusal no quoted sentence states, and it fails a right answer whose job offers sponsorship in a sentence that also negates ('no matter your visa status, we sponsor'). The work_authorization offers_sponsorship filter is the way to pass; a keyword answer passes only if every job it names offers it."
+    },
+    {
+      "id": "t37",
+      "prompt": "I'm thinking of moving into DevOps. What do DevOps job postings typically ask for, and which companies post the most of them?",
+      "verifier": "operator_mix",
+      "expect": {},
+      "why": "Round-4 critique P1-2 (ADR-0352): DigitalXNode, a recruiter's WP Job Openings site, led the DevOps requirements sample with 15 postings, so one agency's wording spoke for the role and it was presented as the top employer. The verifier reads every role_requirements result's companies line and fails a company the curated lists (board_operator.classify, read by the eval itself) call a staffing firm or job board unless that call's operators kept it, and, unless a company was named, one counted more than role_requirements.PER_COMPANY (8) postings. It trusts the curated lists: a new agency no list names passes until the curation pass labels it."
     }
   ],
   "heldout_sha256": "801e7149bc71c42e7b346dcf089ea20f87d1e0035d989b3dba8ffb50fe055e4d"
