@@ -1236,6 +1236,7 @@ def test_a_category_hands_over_as_the_ids_trends_counted() -> None:
         "id IN ('google:careers.google.com:1', 'Google:careers.google.com:2')"
     )
     bare = MultiDict([("family", "ai-ml")])
+    # Across the whole index a category is read from its family table (ADR-0322), not here.
     assert scoped_jobs_clause(bare, ids) is None, "only beside a company's Boards"
     other = MultiDict(
         [("board", "google:careers.google.com"), ("family", "data-science")]
@@ -1283,6 +1284,7 @@ def test_a_hand_off_that_widens_or_empties_says_so(caplog) -> None:
         scoped_jobs_clause(MultiDict([board, ("family", "nope")]), {"ai-ml": []})
         scoped_jobs_clause(MultiDict([board, ("family", "ai-ml")]), {"ai-ml": []})
         scoped_jobs_clause(MultiDict([("family", "ai-ml")]), {"ai-ml": []})
+        scoped_jobs_clause(MultiDict([("role", "odd")]), None, {"watch:odd": ["x"]})
         with pytest.raises(ValueError):
             scoped_jobs_clause(
                 MultiDict([board, ("family", "ai-ml")]),
@@ -1296,7 +1298,7 @@ def test_a_hand_off_that_widens_or_empties_says_so(caplog) -> None:
             "whole Board served"
         ),
         "family 'nope' is not a known family; zero results",
-        "scope widened: family= given without board=; ignored",
+        "scope widened: role= given without board=; ignored",
         f"category hand-off refused: {MAX_FAMILY_IDS + 1} ids > {MAX_FAMILY_IDS}",
     ]
 
@@ -1392,6 +1394,7 @@ def test_strict_accepts_what_the_table_serves():
         ({"first_seen_after": "2026-09-01T00:00:00"}, "first_seen"),
         ({"seen_after": "2026-09-01"}, "first_seen"),
         ({"seen_before": "2026-09-01"}, "first_seen"),
+        ({"max_age_days": "365"}, "first_seen"),  # would read the posted date alone
         ({"sort": "seen"}, "first_seen"),
         ({"sort": "salary"}, "min_salary_annual"),
     ],
@@ -1428,7 +1431,9 @@ def _hand_off(pairs, family_ids, watch=_WATCHED, strict=True):
 @pytest.mark.parametrize(
     ("pairs", "family_ids", "watch", "status", "named"),
     [
-        ([("family", "ai-ml")], {"ai-ml": []}, _WATCHED, 400, "family= needs board="),
+        # Across the whole index (ADR-0322) a family is checked as beside a Board.
+        ([("family", "nonsense")], {"ai-ml": []}, _WATCHED, 400, "'nonsense'"),
+        ([("family", "ai-ml")], None, _WATCHED, 503, "role assignments"),
         ([("role", "llm-genai")], None, _WATCHED, 400, "role= needs board="),
         (
             [("board", "b:x"), ("family", "ai-ml"), ("role", "llm-genai")],
@@ -1906,3 +1911,166 @@ def test_a_description_keyword_is_read_once_for_the_page_its_total_and_page_2(
     assert [r["id"] for r in second] == [
         r["id"] for r in plain.run({**asked, "page": "2"})
     ]
+
+
+# ---- a category across the whole index, and the three agent-only filters (ADR-0322) ----
+
+
+def _days_ago(days: int) -> str:
+    from datetime import UTC, datetime, timedelta
+
+    return (datetime.now(UTC) - timedelta(days=days)).isoformat(timespec="seconds")
+
+
+@pytest.fixture(scope="module")
+def families_served(tmp_path_factory):
+    """A real LanceDB table of five Jobs in two families, with posted dates of every shape the
+    age filter reads, and family tables over it. No `posted_at_comparable`, so the age filter's
+    unmaterialized guard (a LIKE, NULL on a NULL date) is the one exercised."""
+    lancedb = pytest.importorskip("lancedb")
+    pa = pytest.importorskip("pyarrow")
+    from headstart.serving.job_search import FamilyTables
+
+    rows = [
+        # id, location, remote, posted_at, first_seen, min_years, company, description, vector
+        ("lever:acme:1", "Berlin, Germany", True, _days_ago(10)[:10], _days_ago(9), 8,
+         "Acme", "We sponsor visas.", [1.0, 0.0, 0.0, 0.0]),
+        ("lever:acme:2", "Austin, TX", False, "2022-07-29", _days_ago(3), 2,
+         "Acme", "No sponsorship.", [0.9, 0.1, 0.0, 0.0]),
+        ("lever:beta:3", "Munich, Germany", False, None, _days_ago(5), None,
+         "Beta", None, [0.6, 0.4, 0.0, 0.0]),
+        ("lever:beta:4", "Berlin, Germany", True, _days_ago(1)[:10], _days_ago(1), 10,
+         "Beta Labs", "Visa sponsorship offered.", [0.95, 0.05, 0.0, 0.0]),
+        ("lever:gamma:5", "Toronto, ON, CA", False, "21-Apr-2026",
+         "2024-01-01T00:00:00+00:00", 3, None, "Hybrid.", [0.0, 1.0, 0.0, 0.0]),
+    ]  # fmt: skip
+    columns = ("id", "location", "remote", "posted_at", "first_seen", "min_years",
+               "company", "description", "vector")  # fmt: skip
+    data = [dict(zip(columns, row, strict=True)) for row in rows]
+    for n, row in enumerate(data, start=1):
+        row |= {
+            "title": f"Engineer {n}",
+            "ats": "lever",
+            "employment_type": "Full-time",
+            "url": f"https://jobs.lever.co/x/{n}",
+            "description_stored": row["description"] is not None,
+        }
+    schema = pa.schema(
+        [
+            ("id", pa.string()),
+            ("title", pa.string()),
+            ("company", pa.string()),
+            ("location", pa.string()),
+            ("remote", pa.bool_()),
+            ("ats", pa.string()),
+            ("employment_type", pa.string()),
+            ("posted_at", pa.string()),
+            ("first_seen", pa.string()),
+            ("url", pa.string()),
+            ("min_years", pa.int32()),
+            ("description", pa.string()),
+            ("description_stored", pa.bool_()),
+            ("vector", pa.list_(pa.float32(), 4)),
+        ]
+    )
+    db = lancedb.connect(tmp_path_factory.mktemp("families"))
+    table = db.create_table("jobs", data=pa.Table.from_pylist(data, schema=schema))
+    searcher = JobSearch(_Model(), table)
+    searcher.families = FamilyTables(
+        table,
+        {
+            "ai-ml": ["lever:acme:1", "lever:acme:2", "lever:beta:3"],
+            "software-engineering": ["lever:beta:4", "lever:gamma:5"],
+        },
+    )
+    return searcher
+
+
+def _ids(rows):
+    return [row["id"] for row in rows]
+
+
+def test_a_category_across_the_index_lists_and_counts_exactly_its_jobs(
+    families_served,
+):
+    rows = families_served.run({"family": "ai-ml"})
+    # Newest to HeadStart first, as any browse.
+    assert _ids(rows) == ["lever:acme:2", "lever:beta:3", "lever:acme:1"]
+    assert families_served.facets({"family": "ai-ml"})["total"] == 3
+    german = {"family": "ai-ml", "country": "DE"}
+    assert _ids(families_served.run(german)) == ["lever:beta:3", "lever:acme:1"]
+    strip = families_served.facets(german)
+    assert strip["total"] == 2
+    # Every option is counted within the category too: one of its German jobs is remote.
+    assert strip["facets"]["remote"] == [
+        {"value": True, "label": "Remote only", "count": 1}
+    ]
+
+
+def test_a_ranked_category_ranks_only_its_own_jobs(families_served):
+    rows = families_served.run({"family": "ai-ml", "like": "lever:beta:4"})
+    assert _ids(rows) == ["lever:acme:1", "lever:acme:2", "lever:beta:3"]
+    assert rows[0]["score"] > rows[1]["score"] > rows[2]["score"]
+    total = families_served.facets({"family": "ai-ml", "like": "lever:beta:4"})
+    assert total["total"] == 3
+
+
+def test_a_description_keyword_in_a_category_is_matched_on_the_served_table(
+    families_served,
+):
+    args = {"family": "ai-ml", "kw": "visa", "kw_in": "description"}
+    assert _ids(families_served.run(args)) == ["lever:acme:1"]
+    counted = families_served.facets(args)
+    assert counted["total"] == 1
+    # Of the category's 3 jobs, 2 have a description the keyword could match.
+    assert counted["description_coverage"] == {"covered": 2, "total": 3}
+    none = families_served.facets({**args, "kw": "kubernetes"})
+    assert none["total"] == 0 and none["blocking"] == "kw"
+    # The keyword is named when lifting it recovers more than lifting the filter the counts
+    # named: max_years=5 leaves out its one match (8 years), and without the keyword 2 remain.
+    both = families_served.facets({**args, "max_years": "5"})
+    assert both["total"] == 0 and both["blocking"] == "kw"
+
+
+def test_a_category_no_job_is_assigned_to_matches_nothing(families_served):
+    assert families_served.run({"family": "security"}) == []
+    assert families_served.facets({"family": "security"})["total"] == 0
+
+
+def test_a_category_beside_a_board_is_the_board_hand_offs_not_a_family_table(
+    families_served, monkeypatch
+):
+    from werkzeug.datastructures import MultiDict
+
+    def no_table(_family):
+        raise AssertionError("a Board's category is scoped_jobs_clause's")
+
+    monkeypatch.setattr(families_served.families, "table", no_table)
+    args = MultiDict([("family", "ai-ml"), ("board", "lever:acme")])
+    assert len(families_served.run(args)) == 5  # the app's extra_where scopes it
+
+
+def test_max_age_reads_the_posted_date_and_else_the_first_seen_day(families_served):
+    # 2 was posted in 2022 though first seen this week: the posted date wins. 3 has no posted
+    # date and was first seen 5 days ago. 5's date is unreadable and it was first seen in 2024.
+    rows = families_served.run({"max_age_days": "365"})
+    assert sorted(_ids(rows)) == ["lever:acme:1", "lever:beta:3", "lever:beta:4"]
+    assert families_served.facets({"max_age_days": "365"})["total"] == 3
+
+
+def test_an_experience_floor_leaves_out_jobs_whose_experience_is_unknown(
+    families_served,
+):
+    rows = families_served.run({"required_years_at_least": "8"})
+    assert sorted(_ids(rows)) == ["lever:acme:1", "lever:beta:4"]
+    floored = {"family": "ai-ml", "required_years_at_least": "8"}
+    assert _ids(families_served.run(floored)) == ["lever:acme:1"]
+
+
+def test_exclude_company_drops_every_name_containing_it_and_keeps_nameless_rows(
+    families_served,
+):
+    rows = families_served.run({"exclude_company": "BETA"})
+    assert sorted(_ids(rows)) == ["lever:acme:1", "lever:acme:2", "lever:gamma:5"]
+    blocked = families_served.facets({"family": "ai-ml", "exclude_company": "e"})
+    assert blocked["total"] == 0 and blocked["blocking"] == "exclude_company"

@@ -30,6 +30,7 @@ from headstart.serving import facets
 from headstart.serving.job_search import (
     MAX_FAMILY_IDS,
     MAX_SCOPED_BOARDS,
+    FamilyTables,
     JobSearch,
     ScopeUnavailable,
     load_family_ids,
@@ -145,6 +146,10 @@ _LOCAL_COMPANIES = CompanyPrefs.blank("local")
 
 # A Trends category's Jobs by id, from a local pull of the role-assignment snapshot if any.
 _FAMILY_IDS = load_family_ids(_REPO / "data" / "state" / "role_assignments.parquet")
+# ...and a category across the whole index, read from each family's table as the Space does
+# (ADR-0322).
+if _FAMILY_IDS is not None:
+    _searcher.families = FamilyTables(_table, _FAMILY_IDS)
 # The tracked roles' title patterns (config/role_watchlist.json), for a role hand-off (ADR-0051).
 _WATCH = {
     "watch:" + r["name"]: r.get("match", [])

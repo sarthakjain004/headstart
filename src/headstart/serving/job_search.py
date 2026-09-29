@@ -18,6 +18,7 @@ import time
 from bisect import bisect_left
 from collections import OrderedDict
 from collections.abc import Callable, Collection, Mapping, Sequence
+from dataclasses import dataclass, replace
 from pathlib import Path
 from threading import Lock
 from typing import Any
@@ -354,12 +355,13 @@ def scoped_jobs_clause(
     ``role_assignments`` snapshot (ADR-0057), the same assignment the Trends counts are made
     of. So a trend's category hands over as exact ids — "243 AI roles at Google" in Trends
     opens as Google's AI roles in Search, where a semantic query alone ranked all 1,856 Google
-    jobs. Only with
-    ``board=``: a family across the whole index is a Trends view, not a search. A category past
-    :data:`MAX_FAMILY_IDS` is refused as an invalid filter rather than widened.
+    jobs. This clause is only the one beside ``board=``: ``family=`` without it is a category
+    across the whole index, which :meth:`JobSearch.run` and :meth:`JobSearch.facets` read from
+    :class:`FamilyTables` (ADR-0322), so this returns None for it. A category past
+    :data:`MAX_FAMILY_IDS` on its Boards is refused as an invalid filter rather than widened.
 
     Under ``strict=1`` (ADR-0253) a hand-off this would ignore or widen is refused instead. The
-    caller's errors are a :class:`ValueError`: ``family=`` or ``role=`` without ``board=``, both
+    caller's errors are a :class:`ValueError`: ``role=`` without ``board=``, both
     at once, a role with no watch pattern, or a family ``known_families`` does not configure.
     A deployment that cannot apply one is a :class:`ScopeUnavailable`: no watchlist, no family
     taxonomy, or no role assignments, loaded. ``known_families`` are the families the taxonomy
@@ -379,10 +381,9 @@ def scoped_jobs_clause(
         else None
     )
     if _is_strict(args):
-        if (family or role) and not boards:
+        if role and not boards:
             raise ValueError(
-                f"{'family' if family else 'role'}= needs board=: a category is searched "
-                "within one company's Boards"
+                "role= needs board=: a watched role is searched within one company's Boards"
             )
         if family and role:
             raise ValueError("family= and role= name one scope each; send one of them")
@@ -422,11 +423,8 @@ def scoped_jobs_clause(
                 role,
             )
     if not boards:
-        if family or role:
-            _log.warning(
-                "scope widened: %s given without board=; ignored",
-                "family=" if family else "role=",
-            )
+        if role:
+            _log.warning("scope widened: role= given without board=; ignored")
         return None
     if family_ids is None:
         if family:
@@ -485,6 +483,121 @@ def _ids_on_boards(pool: Sequence[str], prefixes: list[str]) -> list[str]:
 def _ids_in_clause(ids: list[str]) -> str:
     """``id IN (…)`` over ``ids``, each quote doubled."""
     return "id IN (" + ", ".join("'" + i.replace("'", "''") + "'" for i in ids) + ")"
+
+
+#: What a family table leaves out of the served table's columns (ADR-0322): the vector, 768
+#: floats a row, because a family table ranks nothing, and the description, because a
+#: description keyword is matched on the served table and handed to the family table as ids.
+_LEFT_OUT_OF_FAMILY_TABLES = ("vector", "description")
+
+#: Rows a family table's build reads a batch. Building software-engineering's took 2,176 ms in the
+#: default batches, 693 at 8,192 and 529 at 65,536 (lancedb 0.36, 2026-09-29).
+FAMILY_SCAN_BATCH_ROWS = 65_536
+
+
+class FamilyTables:
+    """Each role family's served Jobs as an in-memory table, a *family table*: what a category
+    across the whole index reads (``family=`` without ``board=``, ADR-0322).
+
+    The served table has no family column, so a family is a set of ids (:func:`load_family_ids`),
+    and naming software-engineering's 69,456 in a where-clause cost 1.8 s a statement and 24 s for
+    the facet strip (measured 2026-09-29 on the 498,539-row table). A family table holds the
+    family's rows with every column but :data:`_LEFT_OUT_OF_FAMILY_TABLES`, so any filter and any
+    browse order reads it as it reads the served table. It is built on the family's first
+    request, from one scan, and kept: the served table never changes under a process (the Space
+    restarts on a new one). Software-engineering's is 25 MB; every family's together about 140 MB.
+    """
+
+    def __init__(self, table: Any, family_ids: Mapping[str, Sequence[str]]):
+        self._table = table
+        self._family_ids = family_ids
+        self._columns = [
+            c for c in table.schema.names if c not in _LEFT_OUT_OF_FAMILY_TABLES
+        ]
+        self._tables: dict[str, Any] = {}
+        # Held only to build: a table is built once, and two first requests never scan the
+        # served table twice. A build takes about a second, once a family a process; a family
+        # already built is read without waiting on another's build.
+        self._build_lock = Lock()
+
+    def table(self, family: str) -> Any:
+        """``family``'s table; empty for a family no Job is assigned to."""
+        if (built := self._tables.get(family)) is not None:
+            return built
+        with self._build_lock:
+            if family not in self._tables:
+                self._tables[family] = self._build(self._family_ids.get(family, ()))
+            return self._tables[family]
+
+    def _build(self, ids: Sequence[str]) -> Any:
+        import pyarrow as pa
+        import pyarrow.compute as pc
+
+        wanted = pa.array(list(ids), pa.string())
+        # Streamed in batches of FAMILY_SCAN_BATCH_ROWS, so the scan never holds the whole
+        # table's 185 MB of these columns at once.
+        reader = (
+            self._table.search()
+            .select(self._columns)
+            .to_batches(batch_size=FAMILY_SCAN_BATCH_ROWS)
+        )
+        rows = pa.Table.from_batches(
+            [batch.filter(pc.is_in(batch["id"], value_set=wanted)) for batch in reader],
+            schema=reader.schema,
+        )
+        return _in_memory_table(rows)
+
+
+@dataclass(frozen=True)
+class _FamilyScope:
+    """A category across the whole index as one request reads it (ADR-0322)."""
+
+    family: str
+    #: The family's whole table.
+    table: Any
+    #: What the request reads: the whole table, or its rows a description keyword matched.
+    rows: Any
+    #: The request's filters, as applied to ``rows``: without a keyword matched beforehand.
+    filters: SearchFilters
+
+    @property
+    def keyword_matched_first(self) -> bool:
+        return self.rows is not self.table
+
+
+def _family_asked(args: Mapping[str, str]) -> str | None:
+    """The family a request names across the whole index (``family=`` without ``board=``), or
+    None; ``family=`` beside ``board=`` is :func:`scoped_jobs_clause`'s. A plain mapping has no
+    ``board=`` list to read."""
+    family = (args.get("family") or "").strip()
+    if not family:
+        return None
+    boards = args.getlist("board") if hasattr(args, "getlist") else ()
+    return None if any(board.strip() for board in boards) else family
+
+
+def _in_memory_table(rows: Any) -> Any:
+    """``rows`` (an Arrow table) as a LanceDB table of its own. Each call connects its own
+    in-memory database, so concurrent requests never share one."""
+    import lancedb
+
+    return lancedb.connect("memory://").create_table("rows", data=rows)
+
+
+def _matching_ids(table: Any, where: str | None) -> Any:
+    """The ids of ``table``'s rows ``where`` matches, as an Arrow array."""
+    search = table.search()
+    if where:
+        search = search.where(where)
+    return search.select(["id"]).to_arrow()["id"]
+
+
+def _rows_with_ids(table: Any, ids: Any) -> Any:
+    """``table``'s rows whose id is one of ``ids``, as an in-memory table."""
+    import pyarrow.compute as pc
+
+    rows = table.to_arrow()
+    return _in_memory_table(rows.filter(pc.is_in(rows["id"], value_set=ids)))
 
 
 def _checked_job_id(job_id: str, name: str) -> str:
@@ -709,6 +822,10 @@ def _refuse_what_strict_forbids(
     )
     if seen and not capabilities.has_first_seen:
         raise _unmigrated("a first-seen filter", "first_seen")
+    if filters.max_age_days is not None and not capabilities.has_first_seen:
+        # Without it the age of a Job with no readable posted date is unknown, and the filter
+        # would quietly read the posted date alone (ADR-0322).
+        raise _unmigrated("max_age_days", "first_seen")
     if bracket:
         _refuse_an_unserved_currency(
             filters.salary_currency, "a salary bound", capabilities
@@ -864,6 +981,9 @@ class JobSearch:
         self.job_projection = self.projection + tuple(
             c for c in JOB_DETAIL_COLUMNS if c in names
         )
+        #: The family tables a category across the whole index reads (ADR-0322); the app sets
+        #: them once it has loaded the role assignments. None: ``family=`` needs ``board=``.
+        self.families: FamilyTables | None = None
         # Facets ignore the semantic query and the served table is immutable for this process's
         # lifetime (the Space restarts when a new table lands). Cache only the parsed structured
         # filters, bounded so arbitrary public requests cannot grow memory without limit.
@@ -1020,6 +1140,9 @@ class JobSearch:
             if kw
             else None,
             title_words=(args.get("title_words") or "").strip() or None,
+            max_age_days=_int("max_age_days"),
+            required_years_at_least=_int("required_years_at_least"),
+            exclude_company=(args.get("exclude_company") or "").strip() or None,
         )
         # The one place a request is parsed, and so the one place a dropped filter can be
         # reported without `facets.counts` repeating it once per option — see the helper. Under
@@ -1029,6 +1152,75 @@ class JobSearch:
             _refuse_what_strict_forbids(filters, kw_in, sort, self.capabilities)
         _warn_unknown_filters(filters, kw_in, sort, self.capabilities)
         return filters
+
+    def _family_scope(
+        self, args: Mapping[str, str], filters: SearchFilters
+    ) -> _FamilyScope | None:
+        """The category across the whole index a request names (:func:`_family_asked`) as it
+        reads it, or None (ADR-0322).
+
+        A family table has no description, so a keyword the description scope matches is
+        matched on the served table, its rows found once (ADR-0320), and the request reads the
+        family's rows it matched, its filters without the keyword."""
+        family = _family_asked(args)
+        if family is None:
+            return None
+        if self.families is None:
+            # `strict=1` was refused by `scoped_jobs_clause`; the page never sends this.
+            _log.warning(
+                "scope widened: family=%.40r with no family tables loaded", family
+            )
+            return None
+        table = self.families.table(family)
+        if not reads_descriptions(filters, self.capabilities):
+            return _FamilyScope(family, table, table, filters)
+        keyword = self._description_matches.where(
+            SearchFilters(kw=filters.kw, kw_in=filters.kw_in), None
+        )
+        return _FamilyScope(
+            family,
+            table,
+            _rows_with_ids(table, _matching_ids(self._table, keyword)),
+            replace(filters, kw=None, kw_in=None),
+        )
+
+    def _keyword_figures(
+        self,
+        scope: _FamilyScope,
+        counted: dict[str, Any],
+        extra_where: str | None,
+    ) -> dict[str, Any]:
+        """``counted`` with the figures of a description keyword ``scope`` matched before
+        counting (ADR-0322), which :func:`facets.counts` could not make over rows already
+        narrowed by it: what the keyword may match at all, over the whole family table, and
+        whether it is the filter costing the most. A family table has no description column,
+        so only a table with the materialized `description_stored` flag can say; without it,
+        ``counted`` comes back as it is."""
+        if not self.capabilities.has_description_stored:
+            return counted
+        unkeyed = with_extra(
+            build_filter(scope.filters, self.capabilities), extra_where
+        )
+        coverage = facets.description_coverage(scope.table, unkeyed, materialized=True)
+        counted = {**counted, "description_coverage": coverage}
+        if counted["total"] or not coverage["total"]:
+            return counted
+        # Lifting the keyword recovers `coverage["total"]` rows; the filter `counts` named, if
+        # any, only what lifting it recovers among the keyword's rows. The larger is the answer.
+        named = counted["blocking"]
+        recovered = 0
+        if named:
+            unset = False if isinstance(getattr(scope.filters, named), bool) else None
+            lifted = replace(scope.filters, **{named: unset})
+            where = with_extra(build_filter(lifted, self.capabilities), extra_where)
+            recovered = (
+                scope.rows.count_rows(filter=where)
+                if where
+                else scope.rows.count_rows()
+            )
+        if coverage["total"] > recovered:
+            counted["blocking"] = "kw"
+        return counted
 
     def facets(
         self, args: Mapping[str, str], *, extra_where: str | None = None
@@ -1057,7 +1249,7 @@ class JobSearch:
         only_total = asked == "total"
         if like := _like_id(args):
             extra_where = with_extra(extra_where, _other_than(like))
-        cache_key = (filters, extra_where, only_total)
+        cache_key = (filters, extra_where, only_total, _family_asked(args))
         cached = _cache_get(
             self._facet_cache,
             self._facet_cache_lock,
@@ -1067,18 +1259,24 @@ class JobSearch:
         if cached is not None:
             return cached
         started = time.monotonic()
+        # A category across the whole index counts its family table: every count is exact and
+        # none names the family's ids (ADR-0322).
+        scope = self._family_scope(args, filters)
         counted = facets.counts(
-            self._table,
-            filters,
+            scope.rows if scope else self._table,
+            scope.filters if scope else filters,
             self.capabilities,
             extra_where=extra_where,
             only_total=only_total,
+            # A family table's filters never read descriptions: its keyword was matched first.
             table_where=(
                 lambda varied: self._description_matches.where(varied, extra_where)
             )
-            if reads_descriptions(filters, self.capabilities)
+            if not scope and reads_descriptions(filters, self.capabilities)
             else None,
         )
+        if scope and scope.keyword_matched_first:
+            counted = self._keyword_figures(scope, counted, extra_where)
         elapsed_ms = (time.monotonic() - started) * 1000
         if elapsed_ms > SLOW_SEARCH_MS:
             # The strip is ~46 counts, the most expensive request the Space serves; shapes only,
@@ -1134,7 +1332,18 @@ class JobSearch:
         filters = self.parse_filters(args)
         # Narrowed as `facets` narrows it, so both ask the same where-clause.
         narrowed = with_extra(extra_where, _other_than(like)) if like else extra_where
-        if reads_descriptions(filters, self.capabilities):
+        # A category across the whole index reads its family table (ADR-0322): a browse lists
+        # from it, and a ranked search asks the served table, which holds the vectors, to rank
+        # exactly the family table's matching rows by id.
+        scope = self._family_scope(args, filters)
+        table = scope.rows if scope else self._table
+        if scope:
+            where = with_extra(build_filter(scope.filters, self.capabilities), narrowed)
+            if ranked:
+                ids = _matching_ids(table, where).to_pylist()
+                where = _ids_in_clause(ids) if ids else "id IN ('')"
+                table = self._table
+        elif reads_descriptions(filters, self.capabilities):
             # Its rows found once, and shared with the facet counts (ADR-0320).
             where = self._description_matches.where(filters, narrowed)
         else:
@@ -1177,7 +1386,7 @@ class JobSearch:
         page = _int("page")
         page = max(1, min(1 if page is None else page, self.max_page))
         offset = (page - 1) * k
-        browse_key = (filters, sort, k, page, extra_where)
+        browse_key = (filters, sort, k, page, extra_where, _family_asked(args))
         if not ranked:
             cached = _cache_get(
                 self._browse_cache,
@@ -1197,9 +1406,7 @@ class JobSearch:
             if self.has_vector_index:
                 search = search.nprobes(ANN_NPROBES).refine_factor(ANN_REFINE_FACTOR)
         else:
-            search = (
-                self._table.search()
-            )  # no vector: a plain, filtered scan (ADR-0074)
+            search = table.search()  # no vector: a plain, filtered scan (ADR-0074)
         if where:
             search = search.where(where, prefilter=True)
         # Ask only for the columns the response is built from (:data:`RESULT_COLUMNS`).
@@ -1279,7 +1486,7 @@ class JobSearch:
             rows = window[offset : offset + k]
             path = "ranked-window"
         elif sort_currency:
-            rows = self._salary_browse(where, sort_currency, k, offset)
+            rows = self._salary_browse(table, where, sort_currency, k, offset)
             path = "salary-browse"
         else:
             if sort:
@@ -1316,9 +1523,10 @@ class JobSearch:
         return result
 
     def _salary_browse(
-        self, where: str | None, currency: str, k: int, offset: int
+        self, table: Any, where: str | None, currency: str, k: int, offset: int
     ) -> list[dict]:
-        """One page of a salary-sorted browse, stated in ``currency``.
+        """One page of a salary-sorted browse of ``table`` (the served table, or a family table,
+        ADR-0322), stated in ``currency``.
 
         LanceDB can only ORDER BY a stored column, and salary is stored in each employer's own
         currency, so the whole table cannot be ordered across currencies. The page is cut from
@@ -1337,13 +1545,13 @@ class JobSearch:
             "nulls_first": False,
         }
         by_id = {"column_name": "id", "ascending": True}
-        n_own = self._table.count_rows(filter=with_extra(where, own))
+        n_own = table.count_rows(filter=with_extra(where, own))
 
         def segment(clause: str, ordering: list[dict], limit: int, skip: int) -> list:
             if limit <= 0:
                 return []
             return (
-                self._table.search()
+                table.search()
                 .where(clause, prefilter=True)
                 .select([*self.projection])
                 .order_by(ordering)

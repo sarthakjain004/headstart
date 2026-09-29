@@ -81,13 +81,20 @@ SPACE_NAME = {
     "keyword": "kw",
     "keyword_in": "kw_in",
     "ats": "ats",
+    "max_age_days": "max_age_days",
+    "required_years_at_least": "required_years_at_least",
+    "exclude_company": "exclude_company",
 }
 _ARGUMENT_OF = {space: argument for argument, space in SPACE_NAME.items()}
 
-#: Sent as the literal "true" `parse_filters` compares against; the company and the keyword are
-#: sent by their own rules below.
+#: Sent as the literal "true" `parse_filters` compares against; the company, the keyword and
+#: `max_age_days` (0 is sent as nothing) are sent by their own rules below.
 _FLAGS = ("remote", "has_salary")
-_SENT_ELSEWHERE = (*_FLAGS, "company", "keyword", "keyword_in")
+_SENT_ELSEWHERE = (*_FLAGS, "company", "keyword", "keyword_in", "max_age_days")
+
+#: `max_age_days` when the caller sends none (ADR-0322): a relevance search led with Jobs posted
+#: in 2022 (round-2 critique P1-6). 0 is any age, and is not sent.
+DEFAULT_MAX_AGE_DAYS = 365
 
 #: Facet dimensions in the order the answer lists them (the Space's own names).
 _FACET_ORDER = (
@@ -153,6 +160,8 @@ def _params(
         value = arguments.get(argument)
         if argument not in _SENT_ELSEWHERE and value is not None and value != "":
             params.append((name, str(value)))
+    if max_age := arguments.get("max_age_days"):
+        params.append((SPACE_NAME["max_age_days"], str(max_age)))
     if keyword := (arguments.get("keyword") or "").strip():
         params.append((SPACE_NAME["keyword"], keyword))
         params.append(
@@ -185,11 +194,13 @@ def _refuse_by_policy(arguments: dict[str, Any]) -> None:
         )
     if arguments.get("keyword_in") and not (arguments.get("keyword") or "").strip():
         raise ToolFailure("keyword_in only scopes a keyword; send keyword too.")
-    if arguments.get("category") and not (arguments.get("company") or "").strip():
-        raise ToolFailure(
-            "category narrows one company's jobs to a job category, so it needs company. For a "
-            "category across the whole index, use read_trends, or describe the role in query."
-        )
+
+
+def _read_country(asked: Any) -> Any:
+    """The code a caller's country means — "UK", "USA", "Germany" (ADR-0322) — or ``asked``
+    unchanged, for the schema's enum to refuse with the codes it knows."""
+    code = country_filter.code_for(asked) if isinstance(asked, str) else None
+    return code or asked
 
 
 def _money(row: dict[str, Any]) -> str | None:
@@ -330,6 +341,8 @@ def _scope_line(
             )
         if scope.read_as:
             said.append(scope.read_as)
+    if exclude := (arguments.get("exclude_company") or "").strip():
+        said.append(f"no company name containing {scraped_text.quoted(exclude)}")
     if category := arguments.get("category"):
         named = role_families.label(category)
         said.append(f"category {category}" + (f" ({named})" if named else ""))
@@ -339,6 +352,12 @@ def _scope_line(
         said.append(
             f"open to someone with at most {arguments['max_years']} years, jobs that state "
             "no experience included"
+        )
+    if arguments.get("required_years_at_least") is not None:
+        said.append(
+            f"jobs asking for at least {arguments['required_years_at_least']} years (as "
+            "stated, else estimated from the title's seniority), jobs whose experience is "
+            "unknown left out"
         )
     for argument in ("employment_type", "country", "india_place", "ats"):
         if arguments.get(argument):
@@ -373,6 +392,17 @@ def _scope_line(
     if arguments.get("first_seen_within_hours"):
         said.append(
             f"new to HeadStart in the last {arguments['first_seen_within_hours']} hours"
+        )
+    if max_age := arguments.get("max_age_days"):
+        # 365 is the default whether or not the caller sent it, so the sentence holds either way.
+        said.append(
+            f"posted in the last {max_age:,} days"
+            + (
+                ", the default; send max_age_days 0 for any age"
+                if max_age == DEFAULT_MAX_AGE_DAYS
+                else ""
+            )
+            + " (a job with no readable posted date counts from its first-seen day)"
         )
     if keyword := (arguments.get("keyword") or "").strip():
         said.append(
@@ -420,7 +450,8 @@ def _nothing_matched(
         )
     if blocking:
         name = _ARGUMENT_OF.get(blocking, blocking)
-        return f"0 jobs. The filter costing the most is `{name}`; try without it."
+        undo = "send max_age_days 0" if name == "max_age_days" else "try without it"
+        return f"0 jobs. The filter costing the most is `{name}`; {undo}."
     scoped = scope is not None or arguments.get("category")
     return (
         "0 jobs, and no single filter is to blame: nothing matches even with every filter removed"
@@ -575,12 +606,13 @@ TOOL = SpaceTool(
         "2,000 closest matches — for a global order (the highest salary anywhere, the "
         "newest anywhere) omit `query` and narrow with `keyword` and the filters. "
         "`company` matches as the site's company box does (any company name containing "
-        "the text) unless `category` is set, which needs a directory company: a key "
-        "such as 'greenhouse:stripe', or an exact name. When `company` matched as "
+        "the text); beside `category` it needs a directory company: a key such as "
+        "'greenhouse:stripe', or an exact name. When `company` matched as "
         "text, tell the user so, since it also takes in any other employer whose "
         "name contains that text. `sort` salary orders by "
         "the low end of each stated range; without a currency it is ordered in USD. "
-        "Totals count every job the index serves, so they run higher than read_trends', "
+        "Postings over `max_age_days` old (365 unless sent) are left out; totals count "
+        "every other job the index serves, so they run higher than read_trends', "
         "which counts only jobs its classifier places in a tech category. "
         "No account applies, so a user's hidden companies "
         "are not removed. Returns the total, one page of jobs with their ids, links and "
@@ -611,7 +643,8 @@ TOOL = SpaceTool(
                 ),
             },
             "category": role_families.schema(
-                "A job category within `company`'s jobs; needs `company`."
+                "A job category, across the whole index or, with `company`, within that "
+                "company's jobs."
             ),
             "remote": {"type": "boolean", "description": "Remote jobs only."},
             "max_years": {
@@ -623,6 +656,17 @@ TOOL = SpaceTool(
                     "jobs asking for at most this many."
                 ),
             },
+            "required_years_at_least": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 30,
+                "description": (
+                    "A floor on the job's required experience, not the user's: keeps jobs "
+                    "asking for at least this many years ('roles needing 8+ years' is 8), "
+                    "as stated or else estimated from the title's seniority. Jobs whose "
+                    "experience is unknown are left out."
+                ),
+            },
             "employment_type": {
                 "type": "string",
                 "enum": list(employment_type_filter.RULES),
@@ -631,7 +675,8 @@ TOOL = SpaceTool(
                 "type": "string",
                 "enum": list(country_filter.CODES),
                 "description": (
-                    "ISO 3166-1 alpha-2 code (US, GB, DE, IN). Matches every way a job's "
+                    "ISO 3166-1 alpha-2 code (US, GB, DE, IN); a country's name or 'UK', "
+                    "'USA', 'UAE' is read as its code. Matches every way a job's "
                     "location names the country: its name, states, cities and codes. IN is "
                     "india_place 'india'."
                 ),
@@ -676,6 +721,24 @@ TOOL = SpaceTool(
                 "minimum": 1,
                 "maximum": 720,
                 "description": "New to HeadStart within this many hours.",
+            },
+            "max_age_days": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 3650,
+                "default": DEFAULT_MAX_AGE_DAYS,
+                "description": (
+                    "Leaves out postings older than this many days: the posted date, else "
+                    "the day HeadStart first saw the job. 365 unless sent; 0 for any age."
+                ),
+            },
+            "exclude_company": {
+                "type": "string",
+                "maxLength": 100,
+                "description": (
+                    "Leaves out every job whose company name contains this text, such as "
+                    "the employer of a `similar_to` job."
+                ),
             },
             "keyword": {
                 "type": "string",
@@ -727,5 +790,5 @@ TOOL = SpaceTool(
     ),
     answer=answer,
     max_chars=30_000,
-    argument_readers={"category": role_families.resolve},
+    argument_readers={"category": role_families.resolve, "country": _read_country},
 )

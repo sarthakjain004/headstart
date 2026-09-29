@@ -119,6 +119,15 @@ class SearchFilters:
     # the Keyword filter's own substring rule. Its own field rather than the rail's `kw`, so the
     # two can be set together and a Saved Set keeps which one the user typed where.
     title_words: str | None = None
+    # Three filters only an agent sends (ADR-0322). A Job's age in days: its posted date, else
+    # the day HeadStart first saw it where that date is missing or unreadable.
+    max_age_days: int | None = None
+    # A floor on the Job's required experience (`min_years`: stated, or estimated from its
+    # seniority where none is stated), at least this many years. Not the user's experience,
+    # which is `max_years`; a Job whose required experience is unknown cannot meet a floor.
+    required_years_at_least: int | None = None
+    # The company box negated: no company name containing this text.
+    exclude_company: str | None = None
 
 
 @dataclass(frozen=True)
@@ -590,6 +599,26 @@ def _first_seen_clauses(
     return filters
 
 
+def _age_clause(
+    max_age_days: int, *, has_posted_at_comparable: bool, has_first_seen: bool
+) -> str:
+    """Posted within ``max_age_days`` days, or, where the posted date is missing or not readable
+    as a date, first seen within them (ADR-0322). A served posted date is never later than
+    first seen (ADR-0268), so the fallback never makes a row look older than its own date says.
+    A row with neither is left out: its age is unknown."""
+    cutoff = _ago(days=int(max_age_days)).strftime("%Y-%m-%d")
+    guard = posted_date_guard.clause(has_posted_at_comparable)
+    posted = f"({guard} AND posted_at >= '{cutoff}')"
+    if not has_first_seen:
+        return posted
+    # `posted_at IS NULL` beside the guard: the unmaterialized guard is a LIKE, which is NULL
+    # on a NULL date, and NOT NULL would drop the row instead of reading its first-seen day.
+    return (
+        f"({posted} OR ((posted_at IS NULL OR NOT ({guard})) "
+        f"AND first_seen >= '{cutoff}'))"
+    )
+
+
 def build_filter(filters: SearchFilters, capabilities: IndexCapabilities) -> str | None:
     """The prod-table where-clause — the reference Search-filter compiler (ADR-0031, ADR-0149).
 
@@ -685,4 +714,20 @@ def build_filter(filters: SearchFilters, capabilities: IndexCapabilities) -> str
         first_seen_after=filters.first_seen_after,
         has_first_seen=capabilities.has_first_seen,
     )
+    if filters.max_age_days is not None:
+        clauses.append(
+            _age_clause(
+                filters.max_age_days,
+                has_posted_at_comparable=capabilities.has_posted_at_comparable,
+                has_first_seen=capabilities.has_first_seen,
+            )
+        )
+    if filters.required_years_at_least is not None:
+        # NULL never compares, so a Job whose required experience is unknown is left out.
+        clauses.append(f"min_years >= {int(filters.required_years_at_least)}")
+    if filters.exclude_company:
+        clauses.append(
+            f"(company IS NULL OR NOT (lower(company) LIKE "
+            f"'%{_like(filters.exclude_company)}%'))"
+        )
     return " AND ".join(clauses) if clauses else None

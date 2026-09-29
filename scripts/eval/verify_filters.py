@@ -37,7 +37,12 @@ _REPORT_DIR = _ROOT / "data" / "eval" / "filter_checks"
 
 sys.path.insert(0, str(_ROOT / "src"))
 from headstart.scrapers.registry import DISABLED_ATS, SCRAPERS
-from headstart.search_filters import fx, india_gazetteer
+from headstart.search_filters import (
+    country_gazetteer,
+    fx,
+    india_gazetteer,
+    posted_date_guard,
+)
 
 # The page-size ceiling the serving path enforces (job_search.JobSearch's `max_k`), so a crafted
 # `k` can't dump the table. Asserted here, which means changing it there fails this run —
@@ -113,6 +118,35 @@ def _iso_within(posted_at: str | None, days: int) -> bool:
         return False
     cutoff = (datetime.now(UTC) - timedelta(days=days)).strftime("%Y-%m-%d")
     return posted_at >= cutoff
+
+
+def _age_within(row: dict, days: int) -> bool:
+    """``max_age_days`` (ADR-0322): the posted date where the Space's own guard reads it
+    (``posted_date_guard.is_comparable``), else the first-seen day; a row with neither has no
+    age and must not come back."""
+    posted = row.get("posted_at")
+    if posted_date_guard.is_comparable(posted):
+        return _iso_within(posted, days)
+    return _iso_within(row.get("first_seen"), days)
+
+
+#: Places a country filter must never return, labelled by hand from rows that fooled the
+#: gazetteer (ADR-0322): Berlins in the US, Georgia the country, Perth in Western Australia for
+#: the US, Hyderabad in Pakistan, Perth in Scotland and Perth Amboy for Australia.
+_COUNTRY_TRAPS = {
+    "DE": ("berlin, ct", "new berlin", "east berlin", "berlin, nj", "berlin, vt"),
+    "US": ("tbilisi", "batumi", "perth, wa"),
+    "IN": ("sindh", "pakistan"),
+    "AU": ("scotland", "perth amboy"),
+}
+
+
+def _country_ok(code: str, location: str | None) -> bool:
+    """A row the country filter returned: in the country by the gazetteer's rule, and naming
+    none of the country's hand-labelled traps."""
+    low = (location or "").lower()
+    trapped = any(trap in low for trap in _COUNTRY_TRAPS.get(code, ()))
+    return country_gazetteer.matches(code, location) and not trapped
 
 
 def _seen_within(first_seen: str | None, hours: int) -> bool:
@@ -470,6 +504,96 @@ def run_checks(base: str, atses: list[str]) -> list[dict]:
                 "",
             )
         )
+    # The country filter (ADR-0273). The gazetteer's own Python rule proves only that the SQL
+    # agrees with it, so each row must also stay clear of that country's known traps, labelled
+    # by hand (`_COUNTRY_TRAPS`); the location-narrowed cases put a trap in front of the filter.
+    for code, location in (
+        ("US", None),
+        ("IN", None),
+        ("DE", None),
+        ("GB", None),
+        ("CA", None),
+        ("DE", "berlin"),
+        ("US", "georgia"),
+        ("IN", "hyderabad"),
+        ("AU", "perth"),
+    ):
+        narrowed = {"location": location} if location else {}
+        cases.append(
+            (
+                f"country={code}" + (f"+location={location}" if location else ""),
+                {"q": "software engineer", "country": code, **narrowed, "k": 30},
+                lambda r, c=code: _country_ok(c, r.get("location")),
+                "",
+            )
+        )
+    # The three agent-only filters (ADR-0322). The page never sends them; the MCP tool does.
+    for days in (30, 365):
+        cases.append(
+            (
+                f"max_age_days={days}",
+                {"q": "software engineer", "max_age_days": days, "k": 40},
+                lambda r, d=days: _age_within(r, d),
+                "",
+            )
+        )
+    for floor in (5, 8):
+        cases.append(
+            (
+                f"required_years_at_least={floor}",
+                {"q": "backend engineer", "required_years_at_least": floor, "k": 40},
+                lambda r, f=floor: (
+                    r.get("min_years") is not None and r["min_years"] >= f
+                ),
+                "",
+            )
+        )
+    cases.append(
+        (
+            "exclude_company~tech",
+            {"q": "software engineer", "exclude_company": "tech", "k": 40},
+            lambda r: "tech" not in (r.get("company") or "").lower(),
+            "",
+        )
+    )
+    # A category across the whole index (ADR-0322): a row carries no family, so membership is
+    # the Space's own tests' to prove; here every other filter must still hold beside it.
+    cases.append(
+        (
+            "combo family=ai-ml-data-science+country=DE+max_age_days=365",
+            {
+                "q": "machine learning engineer",
+                "family": "ai-ml-data-science",
+                "country": "DE",
+                "max_age_days": 365,
+                "k": 30,
+            },
+            lambda r: (
+                country_gazetteer.matches("DE", r.get("location"))
+                and _age_within(r, 365)
+            ),
+            "",
+        )
+    )
+    cases.append(
+        (
+            "combo family=software-engineering+floor=5+exclude_company=tech+remote",
+            {
+                "family": "software-engineering",
+                "required_years_at_least": 5,
+                "exclude_company": "tech",
+                "remote": "true",
+                "k": 30,
+            },
+            lambda r: (
+                r.get("min_years") is not None
+                and r["min_years"] >= 5
+                and "tech" not in (r.get("company") or "").lower()
+                and r.get("remote") is True
+            ),
+            "",
+        )
+    )
     # The search bar's Title words mode (ADR-0263): every word starts a word of the title
     # (ADR-0299). "ai" is the case that found DOMAIN, Retail and SailPoint as a substring.
     for words in ("rust", "staff frontend", "c++", "ai", '"ai engineer"'):

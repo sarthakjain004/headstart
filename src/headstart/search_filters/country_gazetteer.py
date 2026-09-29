@@ -24,6 +24,11 @@ Each :class:`Country` names its places two ways, and each way in two strengths:
   and "Dublin, OH" is Ohio and not Ireland. Every two-letter code but "us" is shared. The cost
   is a multi-country row that names this country only through a shared term ("Dublin;
   Toronto" is Canada only); ADR-0273 measures it.
+- a **city** word is a city whose name a smaller place in another country shares: "berlin" is
+  also Berlin, CT and New Berlin, WI. It counts unless the row states another country, by its
+  English name or one of its codes, so "Berlin, CT" and "New Berlin, Wisconsin, United States"
+  are not Germany. Unlike a shared word it never yields to another country's city, so "Berlin;
+  Montreal" is Germany and Canada (ADR-0322).
 
 No term belongs to two countries (``test_no_term_names_two_countries``): a term both claimed
 would put its bare rows in both.
@@ -56,6 +61,7 @@ class Country:
     segments: tuple[str, ...] = ()
     shared_words: tuple[str, ...] = ()
     shared_segments: tuple[str, ...] = ()
+    city_words: tuple[str, ...] = ()
 
 
 # fmt: off
@@ -175,7 +181,10 @@ COUNTRIES: dict[str, Country] = {
             "baden-wurttemberg", "baden-wuerttemberg", "hesse", "hessen",
             "north rhine-westphalia", "north rhine westphalia", "nordrhein-westfalen",
             "lower saxony", "niedersachsen", "saxony", "sachsen", "thuringia", "thüringen",
-            "rhineland-palatinate", "rheinland-pfalz", "schleswig-holstein", "berlin",
+            "rhineland-palatinate", "rheinland-pfalz", "schleswig-holstein",
+            # Berlin with its own state or code after it, which no other country's code can
+            # take from it; "berlin" alone is a city word (ADR-0322).
+            "berlin, berlin", "berlin, be", "berlin, de",
             "munich", "münchen", "muenchen", "frankfurt", "cologne", "köln", "koeln",
             "stuttgart", "düsseldorf", "dusseldorf", "duesseldorf", "dresden", "leipzig",
             "nuremberg", "nürnberg", "nuernberg", "hannover", "karlsruhe", "mannheim",
@@ -187,6 +196,8 @@ COUNTRIES: dict[str, Country] = {
             "oberpfaffenhofen",
         ),
         segments=("deu",),
+        # Also Berlin, CT, New Berlin, WI and Berlin, NJ (ADR-0322).
+        city_words=("berlin",),
         shared_words=("hamburg", "hanover", "bremen"),
         shared_segments=("de",),
     ),
@@ -206,13 +217,16 @@ COUNTRIES: dict[str, Country] = {
     "AU": Country(
         "Australia",
         words=(
-            "australia", "sydney", "perth", "canberra", "hobart", "gold coast", "geelong",
+            # Perth with Western Australia's code: "perth" alone is shared (ADR-0322).
+            "australia", "sydney", "perth, wa", "wa, au", "canberra", "hobart", "gold coast",
+            "geelong",
             "north sydney", "new south wales", "queensland", "western australia",
             "south australia", "tasmania", "australian capital territory",
             "northern territory",
         ),
         segments=("aus", "nsw", "vic", "qld", "tas", "act"),
-        shared_words=("melbourne", "victoria", "adelaide", "brisbane"),
+        # "perth" is also Perth, Scotland and Perth Amboy, NJ (ADR-0322).
+        shared_words=("melbourne", "victoria", "adelaide", "brisbane", "perth"),
         shared_segments=("au",),
     ),
     "PL": Country(
@@ -688,6 +702,9 @@ COUNTRIES: dict[str, Country] = {
         "Tunisia", words=("tunisia", "tunis", "zaghouan", "bizerte"), segments=("tun",)
     ),
     "DO": Country("Dominican Republic", words=("dominican republic", "santo domingo")),
+    # Named by 156 served Jobs on 2026-09-29; without it "Tbilisi, Georgia" was the US state
+    # (ADR-0322). "georgia" stays the US's shared word, which Georgia's cities now guard.
+    "GE": Country("Georgia", words=("tbilisi", "batumi", "kutaisi", "rustavi")),
     "SI": Country(
         "Slovenia",
         words=("slovenia", "ljubljana", "maribor"),
@@ -780,8 +797,11 @@ class _Rule:
     sure: str
     shared_segments: str | None
     shared_words: str | None
+    city_words: str | None
     others_sure: str
     others_shared_segments: str
+    #: Another country stated: its English name, or any of its codes (ADR-0322).
+    others_stated: str
 
 
 @cache
@@ -793,13 +813,19 @@ def _rule(code: str) -> _Rule:
         (w for c in others for w in c.words), (s for c in others for s in c.segments)
     )
     others_shared = _regex((), (s for c in others for s in c.shared_segments))
-    assert sure and others_sure and others_shared, code
+    others_stated = _regex(
+        (c.name.lower() for c in others),
+        (s for c in others for s in (*c.segments, *c.shared_segments)),
+    )
+    assert sure and others_sure and others_shared and others_stated, code
     return _Rule(
         sure=sure,
         shared_segments=_regex((), country.shared_segments),
         shared_words=_regex(country.shared_words, ()),
+        city_words=_regex(country.city_words, ()),
         others_sure=others_sure,
         others_shared_segments=others_shared,
+        others_stated=others_stated,
     )
 
 
@@ -814,13 +840,17 @@ def where(code: str) -> str | None:
     """The where-fragment for one country (not India: see the module docstring), or None for a
     code this gazetteer does not know.
 
-    ``sure OR ((shared segment OR (shared word AND NOT another's shared segment)) AND NOT
-    another's sure name)``: at most five ``regexp_like`` passes over ``location``, one per
-    alternation however many names it holds (ADR-0024's single-automaton rule).
+    ``sure OR (city word AND NOT another country stated) OR ((shared segment OR (shared word
+    AND NOT another's shared segment)) AND NOT another's sure name)``: at most seven
+    ``regexp_like`` passes over ``location``, one per alternation however many names it holds
+    (ADR-0024's single-automaton rule), and five for a country with no city word.
     """
     if code not in COUNTRIES:
         return None
     rule = _rule(code)
+    parts = [_like(rule.sure)]
+    if rule.city_words:
+        parts.append(f"({_like(rule.city_words)} AND NOT {_like(rule.others_stated)})")
     shared = []
     if rule.shared_segments:
         shared.append(_like(rule.shared_segments))
@@ -828,12 +858,9 @@ def where(code: str) -> str | None:
         shared.append(
             f"({_like(rule.shared_words)} AND NOT {_like(rule.others_shared_segments)})"
         )
-    if not shared:
-        return f"({_like(rule.sure)})"
-    return (
-        f"({_like(rule.sure)} OR (({' OR '.join(shared)}) "
-        f"AND NOT {_like(rule.others_sure)}))"
-    )
+    if shared:
+        parts.append(f"(({' OR '.join(shared)}) AND NOT {_like(rule.others_sure)})")
+    return "(" + " OR ".join(parts) + ")"
 
 
 @cache
@@ -863,6 +890,8 @@ def matches(code: str, location: str | None) -> bool:
     text = location.lower()
     rule = _rule(code)
     if _search(rule.sure, text):
+        return True
+    if _search(rule.city_words, text) and not _search(rule.others_stated, text):
         return True
     shared = _search(rule.shared_segments, text) or (
         _search(rule.shared_words, text)

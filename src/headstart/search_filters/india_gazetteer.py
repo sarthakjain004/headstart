@@ -16,7 +16,7 @@ contaminated the raw inventory), "wai" (inside taiwan/kuwait/hawaii), "salem" (U
 "punjab" (Pakistan has one), "verna" (inside Governador Valadares), "whitefield"
 (Manchester, UK), "supa" (inside Supai, AZ; its rows carry "india" anyway), "vadod"
 (inside vadodara), "hisar" (inside Turkish Hisarönü/Rumelihisarı). Known residual collisions accepted as negligible for a tech-jobs
-corpus: hyderabad (Pakistan), kochi (Japan), thane (Thanet, UK), madras (Madras, OR), a bare
+corpus: kochi (Japan), thane (Thanet, UK), madras (Madras, OR), a bare
 "IN" (Indiana, on a US state field — see IN_EXACT).
 
 This file is deployed standalone into the Space image (deploy-space.yml copies it next to
@@ -193,6 +193,7 @@ EXCLUDE: dict[str, tuple[str, ...]] = {
     "thane": ("kalyani",),  # 'kalyan' is inside Pune's Kalyani Nagar
     "goa": ("lagoa",),  # Brazil: "lagoa" (lagoon) is inside Alagoas, Lagoa Santa
     "anand": ("sananduva", "canandaigua"),  # Brazil / New York, US
+    "hyderabad": ("pakistan", "sindh"),  # Hyderabad, Sindh, Pakistan (ADR-0322)
 }
 
 # Unambiguous state/UT names — country-level match only (catches "Karnataka, IN" residue).

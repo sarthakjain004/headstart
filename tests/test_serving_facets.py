@@ -461,7 +461,13 @@ def test_every_nameable_filter_is_labelled_and_clearable_in_the_ui():
     bracket = set(re.findall(r"'([^']+)'", _js_decl("BRACKET")))
     # `SearchFilters`'s own fields (ADR-0149) — not `build_filter`'s signature, which is now
     # just `(filters, capabilities)` and would tell this test nothing about individual names.
-    nameable = set(SearchFilters.__dataclass_fields__) - set(facets.NEVER_BLOCKING)
+    # An agent-only filter (ADR-0322) is nameable, but the page never sends it, so its empty
+    # state never has one to name.
+    nameable = (
+        set(SearchFilters.__dataclass_fields__)
+        - set(facets.NEVER_BLOCKING)
+        - set(facets.AGENT_ONLY)
+    )
     for key in sorted(nameable):
         assert key in labels, (
             f"{key} can be the Blocking filter but has no LABELS entry"

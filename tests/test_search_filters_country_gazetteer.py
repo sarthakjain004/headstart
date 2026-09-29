@@ -48,6 +48,24 @@ _ROWS = [
     ("Vienna, Austria", {"AT"}),
     ("Melbourne, FL, US", {"US"}),
     ("Melbourne, Victoria, Australia", {"AU"}),
+    # the round-2 critique's four (ADR-0322): Berlin is a city word, so a state code or another
+    # country named takes the row, never another country's city; Perth is shared; Western
+    # Australia's code beside Perth keeps it Australian
+    ("Berlin, CT", {"US"}),
+    ("East Berlin, CT, US", {"US"}),
+    ("New Berlin, Wisconsin, United States", {"US"}),
+    ("Berlin", {"DE"}),
+    ("Berlin, BE, DE", {"DE"}),
+    ("Berlin; Montreal", {"DE", "CA"}),
+    ("Noida; Berlin; India", {"IN"}),
+    ("Perth, Scotland", {"GB"}),
+    ("Perth, WA", {"AU"}),
+    ("Perth Office - CBD, WA, AU", {"AU"}),
+    ("Perth Amboy, NJ", {"US"}),
+    ("Hyderabad, Sindh, Pakistan", {"PK"}),
+    # Georgia the country guards Georgia the US state (ADR-0322)
+    ("Tbilisi, Georgia", {"GE"}),
+    ("Atlanta, Georgia", {"US"}),
     # a word inside a longer place name is a segment trap
     ("Albuquerque, New Mexico", {"US"}),
     ("Guadalajara, Mexico", {"MX"}),
@@ -76,7 +94,13 @@ _ROWS = [
 def test_every_term_is_a_trusted_lowercase_constant():
     for code, country in COUNTRIES.items():
         assert code.isupper() and len(code) == 2, code
-        for kind in ("words", "segments", "shared_words", "shared_segments"):
+        for kind in (
+            "words",
+            "segments",
+            "shared_words",
+            "shared_segments",
+            "city_words",
+        ):
             for term in getattr(country, kind):
                 assert term == term.lower().strip() and term, (code, term)
                 assert "'" not in term and "%" not in term, (code, term)
@@ -86,7 +110,13 @@ def test_no_term_names_two_countries():
     """A term two countries both claim would put its bare rows in both."""
     owners = collections.defaultdict(set)
     for code, country in COUNTRIES.items():
-        for kind in ("words", "segments", "shared_words", "shared_segments"):
+        for kind in (
+            "words",
+            "segments",
+            "shared_words",
+            "shared_segments",
+            "city_words",
+        ):
             for term in getattr(country, kind):
                 owners[term].add(code)
     assert {t: o for t, o in owners.items() if len(o) > 1} == {}
@@ -131,7 +161,8 @@ def test_where_agrees_with_matches_on_a_real_table(table):
         assert hits == expected, code
 
 
-def test_a_clause_is_at_most_five_regex_passes():
-    for code in COUNTRIES:
-        assert where(code).count("regexp_like(") <= 5, code
+def test_a_clause_is_at_most_five_regex_passes_and_seven_with_a_city_word():
+    for code, country in COUNTRIES.items():
+        limit = 7 if country.city_words else 5
+        assert where(code).count("regexp_like(") <= limit, code
     assert country_gazetteer.where("SG").count("regexp_like(") == 3

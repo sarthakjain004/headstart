@@ -58,6 +58,7 @@ _ROWS = [
     ("Fort Wayne, IN", False, set()),
     ("Salt Lake City, UT", False, set()),  # contaminated the raw inventory
     ("Surat Thani, Thailand", False, set()),
+    ("Hyderabad, Sindh, Pakistan", False, set()),  # ADR-0322
     ("Taiwan - Remote", False, set()),  # 'wai' trap
     ("Salem, OR", False, set()),
     ("Lahore, Punjab", False, set()),  # punjab deliberately not a state alias
@@ -133,12 +134,13 @@ def test_where_india_is_unchanged_by_classify_s_addition():
     a transcription slip would go unnoticed (one did, while drafting this test: `surat`/`thane`
     swapped, caught only because this assertion failed against the real output). ADR-0024/
     ADR-0086/ADR-0138 cite 3,068 chars; the `goa`/`anand`/`INDIA_EXCLUDE` guards below moved it
-    to 3,301, and the whole-string alpha-2 "IN" (`IN_EXACT`) to 3,327.
+    to 3,301, the whole-string alpha-2 "IN" (`IN_EXACT`) to 3,327, and the Pakistan guard on
+    `hyderabad` (ADR-0322) to 3,419.
     """
     clause = where("india")
-    assert len(clause) == 3327
+    assert len(clause) == 3419
     assert hashlib.sha256(clause.encode()).hexdigest() == (
-        "b38f37d54224cf6e573a124e18974fed2bdd3a148e828c56fa6cf8263cd53e20"
+        "c3990aee94c58193821ecd9738341c706a43c33112c6266627df583dae5b333d"
     ), (
         "the compiled clause moved — if this is a deliberate CITIES/STATES/etc. data change, "
         "recompute the hash (hashlib.sha256(where('india').encode()).hexdigest()) and update "

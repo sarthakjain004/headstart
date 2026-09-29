@@ -247,10 +247,9 @@ def test_the_console_script_a_no_clone_install_runs_is_this_servers_main():
         ({"account": "me"}, "unknown argument(s) account"),
         ({"limit": 500}, "from 1 to 40"),
         ({"india_place": "bangalore"}, "`india_place` must be one of"),
-        ({"country": "UK"}, "`country` must be one of"),
+        ({"country": "Narnia"}, "`country` must be one of"),
         ({"salary_min": 3_000_000}, "need salary_currency"),
         ({"keyword_in": "title"}, "send keyword too"),
-        ({"category": "software-engineering"}, "needs company"),
     ],
 )
 def test_search_arguments_the_space_would_misread_are_refused(arguments, words):
@@ -292,6 +291,9 @@ def test_search_sends_both_routes_the_same_strict_query_in_the_spaces_own_names(
             "sort": "first_seen",
             "limit": 5,
             "page": 2,
+            "max_age_days": 90,
+            "required_years_at_least": 2,
+            "exclude_company": "Acme",
         },
     )
     [searched] = space.params_of(R.SEARCH)
@@ -303,6 +305,9 @@ def test_search_sends_both_routes_the_same_strict_query_in_the_spaces_own_names(
         ("remote", "true"),
         ("has_salary", "true"),
         ("max_years", "5"),
+        ("max_age_days", "90"),
+        ("required_years_at_least", "2"),
+        ("exclude_company", "Acme"),
         ("etype", "full-time"),
         ("india", "bengaluru"),
         ("country", "IN"),
@@ -452,7 +457,71 @@ def test_nothing_matching_names_the_blocking_filter_as_this_tool_names_it(
 
 def test_the_scope_line_names_the_country_code():
     text = server.call(_search_space([_job(1)]), "search_jobs", {"country": "DE"})
-    assert "Scope: country DE." in text
+    assert "Scope: country DE · posted in the last 365 days, the default;" in text
+
+
+@pytest.mark.parametrize(
+    ("asked", "code"),
+    [("UK", "GB"), ("u.s.a.", "US"), ("UAE", "AE"), ("Germany", "DE"), ("gb", "GB")],
+)
+def test_a_country_name_or_common_abbreviation_is_read_as_its_code(asked, code):
+    """ec06 of the round-2 critique: "UK" was refused with the 94 codes (ADR-0322)."""
+    space = _search_space([_job(1)])
+    text = server.call(space, "search_jobs", {"country": asked})
+    [searched] = space.params_of(R.SEARCH)
+    assert ("country", code) in searched and f"country {code}" in text
+
+
+def test_a_search_leaves_out_postings_over_a_year_old_unless_told_otherwise():
+    """st04 and sk01 of the round-2 critique: 2022 postings ranked first (ADR-0322)."""
+    space = _search_space([_job(1)])
+    server.call(space, "search_jobs", {"query": "software engineer"})
+    server.call(space, "search_jobs", {"query": "software engineer", "max_age_days": 0})
+    server.call(
+        space, "search_jobs", {"query": "software engineer", "max_age_days": 30}
+    )
+    sent = [dict(params).get("max_age_days") for params in space.params_of(R.SEARCH)]
+    assert sent == ["365", None, "30"]
+
+
+def test_the_scope_line_says_the_new_filters_in_their_own_words():
+    space = _search_space([_job(1)])
+    text = server.call(
+        space,
+        "search_jobs",
+        {
+            "max_age_days": 30,
+            "required_years_at_least": 8,
+            "exclude_company": "Stripe",
+        },
+    )
+    assert "posted in the last 30 days (a job with no readable posted date" in text
+    assert "the default" not in text
+    assert (
+        "jobs asking for at least 8 years (as stated, else estimated from the title's "
+        "seniority), jobs whose experience is unknown left out" in text
+    )
+    assert 'no company name containing "Stripe"' in text
+
+
+def test_a_category_alone_is_searched_across_the_whole_index():
+    """P1-5 of the round-2 critique: "ML jobs in Germany" was refused (ADR-0322)."""
+    space = _search_space([_job(1)])
+    text = server.call(
+        space,
+        "search_jobs",
+        {"query": "machine learning engineer", "category": "AI/ML", "country": "DE"},
+    )
+    [searched] = space.params_of(R.SEARCH)
+    assert ("family", "ai-ml-data-science") in searched
+    assert not [name for name, _ in searched if name in ("board", "company")]
+    assert "category ai-ml-data-science (AI, ML & Data Science)" in text
+
+
+def test_a_filter_the_age_window_blocks_says_how_to_lift_it():
+    space = FakeSpace(search=[], facets=_facets(0, blocking="max_age_days"))
+    text = server.call(space, "search_jobs", {"company": "acme"})
+    assert "The filter costing the most is `max_age_days`; send max_age_days 0." in text
 
 
 def test_nothing_matching_a_company_name_offers_the_companies_it_may_mean():
@@ -727,7 +796,9 @@ def test_a_retired_trends_category_is_read_as_its_successor():
 
 #: Worst case — every field at its clip and 300-character links — at the largest page, measured on
 #: the tool's own rendering (`_answer`), not after the server's cut, which would make it pass.
-@pytest.mark.parametrize(("limit", "budget"), [(10, 8_000), (40, 30_000)])
+#: The 10-row budget rose from 8,000 when every answer's scope line began stating the default age
+#: window (ADR-0322): the worst case measures 7,984 without that sentence and 8,110 with it.
+@pytest.mark.parametrize(("limit", "budget"), [(10, 8_300), (40, 30_000)])
 def test_a_search_answer_stays_inside_its_budget(limit, budget):
     long = "x" * 5_000
     rows = [

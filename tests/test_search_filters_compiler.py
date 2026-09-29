@@ -728,3 +728,43 @@ def test_employment_type_flags_are_used_only_after_the_whole_migration_lands():
 
 def test_has_salary_prefers_the_materialized_presence_flag():
     assert _clause(has_salary=True, has_salary_known=True) == "salary_known = true"
+
+
+# ---- the three agent-only filters (ADR-0322) ----
+
+
+def test_max_age_reads_the_posted_date_and_else_the_first_seen_day(monkeypatch):
+    from datetime import UTC, datetime
+
+    from headstart.search_filters import compiler
+
+    class _Now(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 9, 29, 12, tzinfo=UTC)
+
+    monkeypatch.setattr(compiler, "datetime", _Now)
+    assert _clause(max_age_days=365, has_posted_at_comparable=True) == (
+        "((posted_at_comparable = true AND posted_at >= '2025-09-29') OR "
+        "((posted_at IS NULL OR NOT (posted_at_comparable = true)) "
+        "AND first_seen >= '2025-09-29'))"
+    )
+    # Without first_seen there is nothing to fall back on: an unreadable date is unknown age.
+    assert _clause(max_age_days=30, has_first_seen=False) == (
+        "(posted_at LIKE '____-__-__%' AND posted_at >= '2026-08-30')"
+    )
+
+
+def test_an_experience_floor_keeps_only_jobs_asking_for_at_least_that_many_years():
+    # NULL never compares, so a job stating no experience cannot meet the floor.
+    assert _clause(required_years_at_least=8) == "min_years >= 8"
+    # Beside the user's own ceiling, both hold.
+    assert _clause(max_years=10, required_years_at_least=5) == (
+        "(min_years <= 10 OR min_years IS NULL) AND min_years >= 5"
+    )
+
+
+def test_exclude_company_is_the_company_box_negated_keeping_nameless_rows():
+    assert _clause(exclude_company="O'Reilly 100%") == (
+        "(company IS NULL OR NOT (lower(company) LIKE '%o''reilly 100\\%%'))"
+    )

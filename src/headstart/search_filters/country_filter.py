@@ -36,6 +36,45 @@ def options() -> list[tuple[str, str]]:
     return [(code, _NAMES[code]) for code in CODES]
 
 
+#: What a caller may write for a country besides its code or its English name (ADR-0322): the
+#: abbreviations people use that are not the ISO code ("UK" is GB's, "UAE" AE's), and the names
+#: :func:`name` spells otherwise. Keys are :func:`_spelling` forms.
+_ALIASES = {
+    "uk": "GB",
+    "greatbritain": "GB",
+    "britain": "GB",
+    "usa": "US",
+    "unitedstatesofamerica": "US",
+    "uae": "AE",
+    "emirates": "AE",
+    "ksa": "SA",
+    "korea": "KR",
+    "republicofkorea": "KR",
+    "czechrepublic": "CZ",
+    "turkey": "TR",
+    "holland": "NL",
+    "thenetherlands": "NL",
+}
+
+
+def _spelling(text: str) -> str:
+    """``text`` case-folded with everything but letters dropped: "U.S.A." and "usa" are one."""
+    return "".join(char for char in text.casefold() if char.isalpha())
+
+
+_BY_SPELLING = (
+    {_spelling(code): code for code in CODES}
+    | {_spelling(country): code for code, country in _NAMES.items()}
+    | _ALIASES
+)
+
+
+def code_for(asked: str) -> str | None:
+    """The code ``asked`` means: a code in any case ("gb"), an English name ("Germany"), or a
+    common abbreviation ("UK", "USA", "UAE"); None for anything else."""
+    return _BY_SPELLING.get(_spelling(asked))
+
+
 def clause(code: str, materialized: bool) -> str | None:
     """The where-clause for one code, or None for a code the filter does not know.
 
