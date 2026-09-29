@@ -322,7 +322,8 @@
     "boards": 3,
     "sizes": {
      "greenhouse:acme": 500
-    }
+    },
+    "drawn": true
    },
    {
     "id": "counting@2026-09-16T00:00:00+00:00",
@@ -339,7 +340,8 @@
     "boards": null,
     "sizes": {
      "greenhouse:acme": -400
-    }
+    },
+    "drawn": true
    }
   ],
   "day_markers": [

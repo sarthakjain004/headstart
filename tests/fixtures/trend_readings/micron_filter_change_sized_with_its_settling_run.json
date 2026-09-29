@@ -186,7 +186,8 @@
     "boards": null,
     "sizes": {
      "greenhouse:acme": -264
-    }
+    },
+    "drawn": true
    }
   ],
   "day_markers": [

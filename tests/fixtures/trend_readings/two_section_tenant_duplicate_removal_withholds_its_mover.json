@@ -267,7 +267,8 @@
     "boards": null,
     "sizes": {
      "taleo_enterprise:hdr/1": 45
-    }
+    },
+    "drawn": true
    }
   ],
   "day_markers": [

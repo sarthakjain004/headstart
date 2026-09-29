@@ -257,7 +257,8 @@
     "boards": null,
     "sizes": {
      "greenhouse:acme": -145
-    }
+    },
+    "drawn": true
    },
    {
     "id": "growth_scaled_by_counting@2026-09-16T00:00:00+00:00",
@@ -270,7 +271,8 @@
     "boards": null,
     "sizes": {
      "greenhouse:acme": 120
-    }
+    },
+    "drawn": true
    }
   ],
   "day_markers": [

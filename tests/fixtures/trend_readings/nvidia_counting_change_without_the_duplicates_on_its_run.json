@@ -208,7 +208,8 @@
     "boards": null,
     "sizes": {
      "eightfold:nvidia": -97
-    }
+    },
+    "drawn": true
    },
    {
     "id": "removed@2026-09-15T00:00:00+00:00/eightfold:nvidia",
@@ -221,7 +222,8 @@
     "boards": null,
     "sizes": {
      "eightfold:nvidia": -2041
-    }
+    },
+    "drawn": true
    }
   ],
   "day_markers": [

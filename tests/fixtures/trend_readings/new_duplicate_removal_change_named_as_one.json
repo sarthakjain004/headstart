@@ -186,7 +186,8 @@
     "boards": null,
     "sizes": {
      "eightfold:micron": -20
-    }
+    },
+    "drawn": true
    }
   ],
   "day_markers": [

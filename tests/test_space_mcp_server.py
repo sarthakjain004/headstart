@@ -993,7 +993,9 @@ def test_trends_lead_with_postings_opened_and_closed_and_never_call_the_rest_hir
     assert "Postings opened and closed account for -514" in text
     assert "HeadStart sized none of it as re-counting" in text
     assert "the other +112,365, the unsized rest, is not a hiring figure" in text
-    assert "Boards found or dropped, duplicate postings removed" in text
+    # From the first per-Board count on, the index sizes its Boards found (ADR-0304).
+    assert "Boards dropped or read differently, duplicate postings removed" in text
+    assert "Boards found" not in text
     # Two Marked changes with one label are one counting change, said once.
     assert f"[1] {_FILTER} (2 times, 2026-09-17 to 2026-09-21)" in text
     assert text.count(_FILTER) == 1

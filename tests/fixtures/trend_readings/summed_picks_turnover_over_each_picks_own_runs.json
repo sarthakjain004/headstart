@@ -338,7 +338,8 @@
     "boards": null,
     "sizes": {
      "eightfold:careers.micron.com": -20
-    }
+    },
+    "drawn": true
    }
   ],
   "day_markers": [

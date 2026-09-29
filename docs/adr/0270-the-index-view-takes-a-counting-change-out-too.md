@@ -10,7 +10,9 @@ pick), [ADR-0227](0227-trends-record-each-boards-opened-and-closed-jobs-not-only
 (line readings), [ADR-0238](0238-a-mostly-re-counted-line-gives-no-percentage-and-hot-hides-only-staffing-and-job-boards.md)
 (mostly re-counted), [ADR-0250](0250-a-board-silent-for-two-years-is-dormant-and-leaves-the-tech-subset.md)
 (the Dormant-Board rule), [ADR-0272](0272-an-agent-reads-hiring-as-postings-opened-and-closed.md)
-(the MCP server reads hiring as turnover, and sized this change's premise) · **Issue:** #833
+(the MCP server reads hiring as turnover, and sized this change's premise) · **Issue:** #833 ·
+**Amended by:** [ADR-0304](0304-the-index-view-takes-boards-found-out-of-each-line-by-its-own-openings.md)
+(the index takes Boards found out too, line by line)
 
 ## Context
 
@@ -71,7 +73,7 @@ Reproduced on the HF trends state for a 7-day window ending 2026-09-28 21:40Z:
    as it already did under a pick, and it now says under the index chart that lines and
    percentages skip the marked jumps. The MCP server no longer prints the reason: since ADR-0272
    it says a short line's own span ("counted for its last 3.2 of the window's 21.0 days").
-7. **Found Boards and duplicate removals stay in the index's lines.** Both are sized per company
+7. **Found Boards and duplicate removals stay in the index's lines.** *(Amended by ADR-0304: Boards found are taken out line by line; duplicate removals stay, measured.)* Both are sized per company
    (`discovered` and `evicted` exist only for picks). Over the 7-day window, 9,253 Boards were
    first counted, with 68,535 openings. The MCP server's `read_trends` (ADR-0272) leads with
    turnover and names found Boards and duplicate removals among the change it could not size. Its

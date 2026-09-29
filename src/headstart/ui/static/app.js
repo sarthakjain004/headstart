@@ -2013,16 +2013,16 @@ function verdictLines(d){
   if (!d.series.length || !d.stamps.length) return [];
   const reading = d.reading || {};
   // The index gets one sentence too: its turnover (ADR-0227), the figure a job hunter cannot read
-  // off a chart of levels. Its lines take a counting change out (ADR-0270) but keep Boards found
-  // later, so the net it gives is the hiring one, opened less closed, over the runs the Space
-  // kept.
+  // off a chart of levels. Its lines take counting changes (ADR-0270) and Boards found later
+  // (ADR-0304) out, but not every recount, so the net it gives is the hiring one, opened less
+  // closed, over the runs the Space kept.
   if (!trendPicks.length){
     const whole = reading.total;
     const t = whole && whole.move.turnover;
     if (!t) return [];
     // Its net is the hiring one, opened less closed; recounted jobs are not hiring. Said as
-    // opened against closed, never as "more openings": the lines keep a found Board's backlog,
-    // so a line up 400 read "about 10 more openings" beside it. That the runs of such a change
+    // opened against closed, never as "more openings": the lines keep recounts nothing sizes
+    // (Boards dropped, duplicates removed), and a line up 400 read "about 10 more openings". That the runs of such a change
     // are left out (`turnover_left_out`) is said under "How to read this", not here (ADR-0248).
     const net = t.net == null ? '' : t.net < 0 ? `about ${aboutCount(-t.net)} more closed than opened — `
       : t.net > 0 ? `about ${aboutCount(t.net)} more opened than closed — ` : 'as many opened as closed — ';
@@ -2774,8 +2774,10 @@ function firstSeen(s, d){
   return youngest && d.stamps[first] > youngest ? d.stamps[first] : null;
 }
 // Whether HeadStart has counted the company of line `name` (a summed line: its youngest) for
-// under MIN_SPAN_DAYS, as against the window being short.
+// under MIN_SPAN_DAYS, as against the window being short. The index is no company: a window of a
+// day read every one of its lines "too new" (#857).
 function isYoung(name, d){
+  if (!trendPicks.length) return false;
   const all = countedSince(d);
   const began = countedSince(d, name) || all[all.length - 1];
   return !began || (new Date(d.stamps[d.stamps.length - 1]) - new Date(began)) / 864e5 < MIN_SPAN_DAYS;
@@ -3338,8 +3340,8 @@ function drawTrends(){
   // company's line and a title-matched role's line cannot show.
   if (el('trends-how-moves')) el('trends-how-moves').hidden = ['total', 'company', 'roles'].includes(viewKind(d));
   // One short caption for the view on screen; "How to read this" defines all three units
-  // (ADR-0248). With no pick a found Board is not netted (ADR-0270), so it lifts every Change
-  // line, and that caption says why the dashed line is there.
+  // (ADR-0248). With no pick a found Board is netted too (ADR-0304), so it no longer lifts every
+  // Change line, and the caption says only what the dashed line is.
   const parts = [];
   parts.push(trendMetric === 'new'
     ? `Jobs ${newCounts(d)}.`
@@ -3349,8 +3351,7 @@ function drawTrends(){
       : trendUnit === 'change'
       // A line with no count at the window's start is based on its own first one.
       ? `Lines start at 100 on ${stampLabel(d.stamps[0], true)} (or where they first appear), so 120 means 20% more openings.${
-          !refShown ? '' : trendPicks.length ? ` The dashed line is ${pickScope().whole}.`
-          : ` Adding companies lifts every line, so compare each with the dashed line, ${pickScope().whole}.`}`
+          !refShown ? '' : ` The dashed line is ${pickScope().whole}.`}`
       : 'Each line counts open jobs.'));
   const steps = stepNote(d, marked);
   if (steps) parts.push(steps);
@@ -3742,7 +3743,8 @@ function markedText(item){
 // over the days it was counted, withheld under MIN_SPAN_DAYS; its turnover's net is opened less
 // closed, and neither is given where closed is not; the Other row is the lines past CHART_MAX
 // added together; no change is one the reading could not name; a company line's causes stand in
-// the order their Marked changes ran; and every Marked change is named by exactly one day marker.
+// the order their Marked changes ran; and every drawn Marked change is named by exactly one day
+// marker, and one not drawn (the index's Boards found through the window, ADR-0304) by none.
 function checkReading(reading){
   const out = [];
   const changes = new Map((reading.marked_changes || []).map(c => [c.id, c]));
@@ -3858,8 +3860,10 @@ function checkReading(reading){
   }
   const named = new Map();
   (reading.day_markers || []).forEach(d => d.changes.forEach(c => named.set(c, (named.get(c) || 0) + 1)));
-  changes.forEach((_, id) => {
-    if ((named.get(id) || 0) !== 1) out.push(`marked change ${id}: named by ${named.get(id) || 0} day markers, not one`);
+  changes.forEach((c, id) => {
+    const want = c.drawn === false ? 0 : 1;
+    if ((named.get(id) || 0) !== want)
+      out.push(`marked change ${id}: named by ${named.get(id) || 0} day markers, not ${want ? 'one' : 'none'}`);
   });
   named.forEach((_, id) => { if (!changes.has(id)) out.push(`day marker: it names ${id}, which is no Marked change`); });
   return out;
