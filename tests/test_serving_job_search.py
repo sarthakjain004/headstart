@@ -1383,6 +1383,44 @@ def test_strict_accepts_what_the_table_serves():
     assert "darwinbox" in table.last_where
 
 
+def test_strict_refuses_a_parameter_neither_route_reads_naming_it():
+    """Round-3 critique P2-8 (ADR-0334): `/facets?strict=1&bogus_param=x` counted the whole
+    index, so a parameter renamed on one side would drop its filter silently."""
+    from werkzeug.datastructures import MultiDict
+
+    searcher, _ = _strict_searcher()
+    for ask in (searcher.run, searcher.facets):
+        for args, named in (
+            ({"bogus_param": "x"}, "unknown parameter 'bogus_param'"),
+            ({"india_place": "pune", "kw": "go"}, "unknown parameter 'india_place'"),
+            ({"b": "1", "a": "2"}, "unknown parameters 'a', 'b'"),
+        ):
+            with pytest.raises(ValueError) as refused:
+                ask({**args, "strict": "1"})
+            body, status = refusal(refused.value)
+            assert status == 400 and named in body["detail"], body["detail"]
+            assert "known: " in body["detail"] and "salary_min" in body["detail"]
+            searcher.run(args)  # without strict: ignored, as before
+        # A repeated parameter, as `board=` is, is one name.
+        ask(MultiDict([("strict", "1"), ("board", "a"), ("board", "b"), ("k", "5")]))
+
+
+def test_every_parameter_the_search_module_reads_is_one_strict_knows():
+    """A parameter added to the parser but not to `REQUEST_PARAMETERS` would be refused under
+    `strict=1`, which is every agent's call: this names it in the PR that adds it."""
+    import re
+    from pathlib import Path
+
+    from headstart.serving import job_search
+
+    source = Path(job_search.__file__).read_text(encoding="utf-8")
+    read = set(re.findall(r'args\.get(?:list)?\("([a-z_]+)"', source))
+    read |= set(re.findall(r'_int\("([a-z_]+)"\)', source))
+    assert read and read <= job_search.REQUEST_PARAMETERS, (
+        read - job_search.REQUEST_PARAMETERS
+    )
+
+
 @pytest.mark.parametrize(
     ("args", "column"),
     [

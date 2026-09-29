@@ -21,6 +21,17 @@ def test_a_caller_takes_up_to_its_share_and_is_refused_past_it():
     assert limit.take("b", 0) is None  # another caller's share is its own
 
 
+def test_a_caller_named_in_shares_takes_up_to_its_own_share():
+    """ADR-0334: Anthropic's range stands for every claude.ai user, so it holds more places."""
+    limit = ConcurrencyLimit(total=4, each=2, shares={"anthropic": 3})
+    assert (limit.share("anthropic"), limit.share("a")) == (3, 2)
+    for _ in range(3):
+        assert limit.take("anthropic", 0) is None
+    assert limit.take("anthropic", 0) is Refused.CALLER
+    assert limit.take("a", 0) is None  # the last place
+    assert limit.take("b", 0) is Refused.TOTAL
+
+
 def test_every_caller_together_takes_no_more_than_the_total():
     limit = ConcurrencyLimit(total=3, each=2)
     for caller in ("a", "a", "b"):

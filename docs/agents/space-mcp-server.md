@@ -41,15 +41,18 @@ It needs no account, token or sign-in.
     https://imposeidon-headstart-search.hf.space/mcp --transport http --method tools/list
   ```
 
-**Limits** (ADR-0267, ADR-0276, ADR-0325).
+**Limits** (ADR-0267, ADR-0276, ADR-0325, ADR-0334).
 
-- **How often.** 30 requests a minute from one address, and 300 a minute shared by everyone arriving
-  from Anthropic's published range (`160.79.104.0/21`, which is every claude.ai user). Past it the
-  answer is a 429.
-- **How many at once.** At most 4 requests are answered at once across all callers, and at most 2
-  of them from one caller. Anthropic's range counts as one caller here too, because nothing in a
-  claude.ai request identifies the person. A request waits up to 10 s for a place. If its caller
-  already holds 2, it then gets a 429. If every place is held, it gets a 503.
+- **How often.** 30 tool calls a minute from one address, and 300 a minute shared by everyone
+  arriving from Anthropic's published range (`160.79.104.0/21`, which is every claude.ai user).
+  Past it the answer is a 429.
+- **Connecting is counted apart.** `initialize`, `server/discover`, `ping`, `tools/list` and every
+  notification have a budget of their own: 120 a minute from one address, 1,200 for the range.
+  They take no place below, so a caller that has spent its calls still gets its tool list.
+- **How many at once.** At most 4 calls are answered at once across all callers, and at most 2 of
+  them from one caller. Anthropic's range counts as one caller, because nothing in a claude.ai
+  request identifies the person, and it may hold 3 of the 4. A call waits up to 10 s for a place.
+  If its caller already holds its share, it then gets a 429. If every place is held, it gets a 503.
 - **One description search at a time.** A `search_jobs` call with `keyword_in` set to
   `description` or `both` reads descriptions. Before ADR-0320 it scanned every description the
   filters left and took 16–18 s alone, about twice that beside another (measured 2026-09-29), so
@@ -481,7 +484,13 @@ server changes.
 4. `tests/test_space_mcp_tools.py` holds every registered tool to the rules above without being
    edited. Add what the tool does to `tests/test_space_mcp_server.py` (against a fake Space) and,
    where it depends on the real app's answer, `tests/test_space_mcp_against_space_app.py`.
-5. Describe it here, and give the evaluation (`scripts/eval/`) a task for it.
+5. Describe it here, and give the evaluation (`scripts/eval/`) a task for it. A task whose verifier
+   reads the tools' words also gets a right run in `tests/fixtures/space_mcp_eval_recorded_calls.json`,
+   recorded with `scripts/eval/record_space_mcp_eval_calls.py`: `tests/test_space_mcp_eval.py`
+   replays it, so a change to a tool's output that breaks a verifier fails its own PR (ADR-0334).
+   Re-record when a tool starts reading the Space differently; the replay names the URL it lacks.
+6. A new parameter on `/search` or `/facets` goes into `job_search.REQUEST_PARAMETERS` too:
+   `strict=1`, which every tool sends, refuses a name that set does not hold (ADR-0334).
 
 The Space hosts the registry at `/mcp`, so merging a tool deploys the Space (ADR-0267).
 
