@@ -750,3 +750,5 @@ lever:isee,ISEE,"Hosted board page 404s on both Lever instances; postings API: 3
 lever:cobaltrobotics,Cobalt Robotics,"Hosted board page 404s on both Lever instances; postings API: 9 of 10 postings open ""About Cobalt Robotics"" (e.g. fd7f0836 ""Cobalt Robotics utilizes a combination of ..."") (2026-09-29)"
 lever:eleks,ELEKS,"All 22 postings in the postings API write ""ELEKS"" (e.g. 149909f5 ""ELEKS Software Engineering and Development Office is looking for ...""), never ""Eleks""; the hosted board's title reads ""Eleks"" (2026-09-29)"
 lever:smart-working-solutions,Smart Working,"Hosted board titles itself ""Smart Working Solutions""; 17 of 18 postings open ""About Smart Working ... At Smart Working, we believe ..."" (e.g. 904069e0) (2026-09-29)"
+bamboohr:d1g1t,d1g1t,"/careers/company-info result.name is ""d1g1t""; ADR-0212's digit-run rule leaves the tenant no humanised name, so the Board served an empty company (2026-09-29)"
+pinpoint:3173,Spence & Partners,"12 of 14 postings in postings.json carry division ""Spence & Partners"" and their text reads ""At Spence""; the account titles itself ""Careers at 3173"" (2026-09-29)"
