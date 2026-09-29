@@ -104,3 +104,15 @@ def test_a_complete_read_through_the_tolerance_says_nothing(caplog):
         scraper.mark_truncated_unless_negligible(1000, 1000, "all read")
     assert scraper.truncated is None
     assert not [r for r in caplog.records if "within tolerance" in r.getMessage()]
+
+
+def test_a_measured_shortfall_reports_the_boards_stated_total():
+    """ADR-0330: the stated total rides the shard report into the Board read, measured shortfall
+    or not, so a Board that shrank reads apart from one read short of what it stated."""
+    short, whole, none = _scraper(), _scraper(), _scraper()
+    short.mark_truncated_unless_negligible(10, 100, "listing came back short")
+    whole.mark_truncated_unless_negligible(100, 100, "listing came back short")
+    none.mark_truncated_unless_negligible(10, 0, "no total")
+    assert short.telemetry["stated_total"] == 100
+    assert whole.telemetry["stated_total"] == 100
+    assert "stated_total" not in none.telemetry

@@ -552,6 +552,10 @@ class BaseScraper(ABC):
         ``why`` is the caller's own wording, unchanged, so the reason a Board lands in
         ``unauthoritative_boards.json`` reads exactly as it did before this tolerance existed.
         """
+        # The Board's own total rides the shard report into its Board read (ADR-0330), which is
+        # how a later reader tells a Board that shrank from one read short of what it stated.
+        if expected > 0:
+            self.telemetry["stated_total"] = expected
         # A total of zero is no total, which is the second excluded shape above — so fail closed
         # rather than divide by it. This is the same direction ADR-0053 chose for an unresolvable
         # key: a shortfall we cannot measure is Unauthoritative, never silently tolerated.

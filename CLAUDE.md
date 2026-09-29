@@ -427,10 +427,11 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   it — do not look for it on HF. See `docs/agents/deployment.md`.
   **`data/jobs/` is gitignored but NOT on HF at all** (verified 2026-08-19: zero `data/jobs/*`
   entries in the dataset's file list, only `descriptions/`, `embeddings/`, `lancedb/`, `state/`
-  exist there) — it's ephemeral scrape/filter-stage output, local to whichever machine or CI run
+  exist there; `facts/` joined them with ADR-0330) — it's ephemeral scrape/filter-stage output, local to whichever machine or CI run
   produced it, with no durable source to refresh from. A `snapshot_download` against
   `data/jobs/*` is a silent no-op, not a stale-data warning — don't reach for it expecting fresh
-  data; use `data/descriptions/` (the ADR-0050 store) or `data/state/` for anything durable.
+  data; use `data/descriptions/` (the ADR-0050 store) or `data/state/` for anything durable. The
+  raw fields of every scraped Job, tech or not, persist in `data/facts/` from ADR-0330 on.
 
 - **Pulling `data/lancedb/` (or any multi-GB slice): use `scripts/fetch/pull_lancedb.py`, not
   `snapshot_download`** (ADR-0085). Measured 2026-08-25 on a 1,888 MB / 4,222-file pull,

@@ -132,6 +132,7 @@ from headstart.ingest.index_plan import (
     read_unauthoritative_boards,
     resolve_board,
     scraped_boards,
+    unauthoritative_among,
     workday_site_jobs,
 )
 from headstart.ingest.update_descriptions import read_store
@@ -750,7 +751,7 @@ def sync(args: argparse.Namespace) -> int:
             f"unauthoritative-Board record missing at {args.unauthoritative_boards} — "
             "scrape_join always writes it; no Board is protected from eviction this run"
         )
-    excluded = {b for b in boards if lower_key(b) in unauthoritative}
+    excluded = unauthoritative_among(boards, unauthoritative)
     if excluded:
         boards -= excluded
         # One warning for the whole set, naming a sample of it, then every Board and its reason

@@ -49,19 +49,24 @@ whenever a rule changes, so a rule change moves the whole history and draws no s
 
 1. **Record Job facts** (step 1, built here). `scrape_join` sees every scraped line, tech or not,
    and `job_facts` records under `data/facts/`:
-   - **Job facts** (`jobs/{stamp}.parquet`): one row when a Job is first listed, when its raw
-     fields change, and when an authoritative read of its Board no longer lists it. A row holds
-     the raw fields every rule reads: company, title, location, remote, department, url,
-     posted_at, experience, employment type, salary, requisition, and whether the scrape carried a
-     description.
+   - **Job facts** (`job_facts/{stamp}.parquet`): one row when a Job is first listed, when its
+     raw fields change, when an authoritative read of its Board no longer lists it (`unlisted`),
+     and when its Board leaves the Scrapable Boards (`off_board`, as `index prune` sweeps
+     off-Board rows). A row holds the raw fields every rule reads, which are every `Job` field but
+     its id, ATS, fetch time and description (company, title, location, remote, department, url,
+     posted_at, experience, employment type, salary, requisition), and whether the scrape carried
+     a description.
    - **Board reads** (`board_reads/{stamp}.parquet`): every Board the run read, whether the read
-     was authoritative, why not, the lines it returned, the total it stated, and its seconds.
+     was authoritative, truncated or an error and why, whether its absences counted, the lines it
+     returned, the total it stated where its scraper measured one, and its seconds.
    - **The Listed set** (`listed_jobs.parquet`): each currently listed id with its Board and a
      hash of its raw fields. It is state, rewritten each run, and exists only so the next run can
      tell what changed without storing every id on every run.
 
    Every file names the run, its commit (`code_sha`) and the scope rule it used. Non-tech Jobs are
-   included, and so are Jobs later removed as duplicates or on Boards later parked.
+   included, and so are Jobs later removed as duplicates. A run that cannot record its facts still
+   publishes its scrape: the facts are written all or nothing, and the next run records the
+   changes.
 2. **Archive closed Jobs' description vectors** before `embed_prune` drops them, at half
    precision (the owner's choice, 2026-09-29), so a classifier change can re-sort the past. The
    PR measures how many family decisions flip against full precision before it merges.
@@ -105,9 +110,13 @@ The owner's other decisions (2026-09-29):
   uploads it with the run's facts in one commit. A run whose upload fails loses both together,
   and the next run diffs against the older Listed set, so no change is lost or counted twice.
 - **"Not listed" depends on a scope rule.** A Job is recorded as no longer listed only when an
-  authoritative read of its Board missed it. That is the eviction scope `index sync` uses
-  (ADR-0053, ADR-0161), and the facts record its version (`scope_version`), because it is the
-  one decision a fact carries.
+  authoritative read of its Board missed it, or its Board left the Scrapable Boards. That is the
+  eviction scope `index sync` uses (ADR-0053, ADR-0161, shared through
+  `index_plan.unauthoritative_among`) and `index prune`'s off-Board sweep, and the facts record
+  its version (`scope_version`), because it is the one decision a fact carries.
+- **The stated total is recorded where a scraper measures one.** Every scraper that checks its
+  read against the Board's own total does so through `mark_truncated_unless_negligible`, which now
+  reports the total too. A hard cap or a surface with no total states none.
 - **Fragments accumulate** at two files a run per directory. HF's 10,000-files-per-directory
   limit is years away. A monthly fold, like the description store's, comes before it.
 

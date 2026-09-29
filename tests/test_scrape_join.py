@@ -589,7 +589,7 @@ def test_the_join_records_the_runs_job_facts_over_the_eviction_scope(
     observability.write_shard(
         frags / "shard-0", ShardReport(boards_ok=["greenhouse:acme", "greenhouse:big"])
     )
-    monkeypatch.setattr(job_facts, "now_stamp", lambda: "2026-09-29T06:00:00+00:00")
+    monkeypatch.setattr(job_facts, "facts_stamp", lambda: "2026-09-29T06:00:00+00:00")
     _run(frags, tmp_path / "jobs")
 
     # The next run: acme dropped its id 2, big was read short and returned nothing.
@@ -602,7 +602,7 @@ def test_the_join_records_the_runs_job_facts_over_the_eviction_scope(
             truncated={"greenhouse:big": "listing cap"},
         ),
     )
-    monkeypatch.setattr(job_facts, "now_stamp", lambda: "2026-09-29T07:00:00+00:00")
+    monkeypatch.setattr(job_facts, "facts_stamp", lambda: "2026-09-29T07:00:00+00:00")
     _run(frags2, tmp_path / "jobs")
 
     facts_dir = tmp_path / "facts"
@@ -619,9 +619,29 @@ def test_the_join_records_the_runs_job_facts_over_the_eviction_scope(
         zip(reads["scraper_key"].to_pylist(), reads["outcome"].to_pylist())
     ) == {
         "greenhouse:acme": "authoritative",
-        "greenhouse:big": "short",
+        "greenhouse:big": "truncated",
     }
     assert not list(facts_dir.rglob("*.tmp"))
+
+
+def test_a_join_that_cannot_record_its_facts_still_joins(tmp_path, monkeypatch, caplog):
+    """ADR-0330: the scrape must still publish. The facts are written all or nothing, so the
+    next run records these changes against the Listed set this one left alone."""
+    from headstart.ingest import job_facts
+
+    def fail(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(job_facts, "record_run", fail)
+    frags = tmp_path / "frags"
+    _shard(frags, 0, {"greenhouse.jsonl": ['{"id": "greenhouse:acme:1"}']})
+
+    with caplog.at_level(logging.WARNING, logger="headstart.ingest.scrape_join"):
+        _run(frags, tmp_path / "jobs")
+
+    assert (tmp_path / "jobs" / "greenhouse.jsonl").exists()
+    assert "could not record this run's Job facts" in caplog.text
+    assert not list((tmp_path / "facts").rglob("*.tmp"))
 
 
 def test_the_join_names_the_shards_whose_reports_never_arrived(caplog):

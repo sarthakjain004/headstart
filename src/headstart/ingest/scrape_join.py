@@ -48,7 +48,12 @@ from headstart.ingest import (
     shard_speedup,
     write_id_list,
 )
-from headstart.ingest.index_plan import boards_by_canon, live_keep_set, resolve_board
+from headstart.ingest.index_plan import (
+    boards_by_canon,
+    live_keep_set,
+    resolve_board,
+    unauthoritative_among,
+)
 from headstart.ingest.observability import ShardReport
 
 _log = log.get(__name__, __spec__)
@@ -156,24 +161,37 @@ def _record_facts(
     unauthoritative: set[str],
     live: dict[str, str],
 ) -> None:
-    """Write the run's Job facts (ADR-0330). Its scope is the eviction scope ``index sync`` uses:
-    the Boards this union covered, less the Unauthoritative ones."""
+    """Write the run's Job facts (ADR-0330), over the eviction scope ``index sync`` uses: the
+    Boards this union covered, less the Unauthoritative ones.
+
+    Never fatal. A run that cannot record its facts still has to publish its scrape, and
+    ``record_run`` writes all or nothing, so the next run diffs against the Listed set this one
+    left alone and records the changes then."""
     path = scraped.close()
+    scope = {
+        lower_key(b) for b in boards - unauthoritative_among(boards, unauthoritative)
+    }
     try:
-        recorded = job_facts.record(
+        run = job_facts.record_run(
             path,
             facts_dir,
             stamp,
-            job_facts.board_reads(reports, scraped.board_lines),
-            {b for b in boards if lower_key(b) not in unauthoritative},
+            job_facts.board_reads(reports, scraped.board_lines, scope),
+            scope,
             live,
         )
+    except Exception:  # noqa: BLE001 - the scrape must still publish; see the docstring
+        _log.warning(
+            "could not record this run's Job facts; the next run records its changes",
+            exc_info=True,
+        )
+        return
     finally:
         path.unlink(missing_ok=True)
     _log.info(
-        f"Job facts: {recorded.listed} listed, {recorded.changed} changed, "
-        f"{recorded.unlisted} no longer listed, {recorded.reads} Board read(s); "
-        f"{recorded.still_listed} listed now -> {facts_dir}"
+        f"Job facts: {run.listed} listed, {run.changed} changed, {run.unlisted} unlisted, "
+        f"{run.off_board} off-Board, {run.reads} Board read(s); {run.still_listed} listed "
+        f"now -> {facts_dir}"
     )
 
 
@@ -304,8 +322,8 @@ def main() -> int:
     seen_on_unauthoritative: list[str] = []
     dates = board_dormancy.PostedDates()
     facts_dir = Path(args.facts)
-    stamp = job_facts.now_stamp()
-    scraped = job_facts.ScrapedLines(facts_dir / "scraped_lines.parquet.tmp")
+    stamp = job_facts.facts_stamp()
+    scraped = job_facts.ScrapedLines(facts_dir / job_facts.SCRATCH)
 
     total = 0
     for ats_file, sources in sorted(per_ats.items()):

@@ -43,10 +43,10 @@ from run 35058831217's state and *nothing in its logs said so*; it had to be rec
 afterwards from four independent signals.
 
 **Read it in one direction only**, because CONTEXT.md §Write guard is right that a commit id
-identifies no state here (ADR-0129): merge publishes four commits per run and the reclaim step
+identifies no state here (ADR-0129): merge publishes five commits per run and the reclaim step
 squashes the whole history about every 20 runs — the live dataset is one ``Super-squash`` commit
 as of 2026-09-16. So a commit that *moved*, or a fresh publish time, proves nothing: a squash is a
-commit, and a run that lands three of its four uploads and dies before ``data/state`` leaves a
+commit, and a run that lands four of its five uploads and dies before ``data/state`` leaves a
 minutes-old head over generation-old ledgers. A commit that has **not** moved, or a publish time a
 cycle or more behind the run reading it, does prove nothing was committed in between — and that is
 the originating incident's own shape, since a merge that published nothing stalls both. The

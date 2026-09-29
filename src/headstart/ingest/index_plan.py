@@ -37,7 +37,7 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
-from collections.abc import Iterable, Mapping
+from collections.abc import Collection, Iterable, Mapping
 from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
 from pathlib import Path
@@ -643,6 +643,15 @@ def boards_by_canon(keep: Iterable[str]) -> dict[str, str]:
     for board in sorted(keep):  # sorted so a caller's set order can't change the plan
         live.setdefault(lower_key(board), board)
     return live
+
+
+def unauthoritative_among(
+    boards: Iterable[str], unauthoritative: Collection[str]
+) -> set[str]:
+    """The Boards of ``boards`` whose read this run was not authoritative (ADR-0053), matched
+    case-folded against ``unauthoritative`` (lower-cased keys). ``index sync`` takes them out of
+    its eviction scope and the Job facts out of theirs (ADR-0330), so the two share this rule."""
+    return {board for board in boards if lower_key(board) in unauthoritative}
 
 
 def read_unauthoritative_boards(path: str | Path) -> dict[str, str]:
