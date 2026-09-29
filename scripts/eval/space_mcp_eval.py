@@ -19,7 +19,9 @@ listed and fails an answer naming a job that does not offer sponsorship, judged 
 Space's rules: by a person's label where the job has one, else by a negation check of its own
 (ADR-0333). ``operator_mix`` reads each role_requirements sample's companies and fails one that
 counts a curated staffing firm or job board it was not asked for, or more of one company's
-postings than the cap (ADR-0352). ``all_of`` and ``any_of`` combine checks.
+postings than the cap (ADR-0352). ``country_split`` reads `/facets` once per country the task
+names, with the filters of a search_jobs call the agent made, and needs each total stated
+beside that country's name (ADR-0355). ``all_of`` and ``any_of`` combine checks.
 A run whose server was not connected at its start is not judged: it is an error, left out of the
 summary's scores and named on a line of its own, first.
 
@@ -77,6 +79,7 @@ from headstart.boards import board_operator
 from headstart.boards.board_operator import OPERATORS
 from headstart.mcp_protocol import tool_arguments
 from headstart.mcp_protocol.messages import ToolFailure
+from headstart.search_filters import country_filter
 from headstart.space_mcp import company_scope, search_arguments
 from headstart.space_mcp.server import BY_NAME, NAME, URL_VAR
 from headstart.space_mcp.server import call as call_tool
@@ -1109,6 +1112,88 @@ def verify_operator_mix(
     )
 
 
+# --- country_split -------------------------------------------------------------------------
+
+#: How far either side of a country's name the answer's figure for it may sit: "India: 12,345"
+#: and "2,345 in Germany" both.
+_NEAR_A_NAME = 60
+_FIGURE = re.compile(r"(?<![\d.])\d{1,3}(?:,\d{3})+(?!\d)|(?<![\d.,])\d+(?![\d,])")
+
+
+def _country_total(space: Space, arguments: dict[str, Any], code: str) -> int:
+    """The total `/facets` gives for ``arguments`` (a search_jobs call's, at their defaults)
+    with ``code`` as their only country: what the answer's figure for that country must be."""
+    scope = None
+    if company := (arguments.get("company") or "").strip():
+        scope = company_scope.for_search(
+            space, company, needs_boards=bool(arguments.get("category"))
+        )
+    placeless = {
+        k: v for k, v in arguments.items() if k not in ("country", "india_place")
+    }
+    params = [
+        (name, value)
+        for name, value in search_jobs._params(placeless, scope)
+        if name not in ("k", "page", "sort")
+    ]
+    facets = space.read(
+        SpaceRoute.FACETS, [*params, ("country", code), ("counts", "total")]
+    )
+    return int(facets.get("total") or 0)
+
+
+def _figures_near(answer: str, name: str) -> list[int]:
+    """Every figure within :data:`_NEAR_A_NAME` characters of each place ``answer`` says
+    ``name``."""
+    figures = []
+    for match in re.finditer(rf"\b{re.escape(name)}\b", answer, re.IGNORECASE):
+        start = max(0, match.start() - _NEAR_A_NAME)
+        near = answer[start : match.end() + _NEAR_A_NAME]
+        figures += [int(f.replace(",", "")) for f in _FIGURE.findall(near)]
+    return figures
+
+
+def verify_country_split(
+    expect: dict[str, Any], transcript: Transcript, space: Space
+) -> Verdict:
+    """Each of ``expect["countries"]`` stated with its own count (ADR-0355): for some successful
+    search_jobs call meeting ``must_any``, the answer says, near each country's name, the total
+    `/facets` gives for that call's filters with that country and no other place — read here per
+    country, so an answer taken from `detail` full's places is held to the `country` filter's own
+    count, and one made from a search per country passes too."""
+    schema = BY_NAME["search_jobs"].input_schema
+    rules = {k: v for k, v in expect.items() if k == "must_any"}
+    calls = [
+        call
+        for call in transcript.calls
+        if call.name == "search_jobs"
+        and call.succeeded
+        and not _misses(rules, tool_arguments.with_defaults(schema, call.arguments))
+    ]
+    if not calls:
+        return Verdict(False, f"no successful search_jobs call meets {rules!r}")
+    tried = []
+    for call in calls:
+        arguments = tool_arguments.with_defaults(schema, call.arguments)
+        wrong = []
+        for code in expect["countries"]:
+            name = country_filter.name(code)
+            truth = _country_total(space, arguments, code)
+            if truth not in _figures_near(transcript.final_answer, name):
+                wrong.append(f"{name} is {truth:,}")
+        if not wrong:
+            return Verdict(
+                True,
+                f"search_jobs {json.dumps(call.arguments, ensure_ascii=False)}: each "
+                "country's figure is its /facets total",
+            )
+        tried.append(
+            f"{json.dumps(call.arguments, ensure_ascii=False)}: {', '.join(wrong)}, "
+            "not stated beside its name"
+        )
+    return Verdict(False, " | ".join(tried))
+
+
 # --- mentions ------------------------------------------------------------------------------
 
 
@@ -1218,6 +1303,7 @@ VERIFIERS: dict[str, Verifier] = {
     "hot_top": verify_hot_top,
     "blocking_named": verify_blocking_named,
     "mentions": verify_mentions,
+    "country_split": verify_country_split,
     "any_of": verify_any_of,
     "all_of": verify_all_of,
 }

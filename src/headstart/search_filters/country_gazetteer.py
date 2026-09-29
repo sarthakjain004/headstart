@@ -45,7 +45,7 @@ sends is ever interpolated here beyond the dict lookup in :func:`where`.
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from functools import cache
 
@@ -1036,3 +1036,50 @@ def matches(code: str, location: str | None) -> bool:
 def classify(location: str | None) -> set[str]:
     """Every country ``location`` is in: a row naming three countries is in all three."""
     return {code for code in (*COUNTRIES, "IN") if matches(code, location)}
+
+
+def countries_outside_india(locations: Sequence[str | None]) -> list[frozenset[str]]:
+    """:func:`classify` of each of ``locations``, less India, for many at once (ADR-0355).
+
+    :func:`matches`' rule, run a column at a time by Arrow's regex engine (RE2) over the same
+    regex strings, and each costly pass only over the locations it can still change: the others'
+    guards only where a shared or city term matched. The served table's 85,828 distinct
+    locations took 1.6 s this way and 28 s one at a time (2026-09-29, local). India is left to
+    the caller: its rule is :func:`india_gazetteer.classify` and, on the served table, the
+    materialized column ``country=IN`` reads. Arrow is imported here, not at the top: the MCP
+    server imports this module and installs without it.
+    """
+    import numpy as np
+    import pyarrow as pa
+    import pyarrow.compute as pc
+
+    # Lowered by Python, as `matches` and DataFusion's `lower` do: Arrow's own maps "İ" to "i",
+    # which read "İstanbul" as Turkey where the filter does not (6 served rows, 2026-09-29).
+    lowered = pa.array([(text or "").lower() for text in locations], pa.string())
+    size = len(lowered)
+
+    def search(regex: str | None, among: np.ndarray) -> np.ndarray:
+        found = np.zeros(size, dtype=bool)
+        if regex and among.any():
+            at = np.flatnonzero(among)
+            pattern = _compiled(regex).pattern
+            found[at] = np.asarray(
+                pc.match_substring_regex(lowered.take(pa.array(at)), pattern),
+                dtype=bool,
+            )
+        return found
+
+    codes: list[set[str]] = [set() for _ in range(size)]
+    every = np.ones(size, dtype=bool)
+    for code in COUNTRIES:
+        rule = _rule(code)
+        found = search(rule.sure, every)
+        city = search(rule.city_words, ~found)
+        found |= city & ~search(rule.others_stated, city)
+        shared = search(rule.shared_segments, ~found)
+        words = search(rule.shared_words, ~found & ~shared)
+        shared |= words & ~search(rule.others_shared_segments, words)
+        found |= shared & ~search(rule.others_sure, shared)
+        for at in np.flatnonzero(found):
+            codes[at].add(code)
+    return [frozenset(named) for named in codes]

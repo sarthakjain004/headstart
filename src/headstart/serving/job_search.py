@@ -94,6 +94,9 @@ FACET_CACHE_SIZE = 128
 #: What `/facets` may be asked to count (``counts=``, ADR-0274): every option's count, the default
 #: the page reads, or only the total, for an agent that prints nothing else.
 FACET_COUNTS = ("all", "total")
+#: `/facets`' ``places=1``: where every matching job is, by country with each country's top
+#: cities (`location_counts.places`, ADR-0355). The page never asks it.
+FACET_PLACES = "1"
 FACET_CACHE_TTL_SECONDS = 60
 BROWSE_CACHE_SIZE = 64
 BROWSE_CACHE_TTL_SECONDS = 60
@@ -319,6 +322,7 @@ REQUEST_PARAMETERS = frozenset(
         "per_company",
         # /facets alone
         "counts",
+        "places",
         # the app's scope and answers
         "board",
         "family",
@@ -1539,6 +1543,11 @@ class JobSearch:
         ``counts=total`` in ``args`` counts no option (:data:`FACET_COUNTS`, ADR-0274), cached
         apart from the full strip; any other value but ``all`` is refused.
 
+        ``places=1`` adds ``places``: where every row the total counts is, by country with each
+        country's top cities, read from the same table and where-clause as the total
+        (`location_counts.places`, ADR-0355), so its ``jobs`` is the total and a country's count
+        is what adding ``country=`` would total. Any other value is refused.
+
         A ``like=`` Job is left out of every count, as :meth:`run` leaves it out of the list.
         ``operators=`` narrows every count, and ``operators_left_out`` counts the rows it left
         out (ADR-0335).
@@ -1551,6 +1560,11 @@ class JobSearch:
                 f"counts {asked!r} is not known; known: {_listed(FACET_COUNTS)}"
             )
         only_total = asked == "total"
+        with_places = (args.get("places") or "").strip()
+        if with_places not in ("", FACET_PLACES):
+            raise ValueError(
+                f"places {with_places!r} is not known; send places={FACET_PLACES} or nothing"
+            )
         if like := _like_id(args):
             extra_where = with_extra(extra_where, _other_than(like))
         # `operators=` narrows every count, and what it left out is the total without it, less
@@ -1560,7 +1574,14 @@ class JobSearch:
         operators, extra_where = self._narrowed_by_operators(args, unkept)
         # `operators` too: a list leaving nothing out keeps the where-clause as it was, and
         # still answers with its count.
-        cache_key = (filters, extra_where, only_total, _family_asked(args), operators)
+        cache_key = (
+            filters,
+            extra_where,
+            only_total,
+            _family_asked(args),
+            operators,
+            bool(with_places),
+        )
         cached = _cache_get(
             self._facet_cache,
             self._facet_cache_lock,
@@ -1602,6 +1623,14 @@ class JobSearch:
                 args, replace(filters, include_non_tech=True), extra_where
             )
             counted = {**counted, "non_tech_left_out": shown - counted["total"]}
+        if with_places:
+            _, table, where = self._table_and_where(args, filters, extra_where)
+            counted = {
+                **counted,
+                "places": location_counts.places(
+                    table, where, self.capabilities.has_country
+                ),
+            }
         elapsed_ms = (time.monotonic() - started) * 1000
         if elapsed_ms > SLOW_SEARCH_MS:
             # The strip is ~46 counts, the most expensive request the Space serves; shapes only,
@@ -1950,6 +1979,8 @@ class JobSearch:
         self.work_authorization.start()
         self.run({})
         self.facets({})
+        # Reads every served location's countries once, which later answers look up (ADR-0355).
+        self.facets({"places": FACET_PLACES})
         self.run({"q": "software engineer"})
 
     def indexed(self, ids: Collection[str]) -> set[str]:
@@ -2056,7 +2087,9 @@ class JobSearch:
         limit = LOCATIONS_SHOWN if limit is None else limit
         if not 1 <= limit <= MAX_LOCATIONS:
             raise ValueError(f"limit must be from 1 to {MAX_LOCATIONS}")
-        return location_counts.top(self._table, where, limit)
+        return location_counts.top(
+            self._table, where, limit, self.capabilities.has_country
+        )
 
     def levels(self, args: Mapping[str, str]) -> dict[str, Any]:
         """The Trends level bands of the served jobs on ``board=`` (repeatable, required) — see

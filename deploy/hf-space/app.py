@@ -787,7 +787,10 @@ def _keep_static_for_the_boot(response):
 # 19: each /hot row's `opened_fresh` and `opened_found_late`, its served postings first seen since
 # turnover began posted within 14 days of first sight and longer before (ADR-0351).
 # 20: `may_offer_sponsorship`, and offers read against each Job's place and title (ADR-0353).
-_AGENT_API_VERSION = 20
+# 21: `places=1` on /facets, where every matching job is by country and city, and
+# /companies/locations reads every place's country, so it no longer sends `places_unread`
+# (ADR-0355).
+_AGENT_API_VERSION = 21
 
 
 @app.after_request
