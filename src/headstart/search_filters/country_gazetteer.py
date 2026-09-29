@@ -142,10 +142,10 @@ COUNTRIES: dict[str, Country] = {
         "United Kingdom",
         words=(
             "united kingdom", "great britain", "england", "scotland", "northern ireland", "uk",
-            "u.k.", "greater london", "city of london", "belfast", "cardiff",
+            "u.k.", "greater london", "city of london", "glasgow", "belfast", "cardiff",
             "sheffield", "nottingham", "newcastle upon tyne", "milton keynes", "warrington",
             "coventry", "leicester", "swindon", "guildford", "basingstoke", "bracknell",
-            "slough", "farnborough", "stevenage", "crawley", "greater manchester",
+            "slough", "farnborough", "stevenage", "crawley", "dundee", "greater manchester",
             "west midlands", "cambridgeshire", "lanarkshire", "yorkshire", "lancashire",
             "berkshire", "hertfordshire", "oxfordshire", "buckinghamshire", "tyne and wear",
             "stoke-on-trent", "woking", "havant", "bridgwater", "gaydon", "barrow-in-furness",
@@ -153,7 +153,6 @@ COUNTRIES: dict[str, Country] = {
             "solihull", "rochdale", "luton", "gosport", "bicester", "motherwell",
             "castleford", "bedfordshire", "chester, cheshire", "bury st edmunds", "broadoak",
             "new malden", "alderley edge", "scotstoun", "great baddow",
-            "glasgow", "dundee",
         ),
         segments=("gbr", "wales"),
         shared_words=(
@@ -164,7 +163,6 @@ COUNTRIES: dict[str, Country] = {
         ),
         shared_segments=("gb",),
     ),
-
     "CA": Country(
         "Canada",
         words=(
@@ -215,14 +213,13 @@ COUNTRIES: dict[str, Country] = {
             "nuremberg", "nürnberg", "nuernberg", "hannover", "karlsruhe", "mannheim",
             "heidelberg", "bonn", "darmstadt", "dortmund", "essen", "aachen", "walldorf",
             "wiesbaden", "mainz", "ingolstadt", "wolfsburg", "erlangen", "jena", "ulm",
-            "freiburg", "regensburg", "augsburg", "bochum", "münster",
+            "freiburg", "potsdam", "regensburg", "augsburg", "kiel", "bochum", "münster",
             "duisburg", "metzingen", "braunschweig", "göttingen", "bielefeld", "ratingen",
             "eschborn", "bad homburg", "garching", "böblingen", "sindelfingen", "neckarsulm",
             "oberpfaffenhofen",
             "hanau", "ismaning", "friedrichshafen", "remscheid", "neuss", "weiterstadt",
             "ludwigsburg", "bensheim", "melsungen", "hennigsdorf", "sankt augustin",
             "bad mergentheim", "pfaffenhofen an der ilm", "bitterfeld wolfen", "schönaich",
-            "potsdam", "kiel",
         ),
         segments=("deu",),
         # Also Berlin, CT, New Berlin, WI and Berlin, NJ (ADR-0322).
@@ -248,20 +245,18 @@ COUNTRIES: dict[str, Country] = {
         "Australia",
         words=(
             # Perth with Western Australia's code: "perth" alone is shared (ADR-0322).
-            "australia", "sydney", "perth, wa", "wa, au", "canberra", "gold coast",
+            "australia", "sydney", "perth, wa", "wa, au", "canberra", "hobart", "gold coast",
             "geelong",
             "north sydney", "new south wales", "queensland", "western australia",
             "south australia", "tasmania", "australian capital territory",
             "northern territory",
             "mawson lakes", "cooma", "enoggera",
-            "hobart",
         ),
         segments=("aus", "nsw", "vic", "qld", "tas", "act"),
         # "perth" is also Perth, Scotland and Perth Amboy, NJ (ADR-0322).
         shared_words=("melbourne", "victoria", "adelaide", "brisbane", "perth"),
         shared_segments=("au",),
     ),
-
     "PL": Country(
         "Poland",
         words=(
@@ -324,32 +319,28 @@ COUNTRIES: dict[str, Country] = {
     "NL": Country(
         "Netherlands",
         words=(
-            "netherlands", "nederland", "eindhoven", "utrecht",
+            "netherlands", "nederland", "amsterdam", "rotterdam", "eindhoven", "utrecht",
             "the hague", "den haag", "delft", "hoofddorp", "noord-holland", "north holland",
-            "zuid-holland", "noord-brabant", "north brabant", "gelderland",
+            "zuid-holland", "south holland", "noord-brabant", "north brabant", "gelderland",
             "groningen", "leiden", "amstelveen", "veldhoven", "nijmegen", "amersfoort",
             "papendrecht", "hengelo", "niederlande", "zoetermeer", "hilversum", "breda",
             "schiphol", "wageningen", "s hertogenbosch", "randstad",
-            "amsterdam", "rotterdam", "south holland",
         ),
         segments=("nld",),
         shared_words=("holland",),
         shared_segments=("nl",),
     ),
-
     "IE": Country(
         "Ireland",
         words=(
             "republic of ireland", "cork", "galway", "limerick", "county dublin",
-            "co. dublin", "leinster", "munster", 
+            "co. dublin", "leinster", "munster", "waterford",
             "donegal", "kilkenny", "nenagh",
-            "waterford",
         ),
         segments=("ireland", "irl"),
         shared_words=("ireland", "dublin"),
         shared_segments=("ie",),
     ),
-
     "AE": Country(
         "United Arab Emirates",
         words=(
@@ -381,14 +372,11 @@ COUNTRIES: dict[str, Country] = {
     ),
     "PT": Country(
         "Portugal",
-        words=(
-            "portugal", "lisboa", "braga", "aveiro", "coimbra", "maia", "lisbon",
-        ),
+        words=("portugal", "lisbon", "lisboa", "braga", "aveiro", "coimbra", "maia"),
         segments=("prt",),
         shared_words=("porto",),
         shared_segments=("pt",),
     ),
-
     "RO": Country(
         "Romania",
         words=(
@@ -474,44 +462,38 @@ COUNTRIES: dict[str, Country] = {
         "Belgium",
         words=(
             "belgium", "belgique", "belgië", "brussels", "bruxelles", "brussel", "antwerp",
-            "antwerpen", "gent", "leuven", "mechelen", "liège", "liege", "flanders",
+            "antwerpen", "ghent", "gent", "leuven", "mechelen", "liège", "liege", "flanders",
             "vlaanderen", "wallonia", "vlaams gewest", "diegem", "zaventem", "charleroi",
             "louvain-la-neuve",
             "zedelgem", "ternat", "groot bijgaarden", "erembodegem",
-            "ghent",
         ),
         shared_segments=("be",),
     ),
-
     "IT": Country(
         "Italy",
         words=(
-            "italy", "italia", "milano", "turin", "torino", "bologna", "firenze",
+            "italy", "italia", "milan", "milano", "turin", "torino", "bologna", "firenze",
             "napoli", "genova", "catania", "bari", "pisa", "padova", "padua", "lombardy",
             "lombardia", "lazio", "piedmont",
             "modena", "san giovanni valdarno", "sant agata bolognese", "brugherio", "bozen",
             "bolzano", "vicenza",
-            "milan",
         ),
         segments=("ita",),
         shared_words=("rome", "roma", "florence", "naples", "genoa"),
         shared_segments=("it",),
     ),
-
     "CH": Country(
         "Switzerland",
         words=(
-            "switzerland", "schweiz", "suisse", "zürich", "zuerich", 
+            "switzerland", "schweiz", "suisse", "zurich", "zürich", "zuerich", "geneva",
             "genève", "geneve", "lausanne", "basel", "zug", "lugano", "winterthur",
             "st. gallen", "vaud", "aargau",
             "allschwil", "pfäffikon", "pfaffikon", "mägenwil", "näfels",
-            "zurich", "geneva",
         ),
         segments=("che",),
         shared_words=("bern",),
         shared_segments=("ch",),
     ),
-
     "SE": Country(
         "Sweden",
         words=(
@@ -554,9 +536,7 @@ COUNTRIES: dict[str, Country] = {
     ),
     "HK": Country(
         "Hong Kong",
-        words=(
-            "hong kong", "kowloon", "hksar", "香港",
-        ),
+        words=("hong kong", "kowloon", "hksar", "香港"),
         segments=("hkg",),
         shared_segments=("hk",),
     ),
@@ -601,9 +581,7 @@ COUNTRIES: dict[str, Country] = {
     ),
     "NZ": Country(
         "New Zealand",
-        words=(
-            "new zealand", "auckland", "christchurch", "waikato", "north island", "east tamaki",
-        ),
+        words=("new zealand", "auckland", "christchurch", "waikato", "north island", "east tamaki"),
         segments=("nzl",),
         shared_words=("wellington", "hamilton", "canterbury"),
         shared_segments=("nz",),
@@ -630,13 +608,10 @@ COUNTRIES: dict[str, Country] = {
     ),
     "RS": Country(
         "Serbia",
-        words=(
-            "serbia", "beograd", "novi sad", "belgrade",
-        ),
+        words=("serbia", "belgrade", "beograd", "novi sad"),
         segments=("srb",),
         shared_segments=("rs",),
     ),
-
     "DK": Country(
         "Denmark",
         words=(
@@ -705,14 +680,10 @@ COUNTRIES: dict[str, Country] = {
     ),
     "TR": Country(
         "Türkiye",
-        words=(
-            "türkiye", "turkiye", "istanbul", "ankara", "izmir", "bursa",
-            "turkey",
-        ),
+        words=("turkey", "türkiye", "turkiye", "istanbul", "ankara", "izmir", "bursa"),
         segments=("tur",),
         shared_segments=("tr",),
     ),
-
     "LK": Country(
         "Sri Lanka",
         words=(
@@ -729,9 +700,7 @@ COUNTRIES: dict[str, Country] = {
         "Chile", words=("chile",), segments=("chl",), shared_words=("santiago",),
         shared_segments=("cl",),
     ),
-    "PE": Country("Peru", words=(
-            "perú", "arequipa",
-        ), shared_words=("peru", "lima")),
+    "PE": Country("Peru", words=("perú", "arequipa"), shared_words=("peru", "lima")),
     "LB": Country(
         "Lebanon", words=("beirut",), segments=("lbn",), shared_words=("lebanon",),
         shared_segments=("lb",),
@@ -772,11 +741,8 @@ COUNTRIES: dict[str, Country] = {
         shared_segments=("pr",),
     ),
     "UY": Country(
-        "Uruguay", words=(
-            "uruguay", "montevideo",
-        ), segments=("ury",), shared_segments=("uy",),
+        "Uruguay", words=("uruguay", "montevideo"), segments=("ury",), shared_segments=("uy",)
     ),
-
     "EE": Country("Estonia", words=("estonia", "tallinn", "tartu"), shared_segments=("ee",)),
     "LV": Country(
         "Latvia", words=("latvia", "riga"), segments=("lva",), shared_segments=("lv",)

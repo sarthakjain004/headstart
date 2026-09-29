@@ -582,7 +582,7 @@ class SuccessFactorsScraper(BaseScraper):
         # and the feed carried one on all 10,829 items).
         # A location cut to a two-letter country ("Cali, Un") is as good as none, and the feed
         # states it whole (jobs.boehringer-ingelheim.com 68 of 68, jobs.hii-tsd.com 321 of 321,
-        # 2026-09-29), so such a page also asks for the feed.
+        # 2026-09-29), so such a page also asks for the feed (ADR-0343).
         placeless = {
             job_id
             for _, job_id in open_listed
@@ -1227,7 +1227,8 @@ def _csb_location(page: str) -> str | None:
     # A tenant that filled the region and country fields with names has them cut by the
     # microdata to four and two letters ("Cali, Un"): the page's own "Location:" line states them
     # whole (jobs.hii-tsd.com, jobs.entergy.com, jobs.supermicro.com: 884 of the 1,380 served
-    # rows with a cut country, 2026-09-29). It replaces the assembly only when it says more.
+    # rows with a cut country, 2026-09-29). It replaces the assembly only when it says more
+    # (ADR-0343).
     if _is_cut_location(assembled):
         whole = _job_geo_location(page)
         if whole and len(whole) > len(assembled or ""):
