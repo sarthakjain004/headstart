@@ -81,6 +81,50 @@ _ROWS = [
     # whitespace and an in-word hyphen never separate a code
     ("Rio de Janeiro, Brazil", {"BR"}),
     ("Louvain-la-Neuve, BE", {"BE"}),
+    # a country the table names too rarely for ADR-0273's first cut, and the shared names it
+    # takes back from another country (ADR-0343)
+    ("Paramaribo, Suriname", {"SR"}),
+    ("Georgetown, Guyana", {"GY"}),
+    ("Georgetown, TX", {"US"}),
+    ("Kingston, Jamaica", {"JM"}),
+    ("Kingston, ON", {"CA"}),
+    ("Jamaica, NY", {"US"}),
+    ("Jamaica", {"JM"}),
+    ("Baku, AZ", {"AZ"}),  # Azerbaijan, not Arizona
+    ("Phoenix, AZ", {"US"}),
+    ("Al-Bireh/Ramallah, Palestinian Territory", {"PS"}),  # "AL-" is not Alabama
+    ("Al-Khobar; Saudi Arabia", {"SA"}),
+    ("KR-Osan-04 (3815)", {"KR"}),  # a hyphen after a code still separates it
+    ("Baghdad/Erbil, IQ", {"IQ"}),
+    ("Kaduna, Sokoto, Kebbi, and Zamfara States", {"NG"}),
+    ("Gendalo Gendang, Kali, ID", {"ID"}),  # Kalimantan, not Idaho
+    ("Boise, ID", {"US"}),
+    ("Sala Al Jadida, MA", {"MA"}),  # Morocco, not Massachusetts
+    ("Boston, MA", {"US"}),
+    # a province cut to four letters, then "CA": Canada
+    ("Abbotsford, Brit, CA", {"CA"}),
+    ("Halifax, Nova, CA", {"CA"}),
+    # "Ottawa" is shared (Ottawa, IL): a street of that name in a US row is not Canada
+    (
+        "100 Ottawa Ave Sw - GRAND RAPIDS, MI; CHICAGO, IL; United States of America",
+        {"US"},
+    ),
+    ("Ottawa, IL", {"US"}),
+    ("Ottawa", {"CA"}),
+    ("Ottawa, ON", {"CA"}),
+    ("ON, Ottawa", {"CA"}),
+    (
+        "Ottawa, Ontario, CA",
+        {"CA"},
+    ),  # 20 served rows: the state code "CA" must not take it
+    ("Ottawa, CA", {"CA"}),
+    # a place of a country that states none, in the phrases a remote job is written in
+    ("Remote within the US", {"US"}),
+    ("Remote - US Only", {"US"}),
+    ("Remote, US-Based", {"US"}),
+    ("Remote (Outside the US)", set()),
+    ("Franklin, TN or Remote", {"US"}),
+    ("Playa Vista, CA or Remote", {"US"}),
     # rows naming several countries are in all of them
     ("United States; Canada", {"US", "CA"}),
     ("London, United Kingdom; New York, NY, United States", {"GB", "US"}),
@@ -166,3 +210,11 @@ def test_a_clause_is_at_most_five_regex_passes_and_seven_with_a_city_word():
         limit = 7 if country.city_words else 5
         assert where(code).count("regexp_like(") <= limit, code
     assert country_gazetteer.where("SG").count("regexp_like(") == 3
+
+
+def test_no_clause_uses_a_unicode_word_boundary():
+    """`\\b` is Unicode in Rust's regex crate, which takes DataFusion off its DFA fast path on every
+    non-ASCII row: a segment end written with it made the clause 1.6 to 1.9 times slower over the
+    500,167 served locations (ADR-0343). The ends are spelled `(?:[^a-z0-9]|$)` instead."""
+    for code in COUNTRIES:
+        assert "\\b" not in where(code), code

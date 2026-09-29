@@ -580,10 +580,17 @@ class SuccessFactorsScraper(BaseScraper):
         # the place as an unlabelled span no parser can anchor on, while the feed states it on
         # every item (careers.hcltech.com, 2026-09-25: 3,146 of 4,226 served rows had no location,
         # and the feed carried one on all 10,829 items).
+        # A location cut to a two-letter country ("Cali, Un") is as good as none, and the feed
+        # states it whole (jobs.boehringer-ingelheim.com 68 of 68, jobs.hii-tsd.com 321 of 321,
+        # 2026-09-29), so such a page also asks for the feed (ADR-0343).
         placeless = {
             job_id
             for _, job_id in open_listed
-            if job_id in pages and not pages[job_id].get("location")
+            if job_id in pages
+            and (
+                not pages[job_id].get("location")
+                or _is_cut_location(pages[job_id]["location"])
+            )
         }
         sitemal_fields = self._sitemal_fields() if unread or placeless else {}
         fields = [
@@ -596,11 +603,13 @@ class SuccessFactorsScraper(BaseScraper):
             placed = sum(
                 1
                 for (_, job_id), page in zip(open_listed, fields)
-                if job_id in placeless and page.get("location")
+                if job_id in placeless
+                and page.get("location")
+                and not _is_cut_location(page["location"])
             )
             _log.info(
                 f"{self.board_key()}: sitemal.xml placed {placed} of {len(placeless)} "
-                "job pages that stated no location"
+                "job pages that stated no location or a cut one"
             )
         lost = sum(1 for page in fields if page is None)
         if lost < unread:
@@ -902,9 +911,12 @@ def _feed_location(location: str | None) -> str | None:
 def _with_feed_location(
     page: dict[str, Any], feed: dict[str, Any] | None
 ) -> dict[str, Any]:
-    """A read page's fields, with the feed's location where the page stated none. The page stays
-    the authority on every other field (module docstring)."""
-    if page.get("location") or not feed or not feed.get("location"):
+    """A read page's fields, with the feed's location where the page stated none or a country
+    cut to two letters (:func:`_is_cut_location`). The page stays the authority on every other
+    field (module docstring)."""
+    if not feed or not feed.get("location"):
+        return page
+    if page.get("location") and not _is_cut_location(page["location"]):
         return page
     return {**page, "location": feed["location"]}
 
@@ -1211,7 +1223,35 @@ def _csb_location(page: str) -> str | None:
         _label_value(page, "Country/Region:", "Country:")
         or _meta_itemprop(page, "addressCountry"),
     ]
-    return ", ".join(p for p in parts if p) or None
+    assembled = ", ".join(p for p in parts if p) or None
+    # A tenant that filled the region and country fields with names has them cut by the
+    # microdata to four and two letters ("Cali, Un"): the page's own "Location:" line states them
+    # whole (jobs.hii-tsd.com, jobs.entergy.com, jobs.supermicro.com: 884 of the 1,380 served
+    # rows with a cut country, 2026-09-29). It replaces the assembly only when it says more
+    # (ADR-0343).
+    if _is_cut_location(assembled):
+        whole = _job_geo_location(page)
+        if whole and len(whole) > len(assembled or ""):
+            return whole
+    return assembled
+
+
+#: The last segment is a country name cut to two letters: "Un" for the United States, "In" for
+#: India. An ISO alpha-2 code is upper case, so it never reads as one.
+_CUT_COUNTRY = re.compile(r",\s*[A-Z][a-z]\s*$")
+_JOB_GEO_LOCATION = re.compile(r'class="jobGeoLocation">([^<]*)')
+
+
+def _is_cut_location(location: str | None) -> bool:
+    """Whether ``location`` ends in a country the microdata cut to two letters."""
+    return bool(location) and _CUT_COUNTRY.search(location or "") is not None
+
+
+def _job_geo_location(page: str) -> str | None:
+    """The ``jobGeoLocation`` span of the page's "Location:" line, whitespace collapsed."""
+    match = _JOB_GEO_LOCATION.search(page)
+    text = re.sub(r"\s+", " ", unescape(match.group(1))).strip() if match else ""
+    return text or None
 
 
 # `[^\W_]+` rather than `\w+`: `\w` includes `_`, and SuccessFactors's own slug encoder uses `_`
