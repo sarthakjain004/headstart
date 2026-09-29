@@ -37,17 +37,23 @@ never as "no CNAME", and slips known answers in every ``CONTROL_EVERY`` labels t
 that has started failing.
 
 Stage 2 makes the one request ``PeopleStrongScraper`` and ``check_liveness.p_peoplestrong``
-make: ``POST /api/cp/rest/altone/cp/jobs/v1?limit=1``. Parse the body, never the status: a host
-that is not a registered portal answers 200 with ``response: null`` (code 201), and a departed
-tenant answers a bare 403 HAProxy page. Only a ``totalRecords`` integer is a Board.
+make: ``POST /api/cp/rest/altone/cp/jobs/v1?offset=0&limit=1``, built through
+``PeopleStrongScraper.url(limit=1)`` and read by ``check_liveness``'s own body classifier. Parse
+the body, never the status: a host that is not a registered portal answers 200 with
+``response: null`` (code 201), and a departed tenant answers a bare 403 HAProxy page. Only a
+``totalRecords`` integer is a Board. One deny page is not a departure: the prober settles DEAD
+only when two addresses both get it, and this stage asks once, so it writes ``denied-once``.
 
 Run:  python scripts/discover/mine_peoplestrong_cname.py dns    CAND_FILE OUT_CSV [--concurrency N]
       python scripts/discover/mine_peoplestrong_cname.py verify CAND_FILE OUT_CSV
 
-Both stages stream per item and resume (rows already in OUT_CSV are skipped). ``dns`` writes
-``label,verdict,target``; ``verify`` writes ``ats,tenant,url,status,jobs`` for every label it
-reads, ``status`` being ``live`` / ``dead`` / ``unknown``. Hand the ``live`` rows to
-``scripts/validate/check_liveness.py peoplestrong`` through ``data/wayback-ats/peoplestrong.csv``.
+Both stages stream per item and resume (rows already in OUT_CSV are skipped), and both skip a
+label the committed ledger already holds (``data/validate/liveness/peoplestrong.csv``, keyed
+through ``PeopleStrongScraper.slug_from``). ``dns`` writes ``label,verdict,target``; ``verify``
+writes ``ats,tenant,url,status,jobs`` for every label it settles, ``status`` being ``live`` /
+``dead`` / ``denied-once``; an ``unknown`` answer is not written, so a re-run asks it again. Hand
+the ``live`` rows to ``scripts/validate/check_liveness.py peoplestrong`` through
+``data/wayback-ats/peoplestrong.csv``; it decides ``dead`` for itself.
 
 Requires dnspython for wire parsing (not a base dependency — CI installs base deps only).
 """
@@ -57,18 +63,29 @@ from __future__ import annotations
 import argparse
 import asyncio
 import csv
-import json
 import random
 import socket
 import struct
 import sys
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT / "src"))
-from headstart.network import http  # needs src on sys.path first
+sys.path.insert(0, str(ROOT / "scripts" / "validate"))
+# The prober's own body classifier, single source: what a listing response says about its Board.
+from check_liveness import (  # needs scripts/validate on sys.path first
+    _peoplestrong_denied,
+    _peoplestrong_verdict,
+)
+
+from headstart.boards.liveness_ledger import LIVE, UNKNOWN
+from headstart.network import http
+from headstart.scrapers.peoplestrong import PeopleStrongScraper
+
+LEDGER = ROOT / "data" / "validate" / "liveness" / "peoplestrong.csv"
 
 APEX = "peoplestrong.com"
 #: One of the zone's four Route 53 nameservers (`dig NS peoplestrong.com`: ns-450.awsdns-56.com
@@ -96,7 +113,9 @@ DNS_CONCURRENCY = 100
 # gate is 50 a second; this holds to 15 a second across 8 workers.
 HTTP_WORKERS = 8
 HTTP_RATE = 15.0
-DENIED = "Request forbidden by administrative rules."
+#: One ask got HAProxy's deny page. `p_peoplestrong` settles DEAD only when two named addresses
+#: both get it (a wall on our own address reads the same), so a single ask is not `dead`.
+DENIED_ONCE = "denied-once"
 
 
 def _load_done(out: Path, col: int) -> set[str]:
@@ -106,7 +125,19 @@ def _load_done(out: Path, col: int) -> set[str]:
         return {row[col] for row in list(csv.reader(fh))[1:] if row}
 
 
-def _candidates(path: Path, out: Path, col: int) -> list[str]:
+def _held_labels(ledger: Path = LEDGER) -> set[str]:
+    """Every label the committed ledger holds, live or dead, in the scraper's own spelling."""
+    if not ledger.exists():
+        return set()
+    with ledger.open(encoding="utf-8", newline="") as fh:
+        return {
+            PeopleStrongScraper.slug_from(row["tenant"], row.get("url") or "")
+            for row in csv.DictReader(fh)
+        }
+
+
+def _candidates(path: Path, out: Path, col: int, held: set[str]) -> list[str]:
+    """The labels in ``path`` neither read into ``out`` (column ``col``) nor held by the ledger."""
     labels = [
         line.strip().lower()
         for line in path.read_text(encoding="utf-8", errors="replace").splitlines()
@@ -116,12 +147,13 @@ def _candidates(path: Path, out: Path, col: int) -> list[str]:
     seen: set[str] = set()
     fresh = []
     for label in labels:
-        if label in done or label in seen:
+        if label in done or label in held or label in seen:
             continue
         seen.add(label)
         fresh.append(label)
     print(
-        f"{len(labels)} candidates, {len(done)} already done -> {len(fresh)} to probe",
+        f"{len(labels)} candidates, {len(done)} already done, {len(held)} held in the ledger"
+        f" -> {len(fresh)} to probe",
         flush=True,
     )
     return fresh
@@ -134,10 +166,10 @@ def _query_packet(qid: int, name: str) -> bytes:
     """A DNS query, QTYPE=CNAME (5). Recursion is requested so a public resolver answers too;
     the zone's own authoritative servers ignore the flag."""
     header = struct.pack(">HHHHHH", qid, 0x0100, 1, 0, 0, 0)
-    qname = (
-        b"".join(bytes([len(p)]) + p.encode("idna") for p in name.split(".") if p)
-        + b"\x00"
-    )
+    labels = [
+        p.encode("idna") for p in name.split(".") if p
+    ]  # length of the encoded form
+    qname = b"".join(bytes([len(label)]) + label for label in labels) + b"\x00"
     return header + qname + struct.pack(">HH", 5, 1)
 
 
@@ -280,20 +312,25 @@ async def _sweep(
         await asyncio.gather(*[worker() for _ in range(concurrency)])
         return lost
 
-    lost = await pass_over(labels)
-    if lost:
-        print(f"  [dns] {len(lost)} unanswered, asking again after a pause", flush=True)
-        await asyncio.sleep(10)
-        lost = await pass_over(lost)
+    try:
+        lost = await pass_over(labels)
+        if lost:
+            print(
+                f"  [dns] {len(lost)} unanswered, asking again after a pause",
+                flush=True,
+            )
+            await asyncio.sleep(10)
+            lost = await pass_over(lost)
+    finally:
+        fh.close()
     counts["error"] = len(lost)
-    fh.close()
     return counts
 
 
 def stage_dns(
     cand_file: Path, out: Path, concurrency: int, nameservers: list[str]
 ) -> int:
-    fresh = _candidates(cand_file, out, col=0)
+    fresh = _candidates(cand_file, out, col=0, held=_held_labels())
     if not fresh:
         return 0
     counts = asyncio.run(_sweep(fresh, out, concurrency, nameservers))
@@ -308,8 +345,6 @@ class _Pace:
     """Space request starts HTTP_RATE a second apart across every worker."""
 
     def __init__(self) -> None:
-        import threading
-
         self.next_slot = 0.0
         self.until = 0.0
         self._lock = threading.Lock()
@@ -330,13 +365,22 @@ class _Pace:
             self.until = max(self.until, time.monotonic() + seconds)
 
 
+def classify(r) -> tuple[str, int | None]:
+    """(status, jobs) for one listing response: ``live`` with the Board's stated total, ``dead``
+    for a host that is no registered portal (code 201), ``denied-once`` for HAProxy's deny page,
+    else ``unknown``. The prober's own classifier reads everything but the deny page."""
+    if _peoplestrong_denied(r):
+        return DENIED_ONCE, None
+    return _peoplestrong_verdict(r)
+
+
 def verify(label: str, pace: _Pace) -> tuple[str, str, int | None]:
-    """(label, verdict, jobs): the scraper's own `limit=1` listing read, body first.
+    """(label, status, jobs): the scraper's own `limit=1` listing read, body first.
 
     The name is resolved over DNS-over-HTTPS to a public resolver (`DOH_URL`): on a slow link the
     OS resolver times out on names a public one answers in ~100 ms, and a timeout is no verdict
     about the host."""
-    url = f"https://{label}.{APEX}/api/cp/rest/altone/cp/jobs/v1?offset=0&limit=1"
+    url = PeopleStrongScraper(label).url(limit=1)
     for _ in range(3):
         pace.wait()
         try:
@@ -346,36 +390,27 @@ def verify(label: str, pace: _Pace) -> tuple[str, str, int | None]:
                 json={},
                 headers={"User-Agent": UA},
                 timeout=30,
+                # As the prober's pinned ask does: the verdict is read off the body, so a
+                # certificate fault on a provisioned edge must not turn into `unknown`. Live
+                # portals answer the same with verification on (2 of 2 tried, 2026-09-29).
                 verify=False,
                 attempts=1,
                 doh_url=DOH_URL,
             )
         except Exception:  # noqa: BLE001
-            return label, "unknown", None
+            return label, UNKNOWN, None
         if r.status_code == 429:  # the shared per-minute budget: rest out the window
             pace.rest(60)
             continue
         break
     else:
-        return label, "unknown", None
-    if r.status_code == 403 and DENIED in r.text:
-        return label, "dead", None
-    if r.status_code != 200:
-        return label, "unknown", None
-    try:
-        body = json.loads(r.text)
-    except ValueError:
-        return label, "unknown", None
-    if isinstance(body, dict) and isinstance(body.get("totalRecords"), int):
-        return label, "live", body["totalRecords"]
-    code = (body.get("messageCode") or {}) if isinstance(body, dict) else {}
-    if code.get("code") == 201 and "getTpUrl" in str(code.get("messages")):
-        return label, "dead", None
-    return label, "unknown", None
+        return label, UNKNOWN, None
+    status, jobs = classify(r)
+    return label, status, jobs
 
 
 def stage_verify(cand_file: Path, out: Path) -> int:
-    fresh = _candidates(cand_file, out, col=1)
+    fresh = _candidates(cand_file, out, col=1, held=_held_labels())
     if not fresh:
         return 0
     pace = _Pace()
@@ -385,29 +420,31 @@ def stage_verify(cand_file: Path, out: Path) -> int:
     if fresh_file:
         writer.writerow(["ats", "tenant", "url", "status", "jobs"])
     live = done = 0
-    with ThreadPoolExecutor(max_workers=HTTP_WORKERS) as ex:
-        futures = [ex.submit(verify, c, pace) for c in fresh]
-        for fut in as_completed(futures):
-            label, status, jobs = fut.result()
-            done += 1
-            if status == "unknown":  # unrecorded, so a re-run asks again
-                continue
-            writer.writerow(
-                [
-                    "peoplestrong",
-                    label,
-                    f"https://{label}.{APEX}",
-                    status,
-                    "" if jobs is None else jobs,
-                ]
-            )
-            fh.flush()
-            if status == "live":
-                live += 1
-                print(f"  [live] {label}: {jobs} postings", flush=True)
-            if done % 200 == 0:
-                print(f"  [verify] {done}/{len(fresh)}, {live} live", flush=True)
-    fh.close()
+    try:
+        with ThreadPoolExecutor(max_workers=HTTP_WORKERS) as ex:
+            futures = [ex.submit(verify, c, pace) for c in fresh]
+            for fut in as_completed(futures):
+                label, status, jobs = fut.result()
+                done += 1
+                if status == UNKNOWN:  # unrecorded, so a re-run asks again
+                    continue
+                writer.writerow(
+                    [
+                        "peoplestrong",
+                        label,
+                        f"https://{label}.{APEX}",
+                        status,
+                        "" if jobs is None else jobs,
+                    ]
+                )
+                fh.flush()
+                if status == LIVE:
+                    live += 1
+                    print(f"  [live] {label}: {jobs} postings", flush=True)
+                if done % 200 == 0:
+                    print(f"  [verify] {done}/{len(fresh)}, {live} live", flush=True)
+    finally:
+        fh.close()
     print(f"verify done: {live} live Boards in {done} probed", flush=True)
     return live
 
