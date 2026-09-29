@@ -1241,7 +1241,48 @@ def test_smartrecruiters_an_engineering_function_leaves_a_vague_title_out():
     }
     (job,) = scraper.parse(raw, SCRAPED_AT)
     assert job.department is None
+    assert job.job_function == "Engineering"
     assert is_tech(job.title, job.department) is False
+
+
+def test_smartrecruiters_function_gates_on_it_only_but_still_shows_as_the_department():
+    """Four real Check Point listing postings (captured 2026-09-29), none stating a department.
+    Only the Information Technology function reaches the tech gate (ADR-0291), but every
+    function still shows as the served row's department, as it did before, so a Job kept on its
+    title does not lose its department."""
+    from headstart.ingest.doc_prep import stored_facts
+    from headstart.jobs.tech_filter import is_tech
+
+    jobs = get_scraper(
+        "smartrecruiters", "CheckPointSoftwareTechnologies2", "Check Point"
+    ).parse(_load("smartrecruiters_checkpoint_functions.json"), SCRAPED_AT)
+    got = [
+        (
+            j.title,
+            j.department,
+            j.job_function,
+            stored_facts(j.to_dict())["department"],
+            is_tech(j.title, j.department),
+        )
+        for j in jobs
+    ]
+    it, consulting, eng = "Information Technology", "Consulting", "Engineering"
+    assert got == [
+        # the IT function stands in, so rule 4 promotes the vague title
+        ("Professional Services Consultant", it, it, it, True),
+        # the same title under any other function is not tech
+        ("Professional Services Consultant", None, consulting, consulting, False),
+        # kept on its title, and still shown under its function
+        (
+            "Software Developer – WAF Learning Engine & Machine Learning",
+            None,
+            eng,
+            eng,
+            True,
+        ),
+        # the Engineering function no longer promotes a lawyer
+        ("Legal Counsel, Privacy", None, eng, eng, False),
+    ]
 
 
 def test_smartrecruiters_tech_gate_reads_function_when_department_is_null():

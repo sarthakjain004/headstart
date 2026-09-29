@@ -90,10 +90,15 @@ def stored_facts(job: dict) -> dict:
     ever match on it, and a new value in the store rewrites the served row, vector and all, so
     stamping every row of the ATSes that state one (six when measured on v654) would rewrite
     ~216k rows on the first run for no dedup. Widen it by adding pairs, or by dropping this check.
+
+    ``department`` falls back to the row's ``job_function`` when the row states none, so a
+    function the tech gate must not read still shows as the row's department (ADR-0291).
     """
     facts = {field: job.get(field) for field in META_FIELDS}
     if facts["requisition"] and not eightfold_backing.in_scope(job["id"]):
         facts["requisition"] = None
+    if not facts["department"] and job.get("job_function"):
+        facts["department"] = job["job_function"]
     return facts
 
 

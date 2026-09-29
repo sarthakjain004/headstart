@@ -111,9 +111,11 @@ from headstart.boards.board_identity import board_end
 # ("Security Officers", "Electricians"). On the served table (v298, 498,848 rows) **-3,081 out**:
 # 2,755 SmartRecruiters rows the Engineering function promoted (aecom2 651, boschgroup 488,
 # cityofnewyork 232) and 329 plurals (311 security staff), 3 of them both. **+377 in** on the 244
-# SmartRecruiters Boards walked live, about 40 of them software or digital-design work. On 180
-# sampled Engineering-function rows two labellers found 13 tech and 153 not. The blind hold-out and
-# the labelled set are unchanged. See docs/tech-filter/2026-09-29_the-smartrecruiters-function-fallback.md.
+# SmartRecruiters Boards walked live, a floor; a random 60 of them labelled 3 tech, 15 borderline,
+# 42 not. On 180 sampled Engineering-function rows two labellers found 13 tech and 153 not. The
+# served `department` is unchanged: a function the gate no longer reads still shows there, via
+# `Job.job_function`. The blind hold-out and the labelled set are unchanged. See
+# docs/tech-filter/2026-09-29_the-smartrecruiters-function-fallback.md.
 TECH_FILTER_VERSION = 7
 
 # 1. Strong, software-specific signals. A match here means tech regardless of any disqualifier.

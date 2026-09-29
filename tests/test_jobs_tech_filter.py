@@ -1275,8 +1275,13 @@ def test_version_7_the_role_veto_refuses_a_plural(title, department):
         # `technician` is deliberately not a veto word, in either number
         ("Maintenance Technician", "Engineering"),
         ("Maintenance Technicians", "Engineering"),
-        # the plural `s?` must not reach a longer word the veto never meant
+        # the veto does read "Drivers" here; the strong software signal outranks it (rule 1)
         ("Drivers Software Engineer", "Engineering"),
+        # the plural `s?` must not reach a longer word the veto never meant: a vague title in a
+        # tech department is promoted unless the veto matches, and "custodian" + "ship" or
+        # "cook" + "stown" is no custodian or cook
+        ("Custodianship Lead", "Information Technology"),
+        ("Cookstown Site Lead", "Information Technology"),
     ],
 )
 def test_version_7_plural_veto_does_not_reach_its_neighbours(title, department):

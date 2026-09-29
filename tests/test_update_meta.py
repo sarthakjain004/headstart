@@ -895,6 +895,40 @@ def test_a_requisition_is_stored_only_on_a_board_the_eightfold_pairs_name(
     assert facts[other["id"]]["requisition"] is None
 
 
+def test_a_row_that_states_no_department_shows_its_job_function(tmp_path):
+    """ADR-0291: SmartRecruiters' "Engineering" function no longer reaches `department`, which the
+    tech gate reads, but both places a fact reaches the store still show it as the department,
+    so the facts refresh does not null the department of a row kept on its title."""
+    from headstart.ingest.doc_prep import to_meta
+
+    function_only = {
+        "id": "smartrecruiters:acme:1",
+        "department": None,
+        "job_function": "Engineering",
+    }
+    stated = {
+        "id": "smartrecruiters:acme:2",
+        "department": "Aeronautics",
+        "job_function": "Engineering",
+    }
+    neither = {"id": "greenhouse:acme:3", "department": None, "job_function": None}
+    rows = (function_only, stated, neither)
+    assert [to_meta(r)["department"] for r in rows] == [
+        "Engineering",
+        "Aeronautics",
+        None,
+    ]
+    (tmp_path / "smartrecruiters.jsonl").write_text(
+        "".join(json.dumps(r) + "\n" for r in rows), encoding="utf-8"
+    )
+    facts = um.corpus_facts(tmp_path)
+    assert [facts[r["id"]]["department"] for r in rows] == [
+        "Engineering",
+        "Aeronautics",
+        None,
+    ]
+
+
 def test_a_lost_derivation_is_named_per_ats_with_its_ids(tmp_path, caplog):
     """`lost` on an ordinary run mirrored the next run's `gained` (up to 17 a run, 2026-09-26): a
     field-sourced answer goes when the raw field changes to one nothing parses. The line names the

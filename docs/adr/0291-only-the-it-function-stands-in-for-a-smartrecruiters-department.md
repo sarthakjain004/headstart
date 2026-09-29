@@ -69,16 +69,24 @@ Variant (i) loses more tech than it removes non-tech, so it is out. Between (ii)
   `egisgroup` 174, `jobsforhumanity` 129, `ramboll3` 85, `cima2` 77, `assystem` 66, `accorhotel`
   61. 2,449 of them were posted in 2026, so these are current postings. At the sample's rate
   that is about 200 tech rows lost (up to about 400 counting every borderline as tech) against
-  about 2,300 non-tech rows removed.
+  about 2,300 non-tech rows removed. Most of the lost tech rows sit on software firms whose titles
+  the title rules should catch on their own; #913 follows that up.
 * **What (ii) lets in.** A null department no longer carries a Sales or Manufacturing veto, so a
   generic "…Engineer" there is kept by rule 3, as it is on any ATS that states no department.
   That was the behaviour before #564. On the same 196 Boards, 376 postings not in the Tech subset
   today would enter, plus 1 on a separate random walk of 60 served SmartRecruiters Boards (10,280
-  postings). About 40 of the 376 are software, EDA or digital-design work that today's veto drops:
-  "WPF Developer" three times, "IT Solution Developer (Semiconductor)", "Principal Linux Driver
-  Engineer", "Senior SCCM/MECM Engineer", "AI Development Engineer", seven digital or AMS
-  verification engineers. Most of the rest are process, product, quality and field-application
-  engineers at Renesas (207) and Bosch (90).
+  postings). A read of all 377 titles found about 40 software, EDA or digital-design roles that
+  today's veto drops: "WPF Developer" three times, "IT Solution Developer (Semiconductor)",
+  "Principal Linux Driver Engineer", "Senior SCCM/MECM Engineer", "AI Development Engineer", seven
+  digital or AMS verification engineers. Most of the rest are process, product, quality and
+  field-application engineers at Renesas (207) and Bosch (90). A random 60 of the 377
+  (`random.seed(858)`) were then labelled one by one: **3 tech, 15 borderline, 42 not tech**, and
+  57 of the 60 were posted in 2026 (2 in 2025, 1 in 2024). Scaled up, about 20 tech, 95 borderline
+  and 265 non-tech postings enter. The borderline ones are hardware validation, analog and
+  mixed-signal design, product test and MCU application engineers. The 377 is a floor: it counts
+  only the 244 Boards walked. The random walk found 1 gain on 60 served Boards, so the other
+  roughly 800 served SmartRecruiters Boards would add about 15 more. Boards with no served row were
+  not walked.
 
 ## Decision
 
@@ -89,6 +97,11 @@ Variant (i) loses more tech than it removes non-tech, so it is out. Between (ii)
    longer fetched: on the 196 Boards the gate's passes fall from 16,012 to 11,131, and on the 60
    random Boards from 1,319 to 1,264. The latest run attempted 62,708 SmartRecruiters details
    (join log of run 36482634879).
+   **Every function's label is still kept, as a new `Job.job_function`**, and
+   `doc_prep.stored_facts` shows it as the served row's `department` when the posting states
+   none. So `department` on the served row is what it was before this change, but the tech gate
+   reads `Job.department` alone. `job_function` is None on every other ATS and never reaches the
+   served table as a column of its own.
 2. **`_NON_TECH_ROLE` takes an optional plural `s` before its closing boundary.** On served v298
    this refuses 329 rows on 22 Boards. 311 are security officers and guards on 10 Boards, 273 of
    them one guard firm's (`phenom:careers.sunstatessecurity.com`). The other 18 are drivers,
@@ -110,12 +123,23 @@ Variant (i) loses more tech than it removes non-tech, so it is out. Between (ii)
   Widening rules 1-3 for them is a filter change for every ATS, and needs its own measurement.
 * **Keep every function except Engineering.** This removes the same 2,755 rows and keeps the
   Sales and Manufacturing vetoes, so nothing enters. It was rejected because those vetoes cost
-  recall that #564 never measured: about 40 of the 376 postings they block are software or
-  digital-design work, and no other ATS without a department loses them.
+  recall that #564 never measured, and no other ATS without a department loses it. The labelled
+  sample of 60 gains makes the trade closer than the first read of the titles suggested: about 20
+  tech and 95 borderline postings regained against about 265 non-tech ones admitted. That is still
+  the direction ADR-0017's recall bias asks for (no tech Job dropped, some non-tech creep
+  tolerated), and it is small next to the 2,300 non-tech rows the Engineering fallback removes.
 * **Fall back to Engineering only on software companies**, keyed on the posting's `industry`.
   Of the 13 tech Engineering rows it would keep 5, since Bosch, Intuitive and Renesas file as
   automotive, medical-device and semiconductor companies. Another company-configured field to
   trust, for little gain.
+* **Let `department` go null when the function is not Information Technology** (this ADR's first
+  draft). The gate verdicts are the same as the decision's, but `department` is also what the
+  served row shows (the Space's `/job` route and MCP `get_job`), and it is a fact field that a None
+  overwrites. On the 244 walked Boards, 6,041 of the 12,276 postings that stay tech state no
+  department and show a non-IT function (`boschgroup` 1,018, `aecom2` 639, `renesaselectronics`
+  549), and each would have lost it on its next scrape. Before #564 they showed nothing, but #564
+  has been live since 2026-09-22. `Job.job_function` costs one more field on every row, None except
+  on SmartRecruiters.
 * **Revert #564** (variant i). It also drops the IT-function rows, 63 of the 105 sampled being
   tech.
 * **Pluralise `_NON_SOFTWARE` too.** Measured on v298: 134 rows would flip, mostly "Mechanics"
@@ -127,15 +151,18 @@ Variant (i) loses more tech than it removes non-tech, so it is out. Between (ii)
 
 * **3,081 served rows leave over the next two scrapes of their Boards** (ADR-0083), 2,755 from
   the fallback and 329 from the plural veto (3 are both), on 191 Boards. About 377 postings enter:
-  the Sales and Manufacturing "…Engineer" titles on these Boards. A row kept on its title alone
-  loses a non-IT function as its `department` on its next scrape, since `department` is refreshed
-  as a fact field. Dropping a function can only lift a veto, never add one, so no kept row changes
-  verdict because of it.
+  the Sales and Manufacturing "…Engineer" titles on these Boards, most of them not tech (the
+  labelled sample above). Dropping a function can only lift a veto, never add one, so no kept row
+  changes verdict because of it.
+* **No served row's `department` changes.** Replaying `parse` and `stored_facts` over the 66,209
+  walked postings gives the same department as before on every one, and the same tech verdict as
+  the IT-only rule on every one.
 * **About 200 current tech rows go with the Engineering creep**, per the sample. They are the
-  known cost of this decision, and recoverable by title rules in a later filter round.
+  known cost of this decision, and recoverable by title rules in a later filter round (#913).
 * **SmartRecruiters' detail attempts fall** by about 4,900 a run, from 62,708 to about 57,800
-  (-8%), if every walked Board is in the run's slice. Check the join log's `smartrecruiters detail
-  loss events … attempted` line after this ships.
+  (-8%), if every walked Board is in the run's slice. That figure is projected from the walk, not
+  measured on a run. Check the join log's `smartrecruiters detail loss events … attempted` line
+  after this ships; #570 closes once that line is read.
 * The blind hold-out (recall 84.6%, precision 82.0%) and the labelled set (344 of 345 tech kept,
   84 of 540 non-tech kept) are unchanged. Both are title-only or carry no SmartRecruiters
   function, so the served-table measurement is the one that counts here.

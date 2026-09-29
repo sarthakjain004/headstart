@@ -10,7 +10,7 @@ All figures are on served table v298 (2026-09-29, 498,848 rows, read off HF with
 |---|---:|---:|
 | served rows kept (v298, 498,848) | 498,848 | 495,767 (−3,081 out) |
 | of which SmartRecruiters (23,486) | 23,486 | 20,730 (−2,756) |
-| postings entering on the 244 SmartRecruiters Boards walked (66,209 postings) | – | +377 |
+| postings entering on the 244 SmartRecruiters Boards walked (66,209 postings; a floor) | – | +377 |
 | pre-detail gate passes, the 196 Boards with an "Engineering" rule-4 row | 16,012 | 11,131 |
 | pre-detail gate passes, 60 random served SmartRecruiters Boards | 1,319 | 1,264 |
 | blind hold-out recall / precision | 84.6% / 82.0% | 84.6% / 82.0% |
@@ -367,6 +367,91 @@ A null department no longer carries SmartRecruiters' Sales or Manufacturing func
 
 About 40 are software, EDA or digital-design work that today's veto drops, for example "WPF Developer" (3), "IT Solution Developer (Semiconductor)", "Internship in IT Solution Developer", "Principal Linux Driver Engineer", "Senior SCCM/MECM Engineer", "AI Development Engineer_ME", "Sr EDA Engineer", "Principal Engineer, STA & Synthesis", and seven digital or AMS verification engineers. Most of the rest are process, product, quality, supplier and field-application engineers: "Process Engineer" (10), "Staff Process Engineer" (6), "Field Service Engineer" (6). That is the recall-biased rule 3 applied as on any ATS that states no department, and it is what SmartRecruiters did before #564.
 
+That read counted titles; it did not label them. A random 60 of the 377 (`random.seed(858)`) were then labelled one by one on the same scale as the Option A sample, with each posting's `releasedDate`:
+
+| label | postings | posted 2026 | 2025 | 2024 |
+|---|---:|---:|---:|---:|
+| tech | 3 | 3 | 0 | 0 |
+| ? | 15 | 15 | 0 | 0 |
+| not tech | 42 | 39 | 2 | 1 |
+
+Scaled to 377, that is about 20 tech, 95 borderline and 265 non-tech postings entering. The three tech rows are Renesas design-enablement (EDA flow) and IC-architect roles. The borderline ones are hardware validation, analog and mixed-signal design, product test, semiconductor QA and MCU application engineers. 59 of the 60 are under the Manufacturing function.
+
+The 377 is a floor. It counts only the 244 Boards walked, and 196 of those were chosen because they carry an "Engineering" row. The unbiased random walk found 1 gain on 60 served Boards (10,280 postings), so the other roughly 800 of the 1,051 SmartRecruiters Boards on v298 would add about 15. SmartRecruiters Boards with no served row were not walked, and their gains are unmeasured.
+
+<details><summary>The 60 labelled gains</summary>
+
+| Board | posted | function | label | title |
+|---|---|---|---|---|
+| `boschgroup` | 2024-11-26 | Manufacturing | N | PQA PCB Engineer |
+| `boschgroup` | 2025-06-21 | Manufacturing | N | Failure Analysis Engineer_ME |
+| `boschgroup` | 2026-02-13 | Manufacturing | ? | Test Development Engineer |
+| `boschgroup` | 2026-03-03 | Manufacturing | N | IN_MIVIN_ Sr Engineer - Purchasing Template _IN |
+| `boschgroup` | 2026-03-30 | Manufacturing | N | Customer Quality Engineer_DCCC |
+| `boschgroup` | 2026-04-10 | Manufacturing | N | Jr. Packaging Engineer |
+| `boschgroup` | 2026-04-16 | Manufacturing | N | Maintenance Group Leader / Staff Maintenance Engineer |
+| `boschgroup` | 2026-04-23 | Manufacturing | N | Maintenance Engineer (Final Assembly) |
+| `boschgroup` | 2026-05-13 | Manufacturing | N | Senior Test Maintenance Engineer |
+| `boschgroup` | 2026-06-11 | Manufacturing | N | Process Engineer_ME |
+| `boschgroup` | 2026-08-13 | Manufacturing | N | Technical Engineering Function (TEF) Winter Intern |
+| `boschgroup` | 2026-08-14 | Manufacturing | ? | Robot Operations & Reliability Engineer_PS |
+| `boschgroup` | 2026-08-20 | Manufacturing | N | Process and Equipment Engineer |
+| `boschgroup` | 2026-08-20 | Manufacturing | N | Process and Equipment Engineer (Acceleration Sensors) |
+| `boschgroup` | 2026-08-27 | Manufacturing | N | Quality Engineer |
+| `boschgroup` | 2026-09-02 | Manufacturing | ? | ITM Engineer_PS |
+| `boschgroup` | 2026-09-15 | Manufacturing | N | 电机生产测试工程师Testing Engineer_EM |
+| `boschgroup` | 2026-09-22 | Manufacturing | N | Gyártósori minőségügyi mérnök I Line Quality Engineer |
+| `cieloprojects` | 2025-12-02 | Manufacturing | N | Rolls-Royce - Process Safety Management Engineer |
+| `intuitive` | 2026-06-30 | Manufacturing | N | Staff Quality Engineer - New Product Development |
+| `intuitive` | 2026-08-25 | Manufacturing | N | Sr. Engineer - Value Engineering |
+| `intuitive` | 2026-09-22 | Manufacturing | N | Manufaturing Engineer 3 |
+| `renesaselectronics` | 2026-03-10 | Manufacturing | T | Sr Engineer, Design Enablement |
+| `renesaselectronics` | 2026-04-06 | Manufacturing | T | Sr Engineer, Design Enablement |
+| `renesaselectronics` | 2026-04-14 | Manufacturing | ? | Senior HW Validation Engineer |
+| `renesaselectronics` | 2026-05-05 | Manufacturing | ? | Senior Engineer, Analog Layout |
+| `renesaselectronics` | 2026-05-12 | Manufacturing | ? | Staff Engineer / Sr Engineer / Engineer, Validation |
+| `renesaselectronics` | 2026-05-26 | Manufacturing | N | Staff Product Engineer |
+| `renesaselectronics` | 2026-06-04 | Manufacturing | ? | Sr Quality Assurance Engineer |
+| `renesaselectronics` | 2026-07-06 | Manufacturing | N | Assembly Engineer (Senior/Staff) |
+| `renesaselectronics` | 2026-07-30 | Manufacturing | N | Principal Medium Voltage (MV) Power MOSFET Process Integration Engineer |
+| `renesaselectronics` | 2026-08-18 | Manufacturing | ? | Principal Quality Assurance Engineer |
+| `renesaselectronics` | 2026-08-25 | Manufacturing | ? | Intern - Analog Design Engineer |
+| `renesaselectronics` | 2026-08-31 | Manufacturing | ? | Staff Validation Engineer |
+| `renesaselectronics` | 2026-09-01 | Manufacturing | N | Principal Engineer (f/m/d) Application Engineering |
+| `renesaselectronics` | 2026-09-01 | Manufacturing | N | Senior NPI Engineer |
+| `renesaselectronics` | 2026-09-04 | Manufacturing | ? | Staff MCU Application Engineer |
+| `renesaselectronics` | 2026-09-07 | Manufacturing | N | Staff Application Engineer |
+| `renesaselectronics` | 2026-09-14 | Manufacturing | N | Manager, Semiconductor IC Packaging & Assembly Engineering |
+| `renesaselectronics` | 2026-09-14 | Manufacturing | N | Process Engineer |
+| `renesaselectronics` | 2026-09-14 | Manufacturing | N | Process Engineer |
+| `renesaselectronics` | 2026-09-14 | Manufacturing | N | Process Engineer |
+| `renesaselectronics` | 2026-09-14 | Manufacturing | N | Process Engineer |
+| `renesaselectronics` | 2026-09-14 | Manufacturing | N | Senior NPI Engineer |
+| `renesaselectronics` | 2026-09-14 | Manufacturing | ? | Sr Product Testing Engineer |
+| `renesaselectronics` | 2026-09-14 | Manufacturing | ? | Staff Product Testing Engineer |
+| `renesaselectronics` | 2026-09-15 | Manufacturing | T | Senior/Staff/Sr Staff Engineer, Product Definer (IC Architect) |
+| `renesaselectronics` | 2026-09-15 | Manufacturing | N | Test Process Engineer |
+| `renesaselectronics` | 2026-09-15 | Manufacturing | N | Test Process Engineer |
+| `renesaselectronics` | 2026-09-16 | Manufacturing | N | Impedance Sensor Application Engineer (f/m/d) |
+| `renesaselectronics` | 2026-09-16 | Manufacturing | ? | Sr Staff Hardware Validation Engineer |
+| `renesaselectronics` | 2026-09-22 | Manufacturing | N | NPI Test Process Engineer |
+| `renesaselectronics` | 2026-09-22 | Manufacturing | N | Staff Test Process Engineer |
+| `renesaselectronics` | 2026-09-23 | Manufacturing | N | Senior Staff Business Development Engineer - Motor Drive Solutions (f/m/d) |
+| `renesaselectronics` | 2026-09-24 | Manufacturing | ? | Principal Engineer, Analog / Mixed-Signal IC Design |
+| `renesaselectronics` | 2026-09-24 | Manufacturing | N | Sr Staff Product Engineer |
+| `renesaselectronics` | 2026-09-03 | Sales | N | Senior Manager, Field Applications Engineering – Strategic Accounts (Power) |
+| `seniorplc1` | 2026-02-04 | Manufacturing | N | Engineer - Engineering |
+| `seniorplc1` | 2026-02-06 | Manufacturing | N | Assistant Manager - Engineering |
+| `sikaag` | 2026-09-18 | Manufacturing | N | Technical Engineer |
+
+</details>
+
+## The served department
+
+`department` is what the gate reads, and it is also what the served row shows (the Space's `/job` route and MCP `get_job`). It is a fact field, and a None overwrites the stored value. The first draft of this change set `department` to None whenever the function was not Information Technology. On the 244 walked Boards, 12,276 postings stay tech, and 6,041 of them state no department and show a non-IT function: `boschgroup` 1,018, `aecom2` 639, `renesaselectronics` 549, `jobsforhumanity` 230, `wabtec` 230, `egisgroup` 202. Each would have lost its department on its next scrape.
+
+So `parse` also keeps every function's label as `Job.job_function`, and `doc_prep.stored_facts` shows it as the department when the posting states none. Replaying `parse` then `stored_facts` over all 66,209 walked postings gives the same served department as version 6 on every one. It also gives the same tech verdict as the IT-only rule on every one: 12,276 kept either way, 0 differences.
+
 ## Option D: the role veto reads plurals
 
 `_NON_TECH_ROLE` ended in `)\b`, so rule 4 promoted "Welders" and "Security Officers" while refusing the singulars. With `)s?\b` it refuses 329 served rows on 22 Boards, every one in rule 4 (`tech-department` → `no-tech-signal`). Nothing enters. 311 are security officers and guards, 273 of them on `phenom:careers.sunstatessecurity.com`. Every title was read; the 18 that are not security staff:
@@ -398,4 +483,4 @@ Pluralising `_NON_SOFTWARE` the same way was measured and not done: 134 served r
 
 ## Detail attempts
 
-SmartRecruiters' pre-detail gate asks `filter_tech`'s question with the same department, so it moves with the fallback. The latest successful run before this change (36482634879) attempted 62,708 SmartRecruiters details. On the walked Boards the gate passes about 4,900 fewer postings, so a run whose slice holds all of them attempts about 57,800 (−8%). Read the join log's `smartrecruiters detail loss events … attempted` line after this ships.
+SmartRecruiters' pre-detail gate asks `filter_tech`'s question with the same department, so it moves with the fallback. The latest successful run before this change (36482634879) attempted 62,708 SmartRecruiters details. On the walked Boards the gate passes about 4,900 fewer postings, so a run whose slice holds all of them attempts about 57,800 (−8%). That figure is projected from the walk, not measured on a run. Read the join log's `smartrecruiters detail loss events … attempted` line after this ships; #570 closes once it has been read.
