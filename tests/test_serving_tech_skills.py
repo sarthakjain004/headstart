@@ -195,15 +195,11 @@ def test_the_longest_term_at_a_place_wins():
     assert _found(vocabulary, "Azure, Data Factory") == {"Azure"}
 
 
-def test_mentions_give_each_counted_hit_in_order():
+def test_no_text_mentions_nothing():
     vocabulary = _vocabulary(
         {"name": "Python", "kind": "language", "terms": ["Python"]}
     )
-    assert vocabulary.mentions("Python then Python") == [
-        ("Python", 0, 6),
-        ("Python", 12, 18),
-    ]
-    assert vocabulary.mentions(None) == [] and vocabulary.mentioned("") == set()
+    assert vocabulary.mentioned(None) == set() and vocabulary.mentioned("") == set()
 
 
 def test_a_skill_of_an_unknown_kind_or_named_twice_is_refused():

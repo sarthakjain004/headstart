@@ -279,11 +279,9 @@ MAX_SCOPED_BOARDS = 200
 LOCATIONS_SHOWN = 10
 MAX_LOCATIONS = 50
 
-#: How many Jobs :meth:`JobSearch.requirements` counts over by default, and the sizes a request
-#: may ask for with ``n=`` (ADR-0324).
+#: How many rows :meth:`JobSearch.requirements` reads for its sample (ADR-0324). At 300, a share
+#: near 50% is known to about 6 points either way (95%), which a "most asked for" list needs.
 REQUIREMENTS_SAMPLE = 300
-REQUIREMENTS_SAMPLE_MIN = 50
-REQUIREMENTS_SAMPLE_MAX = 500
 #: How many of a query's closest Jobs a requirements view reads to find its sample within one
 #: category: the window a sorted search re-orders (`max_k * max_page`).
 REQUIREMENTS_CATEGORY_WINDOW = 2_000
@@ -459,24 +457,26 @@ def scoped_jobs_clause(
     return None
 
 
-def _family_lookup(
-    family_ids: Mapping[str, Sequence[str]], current: Collection[str]
-) -> Callable[[str], str | None]:
-    """The current role family holding a Job id, found by bisecting each family's ids, sorted
-    case-folded as :func:`load_family_ids` sorts them."""
-    pools = [(name, family_ids[name]) for name in current if name in family_ids]
+@dataclass(frozen=True)
+class RoleAssignments:
+    """The role assignments a boot loaded (ADR-0057): each family's served ids, sorted case-folded
+    as :func:`load_family_ids` sorts them (a family also holding its predecessors', ADR-0220), and
+    the families the taxonomy lists now, retired ones left out."""
 
-    def family_of(job_id: str) -> str | None:
+    ids: Mapping[str, Sequence[str]]
+    current: frozenset[str]
+
+    def family_of(self, job_id: str) -> str | None:
+        """The current family holding ``job_id``, found by bisecting each family's ids."""
         folded = job_id.lower()
-        for name, pool in pools:
+        for name in self.current:
+            pool = self.ids.get(name, ())
             at = bisect_left(pool, folded, key=str.lower)
             while at < len(pool) and pool[at].lower() == folded:
                 if pool[at] == job_id:
                     return name
                 at += 1
         return None
-
-    return family_of
 
 
 def _ids_on_boards(pool: Sequence[str], prefixes: list[str]) -> list[str]:
@@ -1011,9 +1011,9 @@ class JobSearch:
         self._query_vector_cache_lock = Lock()
         # Requirements answers (ADR-0324) and each asked family's ids as one Arrow array, both for
         # this boot's immutable table, so neither needs a TTL.
-        self._requirements_cache: OrderedDict[tuple[Any, ...], dict[str, Any]] = (
-            OrderedDict()
-        )
+        self._requirements_cache: OrderedDict[
+            tuple[Any, ...], tuple[float, dict[str, Any]]
+        ] = OrderedDict()
         self._requirements_cache_lock = Lock()
         self._family_arrays: dict[str, Any] = {}
         # A description keyword's rows, found once and shared by the ranked page, the facet
@@ -1412,9 +1412,7 @@ class JobSearch:
             encode_started = time.monotonic()
             vector = self._query_vector(query) if query else self._stored_vector(like)
             encode_ms = (time.monotonic() - encode_started) * 1000
-            search = self._table.search(vector).metric("cosine")
-            if self.has_vector_index:
-                search = search.nprobes(ANN_NPROBES).refine_factor(ANN_REFINE_FACTOR)
+            search = self._nearest(vector)
         else:
             search = table.search()  # no vector: a plain, filtered scan (ADR-0074)
         if where:
@@ -1688,70 +1686,75 @@ class JobSearch:
     def requirements(
         self,
         args: Mapping[str, str],
-        family_ids: Mapping[str, Sequence[str]] | None,
-        current_families: Collection[str],
+        assignments: RoleAssignments | None,
+        name_of_board: Callable[[str], str | None] | None = None,
     ) -> dict[str, Any]:
         """What a sample of the Jobs matching ``args`` asks for (``/requirements``, ADR-0324).
 
         ``q=`` (a role) and/or ``family=`` (a role family) choose the Jobs, narrowed by every
-        search filter and ``board=``. With ``q`` the sample is the ``n=`` Jobs closest to it
-        (with ``family`` too, the family's among the :data:`REQUIREMENTS_CATEGORY_WINDOW`
-        closest); with ``family`` alone, the family's ``n`` newest to HeadStart.
-        :func:`requirement_counts.summarize` counts it, and ``matching`` is how many Jobs the
-        filters and family admit, which a query does not narrow. Only the sample's descriptions
-        are read, by id. A :class:`ValueError` names what the request got wrong; a family without
-        role assignments loaded is :class:`ScopeUnavailable`. Scoped by Boards and filters only,
-        so no Account's follow or hide list reaches it."""
+        search filter and ``board=``. With ``q`` the sample is the :data:`REQUIREMENTS_SAMPLE`
+        rows closest to it (with ``family`` too, the family's among the
+        :data:`REQUIREMENTS_CATEGORY_WINDOW` closest); with ``family`` alone, the family's newest
+        to HeadStart. :func:`requirement_counts.summarize` counts it, naming a Board that names no
+        company by ``name_of_board`` (the Company directory's name). ``matching`` is how many Jobs
+        the filters and family admit, which a query does not narrow. Only the sample's
+        descriptions are read, by id. A :class:`ValueError` names what the request got wrong; a
+        family without role assignments loaded is :class:`ScopeUnavailable`. Scoped by Boards and
+        filters only, so no Account's follow or hide list reaches it."""
         query = (args.get("q") or "").strip()
         family = (args.get("family") or "").strip()
         if not query and not family:
             raise ValueError("name a role with q=, a category with family=, or both")
         if family:
-            if family_ids is None:
+            if assignments is None:
                 raise ScopeUnavailable(
                     "family= needs the role assignments, which this deployment has not loaded"
                 )
-            if family not in current_families:
+            if family not in assignments.current:
                 raise ValueError(
                     f"family {family!r} is not a configured family; configured: "
-                    f"{_listed(sorted(current_families))}"
+                    f"{_listed(sorted(assignments.current))}"
                 )
-        size = _int_arg(args)("n")
-        size = REQUIREMENTS_SAMPLE if size is None else size
-        if not REQUIREMENTS_SAMPLE_MIN <= size <= REQUIREMENTS_SAMPLE_MAX:
-            raise ValueError(
-                f"n must be from {REQUIREMENTS_SAMPLE_MIN} to {REQUIREMENTS_SAMPLE_MAX}"
-            )
         filters = self.parse_filters(args)
         where = with_extra(
             build_filter(filters, self.capabilities), scoped_boards_clause(args)
         )
-        cache_key = (filters, where, query, family, size)
-        with self._requirements_cache_lock:
-            if (cached := self._requirements_cache.get(cache_key)) is not None:
-                self._requirements_cache.move_to_end(cache_key)
-                return cached
+        cache_key = (filters, where, query, family)
+        cached = _cache_get(
+            self._requirements_cache,
+            self._requirements_cache_lock,
+            cache_key,
+            float("inf"),
+        )
+        if cached is not None:
+            return cached
         started = time.monotonic()
         in_family = (
-            self._in_family(where, self._family_array(family, family_ids))
-            if family
+            self._in_family(where, self._family_array(family, assignments))
+            if assignments is not None and family
             else None
         )
         if query:
-            ids, scores = self._closest_ids(query, where, size, in_family)
+            ids, scores = self._closest_ids(query, where, in_family)
             matching = len(in_family) if in_family is not None else self._count(where)
         else:
-            ids, scores = in_family[:size], []
+            assert in_family is not None  # a family is named when no query is
+            ids, scores = in_family[:REQUIREMENTS_SAMPLE], []
             matching = len(in_family)
         answer = {
             "matching": matching,
             "order": "closest" if query else "newest",
+            "sample_size": REQUIREMENTS_SAMPLE,
+            "category_window": (
+                REQUIREMENTS_CATEGORY_WINDOW if query and family else None
+            ),
             "closest_score": scores[0] if scores else None,
             "farthest_score": scores[-1] if scores else None,
             **requirement_counts.summarize(
                 self._rows_for_requirements(ids),
                 tech_skills.vocabulary(),
-                _family_lookup(family_ids, current_families) if family_ids else None,
+                assignments,
+                name_of_board,
             ),
         }
         elapsed_ms = (time.monotonic() - started) * 1000
@@ -1759,12 +1762,15 @@ class JobSearch:
             # Shapes only, never the query (ADR-0032).
             _log.warning(
                 f"slow requirements {elapsed_ms:.0f} ms: query={bool(query)} "
-                f"family={bool(family)} n={size} where_len={len(where or '')}"
+                f"family={bool(family)} where_len={len(where or '')}"
             )
-        with self._requirements_cache_lock:
-            self._requirements_cache[cache_key] = answer
-            while len(self._requirements_cache) > REQUIREMENTS_CACHE_SIZE:
-                self._requirements_cache.popitem(last=False)
+        _cache_put(
+            self._requirements_cache,
+            self._requirements_cache_lock,
+            cache_key,
+            answer,
+            REQUIREMENTS_CACHE_SIZE,
+        )
         return answer
 
     def _count(self, where: str | None) -> int:
@@ -1772,15 +1778,20 @@ class JobSearch:
             self._table.count_rows(filter=where) if where else self._table.count_rows()
         )
 
-    def _family_array(
-        self, family: str, family_ids: Mapping[str, Sequence[str]] | None
-    ) -> Any:
+    def _nearest(self, vector: Any) -> Any:
+        """A cosine search around ``vector`` at the served table's operating point (ADR-0173)."""
+        search = self._table.search(vector).metric("cosine")
+        if self.has_vector_index:
+            search = search.nprobes(ANN_NPROBES).refine_factor(ANN_REFINE_FACTOR)
+        return search
+
+    def _family_array(self, family: str, assignments: RoleAssignments) -> Any:
         """``family``'s served ids as one Arrow array, built once per family per boot."""
         import pyarrow as pa
 
         if family not in self._family_arrays:
             self._family_arrays[family] = pa.array(
-                list((family_ids or {}).get(family, ())), pa.string()
+                list(assignments.ids.get(family, ())), pa.string()
             )
         return self._family_arrays[family]
 
@@ -1806,21 +1817,21 @@ class JobSearch:
         return table.sort_by(ordering)["id"].to_pylist()
 
     def _closest_ids(
-        self, query: str, where: str | None, size: int, in_family: list[str] | None
+        self, query: str, where: str | None, in_family: list[str] | None
     ) -> tuple[list[str], list[float]]:
-        """The ``size`` Jobs closest to ``query`` that ``where`` admits (given ``in_family``,
-        those in it among the category window), and their similarity to it."""
-        search = self._table.search(self._query_vector(query)).metric("cosine")
-        if self.has_vector_index:
-            search = search.nprobes(ANN_NPROBES).refine_factor(ANN_REFINE_FACTOR)
+        """The :data:`REQUIREMENTS_SAMPLE` Jobs closest to ``query`` that ``where`` admits
+        (given ``in_family``, those in it among the category window), and their similarity."""
+        search = self._nearest(self._query_vector(query))
         if where:
             search = search.where(where, prefilter=True)
-        window = size if in_family is None else REQUIREMENTS_CATEGORY_WINDOW
+        window = (
+            REQUIREMENTS_SAMPLE if in_family is None else REQUIREMENTS_CATEGORY_WINDOW
+        )
         rows = search.select(["id", "_distance"]).limit(window).to_list()
         if in_family is not None:
             members = set(in_family)
             rows = [row for row in rows if row["id"] in members]
-        rows = rows[:size]
+        rows = rows[:REQUIREMENTS_SAMPLE]
         return [row["id"] for row in rows], [
             round(1 - row["_distance"], 3) for row in rows
         ]
@@ -1832,10 +1843,13 @@ class JobSearch:
             return []
         names = set(self._table.schema.names)
         columns = ["id", *(c for c in requirement_counts.COLUMNS if c in names)]
-        return (
+        rows = (
             self._table.search()
             .where(_ids_in_clause(ids))
             .select(columns)
             .limit(len(ids))
             .to_list()
         )
+        # In the sample's own order, so a posting's first copy is its closest or newest row.
+        place = {job_id: n for n, job_id in enumerate(ids)}
+        return sorted(rows, key=lambda row: place.get(row.get("id"), len(place)))

@@ -20,6 +20,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime
 from typing import Any
 
+from headstart.jobs import posting_copies
 from headstart.mcp_protocol.messages import ToolFailure
 from headstart.search_filters import (
     country_filter,
@@ -29,7 +30,6 @@ from headstart.search_filters import (
 )
 from headstart.space_mcp import (
     company_scope,
-    posting_copies,
     role_families,
     scraped_text,
     shown_company,
@@ -327,9 +327,11 @@ def _page_lines(
     return lines, len(groups) < len(rows)
 
 
-def _scope_line(
+def scope_line(
     arguments: dict[str, Any], scope: company_scope.CompanyScope | None
 ) -> str:
+    """What the filters in ``arguments`` scoped the answer to, as this tool names them; also
+    `role_requirements`' line, whose filters are a subset of these."""
     said = []
     if scope is not None:
         if scope.company is not None:
@@ -540,7 +542,7 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
     rows = shown_company.named(client, rows)
     total = int(facets.get("total") or 0)
     k, page = int(arguments["limit"]), int(arguments["page"])
-    lines = [_scope_line(arguments, scope)]
+    lines = [scope_line(arguments, scope)]
     if coverage := _coverage_line(arguments, facets):
         lines.append(coverage)
     if not rows:

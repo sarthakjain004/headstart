@@ -1,5 +1,5 @@
-"""Which rows of one search page are copies of one posting, so the page lists each once
-(ADR-0274, widened by ADR-0323 and ADR-0331).
+"""Which served rows are copies of one posting, so a search page lists each once (ADR-0274,
+widened by ADR-0323 and ADR-0331) and a requirements sample counts each once (ADR-0324).
 
 Two kinds of copy reach a page:
 
@@ -14,8 +14,8 @@ Two kinds of copy reach a page:
   location string names first) and the same countries, as the `country` filter's gazetteer reads
   the whole location.
 
-Grouping only lists a copy under the row it repeats: every row keeps its number, id and link, and
-paging is the Space's.
+On a search page, grouping only lists a copy under the row it repeats: every row keeps its number,
+id and link, and paging is the Space's.
 """
 
 from __future__ import annotations

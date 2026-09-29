@@ -23,16 +23,23 @@ so "rust" counted "Trust".
 LLM and no pipeline stage: the Space counts a sample of served postings at request time.
 
 - **The sample.** `q=` (a role, as in search) and/or `family=` (a role family) pick the postings,
-  narrowed by every search filter and `board=`. With `q`, the sample is the `n` postings closest
-  to it (ANN search, as `/search` ranks). With `family` alone, it is the family's `n` newest to
+  narrowed by every search filter and `board=`. With `q`, the sample is the 300 rows closest to
+  it (ANN search, as `/search` ranks). With `family` alone, it is the family's 300 newest to
   HeadStart, from one filtered scan of `id` and `first_seen` whose length is also the family's
-  count. With both, it is the family's postings among the 2,000 closest to `q` (the window a sorted
-  search re-orders). `n` defaults to 300, from 50 to 500; the tool always asks for 300. At 300, a
+  count. With both, it is the family's rows among the 2,000 closest to `q` (the window a sorted
+  search re-orders, which the answer names as `category_window`). The size is fixed: at 300, a
   share near 50% is known to about ±6 points (95%), which is what a "most asked for" list needs.
+- **Each posting counts once.** Rows that copy one posting, per country or on two Boards of its
+  employer, are grouped by the rule a search page lists them by (`jobs/posting_copies.py`,
+  ADR-0323, moved out of `space_mcp/` so the serving path can read it), and every count is over the
+  first row of each group. A row whose company names nothing but its Board is named by the Company
+  directory, as `get_job` names one (`company_name.names_no_company`, ADR-0323), and otherwise
+  counts as its Board's own employer, never as one nameless employer.
 - **Descriptions are read by id for the sample alone** (one `id IN (…)` read, as `/job` reads),
   never as a column scan, and never leave the Space. The answer carries counts, the vocabulary's
   own skill names, and the company names search already shows, quoted.
-- **The counts** (`serving/requirement_counts.py`): how many postings the filters and family admit
+- **The counts** (`serving/requirement_counts.py`, keyed `jobs` as `/companies/locations` is):
+  how many rows were read and how many distinct postings they hold; how many the filters and family admit
   (a query ranks but does not narrow, so this is not the query's size); the skills the descriptions
   mention, as a share of the sampled postings that carry a description, with how many distinct
   employers mention each; minimum years in bands (0–1, 2–4, 5–7, 8+) kept apart by source (stated
@@ -41,8 +48,9 @@ LLM and no pipeline stage: the Space counts a sample of served postings at reque
   postings; the countries their locations name (ADR-0273); and, with a family lookup, each sampled
   posting's category (the tool names none that ADR-0306 hides: those count with "other or no
   tech category"). The query path also returns the sample's similarity range.
-- **The answer states its sample**: "counted over 300 postings, of 514,163 that the filters
-  admit", how they were picked, and the similarity range.
+- **The answer states its sample**: "counted over 263 distinct postings, of 500,568 that the
+  filters admit (300 rows read; 37 copies of a posting counted once)", how they were picked, and the
+  similarity range.
 - **Skills come from a curated vocabulary**, `config/tech_skills.json`: 376 skills in 17 kinds
   (languages, web, backend, mobile, cloud, DevOps, data, databases, AI/ML, security, networking,
   IT, enterprise platforms, testing, embedded, practices, clearance), each with its terms.
@@ -63,9 +71,10 @@ LLM and no pipeline stage: the Space counts a sample of served postings at reque
   and otherwise `config/` in the nearest ancestor (the checkout, or `/app` in the Space's image).
   `.gitignore` re-includes it.
 - **Cached for the boot**, 64 answers: the table does not change until the next boot.
-- **A new agent contract, 6**: `/requirements` is new contract, so the app's `_AGENT_API_VERSION`
-  and the server's `AGENT_API` rise together (ADR-0253's rule). The route is in `_READ_ROUTES`,
-  so it is public and rate-limited like the others.
+- **Agent contracts 7 and 8**: `/requirements` was contract 7 (ADR-0323 took 6 first), and its
+  distinct postings under `jobs` keys, with `read`, `sample_size` and `category_window`, are 8. The
+  app's `_AGENT_API_VERSION` and the server's `AGENT_API` rise together (ADR-0253's rule). The
+  route is in `_READ_ROUTES`, so it is public and rate-limited like the others.
 
 ## Measurement
 
@@ -88,28 +97,36 @@ partner list, a perk, or the hiring process was judged wrong.
 |---|---|---|---|---|
 | SAS | the SAS storage interface ("SAS/SATA") | 6/8 | bare "SAS" only in a list of languages or data tools; "SAS programming", "SAS Viya" and other phrases | 8/8 |
 | Express | "PCI Express" | 4/6 | only in a list of backend, web, language or database skills; not after "PCI" | 6/6 |
-| Spark | "Spark Capital" | 5/6 | not before "Capital" | — |
+| Spark | "Spark Capital" | 5/6 | not before "Capital" | 12/12 |
 | Master data management | "MDM", mostly mobile device management | 2/6 | "MDM" dropped | — |
 | Oracle Database | bare "Oracle" as an ERP or a vendor | 4/6 | bare "Oracle" only in a list of databases or data tools | 10/10 |
 | OpenAI APIs | investor and customer lists | 3/6 | API phrases; bare "OpenAI" only in a list of AI skills | 6/6 |
 | Security operations (SOC) | system-on-chip, "SOC 3" reports | 4/6 | phrases only ("SOC analyst", "security operations center") | 6/6 |
 | PCI DSS | the PCI bus, "PCI-Express" | 5/6 | compliance phrases; bare "PCI" only in a list of security skills | 10/10 |
-| Digital forensics | forensic science | 5/6 | qualified phrases only | — |
+| Digital forensics | forensic science | 5/6 | qualified phrases only | 11/11 |
 | 5G and LTE | employers' boilerplate | 3/6 | only in a list of networking or embedded skills | 5/5 |
 | ARM | Azure Resource Manager templates, NetSuite ARM | 1/6 | qualified phrases ("ARM Cortex"), bare "ARM" only in an embedded list; "ARM templates" and Bicep count as infrastructure as code | 6/6 |
-| PLC | the "plc" company suffix | 5/6 | cased | — |
-| Signal processing | "DSP/SSP" (a demand-side platform) | 5/6 | "DSP" cased, not before "/SSP" | — |
+| PLC | the "plc" company suffix, then "PLC NAND" (penta-level cell flash) | 5/6 | cased; not before "NAND" | 11/12, the miss then fixed |
+| Signal processing | "DSP/SSP" (a demand-side platform), then "mixed-signal processing" | 5/6 | "DSP" cased, not before "/SSP"; not after "mixed-" | 11/12, the miss then fixed |
 | Unity | Databricks Unity Catalog, Cisco Unity | 1/6 | not before "Catalog", "Connection", "Express", not after "Cisco"; "Unity Catalog" counts as Databricks | 3/3 |
 | Data structures and algorithms | "data structures" in the data-modelling sense | 1/6 | the paired phrase only | 6/6 |
 | Flutter | Flutter Entertainment | 1/3 | not before "Entertainment" | 9/10 |
-| iOS | Cisco IOS | 9/10 | cased; "IOS" not after "Cisco" | — |
+| iOS | Cisco IOS, also away from the word "Cisco" | 9/10, then 11/12 | cased "iOS" only; upper-case "IOS" dropped | 11/12, the miss then fixed |
 | Swift, and every capitalised word | a description in Title Case | 1 miss of 80 | the Title Case rule | 12/12 |
 
+- **Master data management** keeps only its phrase, so its "After" is its phrase's own hits,
+  which were not re-read. **Go** counts bare only in a list, which misses a Go job that names it
+  alone: a bare cased "Go" outside any list was the language in 9 of 20 hits ("Let's Go!", "Go to
+  market"), so it stays listed, and eleven cased phrases ("Go services", "Go programming", "Go
+  experience") were added instead, 11 of 11 right on the corpus. They took Go from 229 to 236 of
+  the 5,000 descriptions; about 33 more mention Go alone, the known recall gap.
 - **Kept at the bar:** Snowflake 29 of 32 (91%: customer lists). **Kept below it on purpose:**
   "computer vision" was 4 of 10 by the strict rule, 6 of the 10 being one employer's boilerplate
   repeated across its postings; the term itself was right every time. No vocabulary can tell an
   employer's self-description from a requirement, so the answer gives each skill's distinct
-  employers beside its share: a large share from few employers reads as repetition, not demand.
+  employers beside its share: a large share from few employers reads as repetition, not demand,
+  and the answer says so. Dropping the term would hide the skill from every computer-vision role to
+  remove one employer's boilerplate.
 
 **Latency, on the same local copy** (lancedb 0.33 on a laptop; the Space runs 0.36 on 2 vCPU), the
 first call of each: "data engineer" 1.0 s; the security category 0.5 s; "frontend developer",

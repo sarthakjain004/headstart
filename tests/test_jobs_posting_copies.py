@@ -1,4 +1,4 @@
-"""Which rows of one search page copy one posting — `headstart.space_mcp.posting_copies`
+"""Which rows of one search page copy one posting — `headstart.jobs.posting_copies`
 (ADR-0274, ADR-0323).
 
 Contracts: the same company and title stem, brackets aside, anywhere; rows naming no company only
@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from headstart.space_mcp.posting_copies import groups
+from headstart.jobs.posting_copies import groups
 
 _EVERSOURCE_FRONT = (
     "Berlin, CT, United States of America; Westwood, Massachusetts, United States; "

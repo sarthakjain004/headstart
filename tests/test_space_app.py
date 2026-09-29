@@ -3410,11 +3410,11 @@ def test_requirements_count_a_sample_and_carry_no_description_text(app):
 
 @pytest.mark.parametrize(
     ("query", "status"),
-    [("", 400), ("q=x&n=5", 400), ("q=x&n=x", 400), ("family=security", 503)],
+    [("", 400), ("q=x&country=ZZ&strict=1", 400), ("family=security", 503)],
 )
 def test_requirements_refuse_what_they_cannot_count(app, query, status):
-    """No role or category, a sample outside its bounds, or a category on a deployment without
-    role assignments (the fixture pulls none)."""
+    """No role or category, a filter the strict read refuses, or a category on a deployment
+    without role assignments (the fixture pulls none)."""
     r = app.app.test_client().get(f"/requirements?{query}")
     assert r.status_code == status, query
 

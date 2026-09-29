@@ -286,16 +286,6 @@ class Vocabulary:
             if hit.term.skill not in own
         }
 
-    def mentions(self, text: str | None) -> list[tuple[str, int, int]]:
-        """Every counted mention as ``(skill name, start, end)``, in order: what a precision
-        check reads a hit's context from."""
-        if not text:
-            return []
-        return [
-            (self.skills[hit.term.skill].name, hit.start, hit.end)
-            for hit in self._counted(text, self._hits(text))
-        ]
-
     def kind_of(self, name: str) -> str:
         return next(skill.kind for skill in self.skills if skill.name == name)
 

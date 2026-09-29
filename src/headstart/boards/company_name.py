@@ -922,6 +922,23 @@ def echoes_board(name: str, board_key: str) -> bool:
     return text in {slug, tenant(board_key), *re.split(r"[/.:@?=&]", slug)}
 
 
+#: What a served name must hold to be read as a host, URL or path rather than a word.
+_HOST_OR_PATH = re.compile(r"[./:@]")
+
+
+def names_no_company(name: object, board_key: str) -> bool:
+    """Whether a *served* company name is empty or only the Board's own key, host or path
+    (ADR-0323): lowercase, holding a dot, slash, colon or at-sign, and `echoes_board`. "Checkout.com"
+    on `ashby:checkout.com` names a company; "egud.fa.us2.oraclecloud.com" on its own pod does not.
+    """
+    text = str(name or "").strip()
+    return not text or (
+        text == text.lower()
+        and bool(_HOST_OR_PATH.search(text))
+        and echoes_board(text, board_key)
+    )
+
+
 def is_identifier(name: str, board_key: str) -> bool:
     """Whether a name the scraper was *constructed* with is an identifier rather than a
     company's name: lowercase identifier text ("wipro", "careers.persistent.com"), or it
