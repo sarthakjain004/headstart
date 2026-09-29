@@ -357,6 +357,40 @@ def _line(
     return "; ".join(said)
 
 
+def _levels_turnover(reading: dict[str, Any]) -> list[str]:
+    """Where a Level breakdown's lines add up to other turnover than its first row, the one line
+    that says so with both figures (ADR-0336): the first row keeps the runs an experience-reading
+    change re-sorted levels on, as the whole index's line for a category does, and each level
+    leaves them out."""
+    total = ((reading.get("total") or {}).get("move") or {}).get("turnover")
+    levels = [
+        line["move"]["turnover"]
+        for line in reading.get("lines") or []
+        if line["move"].get("turnover")
+    ]
+    if not total or not levels:
+        return []
+    opened = sum(t["opened"] for t in levels)
+    closed = (
+        None
+        if total["closed"] is None or any(t["closed"] is None for t in levels)
+        else sum(t["closed"] for t in levels)
+    )
+    if opened == total["opened"] and closed in (None, total["closed"]):
+        return []
+    summed, whole = f"{opened:,} opened", f"{total['opened']:,}"
+    if closed is not None:
+        summed += f" and {closed:,} closed"
+        whole += f" and {total['closed']:,}"
+    return [
+        (
+            f"The levels add up to {summed}, not the first row's {whole}: each level also "
+            "leaves out the runs an experience-reading change re-sorted levels on, which the "
+            "first row keeps."
+        )
+    ]
+
+
 def _rank(line: dict[str, Any]) -> int:
     """How large a line's move is: its turnover net, else its postings opened, else its change
     in openings listed."""
@@ -731,6 +765,8 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
             )
             for line in shown
         ]
+        if breakdown == "level":
+            lines += _levels_turnover(ranked_from)
         if breakdown == "category" and any(
             role_families.successor(line["name"]) for line in shown
         ):
