@@ -203,19 +203,23 @@ class RunScope:
 
     * ``unlisted`` when its Board is in :attr:`authoritative`: the eviction scope ``index sync``
       uses, the Boards the union covered less the Unauthoritative ones (ADR-0053, ADR-0161);
-    * ``off_board`` when its Board is not in :attr:`scrapable`: the keep-set ``index prune``
-      sweeps against, the Scrapable Boards less those whose gone-verdict parole re-confirmed
-      (ADR-0023, ADR-0206);
+    * ``off_board`` when its Board is not in :attr:`keep_set`: the keep-set ``index prune`` sweeps
+      against, the Scrapable Boards less those whose gone-verdict parole re-confirmed (ADR-0023,
+      ADR-0206);
     * still listed otherwise, since a Board this run did not read, or read short, is no evidence.
 
     Ids are re-resolved through :attr:`live` each run and matched case-folded, as sync and prune
-    match them (ADR-0243). :attr:`scrapable` is None when the keep-set is under
+    match them (ADR-0243). :attr:`keep_set` is None when it is under
     :data:`~headstart.ingest.index_plan.MIN_KEEP_BOARDS`, where prune refuses to act too, or when
     no ledger was loaded.
+
+    The join reads the board-failures ledger as the previous run left it, since this run's
+    ``update_ledgers failures`` comes after it. A Board whose parole re-confirms in this run is
+    pruned now and turns ``off_board`` on the next run.
     """
 
     authoritative: frozenset[str]
-    scrapable: frozenset[str] | None
+    keep_set: frozenset[str] | None
     live: Mapping[str, str]
 
     @classmethod
@@ -235,18 +239,22 @@ class RunScope:
         )
         return cls(
             authoritative=frozenset(lower_key(b) for b in authoritative),
-            scrapable=frozenset(lower_key(b) for b in keep)
+            keep_set=frozenset(lower_key(b) for b in keep)
             if len(keep) >= MIN_KEEP_BOARDS
             else None,
             live=live,
         )
 
+    def is_authoritative(self, board: str | None) -> bool:
+        """Whether this run's read of ``board`` counts its absences."""
+        return board is not None and lower_key(board) in self.authoritative
+
     def absent_as(self, job_id: str) -> Kind | None:
         """What a listed Job this run did not return has become, or None when it stays listed."""
-        board = lower_key(resolve_board(job_id, self.live))
-        if board in self.authoritative:
+        board = resolve_board(job_id, self.live)
+        if self.is_authoritative(board):
             return "unlisted"
-        if self.scrapable is not None and board not in self.scrapable:
+        if self.keep_set is not None and lower_key(board) not in self.keep_set:
             return "off_board"
         return None
 
@@ -305,8 +313,7 @@ def board_reads(
                     board=board,
                     outcome=_outcome(error, truncated),
                     reason=str(reason)[:300] if reason else None,
-                    in_scope=board is not None
-                    and lower_key(board) in scope.authoritative,
+                    in_scope=scope.is_authoritative(board),
                     lines=lines.get(lower_key(board), 0) if board else 0,
                     stated_total=stated if isinstance(stated, int) else None,
                     seconds=report.board_seconds.get(key),

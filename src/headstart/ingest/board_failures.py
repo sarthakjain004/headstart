@@ -260,11 +260,16 @@ def reconfirmed(rows: dict[str, Failure]) -> set[str]:
     return {board for board, row in rows.items() if row.reconfirmed}
 
 
+def reconfirmed_keys(rows: dict[str, Failure]) -> set[str]:
+    """The Boards whose gone-verdict parole re-confirmed (:func:`reconfirmed`), in their
+    :func:`key_for` lookup form: one key per Board, however many casings the ledger holds."""
+    return {key_for(board) for board in reconfirmed(rows)}
+
+
 def reconfirmed_among(boards: Iterable[str], rows: dict[str, Failure]) -> set[str]:
-    """The Boards of ``boards`` whose gone-verdict parole re-confirmed (:func:`reconfirmed`),
-    matched through :func:`key_for`: the Boards ``index prune`` takes out of its keep-set, and the
-    Job facts' off-Board rule with it (ADR-0330)."""
-    gone = {key_for(board) for board in reconfirmed(rows)}
+    """The Boards of ``boards`` whose gone-verdict parole re-confirmed: the Boards ``index prune``
+    takes out of its keep-set, and the Job facts' off-Board rule with it (ADR-0330)."""
+    gone = reconfirmed_keys(rows)
     return {board for board in boards if key_for(board) in gone}
 
 

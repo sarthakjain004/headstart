@@ -1192,7 +1192,7 @@ def prune(args: argparse.Namespace) -> int:
     if args.board_failures and Path(args.board_failures).exists():
         _log.info(
             f"board failures: {len(failures)} entries from {args.board_failures}, "
-            f"{len(board_failures.reconfirmed(failures))} re-confirmed gone"
+            f"{len(board_failures.reconfirmed_keys(failures))} re-confirmed gone"
         )
     else:
         where = (

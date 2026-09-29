@@ -402,14 +402,15 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   there — check how old it is, and refresh it first. A local `data/` directory carries no
   guarantee of currency: it is frozen at whenever *this machine* last pulled or last ran the
   stage that wrote it, which for ephemeral stage output (`data/jobs/`) may be months ago and for
-  HF-backed data (`data/lancedb/`, `data/state/`, `data/descriptions/`, `data/embeddings/`) is
+  HF-backed data (`data/lancedb/`, `data/state/`, `data/descriptions/`, `data/embeddings/`,
+  `data/facts/`) is
   whenever someone last ran a `snapshot_download`. This rule exists because an experience-coverage
   analysis was run against a `data/lancedb/` snapshot holding 32,179 rows when the live served
   table had 287,144 — a 9x understatement that silently changed every conclusion drawn from it.
   If the freshest copy is genuinely too expensive to fetch, say so and label the number stale in
   the same sentence you report it; don't quietly present a stale figure as current.
 - **The HF dataset is the source of truth for pipeline data — never trust the local copy.**
-  `data/state/`, `data/embeddings/`, and `data/lancedb/` are all gitignored: they live in the
+  `data/state/`, `data/embeddings/`, `data/lancedb/` and `data/facts/` are all gitignored: they live in the
   private HF dataset `imPoseidon/headstart-index`, and whatever sits in the working tree is a
   stale snapshot from whenever it was last pulled. Before reading, reasoning about, or quoting a
   number from any of them, refresh from HF first:

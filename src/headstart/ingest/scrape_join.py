@@ -277,8 +277,8 @@ def main() -> int:
     ap.add_argument(
         "--board-failures",
         default=str(_FAILURES),
-        help="the board-failures ledger, whose Boards re-confirmed gone leave the Job facts' "
-        "Scrapable Boards as they leave `index prune`'s keep-set (ADR-0330; default: "
+        help="the board-failures ledger, whose Boards re-confirmed gone leave the keep-set the "
+        "Job facts read, as they leave `index prune`'s (ADR-0330; default: "
         "data/state/board_failures.csv)",
     )
     ap.add_argument(

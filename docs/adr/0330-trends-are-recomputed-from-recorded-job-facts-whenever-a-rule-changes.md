@@ -102,8 +102,11 @@ The owner's other decisions (2026-09-29):
   and nothing reads them.
 - **The facts can only start now.** Every day not recorded is a day no later rule can restate.
 - **Cost, measured 2026-09-29.** A Job-fact row is 38 B and a Listed-set row 17 B (zstd, sorted,
-  on 332,383 scraped lines). The first run records every listed Job (about 3.65M rows); later
-  runs record only what changed. At the current pace the facts, the vector archive and the
+  on 332,383 scraped lines). The first run records every Job its Slice lists (about 3.65M rows,
+  about half the Scrapable Boards); later runs record only what changed.
+- **A Board's first read lists its whole backlog.** Every Board outside the first Slice, and every
+  Board landed later, arrives as `listed` on its first read. That is coverage, not openings, and
+  a restatement reads a Board's first Board read that way. At the current pace the facts, the vector archive and the
   description store reach about 35 GB of HF storage in a year, 35% of the quota. The Space
   downloads none of it.
 - **The join job gains a download and a write.** The Listed set (about 100 MB at 5–7M listed Jobs)
@@ -111,7 +114,9 @@ The owner's other decisions (2026-09-29):
   uploads it with the run's facts in one commit. A run whose upload fails loses both together,
   and the next run diffs against the older Listed set, so no change is lost or counted twice.
 - **"Not listed" depends on a scope rule.** A Job is recorded as no longer listed only when an
-  authoritative read of its Board missed it, or its Board left the Scrapable Boards. That is the
+  authoritative read of its Board missed it, or its Board left the keep-set `index prune` sweeps
+  against. The join reads the board-failures ledger the previous run left, so a Board whose
+  parole re-confirms turns `off_board` one run after prune evicts it. That is the
   eviction scope `index sync` uses (ADR-0053, ADR-0161) and `index prune`'s off-Board sweep,
   both built from the helpers those stages use (`index_plan.unauthoritative_among`,
   `board_failures.reconfirmed_among`, `index_plan.MIN_KEEP_BOARDS`) in one place,

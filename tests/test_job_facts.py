@@ -1,7 +1,7 @@
 """Tests for the Job facts writer (headstart.ingest.job_facts, ADR-0330).
 
 The facts are what each scrape saw, recorded once: a Job first listed, changed, no longer listed by
-an authoritative read of its Board, or on a Board no longer Scrapable. A Board the run did not
+an authoritative read of its Board, or on a Board that left `index prune`'s keep-set. A Board the run did not
 read, or read short, is no evidence, so its Jobs stay listed and write nothing.
 """
 
@@ -14,6 +14,7 @@ import pyarrow.parquet as pq
 import pytest
 
 from headstart.boards.board_identity import lower_key
+from headstart.ingest import board_failures
 from headstart.ingest import job_facts as jf
 from headstart.ingest.observability import ShardReport
 from headstart.jobs.job import Job
@@ -39,13 +40,13 @@ def _job(job_id: str, title: str = "Backend Engineer", **fields) -> dict:
     }
 
 
-def _scope(authoritative: set[str], scrapable: set[str] | None = None) -> jf.RunScope:
+def _scope(authoritative: set[str], keep_set: set[str] | None = None) -> jf.RunScope:
     return jf.RunScope(
         authoritative=frozenset(lower_key(b) for b in authoritative),
-        scrapable=None
-        if scrapable is None
-        else frozenset(lower_key(b) for b in scrapable),
-        live={lower_key(b): b for b in scrapable or ()},
+        keep_set=None
+        if keep_set is None
+        else frozenset(lower_key(b) for b in keep_set),
+        live={lower_key(b): b for b in keep_set or ()},
     )
 
 
@@ -54,13 +55,13 @@ def _run(
     stamp: str,
     jobs: list[tuple[str, dict]],
     scope: set[str],
-    scrapable: set[str] | None = None,
+    keep_set: set[str] | None = None,
 ) -> jf.RunFacts:
     lines = jf.ScrapedLines(tmp_path / "scratch.parquet")
     for board, job in jobs:
         lines.see(board, job)
     return jf.record_run(
-        lines.close(), tmp_path / "facts", stamp, [], _scope(scope, scrapable)
+        lines.close(), tmp_path / "facts", stamp, [], _scope(scope, keep_set)
     )
 
 
@@ -182,16 +183,16 @@ def test_an_id_stored_under_another_casing_is_still_in_its_boards_scope(tmp_path
     assert recorded.unlisted == 1
 
 
-def test_a_job_whose_board_left_the_scrapable_boards_is_off_board(tmp_path):
+def test_a_job_whose_board_left_prunes_keep_set_is_off_board(tmp_path):
     """Like `index prune`'s off-Board sweep: a Board no run will read again must not keep its
-    Jobs listed for good. A Board still Scrapable but unread keeps them."""
+    Jobs listed for good. A Board still in the keep-set but unread keeps them."""
     _run(
         tmp_path,
         T1,
         [(BOARD_A, _job(f"{BOARD_A}:1")), (BOARD_B, _job(f"{BOARD_B}:2"))],
         {BOARD_A, BOARD_B},
     )
-    recorded = _run(tmp_path, T2, [], set(), scrapable={BOARD_A})
+    recorded = _run(tmp_path, T2, [], set(), keep_set={BOARD_A})
 
     assert (recorded.unlisted, recorded.off_board) == (0, 1)
     assert _facts(tmp_path, T2)[f"{BOARD_B}:2"]["kind"] == "off_board"
@@ -200,7 +201,7 @@ def test_a_job_whose_board_left_the_scrapable_boards_is_off_board(tmp_path):
 
 def test_with_no_trusted_keep_set_nothing_is_off_board(tmp_path):
     _run(tmp_path, T1, [(BOARD_A, _job(f"{BOARD_A}:1"))], {BOARD_A})
-    recorded = _run(tmp_path, T2, [], set(), scrapable=None)
+    recorded = _run(tmp_path, T2, [], set(), keep_set=None)
 
     assert recorded.off_board == 0
     assert _listed(tmp_path) == {f"{BOARD_A}:1"}
@@ -219,19 +220,24 @@ def test_the_scope_is_the_boards_read_less_the_unauthoritative_ones_case_folded(
     assert scope.authoritative == {"greenhouse:acme"}
 
 
-def test_the_keep_set_is_prunes_less_boards_reconfirmed_gone(monkeypatch):
-    live = _live(jf.MIN_KEEP_BOARDS + 1)
-    monkeypatch.setattr(
-        jf.board_failures,
-        "reconfirmed_among",
-        lambda boards, failures: {"greenhouse:co0"},
-    )
+def test_the_keep_set_leaves_out_boards_reconfirmed_gone_after_parole():
+    """ADR-0206: `index prune` evicts a Board whose parole re-confirmed it gone, and the facts shed
+    its Jobs with it. A Board quarantined once is still in both keep-sets."""
+    live = _live(jf.MIN_KEEP_BOARDS + 2)
+    failures = {
+        "greenhouse:co0": board_failures.Failure(
+            board_failures.QUARANTINE_AT + 1, "404", "2026-09-20"
+        ),
+        "greenhouse:co1": board_failures.Failure(
+            board_failures.QUARANTINE_AT, "404", "2026-09-20"
+        ),
+    }
 
-    scope = jf.RunScope.of(set(), set(), live, {})
+    scope = jf.RunScope.of(set(), set(), live, failures)
 
-    assert scope.scrapable is not None
-    assert "greenhouse:co0" not in scope.scrapable
-    assert "greenhouse:co1" in scope.scrapable
+    assert scope.keep_set is not None
+    assert "greenhouse:co0" not in scope.keep_set
+    assert "greenhouse:co1" in scope.keep_set
     assert scope.absent_as("greenhouse:co0:7") == "off_board"
     assert scope.absent_as("greenhouse:co1:7") is None
 
@@ -240,7 +246,7 @@ def test_a_keep_set_prune_would_refuse_sheds_nothing():
     """`index prune` refuses a keep-set under MIN_KEEP_BOARDS as a broken ledger; so do the facts."""
     scope = jf.RunScope.of(set(), set(), _live(jf.MIN_KEEP_BOARDS - 1), {})
 
-    assert scope.scrapable is None
+    assert scope.keep_set is None
     assert scope.absent_as("lever:nowhere:1") is None
 
 

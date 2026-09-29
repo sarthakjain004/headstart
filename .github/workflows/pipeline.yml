@@ -1080,8 +1080,15 @@ jobs:
           # so no change is lost or counted twice. Additive: each run adds its own fragments and
           # replaces only the Listed set. Before data/state, whose witness must not claim a root
           # this upload failed to write.
-          publish job_facts hf upload "$HF_DATASET" data/facts data/facts \
-            --repo-type dataset --exclude "*.tmp" --commit-message "nightly: job facts"
+          # Skipped when the run recorded nothing: a first run whose facts failed has no Listed set
+          # to carry, the artifact then holds no data/facts, and `hf upload` of a missing folder
+          # raises, which under `bash -e` would keep data/state from publishing too.
+          if [ -n "$(find data/facts -type f ! -name '*.tmp' 2>/dev/null | head -n 1)" ]; then
+            publish job_facts hf upload "$HF_DATASET" data/facts data/facts \
+              --repo-type dataset --exclude "*.tmp" --commit-message "nightly: job facts"
+          else
+            publication_state job_facts skipped
+          fi
           # data/state LAST, because it carries the witness (ADR-0095). The property is that the
           # witness is never committed BEFORE the roots it vouches for: if an upload above fails,
           # `bash -e` stops here and the new witness is simply never published, leaving the prior
