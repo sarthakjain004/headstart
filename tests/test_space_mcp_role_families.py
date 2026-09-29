@@ -152,6 +152,14 @@ def test_only_current_families_are_offered():
     assert not retired & set(role_families.names())
 
 
+def test_a_retired_id_names_the_current_family_that_took_it_over():
+    """An old window's lines carry retired ids (ADR-0321)."""
+    for family in FAMILIES["retired"]:
+        assert role_families.successor(family["name"]) == family["successor"]
+    assert role_families.successor("security") is None
+    assert role_families.successor("nonsense") is None
+
+
 def test_a_value_that_is_not_a_string_is_left_for_the_schema_check():
     assert role_families.resolve(7) == 7
 

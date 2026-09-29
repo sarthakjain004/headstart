@@ -103,6 +103,15 @@ def label(name: str) -> str | None:
     return taxonomy[0].get(name) if taxonomy else None
 
 
+def successor(name: str) -> str | None:
+    """The current family that took a retired family ``name`` over; None for a current or an
+    unknown id, or without the file. An old window's lines carry retired ids (ADR-0321)."""
+    taxonomy = _taxonomy()
+    if taxonomy is None or name in taxonomy[0]:
+        return None
+    return next((now for old, _, now in taxonomy[1] if old == name), None)
+
+
 def _words(text: str) -> tuple[str, ...]:
     return tuple(re.findall(r"[a-z0-9]+", text.lower()))
 

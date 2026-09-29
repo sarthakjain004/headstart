@@ -667,7 +667,9 @@ def _keep_static_for_the_boot(response):
 # 5: /companies/locations (ADR-0275).
 # 6: each location's country on /companies/locations, and /companies/levels (ADR-0323).
 # 7: /requirements, what a sample of a role's or a category's postings ask for (ADR-0324).
-_AGENT_API_VERSION = 7
+# 8: the `opened_less_closed` lens on /hot, its rows' `opened_less_closed` and the count
+# `closures_partly_uncounted` (ADR-0321).
+_AGENT_API_VERSION = 8
 
 
 @app.after_request
@@ -804,7 +806,7 @@ def _answer_response(body: bytes, gzipped: bytes | None = None) -> Response:
 def hot_companies():
     """The actively-hiring companies ranked at boot (``_rank_hot``), or 503 with nothing ranked.
 
-    Served whole rather than paged or filtered server-side: it is three lenses of at most 100
+    Served whole rather than paged or filtered server-side: it is four lenses of at most 100
     rows each, so the lens switch and the "show staffing" toggle are instant in the browser and
     cost no round trip. 503 rather than an empty 200, so the tab can tell "not built yet" from
     "built, and nothing qualified".

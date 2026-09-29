@@ -4623,7 +4623,7 @@ if (el('matches-controls')){
 
 /* ---- "Hiring now" (hot_ranking): a ranked leaderboard of the companies opening roles.
 
-   The whole ranking arrives in one fetch — three lenses of at most 100 rows — so switching
+   The whole ranking arrives in one fetch — four lenses of at most 100 rows — so switching
    lens or revealing staffing firms is a re-render, never a round trip. The Space ranks it once
    at boot, from the history it just loaded (ADR-0230), so it is fetched once per visit and not
    re-polled. ---- */
@@ -4687,6 +4687,10 @@ const HOT_MEASURE = {
     sub: r.opened == null ? `${r.stock} open now`
       : r.closed == null ? `${r.opened} opened ${hotTurnoverSpan()} · closures not counted · ${r.stock} open now`
       : `${r.opened} opened · ${hotClosed(r)} ${hotTurnoverSpan()} · ${r.stock} open now` }),
+  // Opened less closed (ADR-0321): only companies whose closures were counted on every Board, so
+  // its opened and closed are always both counted.
+  opened_less_closed: r => ({ big: '+' + r.opened_less_closed, unit: `more tech roles opened than closed ${hotTurnoverSpan()}`,
+    sub: `${r.opened} opened · ${r.closed} closed · ${r.stock} open now` }),
   volume:    r => ({ big: String(r.opened), unit: `tech roles opened ${hotTurnoverSpan()}`, sub:
     `${hotClosed(r)} · ${r.net >= 0 ? '+' : ''}${r.net} net · ${r.stock} open now` }),
   rate:      r => ({ big: r.rate + '%', unit: `opened ${hotTurnoverSpan()}, as a share of its open roles`, sub:
