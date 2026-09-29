@@ -45,10 +45,10 @@
     },
     {
       "id": "t04",
-      "prompt": "Which companies are expanding their tech hiring fastest this week?",
+      "prompt": "Which companies opened more tech jobs than they closed this week?",
       "verifier": "hot_top",
-      "expect": {"lens": "expansion", "top": 5},
-      "why": "Plan §9: the top five equal /hot's, hidden Operators out. The verifier reads /hot itself, drops the hidden_by_default Operators, and needs at least four of the top five named. Round-2 critique P1-3 (ADR-0325): the first company the answer names among the hiring_now rows must not be one the tool flagged as re-counting."
+      "expect": {"lens": "opened_less_closed", "top": 5},
+      "why": "Plan §9, ADR-0321: the top five equal /hot's, hidden Operators out, on hiring_now's default Lens, postings opened less closed; Expansion's leader on 2026-09-29, Bosch Group, was re-counting its own flag disowned. The verifier reads /hot itself, drops the hidden_by_default Operators, and needs at least four of the top five named. Round-2 critique P1-3 (ADR-0325): the first company the answer names among the hiring_now rows must not be one the tool flagged as re-counting."
     },
     {
       "id": "t05",
@@ -336,6 +336,16 @@
         }
       },
       "why": "Round-2 critique P0-2 (ADR-0320): two country-scoped \"relocation\" searches in descriptions both hit the 45 s deadline. The rows a description keyword keeps are now found once and kept, so the second page must come back as a successful call, not a deadline sentence."
+    },
+    {
+      "id": "t28",
+      "prompt": "Did tech hiring rise or fall between 1 and 7 September 2026?",
+      "verifier": "mentions",
+      "expect": {
+        "any": ["cannot say", "can't say", "cannot tell", "can't tell", "not able to say", "unable to say", "no hiring figure", "doesn't measure", "does not measure", "only since", "only from"],
+        "tool_results_all": ["cannot say whether hiring rose or fell"]
+      },
+      "why": "ADR-0321, critique round 2 P1-2: HeadStart counts postings opened and closed only from 2026-09-25 18:16, so a window before it has no hiring figure, only openings listed, which mix hiring with re-counting. The trend answer must lead with that, and the final answer must pass it on rather than call the change in openings a rise."
     }
   ],
   "heldout_sha256": "801e7149bc71c42e7b346dcf089ea20f87d1e0035d989b3dba8ffb50fe055e4d"

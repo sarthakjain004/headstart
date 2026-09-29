@@ -285,6 +285,7 @@ supersedes it and note the supersession in both.
 | [0306](0306-a-hidden-family-is-counted-and-folded-into-other-never-listed.md) | A hidden family is counted and folded into Other, never listed | 2026-09-29 |
 | [0307](0307-a-taleo-section-its-twin-host-mirrors-is-buried-onto-the-linked-host.md) | A Taleo section its twin host mirrors is buried onto the linked host | 2026-09-29 |
 | [0320](0320-a-description-keywords-rows-are-found-once-literal-first-and-named-by-row-id.md) | A description keyword's rows are found once, literal first, and named by row id | 2026-09-29 |
+| [0321](0321-an-agent-reads-hiring-now-by-opened-less-closed-and-every-trend-says-its-turnover-span.md) | An agent reads Hiring now by opened less closed, and every trend view states its turnover span first | 2026-09-29 |
 | [0323](0323-an-agent-sees-one-posting-once-under-a-company-name.md) | An agent sees one posting once, under a company's name, and a company's places by country | 2026-09-29 |
 | [0324](0324-an-agent-reads-what-a-roles-postings-ask-for-counted-over-a-sample.md) | An agent reads what a role's postings ask for, counted over a sample | 2026-09-29 |
 | [0325](0325-the-model-retries-an-edge-failure-and-a-description-scan-runs-alone.md) | The model retries an edge failure, a description scan runs alone, and the hosted eval waits for its server | 2026-09-29 |

@@ -379,7 +379,7 @@ def test_hot_rows_the_tab_hides_are_left_out_by_the_apps_own_list(
         "hidden_by_default": ["staffing", "aggregator"],
     }
     monkeypatch.setattr(companies_app, "_HOT", hot)
-    text = server.call(_client(companies_app), "hiring_now", {})
+    text = server.call(_client(companies_app), "hiring_now", {"lens": "expansion"})
     assert '"Acme"' in text and '"Temps Inc"' not in text
     assert "1 aggregator and staffing rows hidden" in text
 

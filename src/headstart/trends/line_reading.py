@@ -1164,7 +1164,7 @@ class _Reader:
             rescaled,
             CauseKind.GROWTH_SCALED_BY_A_CHANGE,
             parent.ts,
-            f"growth rescaled when {parent.label}",
+            netting.GROWTH_RESCALED_WHEN + parent.label,
         )
         self.parent_of[rescaled] = change
         return rescaled
