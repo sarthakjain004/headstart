@@ -343,3 +343,79 @@ def test_the_requisition_is_the_pages_reference_label():
     assert page_fields(layouts["bradyplus_careersmarketplace"])["requisition"] == "3053"
     assert page_fields(layouts["ashfieldhealthcare_careers"])["requisition"] == "23234"
     assert page_fields(layouts["astellasjapan_careers"])["requisition"] is None
+
+
+# --- an empty sitemap body is not an empty listing -------------------------------------------
+
+_EMPTY_ROBOTS = (
+    "Sitemap: https://acme.avature.net/careers/sitemap_index.xml\n"
+    "Sitemap: https://acme.avature.net/CalendarInvitation/sitemap_index.xml\n"
+)
+_EMPTY_INDEX = (
+    "<sitemapindex><sitemap><loc>https://acme.avature.net/careers/sitemap.xml</loc>"
+    "</sitemap></sitemapindex>"
+)
+
+
+def _empty_listing_scraper(search_jobs: FakeResponse):
+    """A tenant whose sitemaps all answer an empty 200 body; its search page is ``search_jobs``."""
+
+    def route(method, url, kwargs):
+        if url.endswith("robots.txt"):
+            return FakeResponse(200, _EMPTY_ROBOTS)
+        if url == "https://acme.avature.net/careers/sitemap_index.xml":
+            return FakeResponse(200, _EMPTY_INDEX)
+        if url == "https://acme.avature.net/careers/SearchJobs":
+            return search_jobs
+        return FakeResponse(
+            200, ""
+        )  # every sitemap: the empty body Avature answers at random
+
+    scraper = get_scraper(
+        "avature", "acme", fetcher=FakeFetcher(route), have_details=set()
+    )
+    scraper.pacer = Pacer(0)
+    return scraper
+
+
+def test_an_empty_sitemap_body_over_a_portal_that_lists_postings_is_unread():
+    """mantech (420 served rows) read one such run in 31: two in a row evict every row."""
+    from headstart.ingest import board_failures
+    from headstart.scrapers.base import BoardUnreadable
+
+    page = (
+        '<a href="https://acme.avature.net/careers/JobDetail/Engineer/123">Engineer</a>'
+    )
+    scraper = _empty_listing_scraper(FakeResponse(200, page))
+    try:
+        scraper.fetch_raw()
+    except BoardUnreadable as exc:
+        assert "unread, not empty" in str(exc)
+        assert not board_failures.is_gone(f"{type(exc).__name__}: {exc}")
+    else:
+        raise AssertionError("an empty sitemap body read as an empty Board")
+
+
+def test_empty_sitemaps_under_a_search_page_with_no_postings_are_an_empty_board():
+    """A utility portal answers an empty body every time; its search page 404s or links none."""
+    for search in (FakeResponse(404, ""), FakeResponse(200, "<p>0 results</p>")):
+        assert _empty_listing_scraper(search).fetch_raw() == []
+
+
+def test_a_well_formed_sitemap_with_no_postings_never_asks_the_search_page():
+    def route(method, url, kwargs):
+        if url.endswith("robots.txt"):
+            return FakeResponse(200, _EMPTY_ROBOTS)
+        if url.endswith("sitemap_index.xml"):
+            return FakeResponse(200, _EMPTY_INDEX)
+        if url.endswith("SearchJobs"):
+            raise AssertionError(
+                "the search page was asked for a well-formed empty listing"
+            )
+        return FakeResponse(200, "<urlset></urlset>")
+
+    scraper = get_scraper(
+        "avature", "acme", fetcher=FakeFetcher(route), have_details=set()
+    )
+    scraper.pacer = Pacer(0)
+    assert scraper.fetch_raw() == []

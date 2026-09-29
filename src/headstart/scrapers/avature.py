@@ -56,7 +56,12 @@ from urllib.parse import urljoin
 from headstart.boards import company_name
 from headstart.jobs.job import Job, html_to_text, is_remote, requisition_of
 from headstart.network import http
-from headstart.scrapers.base import USER_AGENT, BaseScraper, DetailRequest
+from headstart.scrapers.base import (
+    USER_AGENT,
+    BaseScraper,
+    BoardUnreadable,
+    DetailRequest,
+)
 from headstart.scrapers.job_posting_jsonld import (
     find_job_posting,
     hiring_organization,
@@ -170,6 +175,8 @@ class AvatureScraper(BaseScraper):
     pacer = _PACER
     #: The employer the fetched job pages agree on (`og:site_name`, else JSON-LD).
     _pages_company: str | None = None
+    #: Sitemap reads this scrape that answered an empty 200 body (:meth:`_sitemap_text`).
+    _empty_sitemaps: int = 0
 
     @staticmethod
     def slug_from(tenant: str, url: str) -> str:
@@ -205,6 +212,38 @@ class AvatureScraper(BaseScraper):
         response.raise_for_status()
         return response.text
 
+    def _sitemap_text(self, url: str) -> str:
+        """A sitemap or sitemap index, counting the reads that answered an empty 200 body.
+
+        Avature answers one at random: ea's `careers` sitemap read 645,183 bytes, then 0, then 0
+        (2026-09-29), and one listing of ea came back empty on 173 of ~340 reads. A utility
+        portal (`CalendarInvitation`) answers 0 bytes every time, so an empty body alone cannot
+        say which; :meth:`_listing_was_lost` asks the portal's search page instead."""
+        text = self._get_text(url)
+        if not text.strip():
+            self._empty_sitemaps += 1
+        return text
+
+    def _listing_was_lost(self, portals: list[str]) -> str | None:
+        """The public portal whose search page links postings, when every sitemap read empty.
+
+        A job portal's `SearchJobs` page links its first postings as `/JobDetail/` URLs (ea 20,
+        unicredit 15, mantech 6, bupaanz 6 on 2026-09-29), while a utility portal answers 404
+        and an internal one lands on `/Login/`, linking none. Asked only for a Board whose
+        listing came back empty after an empty sitemap body, so it costs nothing otherwise."""
+        for index_url in portals:
+            if not index_url.endswith("sitemap_index.xml") or _PRIVATE_PORTAL.search(
+                index_url
+            ):
+                continue
+            search = index_url.rsplit("/", 1)[0] + "/SearchJobs"
+            response = self._fetch(
+                "GET", search, headers={"User-Agent": USER_AGENT}, timeout=60
+            )
+            if response.status_code == 200 and "/JobDetail/" in (response.text or ""):
+                return search
+        return None
+
     def fetch_raw(self) -> Any:
         robots = self._get_text(self.url())
         portals = sorted(
@@ -220,6 +259,7 @@ class AvatureScraper(BaseScraper):
             self.mark_truncated("robots.txt names no sitemap")
             return []
         listed: dict[str, dict[str, str]] = {}
+        self._empty_sitemaps = 0
         # L'Oréal's portals each redirect their index to one shared index, so its child
         # sitemaps would otherwise be read once per portal against a 1 request/s budget.
         read_sitemaps: set[str] = set()
@@ -227,11 +267,11 @@ class AvatureScraper(BaseScraper):
             if not index_url.endswith("sitemap_index.xml"):
                 continue  # the root `/sitemap.xml` lists only the favicon
             own: list[dict[str, str]] = []
-            for sitemap in _LOC.findall(self._get_text(index_url)):
+            for sitemap in _LOC.findall(self._sitemap_text(index_url)):
                 if sitemap in read_sitemaps:
                     continue
                 read_sitemaps.add(sitemap)
-                for row in listing_rows(self._get_text(sitemap)):
+                for row in listing_rows(self._sitemap_text(sitemap)):
                     if row["id"] not in listed:
                         listed[row["id"]] = row
                         own.append(row)
@@ -241,6 +281,16 @@ class AvatureScraper(BaseScraper):
                 for row in own:
                     del listed[row["id"]]
         rows = list(listed.values())
+        if not rows and self._empty_sitemaps:
+            # An empty body is not an empty listing: mantech, 420 served rows, read one such run
+            # in 31 (2026-09-27/28), and two in a row would have evicted every row (ADR-0083).
+            lost = self._listing_was_lost(portals)
+            if lost:
+                raise BoardUnreadable(
+                    f"{self.board_key()}: {self._empty_sitemaps} sitemap read(s) answered an "
+                    f"empty body and none listed a posting, but {lost} links postings — "
+                    "unread, not empty"
+                )
         if not rows:
             self._log.info(
                 f"{self.board_key()}: no job pages in {len(portals)} portal sitemaps"
