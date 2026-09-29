@@ -27,6 +27,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Any, NamedTuple
 
 from headstart.boards.board_identity import board_of
+from headstart.jobs import experience as experience_extraction
 from headstart.jobs import salary as salary_extraction
 from headstart.jobs import work_authorization
 from headstart.mcp_protocol.messages import ToolFailure
@@ -71,6 +72,25 @@ def _years(low: Any, high: Any) -> str:
     if high is not None:
         return f"up to {high} years"
     return "no years read from it"
+
+
+def _floors_stated(job: dict[str, Any]) -> str | None:
+    """One line when the description the served years came from states several floors: the
+    served one is the smallest (ADR-0079), which the reader should know to check (ADR-0357). Read
+    again from the description `/job` carries; said only when no field states the years and the
+    served floor is the description's smallest, so it describes the number shown."""
+    if not job.get("description") or experience_extraction.from_field(
+        job.get("experience")
+    ):
+        return None
+    floors = experience_extraction.stated_floors(job["description"])
+    if len(floors) < 2 or job.get("min_years") != floors[0]:
+        return None
+    listed = ", ".join(str(n) for n in floors[:-1]) + f" and {floors[-1]}"
+    return (
+        f"   States {listed} years in separate clauses; HeadStart shows the smallest "
+        "(ADR-0079), so check which applies to you."
+    )
 
 
 #: How a figure the description stated per hour, day, week or month is said to have been
@@ -257,6 +277,8 @@ def _job(number: int, job: dict[str, Any], share: _DescriptionShare) -> list[str
         f"   {' · '.join(place)}",
         f"   Experience: {stated}; {_years(job.get('min_years'), job.get('max_years'))}.",
     ]
+    if floors := _floors_stated(job):
+        lines.append(floors)
     if salary := _salary(job):
         lines.append(f"   {salary}")
     if dates:

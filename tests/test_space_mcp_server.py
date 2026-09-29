@@ -1190,6 +1190,43 @@ def test_an_annual_or_disagreeing_salary_says_nothing_of_a_rate():
     assert "Salary: read from the description as USD 572,000 a year." in text
 
 
+_GOOGLE_SENIOR = (
+    "Minimum qualifications: Bachelor's degree or equivalent practical experience. 5 years of "
+    "experience with software development in one or more programming languages. 3 years of "
+    "experience testing, maintaining, or launching software products, and 1 year of experience "
+    "with software design and architecture."
+)
+
+
+def test_a_description_stating_several_floors_says_the_smallest_is_shown():
+    """ADR-0357: the owner kept ADR-0079's smallest floor, so the reader is told to check."""
+    posting = _posting(
+        1, experience=None, description=_GOOGLE_SENIOR, min_years=1, max_years=None
+    )
+    text = server.call(_job_space([posting]), "get_job", {"ids": [posting["id"]]})
+    assert (
+        "   States 1, 3 and 5 years in separate clauses; HeadStart shows the smallest "
+        "(ADR-0079), so check which applies to you."
+    ) in text
+    assert text.count("States ") == 1
+
+
+def test_one_floor_a_field_or_another_served_value_says_nothing_of_floors():
+    one = _posting(
+        1, experience=None, description="5+ years of Python experience.", min_years=5
+    )
+    # A field states the years, so the description's floors are not what is shown.
+    field = _posting(2, experience="3-5 years", description=_GOOGLE_SENIOR, min_years=3)
+    # The served floor is not the description's smallest (not re-derived yet).
+    stale = _posting(3, experience=None, description=_GOOGLE_SENIOR, min_years=4)
+    text = server.call(
+        _job_space([one, field, stale]),
+        "get_job",
+        {"ids": [one["id"], field["id"], stale["id"]]},
+    )
+    assert "in separate clauses" not in text
+
+
 def test_a_missing_id_is_explained_by_the_sentence_the_space_uses():
     space = _job_space([_posting(1)])
     text = server.call(

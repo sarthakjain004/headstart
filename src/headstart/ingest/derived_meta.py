@@ -25,9 +25,9 @@ from __future__ import annotations
 from headstart.jobs.experience import ExperienceSpan
 from headstart.jobs.experience import extract as extract_experience
 from headstart.jobs.remote import extract as extract_remote
-from headstart.jobs.salary import SalarySpan
+from headstart.jobs.salary import SalarySpan, placed
 from headstart.jobs.salary import extract as extract_salary
-from headstart.search_filters import india_filter
+from headstart.search_filters import country_gazetteer, india_filter
 
 
 def experience_fields(span: ExperienceSpan | None) -> dict:
@@ -44,10 +44,15 @@ def experience_fields(span: ExperienceSpan | None) -> dict:
 
 
 def experience_meta(
-    experience: str | None, description: str | None, title: str | None
+    experience: str | None,
+    description: str | None,
+    title: str | None,
+    company: str | None = None,
 ) -> dict:
     """The experience cascade (``headstart.jobs.experience``) as its three served meta keys."""
-    return experience_fields(extract_experience(experience, description, title))
+    return experience_fields(
+        extract_experience(experience, description, title, company)
+    )
 
 
 def salary_fields(span: SalarySpan | None) -> dict:
@@ -61,9 +66,16 @@ def salary_fields(span: SalarySpan | None) -> dict:
     }
 
 
-def salary_meta(salary: str | None, description: str | None, ats: str | None) -> dict:
-    """The salary cascade (``headstart.jobs.salary``) as its four served meta keys."""
-    return salary_fields(extract_salary(salary, description, ats))
+def salary_meta(
+    salary: str | None,
+    description: str | None,
+    ats: str | None,
+    location: str | None = None,
+) -> dict:
+    """The salary cascade (``headstart.jobs.salary``) as its four served meta keys, less a figure
+    whose currency cannot be pay where the job is (:func:`headstart.jobs.salary.placed`)."""
+    span = extract_salary(salary, description, ats)
+    return salary_fields(placed(span, country_gazetteer.classify(location)))
 
 
 def country_meta(location: str | None) -> dict:
@@ -90,7 +102,19 @@ def derive(job: dict) -> dict:
     meta.update(remote_meta(job.get("remote"), job.get("description")))
     meta.update(country_meta(job.get("location")))
     meta.update(
-        experience_meta(job.get("experience"), job.get("description"), job.get("title"))
+        experience_meta(
+            job.get("experience"),
+            job.get("description"),
+            job.get("title"),
+            job.get("company"),
+        )
     )
-    meta.update(salary_meta(job.get("salary"), job.get("description"), job.get("ats")))
+    meta.update(
+        salary_meta(
+            job.get("salary"),
+            job.get("description"),
+            job.get("ats"),
+            job.get("location"),
+        )
+    )
     return meta

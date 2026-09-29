@@ -1074,3 +1074,48 @@ def test_a_job_the_change_ledger_saw_edited_is_stamped_stale(tmp_path):
         description_changes=ledger,
     )
     assert _only_meta(store)["doc_hash"] == um.STALE_DOC_HASH
+
+
+def test_a_moved_location_rechecks_a_rupee_figure_without_a_sweep():
+    # A rupee figure too small to be pay abroad answers to where the job is (ADR-0357).
+    meta = _meta(
+        location="Bengaluru",
+        salary="100000-130000 INR per-year",
+        ats="pyjamahr",
+        min_salary_annual=100_000,
+        max_salary_annual=130_000,
+        salary_currency="INR",
+        salary_source="field",
+    )
+    facts = {f: meta.get(f) for f in um.FACT_FIELDS}
+    facts["location"] = "San Francisco, California, United States"
+    row, _, derived_changed = um.refresh_row(meta, facts, {}, sweep=False)
+    assert derived_changed
+    assert row["min_salary_annual"] is None and row["salary_currency"] is None
+
+
+def test_a_kept_description_figure_is_still_checked_against_the_place():
+    meta = _meta(
+        location="Redwood City, California, United States",
+        min_salary_annual=200_000,
+        max_salary_annual=215_000,
+        salary_currency="INR",
+        salary_source="regex",
+    )
+    facts = {f: meta.get(f) for f in um.FACT_FIELDS}
+    row, _, derived_changed = um.refresh_row(meta, facts, {}, sweep=True)
+    assert derived_changed
+    assert row["salary_source"] is None
+
+
+def test_a_netflix_title_edit_reads_its_ladder_without_text():
+    meta = _meta(
+        company="Netflix",
+        title="Software Engineer (L4)",
+        min_years=7,
+        experience_source="seniority",
+    )
+    facts = {f: meta.get(f) for f in um.FACT_FIELDS}
+    facts["title"] = "Software Engineer (L5)"
+    row, _, _ = um.refresh_row(meta, facts, {}, sweep=False)
+    assert row["min_years"] == 5
