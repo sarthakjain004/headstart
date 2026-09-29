@@ -5632,6 +5632,153 @@ def test_successfactors_prefers_department_over_job_category():
     assert _page_fields(page)["department"] == "RFP Advice Delivery"
 
 
+def _sf_label_span(label: str, value: str, lang: str = "en-US") -> str:
+    """A job page's label/value token pair, in the markup jobs.dlr.de and join.cnh.com serve."""
+    return (
+        f'<span class="joblayouttoken-label" role="heading" aria-level="2">{label}\xa0\n'
+        "        </span>\n\n"
+        f'    <span xml:lang="{lang}" lang="{lang}" class="rtltextaligneligible">{value}\n'
+        "    </span>"
+    )
+
+
+@pytest.mark.parametrize(
+    ("label", "value"),
+    [
+        # jobs.dlr.de, join.cnh.com (2026-09-29, verbatim); the Type of Contract span is the
+        # borealisgroup-shaped one, its value as the probe read it.
+        ("Type of employment:", "Part time, Full-time"),
+        ("Job Type for Job Posting:", "Full Time"),
+        ("Type of Contract:", "Full-time Employment / Unlimited"),
+        ("Workload:", "Part-time"),
+        ("EMPLOYMENT TYPE:", "Full Time"),
+    ],
+)
+def test_successfactors_reads_the_employment_type_off_more_label_spellings(
+    label, value
+):
+    """Blank on 130 sampled pages although a token named the type: the labels were missing, and
+    the match was case-sensitive."""
+    from headstart.scrapers.successfactors import _page_fields
+
+    page = _sf_page("Engineer | Acme") + _sf_label_span(label, value)
+    assert _page_fields(page)["employment_type"] == value
+
+
+@pytest.mark.parametrize("label", ["Employment type:", "Workload:"])
+@pytest.mark.parametrize("value", ["2997", "100%"])
+def test_successfactors_a_code_or_figure_in_a_label_span_is_not_an_employment_type(
+    label, value
+):
+    """careers.technipfmc.com states 'Employment type: 2997', jobs.wingd.com 'Workload: 100%'
+    (2026-09-29): case-insensitive labels reach both, and neither is a type."""
+    from headstart.scrapers.successfactors import _page_fields
+
+    page = _sf_page("Engineer | Acme") + _sf_label_span(label, value)
+    assert _page_fields(page)["employment_type"] is None
+
+
+def test_successfactors_a_figure_span_does_not_hide_a_later_typed_label():
+    from headstart.scrapers.successfactors import _page_fields
+
+    page = (
+        _sf_page("Engineer | Acme")
+        + _sf_label_span("Employment type:", "2997")
+        + _sf_label_span("Job Type:", "Full Time")
+    )
+    assert _page_fields(page)["employment_type"] == "Full Time"
+
+
+def _sf_body_page(body: str) -> str:
+    return _sf_page("Engineer | Acme") + (
+        f'<span itemprop="description" class="jobdescription">{body}</span>'
+    )
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        # jobs.lr.org: the line is typed into the body, the value in a bare span.
+        (
+            (
+                "<p>Job ID:<span>41730</span><br>\nLocation:<span>Halifax</span>\xa0<br>\n"
+                "Position Category:<span>Consulting</span><br>\n"
+                "Position Type:<span>Employee Regular</span></p>"
+            ),
+            "Employee Regular",
+        ),
+        # jobs.davey.com: two lines, the first in the vocabulary's order wins.
+        (
+            (
+                "<p><b>Employment Type:</b>\xa0Permanent\xa0<br>\n"
+                "<b>Job Type:</b>\xa0Full Time\xa0<br>\n<b>Travel Expectations:</b> None</p>"
+            ),
+            "Permanent",
+        ),
+        # careers.borealisgroup.com
+        (
+            (
+                "<p><strong>Location: </strong> Austria - Vienna</p>\n"
+                "<p><strong>Hours: </strong> Full-Time</p>\n"
+                "<p><strong>Type of Contract: </strong> Permanent</p>"
+            ),
+            "Permanent",
+        ),
+        # jobs.bakkavor.com
+        (
+            (
+                "<p>Hours of work: Sunday- Thursday 22:00pm-06:30am</p> "
+                "<p>Contract Type: Permanent</p>"
+            ),
+            "Permanent",
+        ),
+        # jobs.postfinance.ch
+        (
+            "<ul><li>Type: Staff augmentation</li><li>Workload: Part-time</li></ul>",
+            "Part-time",
+        ),
+        # jobs2.buhlergroup.com, a label only the body scan reads
+        ("<p>Duration: Permanent / Unlimited</p>", "Permanent / Unlimited"),
+    ],
+)
+def test_successfactors_reads_a_typed_employment_type_line_out_of_the_description(
+    body, expected
+):
+    """Seven of 130 blank pages state the type as a 'Label: value' line in the body, with no
+    label span. Read from the page already fetched, so no extra request."""
+    from headstart.scrapers.successfactors import _page_fields
+
+    assert _page_fields(_sf_body_page(body))["employment_type"] == expected
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        # careers.technipfmc.com: a code, not a type
+        "<p>Employment type = 2997</p>",
+        "<p>Employment Type: 2997</p>",
+        "<p>Duration of contract: 12 months</p>",
+        "<p>Career Site Contract Hours = 32-40</p>",
+        "<p>Hours: 40 per week</p>",
+        # prose that merely names the words
+        "<p>We offer a contract type that suits you.</p>",
+    ],
+)
+def test_successfactors_a_code_or_a_non_type_line_is_not_an_employment_type(body):
+    from headstart.scrapers.successfactors import _page_fields
+
+    assert _page_fields(_sf_body_page(body))["employment_type"] is None
+
+
+def test_successfactors_a_label_span_outranks_the_description_line():
+    from headstart.scrapers.successfactors import _page_fields
+
+    page = _sf_body_page("<p>Contract Type: Permanent</p>") + _sf_label_span(
+        "Job Type:", "Part time"
+    )
+    assert _page_fields(page)["employment_type"] == "Part time"
+
+
 def test_successfactors_a_title_with_no_company_falls_back_to_the_microdata():
     from headstart.scrapers.successfactors import _page_company
 
