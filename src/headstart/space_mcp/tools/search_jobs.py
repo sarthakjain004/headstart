@@ -447,6 +447,15 @@ def _facet_option(name: str, option: dict[str, Any]) -> str:
     return f"{name}={str(value).lower() if isinstance(value, bool) else value}: {count}"
 
 
+def scans_descriptions(arguments: dict[str, Any]) -> bool:
+    """Whether a call with these arguments matches its keyword against descriptions: the slowest
+    search there is, measured 16–18 s alone on the hosted Space and 29–36 s beside another, so
+    the hosted route gives it a place of its own (ADR-0325)."""
+    return bool(str(arguments.get("keyword") or "").strip()) and arguments.get(
+        "keyword_in"
+    ) in ("description", "both")
+
+
 def _coverage_line(arguments: dict[str, Any], facets: dict[str, Any]) -> str | None:
     """How many jobs a description keyword could match at all: the page's own warning."""
     coverage = facets.get("description_coverage")

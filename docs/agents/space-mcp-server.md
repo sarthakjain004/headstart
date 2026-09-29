@@ -39,7 +39,7 @@ It needs no account, token or sign-in.
     https://imposeidon-headstart-search.hf.space/mcp --transport http --method tools/list
   ```
 
-**Limits** (ADR-0267, ADR-0276).
+**Limits** (ADR-0267, ADR-0276, ADR-0325).
 
 - **How often.** 30 requests a minute from one address, and 300 a minute shared by everyone arriving
   from Anthropic's published range (`160.79.104.0/21`, which is every claude.ai user). Past it the
@@ -48,6 +48,12 @@ It needs no account, token or sign-in.
   of them from one caller. Anthropic's range counts as one caller here too, because nothing in a
   claude.ai request identifies the person. A request waits up to 10 s for a place. If its caller
   already holds 2, it then gets a 429. If every place is held, it gets a 503.
+- **One description search at a time.** A `search_jobs` call with `keyword_in` set to
+  `description` or `both` scans every description the filters leave. It takes 16–18 s alone
+  and about twice that beside another (measured 2026-09-29), so it runs on a place of its own,
+  one for all callers. It never takes one of the 4 places above, so fast calls never wait behind
+  it. When another scan is running, it waits up to 10 s and then gets a 503 asking it to retry in
+  about 20 s, or to match the keyword in titles instead.
 - **How refusals look.** Every refusal is a JSON-RPC error carrying the request's `id`, with the
   HTTP status as its `code` and a sentence as its `message`, plus `Retry-After`. Claude Code shows
   it to the model as `Streamable HTTP error: Error POSTing to endpoint: {…}` and does not retry.
@@ -63,6 +69,14 @@ It needs no account, token or sign-in.
   deploy does not interrupt the URL, because the old boot answers until the new one is up
   (measured 2026-09-28, ADR-0267). While the Space wakes from sleep, the URL answers with Hugging
   Face's own error instead of a sentence, so ask again in a few minutes.
+- **Hugging Face's edge fails some calls.** About one hosted call in seven came back as Hugging
+  Face's HTML error page (HTTP 502; the page itself says 500) on 2026-09-29, and an unrelated
+  Space failed the same way, so the request never reached HeadStart. No MCP client retries a
+  failed POST. The server's instructions tell the model that the page is a passing fault and that
+  every tool only reads, so it may retry the same call up to twice (ADR-0325). The
+  [installed server](#install-it) does not have this problem: it reaches the Space over HTTPS
+  itself and retries an edge reply for up to the call's 45 s, so the model sees one only when the
+  edge fails that whole time. Use it where you can run a command.
 
 ## Install it
 
