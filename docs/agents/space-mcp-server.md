@@ -51,15 +51,17 @@ It needs no account, token or sign-in.
   claude.ai request identifies the person. A request waits up to 10 s for a place. If its caller
   already holds 2, it then gets a 429. If every place is held, it gets a 503.
 - **One description search at a time.** A `search_jobs` call with `keyword_in` set to
-  `description` or `both` scans every description the filters leave. It takes 16–18 s alone
-  and about twice that beside another (measured 2026-09-29), so it runs on a place of its own,
+  `description` or `both` reads descriptions. Before ADR-0320 it scanned every description the
+  filters left and took 16–18 s alone, about twice that beside another (measured 2026-09-29), so
+  it runs on a place of its own,
   one for all callers. It never takes one of the 4 places above, so fast calls never wait behind
   it. When another scan is running, it waits up to 10 s and then gets a 503 asking it to retry in
   about 20 s, or to match the keyword in titles instead. The Space finds a description keyword's
   rows once and keeps them (ADR-0320): the page, its total and the next page share one finding,
   so a repeat or a second page reads no description. A first search looks for the keyword's
-  literal first and reads the exact word rule only on those rows: on a local copy of the table it
-  took 2 s where the plain scans took 8 s (ADR-0320).
+  literal first and reads the exact word rule only on those rows. On the hosted Space (14 calls,
+  one each, 2026-09-29, ADR-0320) a repeat or a next page took 0.7–0.9 s where the one page 2
+  measured before had taken 12.8 s, and a first search 1.2–21.9 s, none near the 45 s deadline.
 - **How refusals look.** Every refusal is a JSON-RPC error carrying the request's `id`, with the
   HTTP status as its `code` and a sentence as its `message`, plus `Retry-After`. Claude Code shows
   it to the model as `Streamable HTTP error: Error POSTing to endpoint: {…}` and does not retry.
