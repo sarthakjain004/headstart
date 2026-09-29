@@ -8,8 +8,7 @@ so each served job counts once, with each entry listed. Then, at once (ADR-0275)
 
 - `/facets` with ``board=`` for each of its Boards — the scope `search_jobs` sends for a key — for
   how many of its served jobs are remote, of each employment type, stating a salary, and posted
-  or new recently; a line whose every count is 0 is left out, since a Board that states no
-  employment type would otherwise read as hiring no full-time staff;
+  or new recently; a line whose every count is 0 is left out;
 - `/trends?company=<key>` over the trailing :data:`TREND_DAYS` days, split by job category (the
   default split for one company), for its tech openings now, its category mix, and the postings
   opened and closed. Those lead: the change in openings also moves when HeadStart re-counts, so
@@ -81,8 +80,7 @@ def _counts_line(
     title: str, counts: int | dict[str, int], note: str = ""
 ) -> str | None:
     """One breakdown line — one count, or a count per label — or None when every count on it is
-    0: a Board that states no employment type would otherwise read as hiring no full-time
-    staff."""
+    0. A job that states no employment type counts as full-time (ADR-0341)."""
     if isinstance(counts, int):
         return f"  {title}: {counts:,}{note}" if counts else None
     if not any(counts.values()):
@@ -100,7 +98,7 @@ def _breakdown(facets: dict[str, Any], levels: dict[str, Any]) -> list[str]:
         _counts_line(
             "employment type",
             {str(value): count for value, count in _options(facets, "etype").items()},
-            " (a job whose Board states no type counts in none)",
+            " (a job that states no type counts as full-time)",
         ),
         _counts_line(
             "level, each job once, in the Trends Level view's bands"

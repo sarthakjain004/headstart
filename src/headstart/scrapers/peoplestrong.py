@@ -98,7 +98,7 @@ _TRIES = 3
 _RETRY_ON = http.TRANSIENT - {429}
 _PACER = Pacer(_SPACING_S)
 
-#: Indian payroll words for a permanent hire that `employment_type_filter.flags` reads as nothing:
+#: Indian payroll words for a permanent hire that `employment_type_filter.reads_as_a_type` reads as nothing:
 #: "On Roll" (397 postings), "Employee" (320), "Regular" (45). Labelled full-time with the
 #: provider's word kept; every other value (Permanent 31,105, Full Time 291, Contract 102, …)
 #: passes through as stated.

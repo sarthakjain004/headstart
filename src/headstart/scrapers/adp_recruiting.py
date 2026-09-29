@@ -203,7 +203,7 @@ def _employment_type(row: dict) -> str | None:
     645 of 77,242 rows ("PT 129 or Less Hours" 340, "FT" 95, ...). Everything else — "Variable",
     "PRN", "Seasonal", "Temporary" — stays as stated, as it does on every other scraper."""
     value = (row.get("workLevelCode") or "").strip()
-    if not value or any(employment_type_filter.flags(value).values()):
+    if not value or employment_type_filter.reads_as_a_type(value):
         return value or None
     if _FULL.search(value):
         return f"Full-time ({value})"

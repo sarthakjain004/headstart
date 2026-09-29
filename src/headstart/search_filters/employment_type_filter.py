@@ -132,13 +132,43 @@ COLUMNS = tuple(rule.column for rule in RULES.values())
 #: The Facet's options, as ``(canonical value, label)``, in :data:`RULES` order.
 FACET_OPTIONS = tuple((value, rule.label) for value, rule in RULES.items())
 
+
+def _no_type_stated_sql() -> str:
+    """True where none of the four raw rules matches, NULL employment type included."""
+    unstated = "coalesce(employment_type, '')"
+    return " AND ".join(f"NOT ({rule.raw_clause(unstated)})" for rule in RULES.values())
+
+
+def _raw_clauses() -> dict[str, str]:
+    """Each canonical value's clause on the raw column. Full-time also takes a row whose type is
+    stated as nothing any rule reads (ADR-0341); the other three need positive evidence."""
+    clauses = {value: rule.raw_clause() for value, rule in RULES.items()}
+    clauses["full-time"] = f"({clauses['full-time']} OR ({_no_type_stated_sql()}))"
+    return clauses
+
+
+#: Each canonical value's SQL clause on the raw column, for a table without the flag columns.
+RAW_CLAUSES = _raw_clauses()
+
 #: The SQL each flag column is computed with on a table that predates it (ADR-0173).
-MIGRATION_SQL = {rule.column: rule.raw_clause() for rule in RULES.values()}
+MIGRATION_SQL = {rule.column: RAW_CLAUSES[value] for value, rule in RULES.items()}
 
 
 def flags(value: str | None, title: str | None = None) -> dict[str, bool]:
-    """The four served boolean columns for one raw employment-type value and the Job's title."""
-    return {rule.column: rule.matches(value, title) for rule in RULES.values()}
+    """The four served boolean columns for one raw employment-type value and the Job's title.
+
+    A Job that no rule reads as anything, because its source states no type (or a word that is
+    none), is full-time (ADR-0341); the other three flags never default."""
+    verdict = {rule.column: rule.matches(value, title) for rule in RULES.values()}
+    if not any(verdict.values()):
+        verdict[RULES["full-time"].column] = True
+    return verdict
+
+
+def reads_as_a_type(value: str | None) -> bool:
+    """Whether any rule reads the raw value as a type, which :func:`flags` cannot say: it
+    defaults a value nothing reads to full-time (ADR-0341)."""
+    return any(rule.matches(value) for rule in RULES.values())
 
 
 def has_flags(schema_names: Collection[str]) -> bool:
@@ -154,4 +184,4 @@ def clause(etype: str | None, materialized: bool) -> str | None:
     rule = RULES.get(etype) if etype else None
     if rule is None:
         return None
-    return f"{rule.column} = true" if materialized else rule.raw_clause()
+    return f"{rule.column} = true" if materialized else RAW_CLAUSES[etype]

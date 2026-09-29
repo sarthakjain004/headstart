@@ -100,8 +100,8 @@ _ATTEMPTS = 3
 API_PATH = "/api/jobs"
 
 #: `employment_type` -> label. The eight schema.org values seen on 114,809 rows; each label reads
-#: correctly through `employment_type_filter.flags` (TEMPORARY, PER_DIEM and OTHER set no flag, which is
-#: right: none of them is one of the four filters).
+#: correctly through `employment_type_filter.flags` (PER_DIEM and OTHER are read as no type, so the
+#: filter counts them as full-time, ADR-0341; TEMPORARY is a contract, ADR-0340).
 _TYPE_LABELS: dict[str, str] = {
     "FULL_TIME": "Full-Time",
     "PART_TIME": "Part-Time",
