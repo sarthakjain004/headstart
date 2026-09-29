@@ -258,7 +258,8 @@ _PAST_DEADLINE = (
 #: Said when too many reads that outlived their call are still running to start another.
 _STILL_FINISHING = (
     "HeadStart is still finishing earlier searches that ran past their time limit; try again "
-    "in a minute, with narrower filters if this is a description-keyword search."
+    "in a minute. A description-keyword search that finishes keeps its matches unless there are "
+    "very many, so the same search is then usually quick."
 )
 
 

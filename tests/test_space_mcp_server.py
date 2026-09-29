@@ -168,6 +168,40 @@ def test_in_process_a_read_may_take_the_calls_whole_deadline_and_says_when_it_di
     assert timeouts and timeouts[0] > 20 and timeouts[0] <= sc.CALL_DEADLINE_S
 
 
+@pytest.mark.parametrize(
+    "keyword_in, advice",
+    [
+        ("description", "Reading job descriptions for the keyword is the slow part"),
+        ("both", "Reading job descriptions for the keyword is the slow part"),
+        ("title", "Narrow the filters"),
+    ],
+)
+def test_a_description_keyword_past_the_deadline_says_the_description_read_is_the_slow_part(
+    keyword_in, advice
+):
+    """ADR-0320: narrowing the other filters was the wrong advice for the description read."""
+
+    def past_the_deadline(url, headers, timeout_s):
+        raise sc.DeadlinePassed(sc._PAST_DEADLINE)
+
+    hosted = server.build_server(env={}, fetch=past_the_deadline)
+    arguments = {"keyword": "visa", "keyword_in": keyword_in, "country": "DE"}
+    reply = messages.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": "search_jobs", "arguments": arguments},
+        },
+        hosted,
+    )
+    assert reply["result"]["isError"] is True
+    said = reply["result"]["content"][0]["text"]
+    assert advice in said
+    if keyword_in != "title":
+        assert "keyword_in: title" in said and "Narrow the filters" not in said
+
+
 def test_a_real_client_handshake_over_a_real_subprocess():
     requests = "".join(
         json.dumps(m) + "\n"

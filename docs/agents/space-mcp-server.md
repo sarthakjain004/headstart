@@ -53,13 +53,20 @@ It needs no account, token or sign-in.
   and about twice that beside another (measured 2026-09-29), so it runs on a place of its own,
   one for all callers. It never takes one of the 4 places above, so fast calls never wait behind
   it. When another scan is running, it waits up to 10 s and then gets a 503 asking it to retry in
-  about 20 s, or to match the keyword in titles instead.
+  about 20 s, or to match the keyword in titles instead. The Space finds a description keyword's
+  rows once and keeps them (ADR-0320): the page, its total and the next page share one finding,
+  so a repeat or a second page reads no description. A first search looks for the keyword's
+  literal first and reads the exact word rule only on those rows: on a local copy of the table it
+  took 2 s where the plain scans took 8 s (ADR-0320).
 - **How refusals look.** Every refusal is a JSON-RPC error carrying the request's `id`, with the
   HTTP status as its `code` and a sentence as its `message`, plus `Retry-After`. Claude Code shows
   it to the model as `Streamable HTTP error: Error POSTing to endpoint: {…}` and does not retry.
 - **How long.** A tool call gets 45 s. Past that the call answers "HeadStart did not answer within
   this call's 45 s…" and asks for narrower filters or the concise detail: a description keyword
-  with `detail: "full"` is the likeliest to meet it. The work it started runs on to its end, so
+  with `detail: "full"` is the likeliest to meet it. A `search_jobs` call with a description
+  keyword says instead that reading descriptions is the slow part, that the Space keeps what the
+  read finds so the same call in a minute or two is usually quick, or to look in titles or add a
+  company (ADR-0320). The work it started runs on to its end, so
   while two such reads are still running, a new call is told HeadStart is still finishing earlier
   searches. Claude Code and the MCP Inspector give up on any request at 60 s (measured
   2026-09-29), which is why the deadline sits under it.
