@@ -45,7 +45,7 @@
     },
     {
       "id": "t04",
-      "prompt": "Which companies are expanding their tech hiring fastest this week?",
+      "prompt": "Which companies opened more tech jobs than they closed this week?",
       "verifier": "hot_top",
       "expect": {"lens": "opened_less_closed", "top": 5},
       "why": "Plan §9, ADR-0321: the top five equal /hot's, hidden Operators out, on hiring_now's default Lens, postings opened less closed; Expansion's leader on 2026-09-29, Bosch Group, was re-counting its own flag disowned. The verifier reads /hot itself, drops the hidden_by_default Operators, and needs at least four of the top five named. Round-2 critique P1-3 (ADR-0325): the first company the answer names among the hiring_now rows must not be one the tool flagged as re-counting."

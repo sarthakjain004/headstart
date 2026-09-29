@@ -284,8 +284,10 @@ category, seniority `level`, watched `role` or `company`.
   2026-09-25 18:16: 3.4 of this window's 30.0 days. Over the whole window it cannot say whether
   hiring rose or fell". A window that ends before turnover began says it has no hiring figure at
   all.
-- **Turnover's other gaps are said.** It leaves out the runs where a counting change landed. Some
-  closures go uncounted, so closed can run low. A company breakdown says both in its header.
+- **Turnover's other gaps are said next, before any figure.** It leaves out the runs inside its
+  span where a counting change landed. Some closures go uncounted, so closed can run low; the
+  answer gives the Boards as "N of M". On 2026-09-29 all 12,407 of the index's Boards had such a
+  run, so the answer says closed runs low.
 - **Each counting change is named once**, numbered, by short tags ("[4] category list + duplicate
   check + category sorting"), and figures refer to it by number. One line glosses each tag once,
   and "growth rescaled by [n]": where taking change [n] out would have left a line below zero,
@@ -314,17 +316,22 @@ other Lenses are `expansion` (the site's net change, less the counting steps it 
 `volume` (postings opened) and `rate` (postings opened as a share of openings). Every row gives
 the site's numbers and opened less closed.
 
-- **Every Lens applies every check.** A row is flagged when:
-  - its net is more than its postings opened and closed could make, even at their pace over the
-    whole week. Such a net is mostly re-counting, so report the row's opened and closed;
-  - its closures were not counted, so its postings opened may be the same postings listed again;
+- **The site's Lenses apply every check that questions what they rank by.** On `expansion`,
+  `volume` and `rate` a row is flagged when:
+  - its net is more than its postings opened and closed could make, sign by sign, even at their
+    pace over the whole week. Such a net is mostly re-counting, so report the row's opened and
+    closed;
+  - its closures were not counted, on all or only some of its Boards;
   - it opened more postings than are open now;
   - on `rate`, it has under 50 openings (a small base).
-- **Flagged rows go last on the site's Lenses.** On `expansion`, `volume` and `rate` the rows the
-  page shows are listed unflagged first, each group in the site's order, and each row gives its
-  place on the page ("site #3"). On 2026-09-29 Expansion's first row was Bosch Group, +442 on 23
-  postings opened and 33 closed. `opened_less_closed` keeps its own order: no flag questions its
-  figure.
+
+  `opened_less_closed` flags nothing, because none of these questions its figure, and it keeps its
+  own order.
+- **Flagged rows go last on the site's Lenses.** Every row `/hot` serves on `expansion`, `volume`
+  or `rate` is listed unflagged first, each group in the site's order, and then cut to `limit`.
+  Each row gives its place on the page ("site #7"). On 2026-09-29 the page's Expansion list began
+  with Bosch Group, +442 on 23 postings opened and 33 closed; the answer began with Capital One,
+  site #7.
 - **Operators.** `operator` is who posts the jobs:
   - `employer`: the company itself, and any company not on the curated list;
   - `services`: an IT services firm posting client work;

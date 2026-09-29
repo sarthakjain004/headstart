@@ -481,6 +481,25 @@ def test_trend_sign_calls_a_large_net_by_its_sign_only(ev):
     ).passed
 
 
+def test_trend_sign_fails_a_hiring_figure_turnover_and_sized_causes_cannot_make(ev):
+    """Review of #865: the sign alone passed an answer quoting the whole change in openings
+    listed as hiring, when its sign happened to match."""
+    move = {
+        "hiring": 900,
+        "not_hiring_total": -50,
+        "turnover": {"opened": 100, "closed": 20, "net": 80},
+    }
+    space = _trends_space(reading={"total": {"move": move}, "lines": []})
+    quoted_the_listed_change = "Hiring rose: net +111,929 openings this month."
+    within = "Hiring rose: net +80, 100 opened and 20 closed."
+
+    failed = ev.verify_trend_sign(
+        _T03, _transcript(ev, answer=quoted_the_listed_change), space
+    )
+    assert not failed.passed and "more than the 170 opened, closed" in failed.detail
+    assert ev.verify_trend_sign(_T03, _transcript(ev, answer=within), space).passed
+
+
 def _span_space(began="2026-09-25T18:16:40+00:00"):
     """Stripe over 14 days to 2026-09-29 04:04, with opened and closed counted since ``began``:
     3.4 of the window's 14.4 days."""
@@ -605,7 +624,9 @@ closed 218 (opened less closed +86) · rate 43%
 
 
 def _hot_answer(ev, answer):
-    return _transcript(ev, [("hiring_now", {}, _HIRING_NOW, False)], answer)
+    return _transcript(
+        ev, [("hiring_now", {"lens": "expansion"}, _HIRING_NOW, False)], answer
+    )
 
 
 def test_hot_top_fails_an_answer_that_leads_with_a_row_hiring_now_flagged(ev):
@@ -650,6 +671,43 @@ def test_hot_top_judges_the_order_hiring_now_lists_so_a_disowned_leader_is_not_n
     )
     assert verdict.passed, verdict.detail
     assert "Acme Robotics" not in verdict.detail
+
+
+def test_hot_top_judges_at_the_calls_own_limit(ev):
+    """A `limit: 2` call lists two rows, so the answer is judged on those two (review of
+    #896), in the order worked out from /hot here, not by hiring_now."""
+    space = _hot_space()
+    rows = space.answers[SpaceRoute.HOT]["lenses"]["expansion"]
+    rows[0].update(stock=958, net=442, opened=23, closed=33)
+    answer = "Borealis Data leads, then Cobalt Payments."
+    transcript = _transcript(
+        ev, [("hiring_now", {"lens": "expansion", "limit": 2}, "", False)], answer
+    )
+    verdict = ev.verify_hot_top({"lens": "expansion", "top": 5}, transcript, space)
+    assert verdict.passed, verdict.detail
+    assert "top 2 on expansion" in verdict.detail
+
+
+def test_the_expected_order_flags_what_hiring_now_flags(ev):
+    """The eval's own flag rules, row by row: each is what ADR-0321 says a site Lens flags."""
+    window = {
+        "base": "2026-09-22T00:00:00+00:00",
+        "to": "2026-09-29T00:00:00+00:00",
+        "turnover_from": "2026-09-25T12:00:00+00:00",
+    }
+
+    def disowned(lens="expansion", **row):
+        return ev._disowned({"stock": 500, **row}, lens, window, 25)
+
+    assert disowned(
+        net=100, opened=306, closed=321
+    )  # a gain against opened less closed
+    assert not disowned(net=90, opened=83, closed=75)
+    assert disowned(net=10, opened=40, closed=None)  # closures not counted
+    assert disowned(net=10, opened=40, closed=5, closures_uncounted_boards=1)
+    assert disowned(net=10, opened=600, closed=500)  # more opened than open now
+    assert disowned("rate", net=10, opened=10, closed=5, stock=30)  # small base
+    assert not disowned("opened_less_closed", net=900, opened=10, closed=5)
 
 
 def test_flagged_headline_reads_a_row_that_gives_its_place_on_the_page(ev):

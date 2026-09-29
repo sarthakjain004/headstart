@@ -442,6 +442,19 @@ def stated_direction(answer: str) -> tuple[str | None, str | None]:
     return _DIRECTION[match.group(1).lower()], match.group(1)
 
 
+#: A signed hiring figure an answer states, with its number: "net −514", "hiring +1,234".
+_STATED_FIGURE = re.compile(
+    r"(?<!not )\b(?:net|hiring)(?:\s+(?:of|is|was|at))?\W{0,3}[+−-]\s?(\d[\d,]*)",
+    re.IGNORECASE,
+)
+
+
+def stated_figure(answer: str) -> int | None:
+    """The size of the first signed hiring figure the answer states, or None."""
+    stated = _STATED_FIGURE.search(answer)
+    return int(stated.group(1).replace(",", "")) if stated else None
+
+
 def _sign(value: int) -> str:
     return "up" if value > 0 else "down" if value < 0 else "flat"
 
@@ -492,11 +505,25 @@ def verify_trend_sign(
         payload.get("turnover_since"),
         reading.get("window") or {},
     )
+    # Faithfulness, not only the sign (critique of #865): no hiring figure can be larger than
+    # everything opened and closed plus the re-counting HeadStart sized. The +111,929 change in
+    # openings listed over 30 days is.
+    stated = stated_figure(transcript.final_answer)
+    bound = (
+        turnover["opened"] + turnover["closed"] + abs(move.get("not_hiring_total") or 0)
+    )
+    overstated = stated is not None and stated > bound
     return Verdict(
-        said in want and span_missing is None,
+        said in want and span_missing is None and not overstated,
         f"postings opened less closed is {net:+,} ({' or '.join(sorted(want))}); the "
         f"answer says {said} ({word!r})"
-        + (f"; {span_missing}" if span_missing else ""),
+        + (f"; {span_missing}" if span_missing else "")
+        + (
+            f"; it states hiring of {stated:,}, more than the {bound:,} opened, closed and "
+            "sized re-counting could make"
+            if overstated
+            else ""
+        ),
     )
 
 
@@ -574,15 +601,30 @@ def _first_named_at(answer: str, names: list[str]) -> int | None:
     return min(found, default=None)
 
 
-def flagged_headline(transcript: Transcript) -> str | None:
-    """The company the final answer names first among the hiring_now rows it was shown, when
-    the tool flagged that row; else None. Leading with a row the tool disowns is the answer's
-    fault, whatever order the ranking itself has."""
-    rows = [
-        (json.loads(company), key, _HOT_FLAG in f" · {rest}")
+def _hiring_now_calls(transcript: Transcript, lens: str | None) -> list[dict[str, Any]]:
+    """Each successful hiring_now call's arguments as the server read them, on ``lens`` only
+    when one is named."""
+    schema = BY_NAME["hiring_now"].input_schema
+    called = [
+        (call, tool_arguments.with_defaults(schema, call.arguments))
         for call in transcript.calls
         if call.name == "hiring_now" and call.succeeded
-        for company, key, rest in _HOT_ROW.findall(call.result or "")
+    ]
+    return [
+        {**arguments, "result": call.result or ""}
+        for call, arguments in called
+        if lens is None or arguments["lens"] == lens
+    ]
+
+
+def flagged_headline(transcript: Transcript, lens: str | None = None) -> str | None:
+    """The company the final answer names first among the hiring_now rows it was shown (on
+    ``lens``, when named), when the tool flagged that row; else None. Leading with a row the tool
+    disowns is the answer's fault, whatever order the ranking itself has."""
+    rows = [
+        (json.loads(company), key, _HOT_FLAG in f" · {rest}")
+        for call in _hiring_now_calls(transcript, lens)
+        for company, key, rest in _HOT_ROW.findall(call["result"])
     ]
     named = [
         (at, company, flagged)
@@ -601,23 +643,82 @@ def flagged_headline(transcript: Transcript) -> str | None:
     return company if flagged else None
 
 
+def _days_between(start: str, end: str) -> float:
+    return (
+        datetime.fromisoformat(end) - datetime.fromisoformat(start)
+    ).total_seconds() / 86400
+
+
+def _disowned(
+    row: dict[str, Any], lens: str, window: dict[str, Any], min_stock: int
+) -> bool:
+    """Whether hiring_now flags ``row`` on ``lens`` (ADR-0321), worked out here from /hot's own
+    fields rather than borrowed from the tool, so a bug in the tool's order cannot hide here.
+    Opened less closed flags nothing: nothing questions its figure."""
+    if lens == "opened_less_closed":
+        return False
+    net, opened, closed = row.get("net"), row.get("opened"), row.get("closed")
+    stock = row.get("stock") or 0
+    if (opened and closed is None) or (
+        closed is not None and row.get("closures_uncounted_boards")
+    ):
+        return True
+    if stock and ((opened or 0) > stock or (lens == "rate" and stock < 2 * min_stock)):
+        return True
+    if not net or opened is None:
+        return False
+    base, to, began = window.get("base"), window.get("to"), window.get("turnover_from")
+    pace = (
+        _days_between(base, to) / _days_between(began, to)
+        if base and to and began and base < began < to
+        else 1.0
+    )
+    if net > opened * pace:
+        return True
+    if closed is None:
+        return False
+    turnover_net = opened - closed
+    return -net > closed * pace or (
+        net * turnover_net < 0 and abs(net) > abs(turnover_net) * pace
+    )
+
+
+def expected_hot_order(
+    hot: dict[str, Any], lens: str, limit: int
+) -> list[dict[str, Any]]:
+    """The rows a correct hiring_now answer on ``lens`` lists first, from /hot itself: the
+    page's rows after the Operators the Hiring now tab hides, and on the site's older Lenses
+    every row a flag disowns after the rest, then the first ``limit``."""
+    hidden = set(hot.get("hidden_by_default") or ())
+    rows = [
+        row
+        for row in (hot.get("lenses") or {}).get(lens) or []
+        if row.get("operator") not in hidden
+    ]
+    window = hot.get("window") or {}
+    min_stock = (hot.get("counts") or {}).get("min_stock", 25)
+    rows.sort(key=lambda row: _disowned(row, lens, window, min_stock))
+    return rows[:limit]
+
+
 def verify_hot_top(
     expect: dict[str, Any], transcript: Transcript, space: Space
 ) -> Verdict:
-    """At least N-1 of the top N on the Lens named, in the order hiring_now lists them: /hot's,
-    after the Operators the Hiring now tab hides, and on the site's older Lenses with the rows a
-    flag disowns after the rest (ADR-0321); and the answer does not lead with a row the tool
-    flagged."""
-    lens, top = expect.get("lens") or "expansion", int(expect.get("top") or 5)
-    hot = space.read(SpaceRoute.HOT)
-    limit = hiring_now.TOOL.input_schema["properties"]["limit"]["default"]
-    rows = [row for _, row, _ in hiring_now.in_answer_order(hot, lens, limit)][:top]
+    """At least N-1 of the top N on the Lens named, in the order a correct hiring_now answer
+    lists them (`expected_hot_order`, at the call's own `limit`), and the answer does not lead
+    with a row the tool flagged on that Lens."""
+    lens = expect.get("lens") or hiring_now.DEFAULT_LENS
+    top = int(expect.get("top") or 5)
+    calls = _hiring_now_calls(transcript, lens)
+    schema = BY_NAME["hiring_now"].input_schema
+    limit = (calls[0] if calls else tool_arguments.with_defaults(schema, {}))["limit"]
+    rows = expected_hot_order(space.read(SpaceRoute.HOT), lens, limit)[:top]
     need = max(len(rows) - 1, 0)
     named = [row["company"] for row in rows if _named(transcript.final_answer, row)]
-    headline = flagged_headline(transcript)
+    headline = flagged_headline(transcript, lens)
     return Verdict(
         len(named) >= need and headline is None,
-        f"names {len(named)} of /hot's top {len(rows)} on {lens} (needs {need}): "
+        f"names {len(named)} of the top {len(rows)} on {lens} (needs {need}): "
         f"{', '.join(r['company'] for r in rows)}"
         + (f"; leads with {headline!r}, a row hiring_now flagged" if headline else ""),
     )
