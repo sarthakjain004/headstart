@@ -127,9 +127,16 @@ _LABEL_PAIRS = (
         r'<span[^>]*class="article--details__value[^"]*"[^>]*>(.*?)</span>',
         re.DOTALL,
     ),
+    # lululemoninc's `<span data-map="item-title">` and `<span data-map="item-value">`.
     re.compile(
-        r'<p class="paragraph[^"]*">\s*<span>\s*<strong>(.*?)</strong>\s*</span>\s*'
-        r"<span>(.*?)</span>\s*</p>",
+        r'<p class="paragraph[^"]*">\s*<span[^>]*>\s*<strong>(.*?)</strong>\s*</span>\s*'
+        r"<span[^>]*>(.*?)</span>\s*</p>",
+        re.DOTALL,
+    ),
+    # bravura and colorado.
+    re.compile(
+        r'class="fieldSetLabel[^"]*"[^>]*>(.*?)</p>\s*'
+        r'<div[^>]*class="fieldSetValue[^"]*"[^>]*>(.*?)</div>',
         re.DOTALL,
     ),
 )
@@ -167,14 +174,34 @@ _DEPARTMENT = (
         re.IGNORECASE,
     ),
 )
-#: Not "job type": dfiretailgroup's states "Store" and "Store Support Centre" under it, and
-#: deloittece's "Non Consulting" — a store or a practice, not an employment type.
+#: "Job type" is not here: dfiretailgroup's states "Store" and "Store Support Centre" under it, and
+#: deloittece's "Non Consulting" — a store or a practice, not an employment type. It and the other
+#: labels that name more than one idea are read by :data:`_EMPLOYMENT_IF_TYPED`.
 _EMPLOYMENT = (
     re.compile(
         r"employment type|type of employment|work type|time type|contract type"
         r"|worker type|tipo de empleo",
         re.IGNORECASE,
     ),
+    re.compile(
+        r"^(?:type of contract|position type|employment class"
+        r"|full[- ]?time ?/ ?part[- ]?time)\b",
+        re.IGNORECASE,
+    ),
+)
+_EMPLOYMENT_IF_TYPED = (
+    re.compile(
+        r"^(?:job|post|hire) type\b|^pay class\b|^working (?:time|pattern|schedule)\b",
+        re.IGNORECASE,
+    ),
+)
+#: What an employment type's value says, for the labels that also carry other kinds of value
+#: ("Job Type": "Experienced", "Store Support Centre", "Non Consulting"; "Working time": "40 hours
+#: per week", "Rotation" on vanoord, 2026-09-29).
+_EMPLOYMENT_VALUE = re.compile(
+    r"\b(?:full|part)[- ]?time\b|\bpermanent\b|\bcontract|\btemporary\b|\bintern(?:ship)?\b"
+    r"|\bregular\b|\bcasual\b|\bseasonal\b|\bfreelance\b",
+    re.IGNORECASE,
 )
 #: A title stated as a label, where `og:title` is empty (bradyplus: "Name").
 _TITLE = (re.compile(r"^(?:name|job name|job title|求人名)$", re.IGNORECASE),)
@@ -581,7 +608,12 @@ def page_fields(page: str) -> dict[str, Any]:
         "department": _labelled(labels, _DEPARTMENT)
         or node.get("occupationalCategory")
         or None,
-        "employment_type": ld.get("employment_type") or _labelled(labels, _EMPLOYMENT),
+        "employment_type": ld.get("employment_type")
+        or _labelled(labels, _EMPLOYMENT)
+        or _labelled(
+            {k: v for k, v in labels.items() if _EMPLOYMENT_VALUE.search(v)},
+            _EMPLOYMENT_IF_TYPED,
+        ),
         "posted_at": ld.get("posted_at") or None,
         "remote": ld.get("remote") or (is_remote(remote_text) if remote_text else None),
         "description": next(filter(None, map(html_to_text, bodies)), None),

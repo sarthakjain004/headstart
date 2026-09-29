@@ -564,3 +564,107 @@ def test_a_details_block_holding_only_css_falls_through_to_the_collapsible_secti
     assert description.startswith("Role Highlights")
     assert "We are looking for an experienced Engineering Manager" in description
     assert "{" not in description
+
+
+# --- employment type: the labels and markup shapes tenants state it in ------------------------
+
+_ROW = (
+    '<div class="article__content__view__field "> '
+    '<div class="article__content__view__field__label"> {label} </div> '
+    '<div class="article__content__view__field__value"> {value} </div> </div>'
+)
+_FIELD_SET = (
+    '<div class="fieldSet "> <p class="fieldSetLabel"> {label}<span>:</span> </p> '
+    '<div class="fieldSetValue"> {value} </div> </div>'
+)
+_ITEM_TITLE = (
+    '<p class="paragraph "> <span data-map="item-title"> <strong> {label}: </strong> '
+    '</span> <span data-map="item-value"> {value} </span> </p>'
+)
+_PARAGRAPH = (
+    '<p class="paragraph"> <span> <strong> {label}: </strong> </span> '
+    "<span> {value} </span> </p>"
+)
+
+
+def _page_with(shape: str, *pairs: tuple[str, str]) -> str:
+    rows = " ".join(shape.format(label=k, value=v) for k, v in pairs)
+    return f"<html><body><article>{rows}</article></body></html>"
+
+
+@pytest.mark.parametrize(
+    ("shape", "pairs", "expected"),
+    [
+        # Captured 2026-09-29: dhlconsulting, lenovo, astellasjapan, bravura, colorado, lululemoninc.
+        (
+            _ROW,
+            [("Job Type", "Non Consulting"), ("Working time:", "Full-time")],
+            "Full-time",
+        ),
+        (_ROW, [("Working time:", "Full-time")], "Full-time"),
+        (_PARAGRAPH, [("Employment Class", "Permanent")], "Permanent"),
+        (
+            _FIELD_SET,
+            [
+                ("Working pattern", "Full time"),
+                ("Contract Type", "Individual Contractor"),
+            ],
+            "Individual Contractor",
+        ),
+        (
+            _FIELD_SET,
+            [("Employment Type", "Faculty"), ("Schedule", "Full-Time")],
+            "Faculty",
+        ),
+        (_ITEM_TITLE, [("Time Type", "Full-time")], "Full-time"),
+    ],
+    ids=["dhl", "lenovo", "astellas", "bravura", "colorado", "lululemon"],
+)
+def test_employment_type_is_read_from_the_labels_and_shapes_tenants_use(
+    shape, pairs, expected
+):
+    assert page_fields(_page_with(shape, *pairs))["employment_type"] == expected
+
+
+@pytest.mark.parametrize(
+    ("label", "value"),
+    [
+        ("Working time", "Full-time"),
+        ("Working Pattern", "Full time"),
+        ("Working Schedule", "Full time"),
+        ("Position Type", "Contract (12-18 month contract)"),
+        ("Type of Contract", "Permanent"),
+        ("Employment Class", "Permanent"),
+        ("Full-time/Part-time", "Full Time, Part Time, Part Time/Job Share"),
+        ("Post Type", "Regular"),
+        ("Pay Class", "Regular Full-Time"),
+        ("Hire Type", "Temporary"),
+        ("Job Type", "Full Time"),
+    ],
+)
+def test_a_type_label_states_the_employment_type(label, value):
+    fields = page_fields(_page_with(_ROW, (label, value)))
+    assert fields["employment_type"] == value
+
+
+@pytest.mark.parametrize(
+    ("label", "value"),
+    [
+        ("Job Type", "Experienced"),
+        ("Job Type", "Store Support Centre"),
+        ("Job Type", "Non Consulting"),
+        ("Post Type", "Internal"),
+        ("Working time", "40 hours per week"),
+        ("Working time", "Rotation"),
+        ("Hours", "Full time role, 40 hours per week."),
+        ("Scheduled Weekly Hours", "40"),
+        ("Core hours", "9:00 AM - 4:30 PM (Mon-Fri)"),
+    ],
+)
+def test_a_label_that_is_not_an_employment_type_states_none(label, value):
+    assert page_fields(_page_with(_ROW, (label, value)))["employment_type"] is None
+
+
+def test_an_employment_type_label_beats_a_job_type_that_looks_like_one():
+    page = _page_with(_ROW, ("Job Type", "Full Time"), ("Employment Type", "Permanent"))
+    assert page_fields(page)["employment_type"] == "Permanent"
