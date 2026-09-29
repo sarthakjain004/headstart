@@ -285,6 +285,9 @@ _FAMILY_IDS = _with_predecessors(
     job_search.load_family_ids(_STATE / "data" / "state" / "role_assignments.parquet"),
     _FAMILY_SUCCESSOR,
 )
+# The families the taxonomy lists now, retired ones left out: what `/requirements` names a
+# sampled Job's category by, and accepts as `family=` (ADR-0324).
+_CURRENT_FAMILIES = _KNOWN_FAMILIES - frozenset(_FAMILY_SUCCESSOR)
 # Email alerts (ADR-0035) — invite-only, so all three must be set before the panel appears:
 # the Google client id the sign-in button needs, and a token scoped to the Subscriptions
 # dataset alone (never the index token, which is read-only by design).
@@ -374,11 +377,12 @@ app.session_interface = _AnswersLeaveTheSessionAlone()
 #
 # The read routes answer anyone as well, so that anyone can use HeadStart's MCP server
 # (ADR-0258): Search and its Facet counts, Trends, Hot, the two company lookups, a Job read
-# by id (ADR-0277), and a company's locations (ADR-0275) and levels (ADR-0323). None writes,
-# and none serves one Account's records to another: a signed-in caller's own session still
-# applies its follow/hide clause to /search and /facets (`_company_where`), and an anonymous
-# one gets none. Every Account route stays behind the wall, and the page at `/` still shows the
-# door until its visitor signs in. Every caller is rate-limited on them (`_limit_each_caller`).
+# by id (ADR-0277), a company's locations (ADR-0275) and levels (ADR-0323), and what a role's
+# postings ask for (ADR-0324). None writes, and none serves one Account's records to another: a
+# signed-in caller's own session still applies its follow/hide clause to /search and /facets
+# (`_company_where`), and an anonymous one gets none. Every Account route stays behind the wall,
+# and the page at `/` still shows the door until its visitor signs in. Every caller is
+# rate-limited on them (`_limit_each_caller`).
 _READ_ROUTES = frozenset(
     {
         "/search",
@@ -390,6 +394,7 @@ _READ_ROUTES = frozenset(
         "/job",
         "/companies/locations",
         "/companies/levels",
+        "/requirements",
     }
 )
 _PUBLIC_PATHS = {
@@ -661,7 +666,8 @@ def _keep_static_for_the_boot(response):
 # `like=` on /search and /facets (ADR-0277).
 # 5: /companies/locations (ADR-0275).
 # 6: each location's country on /companies/locations, and /companies/levels (ADR-0323).
-_AGENT_API_VERSION = 6
+# 7: /requirements, what a sample of a role's or a category's postings ask for (ADR-0324).
+_AGENT_API_VERSION = 7
 
 
 @app.after_request
@@ -1761,6 +1767,22 @@ def company_levels():
     except ValueError as exc:
         body, status = job_search.refusal(exc)
         return jsonify(body), status
+
+
+@app.route("/requirements")
+def role_requirements():
+    """What a sample of the served jobs for a role (``q=``) and/or a category (``family=``) ask
+    for, for an agent's requirements view (ADR-0324): ``JobSearch.requirements`` documents the
+    sample and ``requirement_counts`` the counts. Takes every search filter and ``board=``, and
+    ``n=`` (50 to 500, default 300). Scoped by Boards and filters alone, so no Account's follow
+    or hide list reaches it. Counts only: no description text is served."""
+    try:
+        answer = _searcher.requirements(request.args, _FAMILY_IDS, _CURRENT_FAMILIES)
+    except (ValueError, job_search.ScopeUnavailable) as exc:
+        body, status = job_search.refusal(exc)
+        return jsonify(body), status
+    ticks = _HISTORY.ticks
+    return jsonify({**answer, "newest_tick": ticks[-1] if ticks else None})
 
 
 # HeadStart's MCP server, hosted (ADR-0267): the tools of `headstart.space_mcp` over Streamable

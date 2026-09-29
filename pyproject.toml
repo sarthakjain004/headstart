@@ -85,6 +85,9 @@ packages = ["src/headstart"]
 # this copy first and the repository's or the Space image's `config/` otherwise.
 [tool.hatch.build.targets.wheel.force-include]
 "config/role_families.json" = "headstart/space_mcp/role_families.json"
+# The tech skills a requirements view counts (ADR-0324), beside `serving/tech_skills.py`, which
+# reads this copy first, as `role_families.py` does its list.
+"config/tech_skills.json" = "headstart/serving/tech_skills.json"
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

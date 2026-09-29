@@ -1,8 +1,8 @@
 # The Space MCP server — search, trends and hiring now for an agent
 
 An MCP server that lets an agent read HeadStart the way the website does: find open tech jobs,
-read a posting in full, see how the number of openings is changing, and see which companies are
-hiring hardest this week.
+read a posting in full, see how the number of openings is changing, see which companies are
+hiring hardest this week, and see what a role's postings ask for.
 The Space hosts it at a URL anyone can add to Claude, and it also runs on your own machine as a
 subprocess of your agent client. Either way it answers from the deployed Space's own read routes,
 so every number is the one the website shows. The decision and its alternatives are ADR-0253,
@@ -335,6 +335,37 @@ company, its Boards and any other directory company the name may mean. It gives:
 
 To list the jobs behind any of these, pass the key to `search_jobs` as `company`.
 
+**`role_requirements`** — what postings for a role or a job category ask for, counted over a sample
+of them, for a career switcher's "what does a data engineer typically need" (ADR-0324). It reads
+`/requirements`, one route, and returns counts only.
+
+- **The sample.** `query` is the role, as in `search_jobs`; the sample is the 300 postings closest
+  to it among those the filters admit. `category` alone samples the category's 300 newest postings
+  across the whole index; with `query` too, the closest within the category among the 2,000
+  closest to the query. The answer's first line says which, over how many, of how many: "counted
+  over 300 postings, of 514,163 that the filters admit". A query does not narrow, so that total is
+  every posting the filters admit; the answer gives the similarity range of the sample instead.
+- **Filters.** `company` (a name matched as the company box matches, or a Board key), `country`,
+  `india_place`, `location`, `remote` and `max_years`, each meaning what it means in
+  `search_jobs`.
+- **Skills.** The tech skills the sampled descriptions mention, from a fixed list of about 380
+  (`config/tech_skills.json`, matched by `serving/tech_skills.py`), each as a share of the sampled
+  postings that carry a description, with how many distinct employers mention it. A posting counts
+  once per skill. A mention can be an employer describing itself ("committed to AI, computer vision
+  and sensor fusion" in every posting of one company), which is why the employers figure is there:
+  a large share from few employers is boilerplate, not demand. The skill an employer is named after
+  (Salesforce at Salesforce) is not counted for its own postings.
+- **The rest.** Minimum years in bands (0–1, 2–4, 5–7, 8+), kept apart by source: stated by the
+  posting, estimated from the title's seniority, or not stated. Salary quartiles per currency, a
+  year, over the middle of each stated range. The remote share, the companies with the most
+  sampled postings (with a key), the countries their locations name (ADR-0273), and, for a query,
+  the job categories of the sample.
+- **No description text.** Descriptions are scraped and read only on the Space; the answer carries
+  counts, the list's own skill names and quoted company names.
+- **Cost.** The Space reads the sample's descriptions by id, never the whole column, and keeps each
+  answer for the boot. Measured on a local copy of the served table (514,163 rows, 2026-09-29):
+  0.4–1.0 s a sample of 300, 3.9 s under a `country` whose place pattern is long (Germany).
+
 ## What it cannot tell you, and why
 
 - **No last-seen date.** The served table has no per-Job "last seen"; `get_job` says only whether
@@ -392,7 +423,8 @@ tool is), `server.py` (serves the registry), `space_client.py` (the one way it r
 `company_scope.py`, `company_names.py`, `posting_copies.py`, `role_families.py` and
 `scraped_text.py` — on the shared protocol module in `src/headstart/mcp_protocol/` (`messages.py`,
 and the `stdio.py` and `streamable_http.py` transports). The hosted route is `/mcp` in
-`deploy/hf-space/app.py`, and the two routes only the tools read, `/companies/locations` and
-`/companies/levels`, are answered by `src/headstart/serving/location_counts.py` and
-`level_counts.py`. Tests:
+`deploy/hf-space/app.py`, and the three routes only the tools read are `/companies/locations` and
+`/companies/levels`, answered by `src/headstart/serving/location_counts.py` and `level_counts.py`,
+and `/requirements`, answered by `JobSearch.requirements` with `serving/requirement_counts.py` and
+`serving/tech_skills.py`. Tests:
 `tests/test_space_mcp_*.py` and `tests/test_mcp_protocol_*.py`.

@@ -2238,6 +2238,236 @@ def test_a_company_profile_answer_stays_inside_its_budget():
     assert len(text) <= server.BY_NAME["company_profile"].max_chars
 
 
+# ---- role_requirements --------------------------------------------------------------------
+
+
+def _requirements(sampled=300, matching=12_400, **overrides):
+    """A `/requirements` answer in the route's shape (ADR-0324)."""
+    answer = {
+        "matching": matching,
+        "order": "closest",
+        "closest_score": 0.87,
+        "farthest_score": 0.81,
+        "sampled": sampled,
+        "described": sampled - 4 if sampled else 0,
+        "skills": [
+            {"skill": "SQL", "kind": "data", "postings": 219, "employers": 162},
+            {"skill": "Python", "kind": "language", "postings": 215, "employers": 160},
+            {"skill": "Spark", "kind": "data", "postings": 143, "employers": 105},
+            {"skill": "AWS", "kind": "cloud", "postings": 140, "employers": 106},
+        ],
+        "kinds": {
+            "language": "Languages",
+            "data": "Data engineering and analytics",
+            "cloud": "Cloud",
+        },
+        "vocabulary_size": 376,
+        "experience": {
+            "stated": {"0-1": 10, "2-4": 122, "5-7": 53, "8+": 8},
+            "estimated_from_title": 42,
+            "not_stated": 65,
+        },
+        "salary": {
+            "stating": 59,
+            "currencies": [
+                {
+                    "currency": "USD",
+                    "postings": 51,
+                    "p25": 122500,
+                    "median": 126800,
+                    "p75": 132704,
+                }
+            ],
+        },
+        "remote": 47,
+        "companies": [
+            {"company": "Capgemini", "board": "workday:capgemini", "postings": 13}
+        ],
+        "countries": [
+            {"code": "IN", "name": "India", "postings": 88},
+            {"code": "US", "name": "United States", "postings": 86},
+        ],
+        "no_country": 11,
+        "categories": [
+            {"family": "data-engineering", "postings": 238},
+            {"family": "software-engineering", "postings": 2},
+            {"family": "unclassified-tech", "postings": 5},
+        ],
+        "newest_tick": "2026-09-29T04:04:35+00:00",
+    }
+    answer.update(overrides)
+    return answer
+
+
+def test_requirements_send_the_role_the_category_and_the_filters_in_the_spaces_names():
+    space = FakeSpace(requirements=_requirements())
+    server.call(
+        space,
+        "role_requirements",
+        {
+            "query": "data engineer",
+            "category": "AI/ML",
+            "country": "DE",
+            "remote": True,
+            "location": "Berlin",
+            "max_years": 3,
+        },
+    )
+    assert space.params_of(R.REQUIREMENTS) == [
+        [
+            ("strict", "1"),
+            ("n", "300"),
+            ("q", "data engineer"),
+            ("family", "ai-ml-data-science"),
+            ("remote", "true"),
+            ("country", "DE"),
+            ("location", "Berlin"),
+            ("max_years", "3"),
+        ]
+    ]
+
+
+def test_requirements_need_a_role_or_a_category():
+    with pytest.raises(ToolFailure, match="Name a role in `query`"):
+        server.call(FakeSpace(), "role_requirements", {"country": "DE"})
+
+
+def test_requirements_say_what_was_counted_over_how_many_and_how_picked():
+    space = FakeSpace(requirements=_requirements())
+    text = server.call(space, "role_requirements", {"query": "data engineer"})
+    assert text.startswith(
+        'What postings closest to "data engineer" ask for: counted over 300 postings, '
+        "of 12,400 that the filters admit."
+    )
+    assert "ranks postings but does not narrow them" in text
+    assert "0.87 (the closest) to 0.81 (the farthest counted)" in text
+    # Unclassified tech is hidden (ADR-0306): its 5 count with the 55 in no tech category.
+    assert (
+        "Data Engineering (data-engineering) 238 · Software Engineering "
+        "(software-engineering) 2; other or no tech category: 60." in text
+    )
+    assert "nclassified" not in text
+    assert "  Data engineering and analytics: SQL 74% (162 employers)" in text
+    assert "  Languages: Python 73% (160 employers)" in text
+    assert "0–1: 10 · 2–4: 122 · 5–7: 53 · 8+: 8" in text
+    assert "USD, 51 postings: 122,500 / 126,800 / 132,704" in text
+    assert "Remote: 47 of 300 (16%)." in text
+    assert '"Capgemini" (key "workday:capgemini") 13' in text
+    assert "India (IN) 88 · United States (US) 86; no known country: 11." in text
+    assert "376 tech skills" in text
+    assert text.endswith("Data as of the trends tick 2026-09-29T04:04:35+00:00.")
+
+
+def test_a_category_alone_is_its_newest_postings_and_lists_no_category_mix():
+    space = FakeSpace(
+        requirements=_requirements(
+            order="newest", closest_score=None, farthest_score=None
+        )
+    )
+    text = server.call(space, "role_requirements", {"category": "security"})
+    assert text.startswith(
+        "What the newest postings in Security (security) ask for: counted over 300 "
+        "postings, of 12,400 in the category that the filters admit."
+    )
+    assert "Similarity" not in text and "Job categories" not in text
+
+
+def test_a_query_within_a_category_says_when_the_window_held_fewer():
+    space = FakeSpace(requirements=_requirements(sampled=120))
+    text = server.call(
+        space,
+        "role_requirements",
+        {"query": "data engineer", "category": "data-engineering"},
+    )
+    assert "Only 120 of the category's postings are among the 2,000 closest" in text
+
+
+def test_a_company_key_scopes_every_board_and_a_name_is_the_company_box():
+    key_space = FakeSpace(
+        requirements=_requirements(),
+        companies_lookup={"companies": [_suggestion("lever:razorpay", "Razorpay")]},
+    )
+    server.call(
+        key_space,
+        "role_requirements",
+        {"query": "backend engineer", "company": "lever:razorpay"},
+    )
+    assert ("board", "lever:razorpay") in key_space.params_of(R.REQUIREMENTS)[0]
+    name_space = FakeSpace(requirements=_requirements())
+    text = server.call(
+        name_space, "role_requirements", {"query": "sre", "company": "Stripe"}
+    )
+    assert ("company", "Stripe") in name_space.params_of(R.REQUIREMENTS)[0]
+    assert 'company name contains "Stripe"' in text
+
+
+def test_nothing_to_count_says_so_and_offers_the_companies_a_name_may_mean():
+    space = FakeSpace(
+        requirements=_requirements(sampled=0, matching=0, skills=[]),
+        companies_suggest={
+            "companies": [_suggestion("greenhouse:stripe", "Stripe", "typo")]
+        },
+    )
+    text = server.call(
+        space, "role_requirements", {"query": "sre", "company": "Strpie"}
+    )
+    assert "No postings to count" in text and "greenhouse:stripe" in text
+
+
+def test_a_role_requirements_answer_stays_inside_its_budget():
+    """The most the route lists, every scraped field at its clip and every category named."""
+    long = "x" * 5_000
+    kinds = {f"kind{i}": "A kind label of some length" for i in range(17)}
+    skills = [
+        {
+            "skill": "Infrastructure as code and more",
+            "kind": f"kind{i % 17}",
+            "postings": 300,
+            "employers": 300,
+        }
+        for i in range(40)
+    ]
+    companies = [
+        {"company": long, "board": f"workday:{'b' * 280}", "postings": 300}
+        for _ in range(10)
+    ]
+    countries = [
+        {"code": "CD", "name": "Congo, The Democratic Republic of the", "postings": 300}
+        for _ in range(10)
+    ]
+    categories = [
+        {"family": "systems-administration-it-operations", "postings": 12}
+        for _ in range(25)
+    ]
+    currencies = [
+        {
+            "currency": "IDR",
+            "postings": 300,
+            "p25": 999_999_999,
+            "median": 999_999_999,
+            "p75": 999_999_999,
+        }
+        for _ in range(5)
+    ]
+    space = FakeSpace(
+        requirements=_requirements(
+            sampled=500,
+            skills=skills,
+            kinds=kinds,
+            companies=companies,
+            countries=countries,
+            categories=categories,
+            salary={"stating": 500, "currencies": currencies},
+        )
+    )
+    text = _answer(
+        "role_requirements",
+        space,
+        {"query": long[:200], "location": long[:60], "country": "US", "max_years": 30},
+    )
+    assert len(text) <= server.BY_NAME["role_requirements"].max_chars
+
+
 def test_an_answer_past_its_tools_budget_is_cut_on_lines_and_keeps_its_last(
     monkeypatch,
 ):
@@ -2267,6 +2497,7 @@ LIVE_ARGUMENTS = {
     "get_job": {"ids": ["greenhouse:no-such-board:0"]},
     "find_company": {"name": "Stripe"},
     "company_profile": {"company": "greenhouse:stripe"},
+    "role_requirements": {"query": "data engineer"},
 }
 
 

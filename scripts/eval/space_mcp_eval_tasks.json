@@ -283,6 +283,44 @@
         "tool_results_all": ["by country as search_jobs' `country` reads each place"]
       },
       "why": "Round-2 critique rc02b (ADR-0323): company_profile rolls a company's places up by country, so \"Dublin\" and \"Dublin, Ireland\" count as one Ireland. On 2026-09-29 Stripe's served jobs were in the United States (98), Canada (26) and Ireland (23) first; the answer must name the United States and Ireland from that roll-up."
+    },
+    {
+      "id": "t24",
+      "prompt": "I'm thinking of switching into data engineering. What skills do data engineer postings usually ask for, and how many years of experience?",
+      "verifier": "tool_args",
+      "expect": {
+        "tool": "role_requirements",
+        "must_any": [
+          {"query": {"op": "contains", "value": "data engineer"}},
+          {"category": "data-engineering"}
+        ]
+      },
+      "why": "Critique round 2 P1-10 (ADR-0324): what a role's postings ask for is one role_requirements call, counted over a sample, not five get_job reads. The role goes in query, or the category in category."
+    },
+    {
+      "id": "t25",
+      "prompt": "Which skills are most in demand for machine learning engineers in Germany?",
+      "verifier": "tool_args",
+      "expect": {
+        "tool": "role_requirements",
+        "must": {"country": "DE"},
+        "must_any": [
+          {"query": {"op": "contains", "value": "machine learning"}},
+          {"category": "ai-ml-data-science"}
+        ],
+        "query_must_not_contain": ["germany", "deutschland"]
+      },
+      "why": "ADR-0324: skills in demand are role_requirements' counts, and the place is its country filter (ADR-0273), never words in query."
+    },
+    {
+      "id": "t26",
+      "prompt": "What do cybersecurity job postings typically require? Say how many postings your answer is based on.",
+      "verifier": "mentions",
+      "expect": {
+        "all": [["300", "three hundred"]],
+        "tool_results_all": ["counted over 300 postings"]
+      },
+      "why": "ADR-0324: the answer must state its sample honestly. role_requirements counts over 300 postings and says so in its first line; the final answer must carry that number."
     }
   ],
   "heldout_sha256": "801e7149bc71c42e7b346dcf089ea20f87d1e0035d989b3dba8ffb50fe055e4d"

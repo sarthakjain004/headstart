@@ -1654,3 +1654,162 @@ def test_a_read_by_id_serves_the_detail_and_cuts_a_long_description(served):
     bare = found["lever:o'brien:5"]
     assert bare["description"] is None and bare["description_chars"] == 0
     assert bare["description_stored"] is False and bare["description_cut"] is False
+
+
+# ---- what a sample of Jobs asks for: /requirements (ADR-0324) ----
+
+_FAMILIES = {
+    "data-engineering": sorted(
+        ["lever:acme:1", "lever:acme:2", "lever:beta:4"], key=str.lower
+    ),
+    "security": ["lever:acme:3"],
+}
+
+
+@pytest.fixture(scope="module")
+def sampled(tmp_path_factory):
+    """A real LanceDB table of five Jobs, three of them data engineering, whose vectors fall
+    away from job 1 in order, each with a description naming skills and the columns the
+    requirements counts read."""
+    lancedb = pytest.importorskip("lancedb")
+    pa = pytest.importorskip("pyarrow")
+    vectors = [
+        [1.0, 0.0, 0.0, 0.0],
+        [0.9, 0.1, 0.0, 0.0],
+        [0.7, 0.3, 0.0, 0.0],
+        [0.2, 0.8, 0.0, 0.0],
+        [0.0, 0.0, 1.0, 0.0],
+    ]
+    ids = [
+        "lever:acme:1",
+        "lever:acme:2",
+        "lever:acme:3",
+        "lever:beta:4",
+        "lever:gamma:5",
+    ]
+    rows = [
+        {
+            "id": job_id,
+            "company": job_id.split(":")[1].title(),
+            "location": "Berlin, Germany" if n % 2 else "Austin, TX",
+            "remote": n == 1,
+            "ats": "lever",
+            "first_seen": f"2026-09-2{n}T00:00:00+00:00",
+            "min_years": n,
+            "experience_source": "regex",
+            "min_salary_annual": 100_000 * n,
+            "max_salary_annual": None,
+            "salary_currency": "USD",
+            "description": "Python, SQL and Spark on AWS." if n != 3 else "SIEM work.",
+            "vector": vector,
+        }
+        for n, (job_id, vector) in enumerate(zip(ids, vectors, strict=True), start=1)
+    ]
+    schema = pa.schema(
+        [
+            ("id", pa.string()),
+            ("company", pa.string()),
+            ("location", pa.string()),
+            ("remote", pa.bool_()),
+            ("ats", pa.string()),
+            ("first_seen", pa.string()),
+            ("min_years", pa.int32()),
+            ("experience_source", pa.string()),
+            ("min_salary_annual", pa.int32()),
+            ("max_salary_annual", pa.int32()),
+            ("salary_currency", pa.string()),
+            ("description", pa.string()),
+            ("vector", pa.list_(pa.float32(), 4)),
+        ]
+    )
+    db = lancedb.connect(tmp_path_factory.mktemp("sampled"))
+    table = db.create_table("jobs", data=pa.Table.from_pylist(rows, schema=schema))
+    search = JobSearch(_Model(), table)
+    search._query_vector = lambda _query: [1.0, 0.0, 0.0, 0.0]
+    return search
+
+
+def _query_string(args: dict):
+    from werkzeug.datastructures import MultiDict
+
+    return MultiDict(list(args.items()))
+
+
+def _requirements(search, **args):
+    return search.requirements(
+        _query_string({"strict": "1", **args}), _FAMILIES, set(_FAMILIES)
+    )
+
+
+def test_a_query_samples_the_closest_jobs_and_counts_every_match(sampled):
+    counted = _requirements(sampled, q="data engineer")
+    assert counted["order"] == "closest" and counted["matching"] == 5
+    assert counted["sampled"] == 5 and counted["closest_score"] == 1.0
+    assert counted["closest_score"] >= counted["farthest_score"]
+    python = next(s for s in counted["skills"] if s["skill"] == "Python")
+    assert (python["postings"], python["employers"]) == (4, 3)
+    assert counted["categories"] == [
+        {"family": "data-engineering", "postings": 3},
+        {"family": "security", "postings": 1},
+    ]
+
+
+def test_a_query_is_narrowed_by_the_filters_and_the_boards(sampled):
+    counted = _requirements(sampled, q="data engineer", board="lever:acme")
+    assert counted["matching"] == 3 and counted["sampled"] == 3
+    remote = _requirements(sampled, q="data engineer", remote="true")
+    assert remote["matching"] == 1 and remote["remote"] == 1
+
+
+def test_a_category_alone_samples_its_newest_jobs(sampled, monkeypatch):
+    read = []
+    real = sampled._rows_for_requirements
+    monkeypatch.setattr(
+        sampled, "_rows_for_requirements", lambda ids: read.append(ids) or real(ids)
+    )
+    counted = _requirements(sampled, family="data-engineering")
+    assert counted["order"] == "newest" and counted["closest_score"] is None
+    assert counted["matching"] == 3
+    # Newest to HeadStart first, and only the sample's descriptions are read.
+    assert read == [["lever:beta:4", "lever:acme:2", "lever:acme:1"]]
+
+
+def test_a_query_within_a_category_keeps_only_its_jobs(sampled):
+    counted = _requirements(sampled, q="data engineer", family="data-engineering")
+    assert counted["matching"] == 3 and counted["sampled"] == 3
+    assert counted["categories"] == [{"family": "data-engineering", "postings": 3}]
+
+
+def test_the_counts_come_from_the_sampled_columns(sampled):
+    counted = _requirements(sampled, family="data-engineering", n="60")
+    assert counted["experience"]["stated"] == {"0-1": 1, "2-4": 2, "5-7": 0, "8+": 0}
+    usd = counted["salary"]["currencies"][0]
+    assert (usd["currency"], usd["postings"], usd["median"]) == ("USD", 3, 200_000)
+    assert {c["code"] for c in counted["countries"]} == {"DE", "US"}
+
+
+@pytest.mark.parametrize(
+    ("args", "words"),
+    [
+        ({}, "q=, a category with family="),
+        ({"family": "cooking"}, "not a configured family"),
+        ({"q": "x", "n": "10"}, "n must be from 50 to 500"),
+        ({"q": "x", "country": "ZZ"}, "country"),
+    ],
+)
+def test_a_requirements_request_is_refused_in_words(sampled, args, words):
+    with pytest.raises(ValueError, match=words):
+        _requirements(sampled, **args)
+
+
+def test_a_category_without_role_assignments_is_the_deployments_state(sampled):
+    with pytest.raises(ScopeUnavailable):
+        sampled.requirements(_query_string({"family": "security"}), None, {"security"})
+
+
+def test_a_requirements_answer_is_kept_for_the_boot(sampled, monkeypatch):
+    first = _requirements(sampled, q="kept answer")
+    monkeypatch.setattr(
+        sampled, "_closest_ids", lambda *a: pytest.fail("asked the table again")
+    )
+    assert _requirements(sampled, q="kept answer") is first
