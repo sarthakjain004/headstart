@@ -149,6 +149,9 @@ _ROWS = [
     ("Remote - CA; Remote - IN; Remote - KY; United States of America", False, set()),
     # ADR-0347: towns read off the country-less rows of the 2026-09-29 table
     ("Mundra", True, set()),
+    # a tidied "Chakan, Chakan, IN" is "Chakan, IN", which no shape reads: only the town does
+    ("Chakan, IN", True, set()),
+    ("Chakan, Chakan, IN", True, set()),
     ("Sri City, Andh, IN", True, set()),
     ("Miraroad", True, set()),
     ("Sahnewal", True, set()),
@@ -198,12 +201,12 @@ def test_where_india_is_unchanged_by_classify_s_addition():
     ADR-0086/ADR-0138 cite 3,068 chars; the `goa`/`anand`/`INDIA_EXCLUDE` guards below moved it
     to 3,301, the whole-string alpha-2 "IN" (`IN_EXACT`) to 3,327, the Pakistan guard on
     `hyderabad` (ADR-0322) to 3,419, and the whole-word, tail and town rules with the guards
-    beside them (ADR-0347) to 4,350.
+    beside them (ADR-0347) to 4,357.
     """
     clause = where("india")
-    assert len(clause) == 4350
+    assert len(clause) == 4357
     assert hashlib.sha256(clause.encode()).hexdigest() == (
-        "8912a43292a03e0cae61ca7fab3091ba933a07e8971ccb69a989e7f80bd81416"
+        "7bdef221610cc1e3a711e7961dc74aa8e7d638a63b3f6b777fdbcf0847a436e1"
     ), (
         "the compiled clause moved — if this is a deliberate CITIES/STATES/etc. data change, "
         "recompute the hash (hashlib.sha256(where('india').encode()).hexdigest()) and update "

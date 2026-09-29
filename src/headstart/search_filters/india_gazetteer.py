@@ -370,6 +370,7 @@ TOWNS: tuple[str, ...] = (
     "pantnagar",
     "talegaon",
     "shirwal",
+    "chakan",  # Pune district; "Chakan, IN" is what tidying "Chakan, Chakan, IN" leaves
     "korba",
     "rourkela",
     "parwanoo",

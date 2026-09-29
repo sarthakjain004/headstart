@@ -52,12 +52,16 @@ Maladzyechna in Belarus against `malad`, and the typo "Cananda" against `anand`.
   string (23 rows on six employers, 10 postings name India and none Indiana; one employer writes "Remote, US"
   on 43 other rows and another "Remote, CR" on 2, so after "Remote," the code is the country).
 
-**A town is a whole word too.** `TOWNS` is 75 Indian towns and plants read off country-less rows (Mundra
+**A town is a whole word too.** `TOWNS` is 76 Indian towns and plants read off country-less rows (Mundra
 24 rows, Sahnewal 9, Siliguri 8, Dadra 7, Pantnagar 6, Korba 5) and checked against the posting or the
 employer's other rows. They match as whole words, unlike the substring city aliases, so a short name
 cannot hide inside another place ("Korbach", Germany). A town enters only if it recovers a row no other
-rule does, bar the canonical spelling of a town that did (`kutch`, `hubli`, `dombivli`, `pantnagar`, which
-match no row today). A name that is also a place, a person or a word elsewhere stays out: `kota` (Kota Kinabalu,
+rule does, bar two kinds of exception. The canonical spelling of a town that did (`kutch`, `hubli`,
+`dombivli`, `pantnagar`, which match no row today). And `chakan`, which the plant-tail rule already tags
+("Chakan, Chakan, IN" 6 rows, "Chakan, Chakan_MahTower, IN" 7) but which a tidy of a repeated first part,
+as #955 makes, turns into "Chakan, IN", a bare "Town, IN" that no shape reads. The town keeps those 6
+rows tagged; the other 14 rows of that shape ("Bengaluru, Bengaluru, IN", "India, India, IN") stay tagged by their
+city or the country's name. A name that is also a place, a person or a word elsewhere stays out: `kota` (Kota Kinabalu,
 Kota Bharu, Kota Cilegon), `parsa` (Nepal), `shalimar` (Florida), `patan` (Nepal), `mirzapur`
 (Bangladesh), `hassan`, `kalina` (a Polish village) and `blore` (an English village). Eleven typos of
 cities already held, and the new spelling "Sambhajinagar" of Aurangabad, join those cities' aliases
