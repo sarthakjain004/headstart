@@ -55,6 +55,8 @@ config/*
 !config/stale_shared_vectors.txt
 # The tech skills an agent's requirements view counts in descriptions (ADR-0324).
 !config/tech_skills.json
+# Served rows re-gated for English on each run that reads them (ADR-0286).
+!config/regate_english.txt
 
 # Regenerable pipeline scratch — run logs and superseded intermediates; safe to delete
 data/scratch/

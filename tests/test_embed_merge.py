@@ -48,7 +48,15 @@ def _store_ids(d: Path) -> list[str]:
 
 def _run(store: Path, fragments: Path) -> None:
     old = sys.argv
-    sys.argv = ["embed_merge", "--store", str(store), "--fragments", str(fragments)]
+    sys.argv = [
+        "embed_merge",
+        "--store",
+        str(store),
+        "--fragments",
+        str(fragments),
+        "--non-english-ids",
+        str(store.parent / "pending_non_english.txt"),
+    ]
     try:
         assert ms.main() == 0
     finally:
@@ -206,6 +214,8 @@ def _run_with_upgrades(store: Path, fragments: Path, upgrades: Path) -> None:
         str(fragments),
         "--evict-ids",
         str(upgrades),
+        "--non-english-ids",
+        str(store.parent / "pending_non_english.txt"),
     ]
     try:
         assert ms.main() == 0
@@ -314,3 +324,17 @@ def test_eviction_shrinks_meta_before_vectors_so_a_crash_leaves_a_readable_store
         f"store left corrupt: {vec_rows} vector rows against {meta_rows} meta rows — "
         "EmbeddingStore requires vectors >= meta"
     )
+
+
+def test_a_non_english_drop_needs_no_replacement(tmp_path):
+    """ADR-0286: unlike an upgrade, nothing re-embeds these, so they leave the store even with no
+    fragments at all, and `index sync` then evicts their rows."""
+    store, frags = tmp_path / "store", tmp_path / "frags"
+    _write_store(store, ["a", "b", "c"])
+    frags.mkdir()
+    (tmp_path / "pending_non_english.txt").write_text("b\n", encoding="utf-8")
+
+    _run(store, frags)
+
+    assert _store_ids(store) == ["a", "c"]
+    _assert_consistent(store, 2)

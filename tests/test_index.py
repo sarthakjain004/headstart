@@ -103,17 +103,20 @@ def _sync(
     descriptions: dict[str, str] | None = None,
     corpus: list[str] | None = None,
     scope: list[str] | None = None,
+    stored: list[str] | None = None,
 ) -> int:
     """Run one `index sync` cycle over ``ids`` — store, corpus, and scrape scope all agree.
 
     ``corpus`` narrows the tech corpus below the store, and ``scope`` records the scraped Boards
-    as `scrape_join` would (ADR-0161) instead of deriving them from the corpus.
+    as `scrape_join` would (ADR-0161) instead of deriving them from the corpus. ``stored`` narrows
+    the embedding store below the corpus, as `embed_merge` leaves it after dropping a Job
+    (ADR-0286).
 
     ``meta_over`` restates every store row's metadata after it is written, which is how a run that
     follows an ``update_meta`` refresh looks to sync (ADR-0061).
     """
     store, source, db = tmp_path / "store", tmp_path / "corpus", tmp_path / "db"
-    _write_store(store, ids)
+    _write_store(store, ids if stored is None else stored)
     if meta_over:
         path = store / "meta.jsonl"
         rows = [
@@ -148,6 +151,8 @@ def _sync(
             unauthoritative_boards=str(tmp_path / "unauthoritative_boards.json"),
             # Absent unless a test writes it: no Unauthoritative Board returned an id (ADR-0243).
             unauthoritative_ids=str(tmp_path / "unauthoritative_board_ids.txt"),
+            # Absent unless a test writes it: no embedded Job failed the English gate (ADR-0286).
+            non_english_ids=str(tmp_path / "pending_non_english.txt"),
             # Absent unless a test writes it: no Board is Dormant (ADR-0250).
             dormant_boards=str(tmp_path / "dormant_boards.json"),
             # Pinned into tmp_path for the same reason as `upgrades`. The grace period is left
@@ -205,6 +210,31 @@ def test_a_rejected_row_on_a_scope_excluded_board_evicts_on_its_second_scrape(
     assert _sync(tmp_path, monkeypatch, [kept, rejected], corpus=[kept]) == 0
     assert set(_rows(tmp_path)) == {kept, rejected}, "a first absence only marks it"
     assert _sync(tmp_path, monkeypatch, [kept, rejected], corpus=[kept]) == 0
+    assert set(_rows(tmp_path)) == {kept}
+
+
+def test_a_non_english_drop_on_a_scope_excluded_board_evicts_on_its_second_scrape(
+    tmp_path, monkeypatch
+):
+    """ADR-0286. `embed_merge` dropped the vector of a Job whose text now fails the English gate,
+    so its row is no longer `fresh`. On a Board that is never authoritative (#695) that alone
+    evicts nothing: ADR-0053 keeps the Board out of scope, and the row keeps serving its old
+    English vector. The scrape returned the Job, so it was seen and takes the grace period like a
+    tech-filter rejection. The control is the same runs without embed_plan's list."""
+    (tmp_path / "unauthoritative_boards.json").write_text(
+        json.dumps({"greenhouse:a": "at the listing cap"}), encoding="utf-8"
+    )
+    kept, dropped = "greenhouse:a:1", "greenhouse:a:2"
+    both = [kept, dropped]
+    assert _sync(tmp_path, monkeypatch, both) == 0
+    for _ in range(2):
+        assert _sync(tmp_path, monkeypatch, both, stored=[kept]) == 0
+    assert set(_rows(tmp_path)) == set(both), "control: no list, the row keeps serving"
+
+    (tmp_path / "pending_non_english.txt").write_text(f"{dropped}\n", encoding="utf-8")
+    assert _sync(tmp_path, monkeypatch, both, stored=[kept]) == 0
+    assert set(_rows(tmp_path)) == set(both), "a first absence only marks it"
+    assert _sync(tmp_path, monkeypatch, both, stored=[kept]) == 0
     assert set(_rows(tmp_path)) == {kept}
 
 

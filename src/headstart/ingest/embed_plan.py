@@ -36,7 +36,14 @@ from headstart import log
 from headstart.boards.board_identity import ats_of, board_of
 from headstart.boards.priority_ledger import load_scores
 from headstart.embedding_conventions import MODEL, MODEL_CODE_REVISION, MODEL_REVISION
-from headstart.ingest import PENDING_UPGRADES_PATH, REPO_ROOT, observability, shard_plan
+from headstart.ingest import (
+    PENDING_NON_ENGLISH_PATH,
+    PENDING_UPGRADES_PATH,
+    REPO_ROOT,
+    observability,
+    read_id_list,
+    shard_plan,
+)
 from headstart.ingest.binpack import (
     lpt_pack,
     shard_count,
@@ -59,6 +66,10 @@ _PRIORITY = REPO_ROOT / "data" / "state" / "board_priority.csv"
 # Rides to the merge stage inside the corpus-state artifact it already downloads (ADR-0050).
 _UPGRADES = PENDING_UPGRADES_PATH
 _OUT = REPO_ROOT / "data" / "embeddings" / "assignments"
+#: Served rows that failed the English gate on 2026-09-29 (ADR-0286), re-gated on each run that
+#: reads them: most were embedded before the gate existed, so no re-evaluation would otherwise
+#: reach them. The answer is deterministic, so one that passes simply stays.
+_REGATE = REPO_ROOT / "config" / "regate_english.txt"
 
 # Measured CPU seconds-per-Doc per Bucket. Hardcoded (not derived from live CI logs) for Phase 1
 # (ADR-0025): deterministic, one dict to edit. Refresh with the recipe in
@@ -214,6 +225,17 @@ def main() -> int:
         "before re-adding (ADR-0050)",
     )
     ap.add_argument(
+        "--non-english-out",
+        default=str(PENDING_NON_ENGLISH_PATH),
+        help="where to list embedded ids whose text no longer passes the English gate, for the "
+        "merge stage to drop (ADR-0286)",
+    )
+    ap.add_argument(
+        "--regate",
+        default=str(_REGATE),
+        help="embedded ids to put through the English gate on every run that reads them (ADR-0286)",
+    )
+    ap.add_argument(
         "--max-shards",
         type=int,
         default=_MAX_SHARDS,
@@ -234,6 +256,7 @@ def main() -> int:
     args = ap.parse_args()
 
     prior, degraded, hashes = _prior_rows(Path(args.prior_meta))
+    regate = read_id_list(Path(args.regate))
     scores = load_scores(Path(args.priority))
     # An empty ledger is not an error — ordering just degrades to corpus order — so say it here.
     _log.info(f"priority: {len(scores)} Board scores from {args.priority}")
@@ -247,6 +270,7 @@ def main() -> int:
     metas: list[dict] = []
     boards: list[str] = []
     upgrades: list[str] = []
+    non_english: list[str] = []
     scanned = already = dropped = 0
     edited = deferred = 0
     progress = observability.PreparationProgress(_log)
@@ -269,6 +293,8 @@ def main() -> int:
             # a description whose description we now have (ADR-0050). And a vector whose text
             # has changed since, which `doc_hash` shows (ADR-0285): an edited posting, or a
             # clone that was rewritten. `embed_plan` skips by id, so nothing else reaches them.
+            # Each goes through the English gate again, as does a Job on the one-off re-gate
+            # list, which is only checked, never re-embedded (ADR-0286).
             described = jid in degraded and (job.get("description") or "").strip()
             # No description over a vector built from one is a failed fetch, not an edit.
             # Re-embedding it would build a title-only vector that ADR-0050 rebuilds once the
@@ -279,7 +305,7 @@ def main() -> int:
                 else None
             )
             is_edit = not described and stored is not None and stored != doc_hash(job)
-            if not (described or is_edit):
+            if not (described or is_edit or jid in regate):
                 already += 1
                 progress.report(scanned, len(docs), already, dropped)
                 continue
@@ -287,9 +313,20 @@ def main() -> int:
                 edits.append(job)
                 progress.report(scanned, len(docs), already, dropped)
                 continue
-            upgrading = True
+            upgrading = bool(described or is_edit)
         if not is_english(job.get("title") or "", job.get("description") or ""):
+            # An embedded Job re-evaluated here is served, on an English vector, while its
+            # text now fails the gate a new Job must pass. List it for the merge to drop from
+            # the store; sync then evicts its row like any Job that left, even on a
+            # scope-excluded Board, since the scrape returned it (ADR-0286).
+            if jid in prior:
+                non_english.append(jid)
             dropped += 1
+            progress.report(scanned, len(docs), already, dropped)
+            continue
+        if jid in prior and not upgrading:
+            # On the re-gate list only, and still English: nothing to re-embed.
+            already += 1
             progress.report(scanned, len(docs), already, dropped)
             continue
         # Listed only now that the Doc is actually planned. Listing before the English gate put
@@ -304,6 +341,8 @@ def main() -> int:
         if edited >= _MAX_EDIT_REEMBEDS:
             deferred += 1
         elif not is_english(job.get("title") or "", job.get("description") or ""):
+            # An edit is always an embedded Job, so a failing one is listed to drop (ADR-0286).
+            non_english.append(job["id"])
             dropped += 1
         else:
             upgrades.append(job["id"])
@@ -328,6 +367,17 @@ def main() -> int:
     upgrades_path = Path(args.upgrades_out)
     upgrades_path.parent.mkdir(parents=True, exist_ok=True)
     upgrades_path.write_text("".join(f"{jid}\n" for jid in upgrades), encoding="utf-8")
+    # Rewritten every run for the same reason: a stale list would drop Jobs nothing re-gated.
+    non_english_path = Path(args.non_english_out)
+    non_english_path.parent.mkdir(parents=True, exist_ok=True)
+    non_english_path.write_text(
+        "".join(f"{jid}\n" for jid in non_english), encoding="utf-8"
+    )
+    if non_english:
+        _log.info(
+            f"embedded Jobs no longer English: {len(non_english)} listed for the merge to drop "
+            "(ADR-0286)"
+        )
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
