@@ -565,6 +565,33 @@ def test_a_line_first_counted_inside_the_window_says_when() -> None:
     assert short["move"]["percent_withheld"] == f"a window under {MIN_SPAN_DAYS} days"
 
 
+def test_an_index_category_first_counted_inside_the_window_says_when() -> None:
+    """With no pick (ADR-0270): Hardware & Silicon, sorted in by the Sep 25 category-list change,
+    starts at 0 and says the run it was first counted at, which the page reads (#854 review)."""
+    reading = _golden("index_category_first_counted_inside_the_window")["reading"]
+    assert not reading["picked"]
+    lines = {line["name"]: line for line in reading["lines"]}
+    hardware = lines["hardware-engineering"]
+    assert hardware["first_counted"] == "2026-09-25T17:07:46+00:00"
+    assert hardware["arrived_by"] == CauseKind.COUNTING
+    assert hardware["move"]["start"] == 0
+    assert hardware["move"]["percent_withheld"] == "first counted on Sep 25"
+    assert "first_counted" not in lines["software-engineering"]
+
+
+def test_a_level_counted_from_its_categorys_first_count_is_not_first_counted_later() -> (
+    None
+):
+    """A drill into a category first counted inside the window: its first row starts there, and
+    so does every level, so no level was first counted after its view began. The page read each
+    "new since Sep 25" (#854 review)."""
+    reading = _golden("index_drill_into_a_category_first_counted_inside_the_window")[
+        "reading"
+    ]
+    assert [line.get("first_counted") for line in reading["lines"]] == [None, None]
+    assert all(line["move"]["percent"] is not None for line in reading["lines"])
+
+
 # ---- the measured cases the golden answers carried (ADR-0230) ----------------------------------
 
 

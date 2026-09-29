@@ -10,9 +10,11 @@ the latest value stays the real one and the history before a step is brought to 
 (``_NetTrace``) into a line's hiring and its named causes; the Trends tab and Hot both read that.
 
 With no pick a counting change is taken out as under a pick (ADR-0270): the index is a view
-whose Boards any counting change can move, duplicate removal included. A Found Board is taken out
-of each index line by the openings it brought that line (ADR-0304), a step on nearly every run,
-so it is not drawn. A duplicate removal is sized per company, and the index keeps it.
+whose Boards any counting change can move, a change to the duplicate check (``dedup_version``)
+included. A Found Board is taken out of each index line by the openings it brought that line
+(ADR-0304), a step on nearly every run, so it is not drawn, and out of the share denominator by
+every job it brought. The duplicate rows a removal takes out (``evicted``) are sized per company,
+and the index keeps them.
 """
 
 from __future__ import annotations
