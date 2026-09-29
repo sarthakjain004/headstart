@@ -19,6 +19,7 @@ from headstart.serving.job_absence import WHY_NOT_SERVED
 from headstart.serving.job_search import (
     FACET_CACHE_SIZE,
     QUERY_VECTOR_CACHE_SIZE,
+    REQUEST_PARAMETERS,
     REQUIREMENTS_CATEGORY_WINDOW,
     RESULT_COLUMNS,
     SORT_COLUMNS,
@@ -1043,6 +1044,60 @@ def test_sorting_a_ranked_search_still_paginates_without_repeating():
     second = searcher.run({"q": "backend", "sort": "posted", "k": "2", "page": "2"})
     assert [r["id"] for r in first] == ["d", "c"]
     assert [r["id"] for r in second] == ["b", "a"]
+
+
+def _one_company_first(n=5):
+    """Five of Reflection's closest, then Neara's and Monzo's."""
+    return [
+        *(
+            {**_ROW, "id": f"r{i}", "company": "Reflection", "title": f"MTS {i}"}
+            for i in range(n)
+        ),
+        {**_ROW, "id": "n1", "company": "Neara"},
+        {**_ROW, "id": "m1", "company": "Monzo"},
+    ]
+
+
+def test_per_company_spreads_a_relevance_page_over_the_whole_window():
+    """P1-5 of the round-4 critique: one employer filled a page (ADR-0352). The window is the
+    one a sort takes, so every page cuts one list."""
+    table = _Table(_one_company_first())
+    searcher = JobSearch(_Model(), table)
+    first = searcher.run({"q": "staff platform engineer", "k": "4", "per_company": "2"})
+    assert table.last_k == searcher.max_k * searcher.max_page
+    assert table.last_order is None  # similarity still orders it
+    assert [r["id"] for r in first] == ["r0", "r1", "n1", "m1"]
+    assert [r.get("more_from_company") for r in first] == [3, 3, None, None]
+    second = searcher.run(
+        {"q": "staff platform engineer", "k": "4", "page": "2", "per_company": "2"}
+    )
+    assert [r["id"] for r in second] == ["r2", "r3", "r4"]
+    assert all(r["past_company_cap"] for r in second)
+    assert all(r["score"] == 0.75 for r in first + second)
+
+
+def test_without_per_company_a_relevance_page_is_the_ranking_as_it_was():
+    table = _Table(_one_company_first())
+    out = JobSearch(_Model(), table).run({"q": "staff platform engineer", "k": "4"})
+    assert [r["id"] for r in out][:5] == ["r0", "r1", "r2", "r3", "r4"]
+    assert table.last_k == 4 and "more_from_company" not in out[0]
+
+
+def test_per_company_is_refused_beside_a_sort_or_a_browse_under_strict_and_below_one():
+    searcher = JobSearch(_Model(), _Table(_one_company_first()))
+    for args in (
+        {"q": "x", "sort": "posted", "per_company": "3"},
+        {"per_company": "3"},
+    ):
+        with pytest.raises(ValueError, match="relevance-ranked"):
+            searcher.run({**args, "strict": "1"})
+        assert "past_company_cap" not in str(searcher.run(args))  # else ignored
+    with pytest.raises(ValueError, match="at least 1"):
+        searcher.run({"q": "x", "per_company": "0"})
+
+
+def test_per_company_is_a_parameter_strict_search_and_facets_read():
+    assert "per_company" in REQUEST_PARAMETERS
 
 
 # ── the served projection (ADR-0084's window, re-costed) ─────────────────────────────────────
@@ -2235,6 +2290,17 @@ def test_a_requirements_sample_leaves_out_the_operators_not_named(sampled):
         family = _requirements(sampled, family="data-engineering", operators="employer")
         assert (family["matching"], family["operators_left_out"]) == (1, 2)
     assert _requirements(sampled, q="data engineer")["operators_left_out"] is None
+
+
+def test_per_company_caps_a_sample_and_spreads_a_real_ranked_page(sampled):
+    """ADR-0352 on a real table: Acme's three closest jobs are one company's."""
+    counted = _requirements(sampled, q="data engineer", per_company="1")
+    assert (counted["distinct"], counted["over_company_cap"]) == (3, 2)
+    assert counted["companies"][0]["counted"] == 1
+    assert _requirements(sampled, q="data engineer")["over_company_cap"] == 0
+    page = sampled.run(_query_string({"q": "x", "k": "3", "per_company": "1"}))
+    assert _ids(page) == ["lever:acme:1", "lever:beta:4", "lever:gamma:5"]
+    assert page[0]["more_from_company"] == 2
 
 
 # ---- work_authorization: text-derived stances as a filter (ADR-0333) ----

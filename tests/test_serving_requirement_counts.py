@@ -231,6 +231,35 @@ def test_categories_come_from_the_family_lookup_when_given():
     assert "categories" not in _summary(jobs)
 
 
+def test_per_company_counts_at_most_that_many_of_one_companys_postings():
+    """P1-2 of the round-4 critique: DigitalXNode was 15 of a DevOps sample (ADR-0352). Its
+    postings past the cap are left out of every count; the company list still says how many
+    were sampled and how many counted."""
+    jobs = [_job(2 * i + 1, description="Terraform and Go.") for i in range(5)] + [
+        _job(2, title="Other")
+    ]
+    counted = requirement_counts.summarize(
+        jobs, tech_skills.vocabulary(), per_company=2
+    )
+    assert (counted["read"], counted["distinct"], counted["over_company_cap"]) == (
+        6,
+        3,
+        3,
+    )
+    assert counted["per_company"] == 2 and counted["described"] == 3
+    assert {s["skill"]: s["jobs"] for s in counted["skills"]}["Terraform"] == 2
+    assert counted["companies"][0] == {
+        "company": "Acme 1",
+        FROM_DIRECTORY: False,
+        "board": "lever:acme1",
+        "jobs": 5,
+        "counted": 2,
+    }
+    uncapped = _summary(jobs)
+    assert uncapped["over_company_cap"] == 0 and uncapped["per_company"] is None
+    assert "counted" not in uncapped["companies"][0]
+
+
 def test_an_empty_sample_is_an_empty_answer_not_an_error():
     counted = _summary([])
     assert counted["distinct"] == 0 and counted["skills"] == []

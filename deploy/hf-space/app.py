@@ -743,10 +743,12 @@ def _keep_static_for_the_boot(response):
 # 16: `work_authorization` (offers_sponsorship, refuses_sponsorship, offers_relocation) on /search
 # and /facets, each /job's `work_authorization` stances and mentions, and /requirements'
 # `work_authorization` counts, all read from descriptions by rules (ADR-0333).
-# 17: `include_non_tech` on /search, /facets, /requirements, /companies/locations and
+# 17: `per_company` on /search (a relevance page lists a company's first N before the others',
+# marking the rows) and /requirements (counts at most N of one company's), ADR-0352.
+# 18: `include_non_tech` on /search, /facets, /requirements, /companies/locations and
 # /companies/levels: the jobs the role-family head confidently calls non-tech are left out unless
 # it is sent, and /facets and /requirements say how many as `non_tech_left_out` (ADR-0349).
-_AGENT_API_VERSION = 17
+_AGENT_API_VERSION = 18
 
 
 @app.after_request

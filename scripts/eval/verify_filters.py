@@ -761,7 +761,7 @@ def run_non_tech_checks(base: str) -> list[dict]:
 
     Search leaves out the Jobs the role-family head confidently calls non-tech unless a request
     sends ``include_non_tech``. Three things must hold for each filter set: a strict request naming
-    the switch is accepted (a Space older than agent-api 17 refuses it as an unknown parameter);
+    the switch is accepted (a Space older than agent-api 18 refuses it as an unknown parameter);
     showing more never narrows; and the count the Space says it left out, ``non_tech_left_out``,
     is exactly what the switch adds, and absent once they are included. A table with no stamp
     leaves none out and says nothing, which passes.

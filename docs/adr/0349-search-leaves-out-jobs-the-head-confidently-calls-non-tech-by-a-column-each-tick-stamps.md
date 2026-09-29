@@ -63,7 +63,7 @@ everything.
   field whose unset value compiles a clause), read from `include_non_tech=true` or `=1`. The site
   shows it as "Include non-tech roles", off by default, sent with the other filters, kept by a Saved
   Set and its email digest, and shown as a removable pill. The MCP argument has the same name and
-  description in `search_jobs`, and the Space's agent contract is now version 17. `role_requirements`
+  description in `search_jobs`, and the Space's agent contract is now version 18 (17 is ADR-0352's `per_company`). `role_requirements`
   takes it too, with the same schema; `company_profile` takes none and reads the default.
 
 ### What the stamp leaves alone, and what it changes
@@ -179,7 +179,7 @@ Audited table, v18, 500,167 rows.
   Space counts and the MCP totals fall by the same, and the site says how many it left out.
 - A Job the head is wrong about at 0.9 or above is hidden until the switch is on or the next tick
   decides otherwise: 0 of 161 read were tech, 14 borderline.
-- The Space needs a deploy for `include_non_tech`; an MCP server at version 17 stops on an older Space
+- The Space needs a deploy for `include_non_tech`; an MCP server at version 18 stops on an older Space
   (the agent contract check).
 - A new head is a re-measure (the version test) and the stamp is recomputed from its probabilities on
   its first counting tick.

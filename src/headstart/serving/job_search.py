@@ -58,6 +58,7 @@ from headstart.serving import (
     job_absence,
     level_counts,
     location_counts,
+    per_company_cap,
     requirement_counts,
     tech_skills,
 )
@@ -232,6 +233,15 @@ def _int_arg(args: Mapping[str, str]) -> Callable[[str], int | None]:
     return read
 
 
+def _per_company(args: Mapping[str, str]) -> int | None:
+    """``per_company=``, the most postings of one company a page lists before the others'
+    (ADR-0352), or None when absent; a :class:`ValueError` when below 1."""
+    per_company = _int_arg(args)("per_company")
+    if per_company is not None and per_company < 1:
+        raise ValueError("per_company must be at least 1")
+    return per_company
+
+
 class ScopeUnavailable(LookupError):
     """What a ``strict=1`` request asked for cannot be applied on this deployment yet: no role
     assignments, watchlist or family taxonomy loaded, or a column the served table has not
@@ -305,6 +315,8 @@ REQUEST_PARAMETERS = frozenset(
         "sort",
         "k",
         "page",
+        # /search and /requirements: at most this many of one company first (ADR-0352)
+        "per_company",
         # /facets alone
         "counts",
         # the app's scope and answers
@@ -1719,6 +1731,16 @@ class JobSearch:
         page = _int("page")
         page = max(1, min(1 if page is None else page, self.max_page))
         offset = (page - 1) * k
+        per_company = _per_company(args)
+        if per_company is not None and (sort or not ranked):
+            # Only a relevance ranking has places to spread (ADR-0352): a sort orders by what
+            # was asked, and a browse lists the newest.
+            if strict:
+                raise ValueError(
+                    "per_company spreads only a relevance-ranked search: send q or like, "
+                    "and no sort"
+                )
+            per_company = None
         browse_key = (filters, sort, k, page, extra_where, _family_asked(args))
         if not ranked:
             cached = _cache_get(
@@ -1819,6 +1841,14 @@ class JobSearch:
             window.sort(key=key, reverse=True)
             rows = window[offset : offset + k]
             path = "ranked-window"
+        elif per_company:
+            # The whole window, as a sort takes it, so every page cuts one spread list.
+            window = search.limit(self.max_k * self.max_page).to_list()
+            spread = per_company_cap.spread(
+                [_result_row(r, ranked) for r in window], per_company
+            )
+            rows = spread[offset : offset + k]
+            path = "ranked-spread"
         elif sort_currency:
             rows = self._salary_browse(table, where, sort_currency, k, offset)
             path = "salary-browse"
@@ -1835,7 +1865,9 @@ class JobSearch:
             rows = search.limit(k).offset(offset).to_list()
             path = "ranked" if ranked else "browse"
 
-        result = [_result_row(r, ranked) for r in rows]
+        result = (
+            rows if path == "ranked-spread" else [_result_row(r, ranked) for r in rows]
+        )
         elapsed_ms = (time.monotonic() - started) * 1000
         if elapsed_ms > SLOW_SEARCH_MS:
             # Shapes only: the query text is the user's and is never logged (ADR-0032). The path
@@ -2051,7 +2083,8 @@ class JobSearch:
         descriptions are read, by id. A :class:`ValueError` names what the request got wrong; a
         family without role assignments loaded is :class:`ScopeUnavailable`. Scoped by Boards and
         filters only, so no Account's follow or hide list reaches it; ``operators=`` narrows it
-        as it narrows a search, and ``operators_left_out`` counts what it left out (ADR-0335)."""
+        as it narrows a search, and ``operators_left_out`` counts what it left out (ADR-0335).
+        ``per_company=`` counts at most that many of one company's postings (ADR-0352)."""
         query = (args.get("q") or "").strip()
         family = (args.get("family") or "").strip()
         if not query and not family:
@@ -2072,7 +2105,8 @@ class JobSearch:
         )
         unkept = where
         operators, where = self._narrowed_by_operators(args, unkept)
-        cache_key = (filters, where, query, family, operators)
+        per_company = _per_company(args)
+        cache_key = (filters, where, query, family, operators, per_company)
         cached = _cache_get(
             self._requirements_cache,
             self._requirements_cache_lock,
@@ -2146,6 +2180,7 @@ class JobSearch:
                 tech_skills.vocabulary(),
                 assignments.family_of if assignments else None,
                 board_and_name,
+                per_company,
             ),
         }
         elapsed_ms = (time.monotonic() - started) * 1000

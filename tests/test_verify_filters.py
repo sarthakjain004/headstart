@@ -89,7 +89,7 @@ def test_a_table_without_the_stamp_says_nothing_left_out_and_is_not_a_violation(
 
 
 def test_a_space_that_refuses_the_switch_is_a_violation(monkeypatch):
-    """An app older than agent-api 17 answers a strict request naming it with 400."""
+    """An app older than agent-api 18 answers a strict request naming it with 400."""
     harness = _load_harness()
     monkeypatch.setattr(
         harness, "_probe", lambda base, path, params: (400, {"error": "invalid filter"})
