@@ -2049,6 +2049,35 @@ test('with no pick a counting change is taken out of the lines, and the Marked c
   assert.match(nodes['trends-foot'].textContent, /Lines break at the marked jumps, and percentages skip them\./);
 });
 
+test('with no pick the Boards found come out of each line, listed once and drawn nowhere', () => {
+  // 68,535 openings on 9,253 Boards found in one week read as the index's hiring (#857). They
+  // land on nearly every run, so they are one Marked change, with no marker and no line break.
+  const { t, nodes } = loadApp();
+  t.setPicks([]);
+  t.set(golden('index_takes_boards_found_out_of_each_line_by_its_own_openings'), null);
+  t.setUnit('count', false);
+  t.draw();
+  assert.match(nodes['trends-legend'].innerHTML, /software-engineering[\s\S]*\+35 openings/);
+  assert.match(nodes['trends-changes'].innerHTML, /<li><b>Sep 22 00:00<\/b> 5 more job sites found through Sep 25 — All tech roles \+150 openings<\/li>/);
+  const svg = nodes['trends-chart'].innerHTML;
+  assert.equal((svg.match(/class="found-marker"/g) || []).length, 0);
+  assert.equal((svg.match(/class="epoch-marker"/g) || []).length, 1);
+  same(t.checkReading(golden('index_takes_boards_found_out_of_each_line_by_its_own_openings').reading), []);
+});
+
+test('with no pick a window under 3 days states each line in openings, never too new', () => {
+  // The index is no company: a one-day window read every one of its lines "too new" (#857).
+  const { t, nodes } = loadApp();
+  t.setPicks([]);
+  const d = golden('index_takes_a_counting_change_out_and_marks_every_change');
+  for (const line of [d.reading.total, ...d.reading.lines]) Object.assign(line.move, { span_days: 1, per_week: null });
+  t.set(d, null);
+  t.setUnit('count', false);
+  t.draw();
+  assert.doesNotMatch(nodes['trends-legend'].innerHTML, /too new/);
+  assert.match(nodes['trends-legend'].innerHTML, /software-engineering[\s\S]*\+400 openings/);
+});
+
 // ---- critique round 12 ------------------------------------------------------------------------
 test('a whole company’s line takes a counting change out by openings, as Hot does', () => {
   const { t, nodes } = loadApp();

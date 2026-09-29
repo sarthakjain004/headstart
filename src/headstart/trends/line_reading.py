@@ -58,6 +58,7 @@ from headstart.trends.netting import (
     _View,
     _viewed,
     js_round,
+    note_size,
 )
 
 
@@ -248,6 +249,9 @@ class MarkedChange:
     company: str | None = None
     boards: int | None = None
     sizes: tuple[tuple[str, int], ...] = ()
+    # False for the index's Boards found through the window (ADR-0304): a step on nearly every
+    # run, listed but not drawn, and named by no day marker.
+    drawn: bool = True
 
 
 @dataclass(frozen=True)
@@ -344,6 +348,7 @@ class TrendReading:
                     "company": c.company,
                     "boards": c.boards,
                     "sizes": dict(c.sizes),
+                    "drawn": c.drawn,
                 }
                 for c in self.marked_changes
             ],
@@ -813,7 +818,14 @@ class _Reader:
             whole_company=self._is_whole_company(line),
             estimated=exact.estimated,
             netted=netted,
-            steps_at=tuple(sorted(_count_jumps(self.view, line))),
+            # A quiet step (the index's Boards found) moves the line but breaks nothing drawn.
+            steps_at=tuple(
+                sorted(
+                    j
+                    for j, jump in _count_jumps(self.view, line).items()
+                    if not all(self.notes[k]["quiet"] for k in jump.notes)
+                )
+            ),
             index_base=None
             if move.percent_withheld == MOSTLY_RECOUNTED
             else _index_base(line.points, netted),
@@ -1025,6 +1037,8 @@ class _Reader:
             return self.register_removal(n["company"], n["i"])
         if n["join"]:
             return self.register_joining(n["company"], n["i"])
+        if n["quiet"]:
+            return self.register_found_through_window()
         if n["found"]:
             change = f"found@{stamps[n['i']]}/{n['company']}"
             boards = n["boards"]
@@ -1076,6 +1090,28 @@ class _Reader:
             or ", ".join(n["changed"]),
             fields=tuple(n["fields"]),
             changed=tuple(n["changed"]),
+        )
+        return change
+
+    def register_found_through_window(self) -> str:
+        """The index's Boards found through the window, one change for every run they land on
+        (ADR-0304): they land on nearly every run, so the change is dated at their first and
+        drawn nowhere."""
+        change = "found@window"
+        # the Boards taken out; a run's handful left in the line is not (SMALLEST_STEP_TAKEN_OUT)
+        quiet = [n for n in self.notes if n["quiet"] and n["withhold"]] or [
+            n for n in self.notes if n["quiet"]
+        ]
+        boards = sum(n["boards"] for n in quiet)
+        self._register(
+            change,
+            CauseKind.FOUND_BOARDS,
+            self.stamps[min(n["i"] for n in quiet)],
+            # "job site", not "board": the reader's word for it (ADR-0248).
+            f"{boards:,} more job site{'' if boards == 1 else 's'} found through "
+            f"{_day(self.stamps[-1])}",
+            boards=boards,
+            drawn=False,
         )
         return change
 
@@ -1187,6 +1223,8 @@ class _Reader:
 
         days: dict[str, dict] = {}
         for c in marked:
+            if not c.drawn:
+                continue
             i = run_of(c)
             if i is None:
                 continue
@@ -1228,8 +1266,8 @@ class _Split:
 
     def run(self, b: int, a: int, withheld: float) -> None:
         """What run ``b`` gave up (``withheld``), measured from run ``a``: a removal's share of
-        the line, then the known sizes of Found Boards on a whole company line, then the rest to
-        the change that owns the run."""
+        the line, then the known sizes of Found Boards (on a whole company line, and on an index
+        line its own, ADR-0304), then the rest to the change that owns the run."""
         notes = self.reader.notes
         jump = self.trace.jumps.get(b)
         landing = list(jump.notes) if jump else []
@@ -1243,13 +1281,13 @@ class _Split:
             rest -= share
             if not self.is_company_line:
                 self.estimated = True
-        if self.is_company_line:
-            for k in landing:
-                n = notes[k]
-                if n["size"] is None or (n["evicted"] and by_removal):
-                    continue
-                self.add(self.reader.register_note_change(k), n["size"])
-                rest -= n["size"]
+        for k in landing:
+            n = notes[k]
+            size = note_size(n, self.line, self.is_company_line)
+            if size is None or (n["evicted"] and by_removal):
+                continue
+            self.add(self.reader.register_note_change(k), size)
+            rest -= size
         if abs(rest) <= _NOISE:
             return
         owner = self._owner(landing)
@@ -1274,7 +1312,13 @@ class _Split:
         settles = [k for k in landing if notes[k]["settle"]]
         if settles:
             return settles[0]
-        found = [k for k in landing if notes[k]["found"] and not self.is_company_line]
+        found = [
+            k
+            for k in landing
+            if notes[k]["found"]
+            and notes[k]["sizes"] is None
+            and not self.is_company_line
+        ]
         return found[0] if found else None
 
     def scaled(self, amount: float, after: int, landing: int | None) -> None:
@@ -1356,8 +1400,19 @@ class _Split:
     def cut_change(self, c: int) -> str:
         """Where a step was bigger than the history before it could hold and could not scale,
         the line starts after it (run ``c``, ``_net``'s cut): the growth before is scaled to
-        nothing by the change that made the step, the nearest one landing at or after ``c``."""
-        at = min((j for j in self.trace.withheld if j >= c), default=None)
+        nothing by the change that made the step, the nearest one landing at or after ``c``. A
+        run only the index's Boards found land on is none: they add openings, which never cut a
+        line (ADR-0304)."""
+        notes = self.reader.notes
+
+        def found_only(j: int) -> bool:
+            jump = self.trace.jumps.get(j)
+            return bool(jump) and all(notes[k]["quiet"] for k in jump.notes)
+
+        at = min(
+            (j for j in self.trace.withheld if j >= c and not found_only(j)),
+            default=None,
+        )
         if at is None:
             return self.reader.register_unexplained("cut", self.line.name, c)
         scaling = self.trace.ratios.get(at)
@@ -1587,6 +1642,8 @@ def check_reading(reading: dict) -> list[str]:
     4. A change's size is the same in every window that holds it. One reading holds one
        window, so the tests state it, re-reading over narrower windows. Growth a scaling took
        out is sized by the window: it holds only while the window keeps the growth before it.
+       The index's Boards found through the window are one change over every run they land on,
+       so a window holds it only while it holds all of those runs (ADR-0304).
     5. Share is the netted count over the netted denominator, and the percentage is hiring over
        the netted start, given only off INDEX_BASE_FLOOR openings or more: neither is netted a
        second time. The share's own change is its latest
@@ -1605,7 +1662,8 @@ def check_reading(reading: dict) -> list[str]:
     first netted count and at least INDEX_BASE_FLOOR; ``openings`` is every line's latest added
     together, and ``non_tech_jobs`` the served jobs less those; no change is one the reading
     could not name; no label is a raw field id; a company line's causes stand in the order their
-    Marked changes ran; and every Marked change is named by exactly one day marker."""
+    Marked changes ran; and every drawn Marked change is named by exactly one day marker, and one
+    not drawn (the index's Boards found through the window, ADR-0304) by none."""
     out: list[str] = []
     changes = {c["id"]: c for c in reading.get("marked_changes") or []}
     labels = [
@@ -1823,10 +1881,12 @@ def check_reading(reading: dict) -> list[str]:
     named = Counter(
         change for d in reading.get("day_markers") or [] for change in d["changes"]
     )
-    for cid in changes:
-        if named[cid] != 1:
+    for cid, c in changes.items():
+        want = 1 if c.get("drawn", True) else 0
+        if named[cid] != want:
             out.append(
-                f"marked change {cid}: named by {named[cid]} day markers, not one"
+                f"marked change {cid}: named by {named[cid]} day markers, not "
+                + ("one" if want else "none")
             )
     for cid in named.keys() - changes.keys():
         out.append(f"day marker: it names {cid}, which is no Marked change")
