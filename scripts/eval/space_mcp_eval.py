@@ -862,7 +862,9 @@ def verify_sponsorship_polarity(
         + (f", fewer than {expect.get('at_least')}" if not enough else "")
         + (
             f"; {len(wrong)} of them state {refusal}: "
-            + "; ".join(f"{job.get('title')!r} at {job.get('company')!r}" for job in wrong[:5])
+            + "; ".join(
+                f"{job.get('title')!r} at {job.get('company')!r}" for job in wrong[:5]
+            )
             if wrong
             else f"; none states {refusal}"
         ),
