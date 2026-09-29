@@ -320,6 +320,7 @@ supersedes it and note the supersession in both.
 | [0351](0351-hiring-now-flags-a-row-whose-opened-was-mostly-found-late.md) | Hiring now flags a row whose opened was mostly found late | 2026-09-29 |
 | [0352](0352-a-relevance-page-and-a-requirements-sample-take-a-few-postings-of-each-company.md) | A relevance page and a requirements sample take a few postings of each company | 2026-09-29 |
 | [0354](0354-an-eval-task-may-accept-but-never-require-the-path-its-tool-steers-away-from.md) | An eval task may accept, but never require, the path its tool steers away from (amends 0334) | 2026-09-29 |
+| [0357](0357-the-owner-keeps-the-smallest-stated-experience-and-get-job-names-the-others.md) | The owner keeps the smallest stated experience, and get_job names the others (re-affirms 0079) | 2026-09-29 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*

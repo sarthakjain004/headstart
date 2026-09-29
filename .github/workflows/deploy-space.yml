@@ -30,6 +30,7 @@ on:
       - "src/headstart/boards/company_name.py"
       - "src/headstart/boards/company_ref.py"
       - "src/headstart/jobs/__init__.py"
+      - "src/headstart/jobs/experience.py"
       - "src/headstart/jobs/job.py"
       - "src/headstart/jobs/location.py"
       - "src/headstart/jobs/requisition_copies.py"
