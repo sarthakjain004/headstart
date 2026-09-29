@@ -9,14 +9,19 @@ and the final answer, and judged by the task's verifier. ``trend_sign`` and ``ho
 the Space's public read routes themselves, as the server does, so they check the answer against
 the Space's own figures rather than against what the agent was told; ``trend_sign`` also needs
 the answer to say when opened and closed cover only part of the window, and ``hot_top`` fails an
-answer that leads with a row hiring_now flagged. ``tool_args`` (``search_args`` in the brief's
-fixed schema) checks the arguments instead and trusts the Space to apply them: ``strict=1`` makes
+answer that leads with a row hiring_now flagged, or names a row whose opened was mostly found
+late without saying so. ``tool_args`` (``search_args`` in the brief's fixed schema) checks the
+arguments instead and trusts the Space to apply them: ``strict=1`` makes
 it refuse any it would drop. ``title_keyword_rows`` checks the arguments, then reads the rows that
 call returned back from ``/job`` and needs the keyword where a word starts in every title, the
 keyword's own rule (ADR-0299, ADR-0325). ``sponsorship_polarity`` reads back every row the calls
 listed and fails an answer naming a job that does not offer sponsorship, judged apart from the
 Space's rules: by a person's label where the job has one, else by a negation check of its own
-(ADR-0333). ``all_of`` and ``any_of`` combine checks.
+(ADR-0333). ``operator_mix`` reads each role_requirements sample's companies and fails one that
+counts a curated staffing firm or job board it was not asked for, or more of one company's
+postings than the cap (ADR-0352). ``country_split`` reads `/facets` once per country the task
+names, with the filters of a search_jobs call the agent made, and needs each total stated
+beside that country's name (ADR-0355). ``all_of`` and ``any_of`` combine checks.
 A run whose server was not connected at its start is not judged: it is an error, left out of the
 summary's scores and named on a line of its own, first.
 
@@ -70,9 +75,12 @@ from typing import Any, Protocol
 
 _ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(_ROOT / "src"))
+from headstart.boards import board_operator
+from headstart.boards.board_operator import OPERATORS
 from headstart.mcp_protocol import tool_arguments
 from headstart.mcp_protocol.messages import ToolFailure
-from headstart.space_mcp import company_scope
+from headstart.search_filters import country_filter
+from headstart.space_mcp import company_scope, search_arguments
 from headstart.space_mcp.server import BY_NAME, NAME, URL_VAR
 from headstart.space_mcp.server import call as call_tool
 from headstart.space_mcp.space_client import (
@@ -89,6 +97,7 @@ from headstart.space_mcp.tools import (
     get_job,
     hiring_now,
     read_trends,
+    role_requirements,
     search_jobs,
 )
 
@@ -675,12 +684,29 @@ def _days_between(start: str, end: str) -> float:
     ).total_seconds() / 86400
 
 
+def _found_late(row: dict[str, Any]) -> bool:
+    """Whether most of ``row``'s postings opened were found late, posted weeks before HeadStart
+    first saw them (ADR-0351): of 10 or more opened, its served postings first seen in the window
+    and posted long before are at least half, and those posted since fewer than half."""
+    opened, fresh, late = (
+        row.get("opened"),
+        row.get("opened_fresh"),
+        row.get("opened_found_late"),
+    )
+    if opened is None or fresh is None or late is None or opened < 10:
+        return False
+    return 2 * fresh < opened <= 2 * late
+
+
 def _disowned(
     row: dict[str, Any], lens: str, window: dict[str, Any], min_stock: int
 ) -> bool:
     """Whether hiring_now flags ``row`` on ``lens`` (ADR-0321), worked out here from /hot's own
     fields rather than borrowed from the tool, so a bug in the tool's order cannot hide here.
-    Opened less closed flags nothing: nothing questions its figure."""
+    Every Lens flags opened mostly found late (ADR-0351); Opened less closed flags nothing else,
+    since nothing else questions its figure."""
+    if _found_late(row):
+        return True
     if lens == "opened_less_closed":
         return False
     net, opened, closed = row.get("net"), row.get("opened"), row.get("closed")
@@ -727,26 +753,51 @@ def expected_hot_order(
     return rows[:limit]
 
 
+#: Words by which an answer says a company's postings opened were not newly posted (ADR-0351).
+_FOUND_LATE_SAID = re.compile(
+    r"found late|posted (?:weeks|months|long|well) (?:before|earlier|ago)|posted earlier"
+    r"|older postings|not newly posted|backfill|listed again|re-?listed|re-?posted",
+    re.IGNORECASE,
+)
+
+
+def unflagged_found_late(answer: str, rows: list[dict[str, Any]]) -> list[str]:
+    """The companies among ``rows`` whose opened was mostly found late (ADR-0351) that the
+    answer names without saying so anywhere: reported as hiring this week."""
+    if _FOUND_LATE_SAID.search(answer):
+        return []
+    return [row["company"] for row in rows if _found_late(row) and _named(answer, row)]
+
+
 def verify_hot_top(
     expect: dict[str, Any], transcript: Transcript, space: Space
 ) -> Verdict:
     """At least N-1 of the top N on the Lens named, in the order a correct hiring_now answer
-    lists them (`expected_hot_order`, at the call's own `limit`), and the answer does not lead
-    with a row the tool flagged on that Lens."""
+    lists them (`expected_hot_order`, at the call's own `limit`), the answer does not lead with
+    a row the tool flagged on that Lens, and it names no row listed whose opened was mostly
+    found late without saying so (ADR-0351)."""
     lens = expect.get("lens") or hiring_now.DEFAULT_LENS
     top = int(expect.get("top") or 5)
     calls = _hiring_now_calls(transcript, lens)
     schema = BY_NAME["hiring_now"].input_schema
     limit = (calls[0] if calls else tool_arguments.with_defaults(schema, {}))["limit"]
-    rows = expected_hot_order(space.read(SpaceRoute.HOT), lens, limit)[:top]
+    listed = expected_hot_order(space.read(SpaceRoute.HOT), lens, limit)
+    rows = listed[:top]
     need = max(len(rows) - 1, 0)
     named = [row["company"] for row in rows if _named(transcript.final_answer, row)]
     headline = flagged_headline(transcript, lens)
+    found_late = unflagged_found_late(transcript.final_answer, listed)
     return Verdict(
-        len(named) >= need and headline is None,
+        len(named) >= need and headline is None and not found_late,
         f"names {len(named)} of the top {len(rows)} on {lens} (needs {need}): "
         f"{', '.join(r['company'] for r in rows)}"
-        + (f"; leads with {headline!r}, a row hiring_now flagged" if headline else ""),
+        + (f"; leads with {headline!r}, a row hiring_now flagged" if headline else "")
+        + (
+            f"; reports {', '.join(found_late)} as hiring, though most of what each opened "
+            "was found late"
+            if found_late
+            else ""
+        ),
     )
 
 
@@ -827,8 +878,11 @@ POLARITY_IDS_READ = 40
 LABELLED_DESCRIPTIONS = (
     _ROOT / "tests" / "fixtures" / "work_authorization_labelled.jsonl"
 )
-#: The labels of a job that does offer sponsorship; "mixed" offers it in one place.
+#: The labels of a job that does offer sponsorship; "mixed" offers it in one place. A job
+#: labelled "may_offer" (hedged: "not guaranteed", "case by case") offers it only on an answer
+#: line that says so (ADR-0353).
 _OFFERING_LABELS = ("offers", "mixed")
+_HEDGED_LABEL = "may_offer"
 #: The eval's own reading of an unlabelled job, deliberately simpler than the Space's rules so it
 #: does not share their errors: a quoted sentence with a negating word within :data:`_NEAR_WORDS`
 #: words of one about sponsorship. Near, since "We support visa sponsorship … the right person
@@ -838,6 +892,28 @@ _NEAR_WORDS = 5
 _NEGATED = re.compile(
     r"(?i)\b(?:no|not|never|unable|cannot|without|nor|refus\w*)\b|n['’]t\b|"
     r"citizenship (?:is )?required|must (?:be|hold) (?:a )?(?:u\.?s\.?|united states) citizen"
+)
+
+
+#: The eval's own reading of a hedged offer, again apart from the Space's rules (ADR-0353): a
+#: quoted sentence about sponsorship that promises nothing. Read before :data:`_NEGATED`, since
+#: "not guaranteed" is not a refusal.
+_HEDGED = re.compile(
+    r"(?i)not guaranteed|case[- ]by[- ]case|\bmay (?:be )?(?:available|considered|offered|"
+    r"possible|sponsor)|\bmight\b|select positions|certain (?:positions|roles)"
+)
+#: A hedge stands further from its word than a negation: "Sponsorship for this role is not
+#: guaranteed", "Sponsorship decisions are made on a case-by-case basis".
+_HEDGE_NEAR_WORDS = 8
+#: What an answer line says of a hedged job to report it truly.
+_SAID_HEDGED = re.compile(
+    r"(?i)not guaranteed|case[- ]by[- ]case|\bmay\b|\bmight\b|hedg|possib|not a firm|"
+    r"uncertain|conditional|not promised|depends"
+)
+#: What an answer line says of a job it left out ("I dropped an Amgen listing …").
+_LEFT_OUT = re.compile(
+    r"(?i)\b(?:dropp\w*|left (?:it )?out|leav\w*|exclud\w*|skipp\w*|omitt\w*|remov\w*|"
+    r"filtered out|set aside|ruled out)\b"
 )
 
 
@@ -857,23 +933,55 @@ def _sponsorship_labels() -> dict[str, str]:
 
 def _not_offering(job: dict[str, Any], labels: dict[str, str]) -> str | None:
     """Why the eval reads ``job`` as not offering sponsorship, or None: its label where a
-    person gave it one, else the first sentence `/job` quotes about sponsorship that negates."""
+    person gave it one, else the first sentence `/job` quotes about sponsorship that negates.
+    A hedged offer's reason starts "hedged" (:func:`_hedged`)."""
     if (label := labels.get(str(job.get("id")))) is not None:
+        if label == _HEDGED_LABEL:
+            return "hedged: labelled may_offer by hand"
         return None if label in _OFFERING_LABELS else f"labelled {label} by hand"
     for mention in (job.get("work_authorization") or {}).get("mentions") or []:
         for topic in _SPONSORSHIP_TOPIC.finditer(mention):
             near = mention[: topic.start()].split()[-_NEAR_WORDS:] + [topic.group()]
             near += mention[topic.end() :].split()[:_NEAR_WORDS]
+            hedge = mention[: topic.start()].split()[-_HEDGE_NEAR_WORDS:] + [
+                topic.group()
+            ]
+            hedge += mention[topic.end() :].split()[:_HEDGE_NEAR_WORDS]
+            if _HEDGED.search(" ".join(hedge)):
+                return f"hedged: says {mention[:80]!r}"
             if _NEGATED.search(" ".join(near)):
                 return f"says {mention[:80]!r}"
     return None
 
 
+def _hedged(why: str) -> bool:
+    return why.startswith("hedged")
+
+
+def _lines_naming(answer: str, job: dict[str, Any]) -> list[str]:
+    """The lines of ``answer`` naming ``job``: by id, by title and company, or by its company
+    on a line saying it was left out ("I dropped an Amgen listing")."""
+    company = str(job.get("company") or "")
+    return [
+        line
+        for line in answer.splitlines()
+        if _named_in(line, job)
+        or (company and _found(line, company) and _LEFT_OUT.search(line))
+    ]
+
+
 def _said_not_offering(answer: str, job: dict[str, Any]) -> bool:
-    """Whether a line of ``answer`` naming ``job`` says it does not offer sponsorship."""
+    """Whether a line of ``answer`` naming ``job`` says it does not offer sponsorship, or that
+    it was left out."""
     return any(
-        _named_in(line, job) and _NEGATED.search(line) for line in answer.splitlines()
+        _NEGATED.search(line) or _LEFT_OUT.search(line)
+        for line in _lines_naming(answer, job)
     )
+
+
+def _said_hedged(answer: str, job: dict[str, Any]) -> bool:
+    """Whether a line of ``answer`` naming ``job`` says its offer is hedged."""
+    return any(_SAID_HEDGED.search(line) for line in _lines_naming(answer, job))
 
 
 def verify_sponsorship_polarity(
@@ -885,8 +993,10 @@ def verify_sponsorship_polarity(
     offering sponsorship. A job a person labelled (:data:`LABELLED_DESCRIPTIONS`) is judged by
     its label; any other by :data:`_NEGATED` near a sponsorship word in the sentences `/job`
     quotes.
-    With ``expect["said_ok"]``, a job named on a line saying it does not offer sponsorship is
-    fine: the answer reported it truly. At least ``expect["at_least"]`` must be named.
+    With ``expect["said_ok"]``, a job named on a line saying it does not offer sponsorship, or
+    that it was left out, is fine: the answer reported it truly. A hedged offer ("not
+    guaranteed", "case by case", a person's ``may_offer`` label) is fine on a line that says it
+    is hedged (ADR-0353). At least ``expect["at_least"]`` must be named.
 
     It catches a named job a person labelled refusing or silent, and one whose quoted sentence
     about sponsorship negates ("not available", "without sponsorship", "citizenship required").
@@ -911,6 +1021,7 @@ def verify_sponsorship_polarity(
         for job in named
         if (why := _not_offering(job, labels))
         and not (expect.get("said_ok") and _said_not_offering(answer, job))
+        and not (_hedged(why) and _said_hedged(answer, job))
     ]
     at_least = int(expect.get("at_least", 1))
     enough = len(named) >= at_least
@@ -930,6 +1041,157 @@ def verify_sponsorship_polarity(
             else ""
         ),
     )
+
+
+# --- operator_mix --------------------------------------------------------------------------
+
+#: One company on role_requirements' companies line: its quoted name, any tags, its quoted key,
+#: and its count, "15" or "15 sampled, 8 counted".
+_SAMPLED_COMPANY = re.compile(
+    r'(?:("(?:[^"\\]|\\.)*")|no company name)(?: \([^)]*\))* \(key ("(?:[^"\\]|\\.)*")\) '
+    r"([\d,]+)(?: sampled, ([\d,]+) counted)?"
+)
+_COMPANIES_LINE = "Companies with the most sampled postings:"
+#: Operators a sample leaves out unless its call keeps them (ADR-0335).
+_LEFT_OUT_OPERATORS = ("staffing", "aggregator")
+
+
+def sampled_companies(result: str) -> list[tuple[str, str, int]]:
+    """Each company on a role_requirements result's companies line: its name, its key, and how
+    many of its postings were counted."""
+    line = next(
+        (ln for ln in result.splitlines() if ln.startswith(_COMPANIES_LINE)), ""
+    )
+    return [
+        (
+            json.loads(name) if name else "",
+            json.loads(key),
+            int((counted or sampled).replace(",", "")),
+        )
+        for name, key, sampled, counted in _SAMPLED_COMPANY.findall(line)
+    ]
+
+
+def verify_operator_mix(
+    expect: dict[str, Any], transcript: Transcript, space: Space
+) -> Verdict:
+    """Round-4 critique P1-2 (ADR-0352): in every successful role_requirements call, no company
+    the sample counted is one the curated lists (`board_operator.classify`, read here, not by the
+    tool) call a staffing firm or job board unless that call's `operators` kept it, and, unless a
+    `company` was named, no company counted more than ``expect["per_company"]`` postings."""
+    schema = BY_NAME["role_requirements"].input_schema
+    calls = [
+        (call, tool_arguments.with_defaults(schema, call.arguments))
+        for call in transcript.calls
+        if call.name == "role_requirements" and call.succeeded
+    ]
+    if not calls:
+        return Verdict(False, "no successful role_requirements call")
+    cap = int(expect.get("per_company", role_requirements.PER_COMPANY))
+    wrong: list[str] = []
+    listed = 0
+    for call, arguments in calls:
+        kept = set(search_arguments.operators_kept(arguments) or OPERATORS)
+        for name, key, counted in sampled_companies(call.result or ""):
+            listed += 1
+            operator = board_operator.classify(key, name)
+            if operator in _LEFT_OUT_OPERATORS and operator not in kept:
+                wrong.append(f"{name or key!r} is {operator}")
+            if counted > cap and not (arguments.get("company") or "").strip():
+                wrong.append(f"{name or key!r} counted {counted}, over {cap}")
+    if not listed:
+        return Verdict(False, "no role_requirements result lists its sampled companies")
+    return Verdict(
+        not wrong,
+        f"{listed} sampled companies read"
+        + (
+            f"; {'; '.join(wrong[:5])}"
+            if wrong
+            else "; none a left-out operator or over the cap"
+        ),
+    )
+
+
+# --- country_split -------------------------------------------------------------------------
+
+#: How far either side of a country's name the answer's figure for it may sit: "India: 12,345"
+#: and "2,345 in Germany" both.
+_NEAR_A_NAME = 60
+_FIGURE = re.compile(r"(?<![\d.])\d{1,3}(?:,\d{3})+(?!\d)|(?<![\d.,])\d+(?![\d,])")
+
+
+def _country_total(space: Space, arguments: dict[str, Any], code: str) -> int:
+    """The total `/facets` gives for ``arguments`` (a search_jobs call's, at their defaults)
+    with ``code`` as their only country: what the answer's figure for that country must be."""
+    scope = None
+    if company := (arguments.get("company") or "").strip():
+        scope = company_scope.for_search(
+            space, company, needs_boards=bool(arguments.get("category"))
+        )
+    placeless = {
+        k: v for k, v in arguments.items() if k not in ("country", "india_place")
+    }
+    params = [
+        (name, value)
+        for name, value in search_jobs._params(placeless, scope)
+        if name not in ("k", "page", "sort")
+    ]
+    facets = space.read(
+        SpaceRoute.FACETS, [*params, ("country", code), ("counts", "total")]
+    )
+    return int(facets.get("total") or 0)
+
+
+def _figures_near(answer: str, name: str) -> list[int]:
+    """Every figure within :data:`_NEAR_A_NAME` characters of each place ``answer`` says
+    ``name``."""
+    figures = []
+    for match in re.finditer(rf"\b{re.escape(name)}\b", answer, re.IGNORECASE):
+        start = max(0, match.start() - _NEAR_A_NAME)
+        near = answer[start : match.end() + _NEAR_A_NAME]
+        figures += [int(f.replace(",", "")) for f in _FIGURE.findall(near)]
+    return figures
+
+
+def verify_country_split(
+    expect: dict[str, Any], transcript: Transcript, space: Space
+) -> Verdict:
+    """Each of ``expect["countries"]`` stated with its own count (ADR-0355): for some successful
+    search_jobs call meeting ``must_any``, the answer says, near each country's name, the total
+    `/facets` gives for that call's filters with that country and no other place — read here per
+    country, so an answer taken from `detail` full's places is held to the `country` filter's own
+    count, and one made from a search per country passes too."""
+    schema = BY_NAME["search_jobs"].input_schema
+    rules = {k: v for k, v in expect.items() if k == "must_any"}
+    calls = [
+        call
+        for call in transcript.calls
+        if call.name == "search_jobs"
+        and call.succeeded
+        and not _misses(rules, tool_arguments.with_defaults(schema, call.arguments))
+    ]
+    if not calls:
+        return Verdict(False, f"no successful search_jobs call meets {rules!r}")
+    tried = []
+    for call in calls:
+        arguments = tool_arguments.with_defaults(schema, call.arguments)
+        wrong = []
+        for code in expect["countries"]:
+            name = country_filter.name(code)
+            truth = _country_total(space, arguments, code)
+            if truth not in _figures_near(transcript.final_answer, name):
+                wrong.append(f"{name} is {truth:,}")
+        if not wrong:
+            return Verdict(
+                True,
+                f"search_jobs {json.dumps(call.arguments, ensure_ascii=False)}: each "
+                "country's figure is its /facets total",
+            )
+        tried.append(
+            f"{json.dumps(call.arguments, ensure_ascii=False)}: {', '.join(wrong)}, "
+            "not stated beside its name"
+        )
+    return Verdict(False, " | ".join(tried))
 
 
 # --- mentions ------------------------------------------------------------------------------
@@ -1036,10 +1298,12 @@ VERIFIERS: dict[str, Verifier] = {
     "search_args": verify_tool_args,
     "title_keyword_rows": verify_title_keyword_rows,
     "sponsorship_polarity": verify_sponsorship_polarity,
+    "operator_mix": verify_operator_mix,
     "trend_sign": verify_trend_sign,
     "hot_top": verify_hot_top,
     "blocking_named": verify_blocking_named,
     "mentions": verify_mentions,
+    "country_split": verify_country_split,
     "any_of": verify_any_of,
     "all_of": verify_all_of,
 }

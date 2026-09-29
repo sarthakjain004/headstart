@@ -96,9 +96,10 @@ from headstart.ingest.doc_prep import (
 )
 from headstart.ingest.update_descriptions import read_changes, read_store
 from headstart.jobs.experience import from_field, from_seniority
+from headstart.jobs.salary import SalarySpan, placed
 from headstart.jobs.salary import from_field as salary_from_field
 from headstart.scrapers import registry
-from headstart.search_filters import india_filter
+from headstart.search_filters import country_gazetteer, india_filter
 
 _log = log.get(__name__, __spec__)
 
@@ -326,7 +327,11 @@ def refresh_row(
     )
     # Salary's own input drift — its cascade never reads `title`, so title-only edits don't
     # trigger it (unlike experience's).
-    salary_inputs_moved = facts_changed and row.get("salary") != meta.get("salary")
+    # And `location`, which decides whether a rupee figure can be pay there (ADR-0357).
+    salary_inputs_moved = facts_changed and (
+        row.get("salary") != meta.get("salary")
+        or row.get("location") != meta.get("location")
+    )
 
     changed = False
     if sweep or rederive or inputs_moved:
@@ -334,7 +339,10 @@ def refresh_row(
             row["id"] in descriptions
         ):  # the full cascade, against the text this row was derived from
             derived = experience_meta(
-                row.get("experience"), descriptions[row["id"]], row.get("title")
+                row.get("experience"),
+                descriptions[row["id"]],
+                row.get("title"),
+                row.get("company"),
             )
         else:
             span = _rederive_without_text(row, meta)
@@ -346,7 +354,10 @@ def refresh_row(
     if sweep or rederive or salary_inputs_moved:
         if row["id"] in descriptions:
             derived_salary = salary_meta(
-                row.get("salary"), descriptions[row["id"]], row.get("ats")
+                row.get("salary"),
+                descriptions[row["id"]],
+                row.get("ats"),
+                row.get("location"),
             )
         else:
             salary_span = _rederive_salary_without_text(row, meta)
@@ -409,7 +420,7 @@ def _rederive_without_text(row: dict, meta: dict) -> Any:
         return field
     if meta.get("experience_source") == "regex":
         return _KEEP
-    return from_seniority(row.get("experience"), row.get("title"))
+    return from_seniority(row.get("experience"), row.get("title"), row.get("company"))
 
 
 def _rederive_salary_without_text(row: dict, meta: dict) -> Any:
@@ -419,13 +430,21 @@ def _rederive_salary_without_text(row: dict, meta: dict) -> Any:
     because nothing here can improve on it without the text. But where experience falls through to
     a seniority floor that needs no text, salary has no such tier (see ``headstart.jobs.salary``'s
     module docstring) — "no field, no held description, no prior regex value" is honestly
-    ``None`` here, never a guess.
+    ``None`` here, never a guess. Either value still answers to where the job is (ADR-0357): a
+    rupee figure too small to be pay in a job placed wholly abroad is dropped.
     """
+    places = country_gazetteer.classify(row.get("location"))
     field = salary_from_field(row.get("salary"), row.get("ats"))
     if field is not None:
-        return field
+        return placed(field, places)
     if meta.get("salary_source") == "regex":
-        return _KEEP
+        stored = SalarySpan(
+            meta.get("min_salary_annual"),
+            meta.get("max_salary_annual"),
+            meta.get("salary_currency"),
+            "regex",
+        )
+        return _KEEP if placed(stored, places) is not None else None
     return None
 
 

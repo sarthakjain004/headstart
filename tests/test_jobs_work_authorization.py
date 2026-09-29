@@ -13,6 +13,7 @@ import pytest
 from headstart.jobs import work_authorization as wa
 
 OFFERS = wa.OFFERS_SPONSORSHIP
+MAY = wa.MAY_OFFER_SPONSORSHIP
 REFUSES = wa.REFUSES_SPONSORSHIP
 RELOCATION = wa.OFFERS_RELOCATION
 
@@ -43,8 +44,9 @@ RELOCATION = wa.OFFERS_RELOCATION
     ],
 )
 def test_an_offer_of_sponsorship(text):
-    assert OFFERS in wa.stances(text)
-    assert REFUSES not in wa.stances(text)
+    # A job in the United States, so an offer naming the US or the UK reaches it (ADR-0353).
+    assert OFFERS in wa.stances(text, "Software Engineer", "Austin, TX")
+    assert REFUSES not in wa.stances(text, "Software Engineer", "Austin, TX")
 
 
 @pytest.mark.parametrize(
@@ -126,11 +128,237 @@ def test_a_text_that_offers_and_refuses_is_read_as_refusing():
     ],
 )
 def test_a_sponsor_word_about_something_else_is_no_stance(text):
-    assert not wa.stances(text) & {OFFERS, REFUSES}
+    assert not wa.stances(text) & {OFFERS, MAY, REFUSES}
 
 
-def test_sponsorship_not_guaranteed_offers_it_to_some():
-    assert wa.stances("Sponsorship for this role is not guaranteed.") == {OFFERS}
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Amgen, round-4 critique P1-3.
+        "Sponsorship Sponsorship for this role is not guaranteed.",
+        # Diligent, round-4 critique p1_offers_1.
+        (
+            "Visa sponsorship may be available for select positions based on business needs and "
+            "specific role requirements."
+        ),
+        (
+            "Sponsorship decisions are evaluated on a case-by-case basis, and eligibility should "
+            "not be assumed for all opportunities."
+        ),
+        "We may sponsor H-1B visas for exceptional candidates.",
+        "Visa sponsorship is not always available.",
+        "Visa sponsorship might be possible for the right candidate.",
+    ],
+)
+def test_a_hedged_offer_may_offer_sponsorship(text):
+    # ADR-0353: offered to some, not promised to this job.
+    assert wa.stances(text, "Software Engineer", "Austin, TX") == {MAY}
+
+
+def test_a_firm_offer_outranks_a_hedged_one_and_a_refusal_both():
+    hedged = "Sponsorship for this role is not guaranteed. "
+    assert wa.stances(hedged + "Visa sponsorship is available.") == {OFFERS}
+    assert wa.stances(hedged + "We cannot sponsor visas.") == {REFUSES}
+
+
+@pytest.mark.parametrize(
+    ("location", "want"),
+    [
+        ("Berlin, Germany", {OFFERS}),
+        ("Munich", {OFFERS}),
+        # n8n "Senior Developer Advocate, US", round-4 critique P1-3.
+        ("United States", set()),
+        ("New York, NY", set()),
+        # A place no country can be read from: it may reach the job.
+        ("Remote", {MAY}),
+        (None, {MAY}),
+    ],
+)
+def test_an_offer_scoped_to_a_country_is_judged_against_the_jobs_place(location, want):
+    text = (
+        "We can sponsor visas to Germany; for any other country, you need to have existing "
+        "right to work."
+    )
+    assert wa.stances(text, "Senior Developer Advocate", location) == want
+
+
+def test_an_offer_scoped_only_to_another_country_refuses_this_job():
+    text = "Visa sponsorship is available only for roles based in the Netherlands."
+    assert wa.stances(text, "Backend Engineer", "Amsterdam, NL") == {OFFERS}
+    assert wa.stances(text, "Backend Engineer", "London, United Kingdom") == {REFUSES}
+
+
+def test_a_country_the_candidate_comes_from_is_not_the_offers_scope():
+    text = "If you are outside Canada, we support relocation and immigration."
+    assert OFFERS in wa.stances(text, "Engineer", "Toronto, ON, Canada")
+
+
+@pytest.mark.parametrize(
+    ("title", "want"),
+    [
+        ("Principal Software Engineer", {OFFERS}),
+        ("Director, Software Engineering", {OFFERS}),
+        ("Senior Software Engineer", {REFUSES}),
+        ("Software Engineer II", {REFUSES}),
+        # Medtronic's "Software Engineering Manager", round-4 critique P1-3: a manager's rank
+        # beside a Principal engineer's is not read from the title.
+        ("Software Engineering Manager", {MAY}),
+        (None, {MAY}),
+    ],
+)
+def test_an_offer_limited_to_levels_is_judged_against_the_title(title, want):
+    text = (
+        "Visa sponsorship for this position is offered exclusively for Principal-level roles "
+        "and above. Roles below the Principal level require unrestricted U.S. work "
+        "authorization."
+    )
+    assert wa.stances(text, title, "Minneapolis, MN") == want
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        # AeroVironment, round-4 critique P1-3.
+        "Some positions will require current U.S. Citizenship due to contract requirements.",
+        "Certain roles may require U.S. citizenship to obtain a security clearance.",
+        "This position may require U.S. citizenship.",
+    ],
+)
+def test_a_citizenship_requirement_of_some_positions_does_not_refuse_this_job(text):
+    assert REFUSES not in wa.stances(text, "Software Engineer", "Austin, TX")
+
+
+@pytest.mark.parametrize(
+    ("text", "want"),
+    [
+        # US Bank: an agency's name, not a requirement.
+        (
+            "The E-Verify program is operated by the U.S. Citizenship and Immigration Services.",
+            set(),
+        ),
+        # RTX: a field label before an offer.
+        (
+            (
+                "U.S. Citizen, U.S. Person, or Immigration Status Requirements: The company "
+                "will offer immigration sponsorship for this position, if needed."
+            ),
+            {OFFERS},
+        ),
+    ],
+)
+def test_citizenship_named_but_not_required_does_not_refuse(text, want):
+    assert wa.stances(text, "Quality Engineer", "San Marcos, TX") == want
+
+
+def test_an_offer_to_candidates_in_the_eu_reaches_a_job_in_a_member_country():
+    text = (
+        "Visa sponsorship may be available for eligible candidates already located in a UK/EU "
+        "country who require support."
+    )
+    assert wa.stances(text, "Backend Engineer", "France") == {MAY}
+    assert wa.stances(text, "Backend Engineer", "United States") == set()
+
+
+def test_an_offer_not_made_for_every_role_is_hedged_and_a_firm_one_beside_it_stands():
+    # Anthropic, labelled offers in ADR-0333's frozen sample, had read as a refusal.
+    hedge = "However, we aren't able to successfully sponsor visas for every role."
+    assert wa.stances(hedge, "Engineer", "Seattle, WA") == {MAY}
+    assert wa.stances("We do sponsor visas! " + hedge, "Engineer", "Seattle, WA") == {
+        OFFERS
+    }
+
+
+@pytest.mark.parametrize(
+    ("text", "want"),
+    [
+        # PHINIA, drawn after the first freeze: the company sponsors, this role does not.
+        (
+            (
+                "PHINIA does provide sponsorship for employment visa status based on business need. "
+                "However, for this role, applicants must be currently authorized to work on a "
+                "full-time basis, in the country where the position is currently based."
+            ),
+            {REFUSES},
+        ),
+        (
+            "You must currently possess valid and unrestricted U.S. work authorization.",
+            {REFUSES},
+        ),
+        # UCI: a heading, then a demand for proof; nothing is offered.
+        (
+            (
+                "Consideration for Work Authorization Sponsorship Must be able to provide proof of "
+                "work authorization"
+            ),
+            set(),
+        ),
+        # An offer made later, or for a move the job does not need.
+        (
+            "Visa sponsorship and relocation support for a move to NYC (after 2 years' tenure)",
+            {MAY, RELOCATION},
+        ),
+        ("If you wish to relocate, we are happy to help you obtain a visa.", {MAY}),
+        # The usual demand beside an offer is no refusal.
+        (
+            (
+                "Candidates must be legally authorized to work in the United States. Visa "
+                "sponsorship is available for this position."
+            ),
+            {OFFERS},
+        ),
+    ],
+)
+def test_what_the_first_draw_after_the_freeze_got_wrong(text, want):
+    assert wa.stances(text, "Engineer", "Austin, TX") == want
+
+
+@pytest.mark.parametrize(
+    ("text", "want"),
+    [
+        # Carrier: a curly apostrophe negates as a straight one does.
+        ("This position doesn’t support immigration sponsorship.", {REFUSES}),
+        # MSR-FSR: "support" is the job's duty; the authorisation is demanded.
+        (
+            (
+                "Travel to customer sites to support essential therefore EU work authorisation "
+                "and eligibility required."
+            ),
+            set(),
+        ),
+    ],
+)
+def test_what_the_second_draw_after_the_freeze_got_wrong(text, want):
+    assert wa.stances(text, "Engineer", "Dresden, Germany") == want
+
+
+@pytest.mark.parametrize(
+    ("text", "want"),
+    [
+        (
+            "You must have a valid NZ work visa for your application to be considered.",
+            {REFUSES},
+        ),
+        (
+            (
+                "Collaborate with cross-functional teams to support immigration and border "
+                "security operations globally."
+            ),
+            set(),
+        ),
+    ],
+)
+def test_what_the_draw_after_the_last_freeze_got_wrong(text, want):
+    assert wa.stances(text, "Engineer", "Wellington, New Zealand") == want
+
+
+def test_mentions_quote_a_us_person_requirement():
+    text = "Applicants will be asked to verify U.S. person status under the ITAR."
+    assert wa.mentions(text) == [text]
+
+
+def test_a_citizenship_requirement_of_this_job_still_refuses_it():
+    for text in ("U.S. Citizenship required.", "Must be a U.S. citizen."):
+        assert wa.stances(text, "Software Engineer", "Austin, TX") == {REFUSES}
 
 
 @pytest.mark.parametrize(
@@ -227,6 +455,7 @@ _LABELLED = Path(__file__).parent / "fixtures" / "work_authorization_labelled.js
 #: Each stance, and the labels that make it true.
 _TRUE_WHEN = {
     OFFERS: ("sponsorship", {"offers"}),
+    MAY: ("sponsorship", {"may_offer"}),
     REFUSES: ("sponsorship", {"refuses", "mixed"}),
     RELOCATION: ("relocation", {"offers"}),
 }
@@ -239,32 +468,61 @@ def _labelled(sample=None):
     return [row for row in rows if sample is None or row["sample"] == sample]
 
 
+def _stances(row):
+    """What the rules read in a labelled row, against its job's own title and place."""
+    return wa.stances(row["text"], row["title"], row["location"])
+
+
 def _precision_recall(rows, stance):
     field, true = _TRUE_WHEN[stance]
-    read = [(stance in wa.stances(row["text"]), row[field] in true) for row in rows]
+    read = [(stance in _stances(row), row[field] in true) for row in rows]
     tp = sum(got and want for got, want in read)
     return tp / sum(got for got, _ in read), tp / sum(want for _, want in read)
 
 
 @pytest.mark.parametrize(
     ("stance", "precision_at_least", "recall_at_least"),
-    [(OFFERS, 0.97, 0.95), (REFUSES, 0.96, 0.96), (RELOCATION, 0.98, 0.98)],
+    [
+        (OFFERS, 0.98, 0.96),
+        (MAY, 0.97, 0.95),
+        (REFUSES, 0.98, 0.97),
+        (RELOCATION, 0.98, 0.98),
+    ],
 )
 def test_the_rules_hold_their_measured_rates_on_the_labelled_sample(
     stance, precision_at_least, recall_at_least
 ):
-    # 660 descriptions read by hand (ADR-0333); measured 0.98/0.96, 0.97/0.97 and 0.99/0.99.
+    # 893 descriptions read by hand (ADR-0333, ADR-0353); measured 0.99/0.98, 1.00/1.00,
+    # 0.98/0.98 and 0.99/0.99.
     precision, recall = _precision_recall(_labelled(), stance)
     assert precision >= precision_at_least and recall >= recall_at_least
 
 
 def test_offers_hold_their_precision_on_the_sample_drawn_after_the_rules_froze():
-    # 70 jobs the frozen rules said offer sponsorship, drawn and read after the last change.
+    # ADR-0333's 70 frozen offers, read against each job's place and title (ADR-0353): 13 of
+    # them are hedged and now only may offer; 58 of the 59 left are right.
     rows = [
         row
         for row in _labelled("predicted-offers-v2-frozen")
-        if OFFERS in wa.stances(row["text"])
+        if OFFERS in _stances(row)
     ]
     field, true = _TRUE_WHEN[OFFERS]
     right = sum(row[field] in true for row in rows)
-    assert len(rows) == 70 and right >= 68
+    assert len(rows) == 59 and right >= 58
+
+
+def test_offers_hold_their_precision_on_the_50_drawn_after_the_last_freeze():
+    # ADR-0353: 50 live offers drawn after the rules froze, 48 right; the two wrong ones (a
+    # demand for a valid local visa, immigration as a product's domain) were fixed after.
+    rows = [
+        row
+        for row in _labelled("predicted-offers-v3-frozen")
+        if OFFERS in _stances(row)
+    ]
+    field, true = _TRUE_WHEN[OFFERS]
+    assert len(rows) >= 48 and sum(row[field] in true for row in rows) >= 48
+
+
+def test_every_labelled_row_carries_its_jobs_title_and_place():
+    # A scoped offer is judged against them (ADR-0353); None where the job left the index.
+    assert all("title" in row and "location" in row for row in _labelled())

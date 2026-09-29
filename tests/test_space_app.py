@@ -1009,7 +1009,7 @@ def test_a_caller_cannot_claim_the_in_process_mark_with_a_header(auth_app, monke
 
 # ---- the app's own mark on every reply (ADR-0253) ----
 
-_OWN_REPLY = "app; agent-api=18"
+_OWN_REPLY = "app; agent-api=21"
 
 
 def test_a_routes_own_answer_is_marked(auth_app):
@@ -3389,9 +3389,9 @@ def test_locations_are_counted_over_the_named_boards_only(app, monkeypatch):
     scoped = []
     real = app.job_search.location_counts.top
 
-    def recording(table, where, limit):
+    def recording(table, where, limit, india_materialized):
         scoped.append((where, limit))
-        return real(table, where, limit)
+        return real(table, where, limit, india_materialized)
 
     monkeypatch.setattr(app.job_search.location_counts, "top", recording)
     r = app.app.test_client().get(
@@ -3419,8 +3419,21 @@ def test_locations_are_counted_over_the_named_boards_only(app, monkeypatch):
             {"code": "DE", "jobs": 1, "places": [{"location": "Berlin", "count": 1}]}
         ],
         "no_country": {"jobs": 1, "places": [{"location": "Remote", "count": 1}]},
-        "places_unread": 0,
     }
+
+
+def test_facets_say_where_the_matching_jobs_are_when_asked(app):
+    """ADR-0355: `places=1` is a parameter strict requests may send, and adds `places`."""
+    client = app.app.test_client()
+    placed = client.get("/facets?places=1&counts=total&strict=1")
+    assert placed.status_code == 200
+    # The fake table answers its two rows, Berlin and Remote, whatever it is asked.
+    assert placed.get_json()["places"]["countries"] == [
+        {"code": "DE", "jobs": 1, "places": [{"location": "Berlin", "count": 1}]}
+    ]
+    assert "places" not in client.get("/facets?counts=total&strict=1").get_json()
+    refused = client.get("/facets?places=yes")
+    assert refused.status_code == 400 and "places" in refused.get_json()["detail"]
 
 
 @pytest.mark.parametrize(
@@ -4655,16 +4668,79 @@ def test_hot_is_ranked_at_boot_from_the_history_the_trends_tab_reads(
     history = _company_history(trends_app, monkeypatch, tmp_path)
     seen = {}
 
-    def rank(given, directory):
-        seen.update(history=given, directory=directory)
+    def rank(given, directory, first_seen):
+        seen.update(history=given, directory=directory, first_seen=first_seen)
         return {"window": {"base": _T1}, "lenses": {}, "counts": {"ranked": 0}}
 
+    # The served postings first seen since turnover began date each row's opened (ADR-0351).
+    postings = [("workday:hpe/a:1", "2026-09-20T00:00:00+00:00", "2026-05-05")]
+    asked = []
+    monkeypatch.setattr(
+        trends_app, "_first_seen_since", lambda stamp: asked.append(stamp) or postings
+    )
     monkeypatch.setattr(trends_app.hot_ranking, "rank", rank)
     ranked = trends_app._rank_hot(history)
     assert ranked["window"]["base"] == _T1
-    assert seen == {"history": history, "directory": history.companies}
+    assert seen == {
+        "history": history,
+        "directory": history.companies,
+        "first_seen": postings,
+    }
+    assert asked == [history.trailing_week()["turnover_from"]]
     monkeypatch.setattr(trends_app, "_HOT", ranked)
     assert trends_app.app.test_client().get("/hot").get_json() == ranked
+
+
+def test_unread_first_seen_postings_leave_the_hot_tab_up(trends_app, monkeypatch):
+    """ADR-0351: a table that cannot be read for its first-seen postings (this fake has no
+    `to_arrow`) dates nothing, rather than darkening the tab; so does no turnover stamp."""
+    assert trends_app._first_seen_since(None) is None
+    assert trends_app._first_seen_since("2026-09-25T18:16:48+00:00") is None
+
+
+def test_first_seen_postings_are_read_whole_in_three_columns(trends_app, monkeypatch):
+    """The read asks for every row its filter counts, as `JobSearch._in_family` does, in three
+    columns (ADR-0351)."""
+    asked = {}
+
+    class Table:
+        def count_rows(self, where):
+            asked["counted"] = where
+            return 12
+
+        def search(self):
+            return self
+
+        def where(self, where):
+            asked["where"] = where
+            return self
+
+        def select(self, columns):
+            asked["columns"] = columns
+            return self
+
+        def limit(self, n):
+            asked["limit"] = n
+            return self
+
+        def to_arrow(self):
+            return pa.table(
+                {
+                    "id": ["gh:a:1"],
+                    "first_seen": ["2026-09-26T00:00:00+00:00"],
+                    "posted_at": [None],
+                }
+            )
+
+    monkeypatch.setattr(trends_app, "_table", Table())
+    rows = trends_app._first_seen_since("2026-09-25T18:16:48+00:00")
+    assert rows == [("gh:a:1", "2026-09-26T00:00:00+00:00", None)]
+    assert asked == {
+        "counted": "first_seen > '2026-09-25T18:16:48+00:00'",
+        "where": "first_seen > '2026-09-25T18:16:48+00:00'",
+        "columns": ["id", "first_seen", "posted_at"],
+        "limit": 12,
+    }
 
 
 def test_boot_derives_its_company_boards_and_hot_through_the_one_function(

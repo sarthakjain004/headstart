@@ -487,6 +487,17 @@ def from_description(text: str | None) -> ExperienceSpan | None:
     return _scan(text, _DESC_PATTERNS) or _scan(text, _NUM_WORD_PATTERNS)
 
 
+def stated_floors(text: str | None) -> list[int]:
+    """Every distinct floor the description states, in the pass Tier 2 answers from, smallest
+    first; "up to N" ceilings left out. The answer is the first of them (ADR-0079), and `get_job`
+    says so when there are several (ADR-0357)."""
+    if not text:
+        return []
+    text = text.translate(_FOLD)
+    stated = _stated(text, _DESC_PATTERNS) or _stated(text, _NUM_WORD_PATTERNS)
+    return sorted({span.min_years for span, ceiling in stated if not ceiling})
+
+
 def _scan(text: str, patterns: list[_Tier2Pattern]) -> ExperienceSpan | None:
     """One pass of the Tier-2 patterns over already-folded text, answered by its smallest floor.
 
@@ -496,7 +507,19 @@ def _scan(text: str, patterns: list[_Tier2Pattern]) -> ExperienceSpan | None:
     anybody wrote. Selecting rather than returning early is what lets `_GAP` be as wide as recall
     wants, since position no longer decides the answer.
     """
-    spans: list[ExperienceSpan] = []
+    return min(
+        (span for span, _ in _stated(text, patterns)),
+        key=lambda span: span.min_years,
+        default=None,
+    )
+
+
+def _stated(
+    text: str, patterns: list[_Tier2Pattern]
+) -> list[tuple[ExperienceSpan, bool]]:
+    """Every match of one pass that survives the guards, each with whether it is an "up to N"
+    ceiling rather than a stated floor."""
+    spans: list[tuple[ExperienceSpan, bool]] = []
     for pattern, guarded in patterns:
         # Every occurrence, so a rejected match falls through to the next one — "Founded 12 years
         # ago. Requires 5+ years building …" still yields 5 rather than nothing. Resumed from just
@@ -534,7 +557,7 @@ def _scan(text: str, patterns: list[_Tier2Pattern]) -> ExperienceSpan | None:
                 # write a 150 no other path can produce (ADR-0072).
                 top = hi if hi is not None else lo
                 if top <= _MAX_PLAUSIBLE_REQUIREMENT:
-                    spans.append(ExperienceSpan(0, top, "regex"))
+                    spans.append((ExperienceSpan(0, top, "regex"), True))
                 continue
             if hi is None:
                 # Recover the floor when this match is a range's ceiling ("2-4 years" -> 2, not 4).
@@ -553,8 +576,8 @@ def _scan(text: str, patterns: list[_Tier2Pattern]) -> ExperienceSpan | None:
                 continue
             if hi is not None and (hi < lo or hi > _MAX_PLAUSIBLE_YEARS):
                 hi = None
-            spans.append(ExperienceSpan(lo, hi, "regex"))
-    return min(spans, key=lambda span: span.min_years, default=None)
+            spans.append((ExperienceSpan(lo, hi, "regex"), False))
+    return spans
 
 
 # --- Tier 3 (fallback): map a seniority label to a floor-years estimate --------------------------
@@ -658,14 +681,39 @@ _LEVEL_YEARS = {
 }
 
 
+# One employer's own level ladder, where it disagrees with `_LEVEL_YEARS` (ADR-0357). Netflix titles
+# every role by level, "Software Engineer (L5)" or "Software Engineer 5", including role nouns
+# `_LEVEL` does not hold ("Business Security Partner (L5)", "Creative Tech Researcher 5"). Its
+# postings that state a number state medians of 3, 5 and 9 years at L4, L5 and L6 (n=11, 35, 21;
+# served table, 2026-09-29), where `_LEVEL_YEARS` gives 7, 7 and nothing, and "(LN)" titles at
+# other employers state 6, 5 and 10. A ladder is the employer's, so it is keyed by company and
+# holds only levels its postings measure. Tier 3, so it answers only a posting that states no
+# number: a stated one always wins (ADR-0018).
+_COMPANY_LADDERS = {"netflix": {"4": 3, "5": 5, "6": 9}}
+_LADDER_LEVEL = re.compile(
+    r"\(\s*L\s*([1-9])\s*\)|\b[A-Za-z]+\s+([1-9])(?=\s*(?:$|[,(\u2013\u2014-]))"
+)
+
+
+def _company_level(title: str | None, company: str | None) -> ExperienceSpan | None:
+    """The floor ``company``'s own ladder gives the level in ``title``, when it has one."""
+    ladder = _COMPANY_LADDERS.get((company or "").strip().lower())
+    match = _LADDER_LEVEL.search(title or "") if ladder else None
+    years = ladder.get(match.group(1) or match.group(2)) if match else None
+    return None if years is None else ExperienceSpan(years, None, "seniority")
+
+
 def from_seniority(
-    field: str | None, title: str | None = None
+    field: str | None, title: str | None = None, company: str | None = None
 ) -> ExperienceSpan | None:
     """Tier 3 (fallback) — map a seniority label to a floor-years estimate, from the source's field
-    (else the title). Word labels first ("Senior"), then a numeric/roman level suffix ("Engineer II")."""
+    (else the title). The employer's own ladder first (Netflix's "(L5)"), then word labels
+    ("Senior"), then a numeric/roman level suffix ("Engineer II")."""
     text = f"{field or ''} {title or ''}"
     if not text.strip():
         return None
+    if (own := _company_level(title, company)) is not None:
+        return own
     for pattern, years in _SENIORITY:
         if pattern.search(text):
             return ExperienceSpan(years, None, "seniority")
@@ -676,14 +724,18 @@ def from_seniority(
 
 
 def extract(
-    field: str | None, description: str | None, title: str | None = None
+    field: str | None,
+    description: str | None,
+    title: str | None = None,
+    company: str | None = None,
 ) -> ExperienceSpan | None:
     """Run the cascade: a concrete number from the structured field, then from the description, and
-    only if neither yields one, a floor estimate from the seniority label (field or title). Concrete
-    numbers always win over the seniority fallback (per ADR-0018). None if nothing matches.
+    only if neither yields one, a floor estimate from the seniority label (field or title, read on
+    ``company``'s own ladder where it has one). Concrete numbers always win over the seniority
+    fallback (per ADR-0018). None if nothing matches.
     """
     return (
         from_field(field)
         or from_description(description)
-        or from_seniority(field, title)
+        or from_seniority(field, title, company)
     )

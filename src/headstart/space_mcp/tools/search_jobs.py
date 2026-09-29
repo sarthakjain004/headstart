@@ -5,13 +5,18 @@ describe one query and nothing the Space would drop is dropped silently. The ans
 searched, how the rows are ordered (a sort with a query orders only those of the 2,000 closest
 matches that score at least the floor, `JobSearch.run`, ADR-0338), the rows themselves with every scraped field quoted, and — when nothing matches —
 which filter is to blame, named as this tool names it. A concise answer asks `/facets` for the
-total alone (``counts=total``, ADR-0274); only ``detail=full`` pays for every option's count.
+total alone (``counts=total``, ADR-0274); only ``detail=full`` pays for every option's count, and
+for where every matching job is (``places=1``, ADR-0355): the jobs in each country, as ``country``
+would total them, with each country's top cities, over the whole match rather than a sample.
 
 A row carries its posting's age, flagged past a year, and its employment type as scraped beside
 the `employment_type` values it counts as, and its company as the Company directory names it when
 the served name is only its Board's host (`shown_company`). Rows on one page that copy one
 posting — per country, or on two Boards of its employer (`requisition_copies`) — are listed under
-the first of them, with only what differs; every id and link stays.
+the first of them, with only what differs; every id and link stays. A relevance page lists at most
+`per_company` jobs of one company before every other company's and says how many more each has,
+and a company named like an agency and on no curated list is tagged "operator unverified"
+(ADR-0352).
 """
 
 from __future__ import annotations
@@ -21,6 +26,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime
 from typing import Any
 
+from headstart.boards.board_identity import board_of
 from headstart.jobs import requisition_copies, work_authorization
 from headstart.mcp_protocol.messages import ToolFailure
 from headstart.search_filters import (
@@ -28,6 +34,7 @@ from headstart.search_filters import (
 )
 from headstart.space_mcp import (
     company_scope,
+    job_places,
     role_families,
     scraped_text,
     search_arguments,
@@ -77,6 +84,10 @@ _FACET_ORDER = (
     "ats",
 )
 _FACET_OPTIONS_SHOWN = 12
+
+#: How many countries a full answer lists where its matching jobs are (ADR-0355): enough that a
+#: comparison of two large markets finds both; send `country` for any other one.
+COUNTRIES_SHOWN = 15
 
 #: A company or location past this is cut; a title keeps `scraped_text.FIELD_LIMIT`.
 SHORT_FIELD = 60
@@ -155,9 +166,29 @@ def _params(
         )
     if sort := SORTS[arguments["sort"]]:
         params.append(("sort", sort))
+    if per_company := _per_company(arguments):
+        params.append(("per_company", str(per_company)))
     params.append(("k", str(arguments["limit"])))
     params.append(("page", str(arguments["page"])))
     return params
+
+
+def _per_company(arguments: dict[str, Any]) -> int | None:
+    """The most jobs of one company a page lists before other companies' (ADR-0352), or None
+    when it does not apply: only a relevance ranking has places to spread, and a `company`
+    asks for that company's jobs."""
+    ranked = (arguments.get("query") or "").strip() or (
+        arguments.get("similar_to") or ""
+    ).strip()
+    per_company = arguments.get("per_company")
+    if (
+        not ranked
+        or arguments["sort"] != "relevance"
+        or (arguments.get("company") or "").strip()
+        or not per_company
+    ):
+        return None
+    return int(per_company)
 
 
 def _refuse_by_policy(arguments: dict[str, Any]) -> None:
@@ -168,16 +199,7 @@ def _refuse_by_policy(arguments: dict[str, Any]) -> None:
         raise ToolFailure(
             "similar_to ranks by one job and query by a description of the role; send one."
         )
-    bounded = (
-        arguments.get("salary_min") is not None
-        or arguments.get("salary_max") is not None
-    )
-    low, high = arguments.get("salary_min"), arguments.get("salary_max")
-    if low is not None and high is not None and low > high:
-        raise ToolFailure(
-            f"salary_min {low:,} is above salary_max {high:,}, so no range could be read as "
-            "both; send the lower figure as salary_min."
-        )
+    search_arguments.refuse_unreadable_salary(arguments)
     floor, ceiling = (
         arguments.get("required_years_at_least"),
         arguments.get("max_years"),
@@ -187,12 +209,6 @@ def _refuse_by_policy(arguments: dict[str, Any]) -> None:
             f"required_years_at_least {floor} is above max_years {ceiling}: no job asks for "
             "at least one and at most the other. max_years is the user's own experience; "
             "required_years_at_least a floor on what the job asks."
-        )
-    if bounded and not arguments.get("salary_currency"):
-        raise ToolFailure(
-            "salary_min and salary_max need salary_currency: an unqualified bound is read as "
-            "USD, so 30 lakh would become $3,000,000. For 30 lakh send salary_min 3000000 with "
-            "salary_currency INR."
         )
     if arguments.get("keyword_in") and not (arguments.get("keyword") or "").strip():
         raise ToolFailure("keyword_in only scopes a keyword; send keyword too.")
@@ -268,6 +284,8 @@ def _facts(row: dict[str, Any], today: date, experience_filtered: bool) -> list[
     if seen:
         age = "" if posted else _age(str(seen), today)
         facts.append(f"first seen {str(seen)[:10]}{age}")
+    if row.get("past_company_cap"):
+        facts.append("past per_company: its company's closer jobs are listed earlier")
     return facts
 
 
@@ -282,10 +300,15 @@ def _where(row: dict[str, Any]) -> str:
     )
 
 
+def _company(row: dict[str, Any]) -> str:
+    """The row's company as shown, tagged when its operator is unverified (ADR-0352)."""
+    return shown_company.tagged(row, board_of(str(row.get("id") or "")), SHORT_FIELD)
+
+
 def _row(number: int, row: dict[str, Any], facts: list[str]) -> str:
     said = [
         scraped_text.quoted(row.get("title")),
-        shown_company.said(row, SHORT_FIELD),
+        _company(row),
         *facts,
     ]
     return f"{number:>2}. {_score(row)}{' · '.join(said)}\n    {_where(row)}"
@@ -303,7 +326,7 @@ def _also(
     if row.get("title") != head.get("title"):
         said.append(scraped_text.quoted(row.get("title")))
     if row.get("company") != head.get("company"):
-        said.append(shown_company.said(row, SHORT_FIELD))
+        said.append(_company(row))
     said += [fact for fact in facts if fact not in head_facts]
     return (
         f"    also #{number}: {_score(row)}{' · '.join(said) or 'as above'}\n"
@@ -327,6 +350,28 @@ def _page_lines(
             _also(first + i, rows[i], facts[i], rows[head], facts[head]) for i in others
         ]
     return lines, len(groups) < len(rows)
+
+
+def _held_line(rows: list[dict[str, Any]]) -> str | None:
+    """How many more jobs each company on the page has after every other company's
+    (`more_from_company`, ADR-0352), and how to list them."""
+    held: dict[str, tuple[int, str]] = {}
+    for row in rows:
+        if more := row.get("more_from_company"):
+            name = str(row.get("company") or "").strip()
+            key = name or board_of(str(row.get("id") or ""))
+            held.setdefault(key.casefold(), (int(more), key))
+    if not held:
+        return None
+    said = "; ".join(
+        f"{more:,} more from {scraped_text.quoted(name, SHORT_FIELD)}: send company "
+        f"{scraped_text.quoted(name, SHORT_FIELD)}"
+        for more, name in held.values()
+    )
+    return (
+        f"Listed after every other company's jobs, past per_company: {said}. Say so rather "
+        "than calling this page all there is from them."
+    )
 
 
 def _sorted_by_similarity(arguments: dict[str, Any]) -> bool:
@@ -361,6 +406,12 @@ def _order_line(arguments: dict[str, Any], rows: list[dict[str, Any]]) -> str:
             f"{lowest}. Less similar rows are left out of a sorted answer, since they are "
             f"mostly other roles; omit {ranking} for a global order, or sort by relevance for "
             "every match."
+        )
+    if (per_company := _per_company(arguments)) is not None:
+        return (
+            f"Ordered by similarity to {ranked_by}, which orders the matches but does not "
+            f"narrow them, with at most {per_company} jobs of one company before every other "
+            "company's (per_company; 0 lists the ranking as it is)."
         )
     if query or similar_to:
         return f"Ordered by similarity to {ranked_by}, which orders the matches but does not narrow them."
@@ -471,7 +522,7 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
     full = arguments.get("detail") == "full"
     # Concise prints only the total, so it asks for nothing else (ADR-0274): under a description
     # keyword every option's count re-scans the matches, 98.7 s against 10.6 s for the page.
-    counted = params if full else [*params, ("counts", "total")]
+    counted = [*params, ("places", "1")] if full else [*params, ("counts", "total")]
     try:
         with ThreadPoolExecutor(max_workers=2) as pool:
             rows_asked = pool.submit(client.read, SpaceRoute.SEARCH, params)
@@ -498,6 +549,12 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
         lines.append(coverage)
     if note := _keyword_note(arguments):
         lines.append(note)
+    if full and total and (places := facets.get("places")):
+        # Above the rows, so the size guard, which cuts from the end, never cuts it.
+        lines.append(
+            job_places.said(places, f"the {total:,} matching jobs", COUNTRIES_SHOWN)
+            + " A country's count is the total search_jobs gives with that `country`."
+        )
     if not rows:
         lines.insert(
             0,
@@ -532,6 +589,10 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
                 "one posting on two of its Boards is."
             )
         lines += page_lines
+        if held := _held_line(rows):
+            lines.append(held)
+        if any(shown_company.UNVERIFIED in line for line in page_lines):
+            lines.append(shown_company.UNVERIFIED_NOTE)
         shown_to = first + len(rows) - 1
         if shown_to < total:
             lines.append(
@@ -615,42 +676,14 @@ TOOL = SpaceTool(
                     "experience is unknown are left out."
                 ),
             },
-            "employment_type": {
-                "type": "string",
-                "enum": list(employment_type_filter.RULES),
-                "description": (
-                    "full-time also keeps jobs whose source states no type; part-time, "
-                    "contract and internship keep only jobs that say so."
-                ),
-            },
+            "employment_type": search_arguments.PROPERTIES["employment_type"],
             "country": search_arguments.PROPERTIES["country"],
             "india_place": search_arguments.PROPERTIES["india_place"],
             "location": search_arguments.PROPERTIES["location"],
-            "salary_min": {
-                "type": "integer",
-                "minimum": 0,
-                "description": (
-                    "Annual; needs salary_currency (30 lakh = 3000000 INR). Keeps a job whose "
-                    "stated range reaches it; other currencies are converted at fixed rates."
-                ),
-            },
-            "salary_max": {
-                "type": "integer",
-                "minimum": 0,
-                "description": (
-                    "Annual; needs salary_currency. Keeps a job whose stated range starts at "
-                    "or below it."
-                ),
-            },
-            "salary_currency": {
-                "type": "string",
-                "maxLength": 3,
-                "description": "ISO 4217 code, such as USD, INR, EUR, GBP.",
-            },
-            "has_salary": {
-                "type": "boolean",
-                "description": "Only jobs that state a salary.",
-            },
+            "salary_min": search_arguments.PROPERTIES["salary_min"],
+            "salary_max": search_arguments.PROPERTIES["salary_max"],
+            "salary_currency": search_arguments.PROPERTIES["salary_currency"],
+            "has_salary": search_arguments.PROPERTIES["has_salary"],
             "posted_within_days": {
                 "type": "integer",
                 "minimum": 1,
@@ -707,6 +740,18 @@ TOOL = SpaceTool(
                     f"at least {SORT_FLOOR:.2f} among its {SORT_WINDOW:,} closest."
                 ),
             },
+            "per_company": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 40,
+                "default": 3,
+                "description": (
+                    "With `query` or `similar_to` and sort relevance: at most this many jobs "
+                    "of one company before every other company's; its others follow them, "
+                    "and the answer says how many. 0 lists the ranking as it is. Not applied "
+                    "with `company`."
+                ),
+            },
             "limit": {
                 "type": "integer",
                 "minimum": 1,
@@ -723,13 +768,18 @@ TOOL = SpaceTool(
                 "type": "string",
                 "enum": ["concise", "full"],
                 "default": "concise",
-                "description": "full adds the count behind each filter's options.",
+                "description": (
+                    "full adds the count behind each filter's options, and where every "
+                    "matching job is: the jobs in each country (what `country` would total, "
+                    "a job naming two in both) with its top cities, over the whole match."
+                ),
             },
         },
         "additionalProperties": False,
     },
     when_to_use=(
-        "Use search_jobs to find openings: put the role in `query`, and years, pay, place, company and dates in their own fields — never in `query`."
+        "Use search_jobs to find openings: put the role in `query`, and years, pay, place, company and dates in their own fields — never in `query`. "
+        "`detail` full counts matches per country."
     ),
     answer=answer,
     max_chars=30_000,

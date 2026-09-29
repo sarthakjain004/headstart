@@ -26,8 +26,9 @@ import pytest
 from headstart.jobs import work_authorization
 from headstart.mcp_protocol import messages, tool_arguments
 from headstart.mcp_protocol.messages import ToolFailure
+from headstart.search_filters import country_filter
 from headstart.serving.job_absence import WHY_NOT_SERVED
-from headstart.space_mcp import scraped_text, server
+from headstart.space_mcp import scraped_text, server, shown_company
 from headstart.space_mcp import space_client as sc
 from headstart.space_mcp.tools import (
     REGISTRY,
@@ -539,6 +540,63 @@ def test_operators_are_sent_as_named_and_not_at_all_when_every_one_is():
         server.BY_NAME["search_jobs"].answer(space, {"operators": []})
 
 
+def _per_company_sent(space):
+    return [dict(p).get("per_company") for p in space.params_of(R.SEARCH)]
+
+
+def test_per_company_is_sent_on_a_relevance_ranking_without_a_company():
+    """P1-5 of the round-4 critique: one employer filled a page (ADR-0352)."""
+    space = _search_space([_job(1)])
+    server.call(space, "search_jobs", {"query": "staff platform engineer"})
+    server.call(space, "search_jobs", {"similar_to": "lever:x:1", "per_company": 5})
+    server.call(space, "search_jobs", {"query": "x", "per_company": 0})
+    server.call(space, "search_jobs", {"query": "x", "company": "Reflection"})
+    server.call(space, "search_jobs", {"query": "x", "sort": "posted"})
+    server.call(space, "search_jobs", {"keyword": "rust"})
+    assert _per_company_sent(space) == ["3", "5", None, None, None, None]
+
+
+def test_a_spread_page_says_what_it_held_back_and_marks_the_rows_past_it():
+    reflection = {"company": "Reflection", "more_from_company": 23}
+    rows = [
+        _job(1, **reflection),
+        _job(2, **reflection),
+        _job(3, company="Neara"),
+        _job(4, company="Reflection", past_company_cap=True),
+    ]
+    text = server.call(
+        _search_space(rows, total=90),
+        "search_jobs",
+        {"query": "staff platform engineer"},
+    )
+    assert (
+        "with at most 3 jobs of one company before every other company's (per_company; 0 "
+        "lists the ranking as it is)."
+    ) in text
+    assert (
+        'Listed after every other company\'s jobs, past per_company: 23 more from "Reflection": '
+        'send company "Reflection".'
+    ) in text
+    assert (
+        text.count("past per_company: its company's closer jobs are listed earlier")
+        == 1
+    )
+    plain = server.call(_search_space([_job(1)]), "search_jobs", {"query": "x"})
+    assert "Listed after every other" not in plain
+
+
+def test_a_row_whose_company_reads_like_an_agency_is_tagged_never_left_out():
+    """P1-2 of the round-4 critique: hiring_now's flag reached no search row (ADR-0352)."""
+    rows = [_job(1, company="Northwind Staffing LLC"), _job(2)]
+    text = server.call(_search_space(rows), "search_jobs", {"query": "frontend"})
+    assert '"Northwind Staffing LLC" (operator unverified) · ' in text
+    assert '"Razorpay" (operator unverified)' not in text
+    assert shown_company.UNVERIFIED_NOTE in text
+    assert shown_company.UNVERIFIED_NOTE not in server.call(
+        _search_space([_job(1)]), "search_jobs", {"query": "frontend"}
+    )
+
+
 def test_nothing_left_but_what_operators_left_out_is_said():
     space = FakeSpace(search=[], facets=_facets(0, operators_left_out=12))
     text = server.call(space, "search_jobs", {"query": "x", "remote": True})
@@ -721,10 +779,62 @@ def test_nothing_matching_with_no_single_blocker_blames_the_scope():
 def test_full_detail_adds_the_facet_counts_capped_per_dimension():
     space = _search_space([_job(1)])
     text = server.call(space, "search_jobs", {"detail": "full"})
-    assert space.params_of(R.FACETS) == space.params_of(R.SEARCH)
+    # ADR-0355: the same filters, and where every matching job is.
+    assert space.params_of(R.FACETS) == [
+        [*space.params_of(R.SEARCH)[0], ("places", "1")]
+    ]
     assert "  remote=true: 212\n" in text
     assert "  max_years=0: 31 · max_years any: 1,904\n" in text
     assert "ats=ats0: 100" in text and "…8 more" in text
+
+
+def _places(countries: int) -> dict:
+    return {
+        "jobs": 1904,
+        "unstated": 40,
+        "countries": [
+            {
+                "code": code,
+                "jobs": 900 - 10 * n,
+                "places": [
+                    {"location": f"{code} city {i}", "count": 30 - i} for i in range(3)
+                ],
+            }
+            for n, code in enumerate(country_filter.CODES[:countries])
+        ],
+        "no_country": {
+            "jobs": 23,
+            "places": [
+                {"location": "Remote", "count": 20},
+                {"location": "N/A", "count": 3},
+            ],
+        },
+    }
+
+
+def test_full_detail_says_where_every_matching_job_is_by_country_with_its_cities():
+    """P2-6 (round-4 critique): how many in India against Germany is one call, over the whole
+    match, each country's count what `country` would total (ADR-0355)."""
+    space = FakeSpace(search=[_job(1)], facets={**_facets(1904), "places": _places(17)})
+    text = server.call(space, "search_jobs", {"query": "ml engineer", "detail": "full"})
+    assert (
+        "Where the 1,904 matching jobs are, by country as search_jobs' `country` reads each "
+        "place (a job naming two countries counts in both), with its top places, a first "
+        'place\'s spellings merged: United States 900 ("US city 0" 30 · "US city 1" 29 · '
+        '"US city 2" 28) · India 890 ("IN city 0" 30 ·' in text
+    )
+    assert " · …2 more countries." in text  # fifteen are listed
+    assert (
+        'No country is read from the places of 23 ("Remote" 20 · "N/A" 3). 40 name no place. '
+        "A country's count is the total search_jobs gives with that `country`." in text
+    )
+
+
+def test_a_concise_search_asks_for_no_places_and_says_none():
+    space = FakeSpace(search=[_job(1)], facets={**_facets(1), "places": _places(2)})
+    text = server.call(space, "search_jobs", {})
+    assert ("places", "1") not in space.params_of(R.FACETS)[0]
+    assert "Where the" not in text
 
 
 @pytest.fixture
@@ -957,6 +1067,33 @@ def test_a_search_answer_stays_inside_its_budget(limit, budget):
     assert len(text) <= budget
 
 
+def test_a_full_search_answer_keeps_its_places_when_its_worst_case_is_cut():
+    """ADR-0355: fifteen countries, each place at its clip, beside every facet line and forty
+    rows at theirs, run past the budget; the guard cuts rows from the end, and the places line
+    stands above them."""
+    long = "x" * 5_000
+    rows = [
+        _job(
+            n,
+            title=f"{n} {long}",
+            company=long,
+            location=long,
+            employment_type=long,
+            url="https://x.io/" + "a" * 287,
+        )
+        for n in range(40)
+    ]
+    places = _places(40)
+    for country in [*places["countries"], places["no_country"]]:
+        for place in country["places"]:
+            place["location"] = long
+    space = FakeSpace(search=rows, facets={**_facets(9_999), "places": places})
+    text = server.call(space, "search_jobs", {"limit": 40, "detail": "full"})
+    assert len(text) <= server.BY_NAME["search_jobs"].max_chars
+    assert "answer cut to fit" in text
+    assert "Where the 9,999 matching jobs are" in text and "…25 more countries" in text
+
+
 def test_similar_to_is_sent_as_like_in_place_of_a_query_and_said():
     space = _search_space([_job(2)])
     text = server.call(space, "search_jobs", {"similar_to": " lever:razorpay:0001 "})
@@ -1131,6 +1268,43 @@ def test_an_annual_or_disagreeing_salary_says_nothing_of_a_rate():
     )
     assert "annualised" not in text
     assert "Salary: read from the description as USD 572,000 a year." in text
+
+
+_GOOGLE_SENIOR = (
+    "Minimum qualifications: Bachelor's degree or equivalent practical experience. 5 years of "
+    "experience with software development in one or more programming languages. 3 years of "
+    "experience testing, maintaining, or launching software products, and 1 year of experience "
+    "with software design and architecture."
+)
+
+
+def test_a_description_stating_several_floors_says_the_smallest_is_shown():
+    """ADR-0357: the owner kept ADR-0079's smallest floor, so the reader is told to check."""
+    posting = _posting(
+        1, experience=None, description=_GOOGLE_SENIOR, min_years=1, max_years=None
+    )
+    text = server.call(_job_space([posting]), "get_job", {"ids": [posting["id"]]})
+    assert (
+        "   States 1, 3 and 5 years in separate clauses; HeadStart shows the smallest "
+        "(ADR-0079), so check which applies to you."
+    ) in text
+    assert text.count("States ") == 1
+
+
+def test_one_floor_a_field_or_another_served_value_says_nothing_of_floors():
+    one = _posting(
+        1, experience=None, description="5+ years of Python experience.", min_years=5
+    )
+    # A field states the years, so the description's floors are not what is shown.
+    field = _posting(2, experience="3-5 years", description=_GOOGLE_SENIOR, min_years=3)
+    # The served floor is not the description's smallest (not re-derived yet).
+    stale = _posting(3, experience=None, description=_GOOGLE_SENIOR, min_years=4)
+    text = server.call(
+        _job_space([one, field, stale]),
+        "get_job",
+        {"ids": [one["id"], field["id"], stale["id"]]},
+    )
+    assert "in separate clauses" not in text
 
 
 def test_a_missing_id_is_explained_by_the_sentence_the_space_uses():
@@ -2610,6 +2784,53 @@ def test_an_unverified_operator_is_flagged_and_listed_last_on_every_lens():
         )
 
 
+def test_a_row_whose_opened_was_mostly_found_late_is_flagged_and_listed_last_on_every_lens():
+    """P1-1 of the round-4 critique: Starbucks stood #3 on the default Lens on 50 opened, 28 of
+    its postings first seen that week posted more than 14 days before (ADR-0351)."""
+    rows = [
+        _hot_row(1, opened_fresh=80, opened_found_late=10),
+        _hot_row(
+            2,
+            company="Starbucks",
+            opened=50,
+            closed=0,
+            opened_fresh=22,
+            opened_found_late=28,
+        ),
+        _hot_row(3),  # its postings went unread: nothing to flag
+    ]
+    for lens in ("opened_less_closed", "expansion", "volume", "rate"):
+        text = server.call(FakeSpace(hot=_hot(rows)), "hiring_now", {"lens": lens})
+        listed = _listed(text)
+        assert listed[-1].split('"')[1] == "Starbucks", lens
+        assert listed[-1].endswith(
+            "FLAG opened mostly found late, not newly posted: of its postings first seen "
+            "since turnover began, 28 were posted more than 14 days before HeadStart saw "
+            "them and 22 since"
+        )
+        assert "FLAG" not in "".join(listed[:-1])
+        assert (
+            "1 of these rows opened mostly postings HeadStart found late, posted weeks "
+            "before it first saw them" in text
+        )
+
+
+@pytest.mark.parametrize(
+    ("opened", "fresh", "late", "flagged"),
+    [
+        (50, 22, 28, True),
+        (50, 25, 25, False),  # half its opened could be newly posted
+        (50, 0, 24, False),  # too few served postings found late to say so
+        (9, 0, 9, False),  # too few opened
+        (10, 4, 5, True),
+    ],
+)
+def test_found_late_needs_both_halves(opened, fresh, late, flagged):
+    row = _hot_row(1, opened=opened, opened_fresh=fresh, opened_found_late=late)
+    text = server.call(FakeSpace(hot=_hot([row])), "hiring_now", {})
+    assert ("FLAG opened mostly found late" in text) is flagged
+
+
 def test_the_sites_order_is_kept_and_unnumbered_when_no_flagged_row_leads():
     rows = [_hot_row(1), _hot_row(2), _hot_row(3, net=435, opened=20, closed=32)]
     text = server.call(FakeSpace(hot=_hot(rows)), "hiring_now", {"lens": "expansion"})
@@ -2907,7 +3128,6 @@ def _locations(n=3):
                 {"location": "Remote", "count": 3},
             ],
         },
-        "places_unread": 0,
     }
 
 
@@ -3395,6 +3615,7 @@ def test_requirements_send_the_role_the_category_and_the_filters_in_the_spaces_n
             ("strict", "1"),
             ("q", "data engineer"),
             ("family", "ai-ml-data-science"),
+            ("per_company", "8"),
             ("remote", "true"),
             ("max_years", "3"),
             ("country", "DE"),
@@ -3402,6 +3623,50 @@ def test_requirements_send_the_role_the_category_and_the_filters_in_the_spaces_n
             ("max_age_days", "365"),
             ("operators", "employer,services"),
         ]
+    ]
+
+
+def test_a_requirements_sample_caps_one_company_unless_one_is_named_and_says_so():
+    """P1-2 of the round-4 critique: DigitalXNode was 15 of a DevOps sample (ADR-0352)."""
+    capped = _requirements(
+        distinct=255,
+        per_company=8,
+        over_company_cap=8,
+        companies=[
+            {
+                "company": "DigitalXNode",
+                "from_directory": False,
+                "board": "wp_job_openings:digitalxnode.com",
+                "jobs": 16,
+                "counted": 8,
+            },
+            {
+                "company": "Northwind Staffing LLC",
+                "from_directory": False,
+                "board": "lever:northwindstaffing",
+                "jobs": 3,
+                "counted": 3,
+            },
+        ],
+    )
+    space = FakeSpace(requirements=capped)
+    text = server.call(space, "role_requirements", {"category": "devops"})
+    assert "(300 postings read; 37 copies of one counted once)." in text
+    assert (
+        "At most 8 postings of one company are counted, so one company's wording cannot "
+        "speak for the role: 8 more were left out."
+    ) in text
+    assert (
+        '"DigitalXNode" (key "wp_job_openings:digitalxnode.com") 16 sampled, 8 counted · '
+        '"Northwind Staffing LLC" (operator unverified) (key "lever:northwindstaffing") 3.'
+    ) in text
+    assert shown_company.UNVERIFIED_NOTE in text
+    server.call(
+        space, "role_requirements", {"category": "devops", "company": "Northwind"}
+    )
+    assert [dict(p).get("per_company") for p in space.params_of(R.REQUIREMENTS)] == [
+        "8",
+        None,
     ]
 
 
@@ -3449,8 +3714,47 @@ def test_requirements_filters_are_search_jobs_own():
         "max_age_days",
         "operators",
         "include_non_tech",
+        "employment_type",
+        "work_authorization",
+        "salary_min",
+        "salary_max",
+        "salary_currency",
+        "has_salary",
     ):
         assert mine[name] == search[name], name
+
+
+def test_requirements_sample_internships_sponsoring_roles_and_a_pay_band():
+    """P2-6 (round-4 critique): "what do internships ask for" and "what do sponsoring roles
+    pay" were refused (`p1_21`); each is now a Search filter the sample takes (ADR-0355)."""
+    space = FakeSpace(requirements=_requirements())
+    text = server.call(
+        space,
+        "role_requirements",
+        {
+            "category": "software-engineering",
+            "employment_type": "internship",
+            "work_authorization": "offers_sponsorship",
+            "salary_min": 50000,
+            "salary_currency": "USD",
+        },
+    )
+    sent = dict(space.params_of(R.REQUIREMENTS)[0])
+    assert sent["etype"] == "internship"
+    assert sent["work_authorization"] == "offers_sponsorship"
+    assert (sent["salary_min"], sent["salary_currency"]) == ("50000", "USD")
+    assert "employment_type internship" in text
+    assert "description offers visa sponsorship" in text
+    assert "salary range reaching 50,000 USD a year or more" in text
+
+
+def test_a_requirements_pay_bound_needs_its_currency_as_search_does():
+    with pytest.raises(ToolFailure, match="need salary_currency"):
+        server.call(
+            FakeSpace(requirements=_requirements()),
+            "role_requirements",
+            {"query": "data engineer", "salary_min": 3000000},
+        )
 
 
 def test_requirements_need_a_role_or_a_category():

@@ -217,6 +217,38 @@ _KNOWN_FAMILIES = frozenset(trend_history.family_labels(_CONFIG / "role_families
 _ANSWERS_VERSION = f"{time.time_ns():x}"
 
 
+def _first_seen_since(stamp: str | None) -> list[tuple[str, str, str | None]] | None:
+    """The served postings first seen after ``stamp``, as ``(id, first_seen, posted_at)``, which
+    the Hot ranking dates its rows' jobs Opened by (ADR-0351); None with no stamp or no
+    `first_seen` column, or where the read fails, so the rows say their postings went unread
+    rather than the tab going dark. About 92,000 rows since 2026-09-25, three short columns."""
+    if not stamp or not _searcher.capabilities.has_first_seen:
+        return None
+    where = f"first_seen > '{stamp}'"
+    try:
+        rows = (
+            _table.search()
+            .where(where)
+            .select(["id", "first_seen", "posted_at"])
+            .limit(max(1, _table.count_rows(where)))
+            .to_arrow()
+        )
+    except Exception as exc:  # noqa: BLE001 - an unread date darkens one flag only
+        print(
+            f"hot ranking: first-seen postings unread ({type(exc).__name__}: {exc})",
+            flush=True,
+        )
+        return None
+    return list(
+        zip(
+            rows["id"].to_pylist(),
+            rows["first_seen"].to_pylist(),
+            rows["posted_at"].to_pylist(),
+            strict=True,
+        )
+    )
+
+
 def _rank_hot(history: trend_history.TrendHistory) -> dict:
     """The Hot tab's ranking (``headstart.trends.hot_ranking``, ADR-0230), or ``{}`` to keep it
     dark.
@@ -233,7 +265,11 @@ def _rank_hot(history: trend_history.TrendHistory) -> dict:
         return {}
     started = time.monotonic()
     try:
-        ranked = hot_ranking.rank(history, companies)
+        ranked = hot_ranking.rank(
+            history,
+            companies,
+            _first_seen_since(history.trailing_week()["turnover_from"]),
+        )
     except Exception as exc:  # noqa: BLE001 - a ranking failure darkens Hot only
         print(f"hot ranking failed ({type(exc).__name__}: {exc})", flush=True)
         return {}
@@ -748,7 +784,13 @@ def _keep_static_for_the_boot(response):
 # 18: `include_non_tech` on /search, /facets, /requirements, /companies/locations and
 # /companies/levels: the jobs the role-family head confidently calls non-tech are left out unless
 # it is sent, and /facets and /requirements say how many as `non_tech_left_out` (ADR-0349).
-_AGENT_API_VERSION = 18
+# 19: each /hot row's `opened_fresh` and `opened_found_late`, its served postings first seen since
+# turnover began posted within 14 days of first sight and longer before (ADR-0351).
+# 20: `may_offer_sponsorship`, and offers read against each Job's place and title (ADR-0353).
+# 21: `places=1` on /facets, where every matching job is by country and city, and
+# /companies/locations reads every place's country, so it no longer sends `places_unread`
+# (ADR-0355).
+_AGENT_API_VERSION = 21
 
 
 @app.after_request

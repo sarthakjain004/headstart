@@ -15,6 +15,7 @@ from headstart.jobs.experience import (
     from_description,
     from_field,
     from_seniority,
+    stated_floors,
 )
 
 # --- Tier 1: from_field ---------------------------------------------------------------------------
@@ -930,3 +931,49 @@ def test_an_entry_word_outranks_associate():
 )
 def test_a_ladder_named_after_the_discipline_reads_as_its_level(title, years):
     assert from_seniority(None, title) == ExperienceSpan(years, None, "seniority")
+
+
+# --- the floors a description states, and one employer's ladder (ADR-0357) -----------------------
+
+
+def test_stated_floors_lists_every_floor_smallest_first_without_ceilings():
+    assert stated_floors(
+        "5 years of experience with software development. 3 years of experience testing "
+        "software products, and 1 year of experience with software design."
+    ) == [1, 3, 5]
+    assert stated_floors(
+        "up to 3 years of experience; 5+ years of Java experience"
+    ) == [5]
+    assert stated_floors("5+ years of experience") == [5]
+    assert stated_floors(None) == []
+    # The first floor is the one ADR-0079 serves.
+    text = "7+ years in software engineering with 2+ years in a people management role"
+    assert stated_floors(text)[0] == from_description(text).min_years
+
+
+def test_netflix_titles_read_on_netflixs_own_ladder_only_when_no_number_is_stated():
+    assert extract(None, None, "Software Engineer (L4) - CKG", "Netflix") == (
+        ExperienceSpan(3, None, "seniority")
+    )
+    assert extract(None, None, "Business Security Partner (L5)", "Netflix") == (
+        ExperienceSpan(5, None, "seniority")
+    )
+    assert extract(None, None, "Creative Tech Researcher 5", "Netflix") == (
+        ExperienceSpan(5, None, "seniority")
+    )
+    assert extract(None, None, "Staff Software Engineer (L6)", "Netflix") == (
+        ExperienceSpan(9, None, "seniority")
+    )
+    # A stated number always wins over the ladder, from the description or a field.
+    assert extract(
+        None, "2+ years of experience", "Software Engineer (L5)", "Netflix"
+    ) == ExperienceSpan(2, None, "regex")
+    assert extract("1-3", None, "Software Engineer (L5)", "Netflix") == ExperienceSpan(
+        1, 3, "field"
+    )
+    # Another employer keeps the shared mapping.
+    assert extract(None, None, "Software Engineer (L4) - CKG", "Acme") == (
+        ExperienceSpan(7, None, "seniority")
+    )
+    assert extract(None, None, "Business Security Partner (L5)", "Acme") is None
+    assert extract(None, None, "Windows 11 Engineer", "Netflix") is None

@@ -2388,3 +2388,19 @@ def test_a_description_figure_carries_the_period_it_was_stated_in():
     assert from_field("50000-70000 USD per-year-salary", "lever").period is None
     # The period is not part of a span's identity.
     assert SalarySpan(1, 2, "USD", "regex", "hour") == SalarySpan(1, 2, "USD", "regex")
+
+
+# --- a rupee figure where the job is (ADR-0357) --------------------------------------------------
+
+
+def test_a_small_rupee_figure_on_a_job_placed_abroad_is_dropped():
+    knowfinity = SalarySpan(100_000, 130_000, "INR", "field")
+    assert salary_module.placed(knowfinity, {"US"}) is None
+    # India among the places, no place read, a figure large enough to be rupee pay: kept.
+    assert salary_module.placed(knowfinity, {"US", "IN"}) == knowfinity
+    assert salary_module.placed(knowfinity, set()) == knowfinity
+    lakhs = SalarySpan(1_000_000, 2_000_000, "INR", "field")
+    assert salary_module.placed(lakhs, {"AE"}) == lakhs
+    dollars = SalarySpan(100_000, 130_000, "USD", "field")
+    assert salary_module.placed(dollars, {"US"}) == dollars
+    assert salary_module.placed(None, {"US"}) is None

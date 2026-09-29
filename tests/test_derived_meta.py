@@ -84,3 +84,21 @@ def test_seniority_fallback_floor():
 
 def test_nothing_extractable():
     _assert_paths_agree(_job(description="", salary=None, experience=None))
+
+
+def test_a_rupee_figure_on_a_us_job_is_dropped_on_both_paths():
+    # Knowfinity's US Software Engineer on PyjamaHR, whose field carries the ATS's default currency.
+    job = _job(
+        ats="pyjamahr",
+        location="United States; California, United States",
+        salary="100000-130000 INR per-year",
+        description="",
+    )
+    assert doc_prep.to_meta(job)["min_salary_annual"] is None
+    _assert_paths_agree(job)
+
+
+def test_netflix_level_reads_on_both_paths():
+    _assert_paths_agree(
+        _job(company="Netflix", title="Business Security Partner (L5)", description="")
+    )

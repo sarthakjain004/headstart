@@ -712,6 +712,47 @@ def test_the_expected_order_flags_what_hiring_now_flags(ev):
     assert disowned(net=10, opened=600, closed=500)  # more opened than open now
     assert disowned("rate", net=10, opened=10, closed=5, stock=30)  # small base
     assert not disowned("opened_less_closed", net=900, opened=10, closed=5)
+    # opened mostly found late, on every Lens (ADR-0351)
+    starbucks = {"net": 50, "opened": 50, "closed": 0, "opened_found_late": 28}
+    assert disowned("opened_less_closed", **starbucks, opened_fresh=22)
+    assert not disowned("opened_less_closed", **starbucks, opened_fresh=25)
+    assert not disowned("opened_less_closed", **starbucks, opened_fresh=None)
+
+
+def test_hot_top_fails_an_answer_that_reports_a_found_late_row_as_hiring(ev):
+    """Round-4 critique P1-1 (ADR-0351): Starbucks' 50 opened were mostly posted months before
+    HeadStart first saw them. An answer naming it without saying so fails; one that says so, or
+    leaves it out, passes."""
+    space = _hot_space()
+    rows = space.answers[SpaceRoute.HOT]["lenses"]["expansion"]
+    rows[4].update(
+        company="Starbucks", opened=50, opened_fresh=22, opened_found_late=28
+    )
+    top = (
+        "Acme Robotics, Borealis Data, Cobalt Payments, Ember Health and Fjord Security"
+    )
+    expect = {"lens": "expansion", "top": 5}
+
+    reported = ev.verify_hot_top(
+        expect, _transcript(ev, answer=f"{top} lead; Starbucks opened 50."), space
+    )
+    said = ev.verify_hot_top(
+        expect,
+        _transcript(
+            ev,
+            answer=f"{top} lead. Starbucks' 50 opened were mostly found late, posted "
+            "weeks before HeadStart saw them.",
+        ),
+        space,
+    )
+    left_out = ev.verify_hot_top(expect, _transcript(ev, answer=f"{top} lead."), space)
+
+    assert not reported.passed
+    assert "reports Starbucks as hiring" in reported.detail
+    assert said.passed, said.detail
+    assert left_out.passed, left_out.detail
+    # Listed after the unflagged rows, so the top five are the others.
+    assert "Starbucks" not in left_out.detail
 
 
 def test_flagged_headline_reads_a_row_that_gives_its_place_on_the_page(ev):
@@ -934,6 +975,66 @@ def test_sponsorship_polarity_with_said_ok_passes_a_job_reported_as_not_offering
     assert verdict("50 jobs mention sponsorship.").passed
 
 
+_HEDGED_JOB = (
+    "workday:amgen/Careers:R-1",
+    "Software Engineer",
+    "Amgen",
+    ["Sponsorship Sponsorship for this role is not guaranteed."],
+)
+_HEDGED_ROWS = (
+    '1. "Software Engineer"\n   id "workday:amgen/Careers:R-1"\n' + _RUST_ROWS
+)
+
+
+def _hedged_verdict(ev, answer, expect=_POLARITY_EXPECT):
+    transcript = _transcript(
+        ev,
+        [
+            (
+                "search_jobs",
+                {"work_authorization": "offers_sponsorship"},
+                _HEDGED_ROWS,
+                False,
+            )
+        ],
+        answer=answer,
+    )
+    space = _stance_space(_HEDGED_JOB, *_POLARITY_JOBS)
+    return ev.verify_sponsorship_polarity(expect, transcript, space)
+
+
+def test_sponsorship_polarity_passes_a_job_named_only_to_say_it_was_dropped(ev):
+    # Round-4 critique P1-4's t36 r1: the answer named Amgen only to drop it (ADR-0353).
+    answer = (
+        "Backend Engineer at Threema AG sponsors H-1B visas.\n"
+        "I dropped an Amgen listing (Software Engineer) because its description says "
+        "'Sponsorship for this role is not guaranteed'."
+    )
+    assert _hedged_verdict(ev, answer, {"at_least": 1, "said_ok": True}).passed
+
+
+def test_sponsorship_polarity_passes_a_hedged_offer_only_when_the_answer_says_so(ev):
+    assert not _hedged_verdict(
+        ev, "Software Engineer at Amgen offers visa sponsorship."
+    ).passed
+    assert _hedged_verdict(
+        ev, "Software Engineer at Amgen: sponsorship is possible but not guaranteed."
+    ).passed
+
+
+@pytest.mark.parametrize(
+    "mention",
+    [
+        "Sponsorship for this role is not guaranteed.",
+        "Visa sponsorship may be available for select positions.",
+        "Sponsorship decisions are made on a case-by-case basis.",
+    ],
+)
+def test_sponsorship_polarity_reads_a_hedge_before_a_negation(ev, mention):
+    job = {"id": "lever:acme:1", "work_authorization": {"mentions": [mention]}}
+    assert ev._not_offering(job, {}).startswith("hedged")
+
+
 def test_sponsorship_polarity_fails_an_answer_naming_no_job(ev):
     transcript = _transcript(
         ev,
@@ -1037,6 +1138,75 @@ def test_blocking_named_reads_the_company_form(ev):
     )
 
     assert ev.verify_blocking_named({"argument": "company"}, transcript, None).passed
+
+
+# --- operator_mix --------------------------------------------------------------------------
+
+_SAMPLE = (
+    "What the newest postings in DevOps (devops) ask for: counted over 270 distinct ...\n"
+    'Companies with the most sampled postings: "Cognizant" (key '
+    '"happydance:careers.cognizant.com") 8 · "Northwind Staffing LLC" (operator unverified) '
+    '(key "lever:northwindstaffing") 3 · no company name (key "oracle:egud.fa.us2.oraclecloud.com") 2.\n'
+)
+
+
+def _sample(*companies):
+    """A role_requirements result whose companies line lists ``companies`` as the tool does."""
+    listed = " · ".join(
+        f"{json.dumps(name)} (key {json.dumps(key)}) {count}"
+        for name, key, count in companies
+    )
+    return f"Companies with the most sampled postings: {listed}.\n"
+
+
+def test_sampled_companies_reads_names_tags_keys_and_the_counted_figure(ev):
+    assert ev.sampled_companies(_SAMPLE) == [
+        ("Cognizant", "happydance:careers.cognizant.com", 8),
+        ("Northwind Staffing LLC", "lever:northwindstaffing", 3),
+        ("", "oracle:egud.fa.us2.oraclecloud.com", 2),
+    ]
+    capped = _sample(
+        ("DigitalXNode", "wp_job_openings:digitalxnode.com", "15 sampled, 8 counted")
+    )
+    assert ev.sampled_companies(capped)[0][2] == 8
+
+
+def test_operator_mix_fails_a_curated_agency_or_board_it_was_not_asked_for(ev):
+    """Round-4 critique P1-2 (ADR-0352): an agency led the DevOps sample."""
+
+    def verdict(result, arguments=None):
+        calls = [
+            ("role_requirements", arguments or {"category": "devops"}, result, False)
+        ]
+        return ev.verify_operator_mix({}, _transcript(ev, calls, "..."), None)
+
+    assert verdict(_SAMPLE).passed
+    jobgether = _sample(("Jobgether", "lever:jobgether", 6), ("Cognizant", "x:y", 5))
+    staffing = _sample(("Vrinda International", "zoho:vrindainternational", 5))
+    assert "is aggregator" in verdict(jobgether).detail
+    assert not verdict(jobgether).passed and not verdict(staffing).passed
+    # Asked for by its operators, or by name, it is the user's own choice.
+    every = ["employer", "services", "staffing", "aggregator"]
+    assert verdict(jobgether, {"category": "devops", "operators": every}).passed
+    assert verdict(jobgether, {"category": "devops", "company": "Jobgether"}).passed
+
+
+def test_operator_mix_fails_one_company_counted_past_the_cap_unless_named(ev):
+    over = _sample(("Cognizant", "happydance:careers.cognizant.com", 11))
+
+    def verdict(arguments):
+        calls = [("role_requirements", arguments, over, False)]
+        return ev.verify_operator_mix({}, _transcript(ev, calls, "..."), None)
+
+    assert "counted 11, over 8" in verdict({"category": "devops"}).detail
+    assert verdict({"category": "devops", "company": "Cognizant"}).passed
+
+
+def test_operator_mix_needs_a_sample_that_lists_its_companies(ev):
+    none = ev.verify_operator_mix({}, _transcript(ev, [], "..."), None)
+    assert not none.passed and "no successful role_requirements" in none.detail
+    unlisted = [("role_requirements", {"query": "x"}, "No postings to count.", False)]
+    assert not ev.verify_operator_mix({}, _transcript(ev, unlisted, "..."), None).passed
 
 
 # --- mentions ------------------------------------------------------------------------------
@@ -1562,6 +1732,78 @@ def test_only_takes_several_task_ids(ev, monkeypatch, capsys):
         ev.main(["--only", "t07,t99", "--dry-run"])
 
 
+# --- country_split (ADR-0355) ----------------------------------------------------------------
+
+_T37 = {
+    "countries": ["IN", "DE"],
+    "must_any": [
+        {"category": "ai-ml-data-science"},
+        {"keyword": {"op": "contains", "value": "ai"}},
+    ],
+}
+
+
+class _CountrySpace:
+    """`/facets` answering each country's total, recording what each read sent."""
+
+    def __init__(self, totals):
+        self.totals = totals
+        self.asked = []
+
+    def read(self, route, params=()):
+        assert route == SpaceRoute.FACETS
+        self.asked.append(list(params))
+        return {"total": self.totals[dict(params)["country"]]}
+
+
+def test_country_split_needs_each_countrys_facets_total_beside_its_name(ev):
+    space = _CountrySpace({"IN": 12345, "DE": 2345})
+    full = ("search_jobs", {"category": "ai-ml-data-science", "detail": "full"}, "…")
+    passed = ev.verify_country_split(
+        _T37,
+        _transcript(ev, [full], "India has 12,345 open AI roles; Germany 2345."),
+        space,
+    )
+    assert passed.passed, passed.detail
+    # Each read is the call's filters with that country as its only place, a total alone.
+    sent = [dict(params) for params in space.asked]
+    assert [s["country"] for s in sent] == ["IN", "DE"]
+    assert all(s["family"] == "ai-ml-data-science" for s in sent)
+    assert all(s["counts"] == "total" and "page" not in s for s in sent)
+
+
+def test_country_split_fails_a_figure_that_is_not_the_countrys_own(ev):
+    space = _CountrySpace({"IN": 12345, "DE": 2345})
+    full = ("search_jobs", {"category": "ai-ml-data-science", "detail": "full"}, "…")
+    failed = ev.verify_country_split(
+        _T37, _transcript(ev, [full], "India 12,345 and Germany 2,300."), space
+    )
+    assert not failed.passed and "Germany is 2,345" in failed.detail
+
+
+def test_country_split_passes_a_search_per_country_with_its_place_replaced(ev):
+    """One search per country is a right path too: each call's own country is replaced."""
+    space = _CountrySpace({"IN": 900, "DE": 80})
+    calls = [
+        ("search_jobs", {"keyword": "ai", "country": "IN"}, "…"),
+        ("search_jobs", {"keyword": "ai", "india_place": "pune"}, "…"),
+    ]
+    verdict = ev.verify_country_split(
+        _T37, _transcript(ev, calls, "900 in India against 80 in Germany."), space
+    )
+    assert verdict.passed, verdict.detail
+    assert all("india" not in dict(p) and dict(p)["kw"] == "ai" for p in space.asked)
+
+
+def test_country_split_needs_a_search_for_the_category(ev):
+    space = _CountrySpace({"IN": 1, "DE": 1})
+    anything = ("search_jobs", {"query": "ai engineer", "detail": "full"}, "…")
+    failed = ev.verify_country_split(
+        _T37, _transcript(ev, [anything], "India 1, Germany 1."), space
+    )
+    assert not failed.passed and "no successful search_jobs call meets" in failed.detail
+
+
 # --- the verifier self-test: recorded tool results (ADR-0334) ---------------------------------
 
 _RECORDED = (
@@ -1632,7 +1874,7 @@ def test_the_recording_covers_every_task_whose_verifier_reads_tool_results(ev):
     def reads_results(task):
         checks = (task.get("expect") or {}).get("checks") or [task]
         return any(
-            c["verifier"] in ("blocking_named", "title_keyword_rows")
+            c["verifier"] in ("blocking_named", "title_keyword_rows", "operator_mix")
             or {"tool_results_all", "answer_carries", "answer_any"}
             & set(c.get("expect") or {})
             for c in checks

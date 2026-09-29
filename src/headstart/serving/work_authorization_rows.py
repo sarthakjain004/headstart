@@ -69,7 +69,8 @@ class WorkAuthorizationRows:
 
     def clause(self, stance: str) -> str:
         """A where-clause keeping ``stance``'s Jobs. Only once :meth:`wait` has said the read
-        finished; a stance none holds keeps nothing."""
+        finished; a stance none holds keeps nothing. ``may_offer_sponsorship`` keeps the Jobs
+        that offer sponsorship too (ADR-0353)."""
         return self._clauses.get(stance, ids_in_clause([]))
 
     def _read(self) -> None:
@@ -79,17 +80,19 @@ class WorkAuthorizationRows:
             reader = (
                 self._table.search()
                 .where(f"regexp_like(description, '{work_authorization.PREFILTER}')")
-                .select(["id", "description"])
+                .select(["id", "title", "location", "description"])
                 .to_batches(batch_size=READ_BATCH_ROWS)
             )
             for batch in reader:
-                for job_id, text in zip(
+                for job_id, title, location, text in zip(
                     batch.column("id").to_pylist(),
+                    batch.column("title").to_pylist(),
+                    batch.column("location").to_pylist(),
                     batch.column("description").to_pylist(),
                     strict=True,
                 ):
                     read += 1
-                    for stance in work_authorization.stances(text):
+                    for stance in work_authorization.stances(text, title, location):
                         ids[stance].append(job_id)
         except Exception:  # noqa: BLE001 — a failed read is said, and refused per request
             _log.exception(
@@ -97,6 +100,11 @@ class WorkAuthorizationRows:
             )
             ids = {s: [] for s in work_authorization.STANCES}
             self._failed = True
+        # The filter's may_offer_sponsorship keeps every job that at least may offer it: the
+        # hedged and unmatched-scope offers, and the firm ones (ADR-0353).
+        ids[work_authorization.MAY_OFFER_SPONSORSHIP] += ids[
+            work_authorization.OFFERS_SPONSORSHIP
+        ]
         self._clauses = {stance: ids_in_clause(found) for stance, found in ids.items()}
         _log.info(
             "work authorization stances read from %d descriptions: %s",
