@@ -499,6 +499,17 @@ range with its own currency ("₹15,000 - ₹20,000 per month"), the field now a
 every other parsed field. That happened on 3 served rows. On a fourth, the field ("AED 22000") and
 the description ("AED 13,000 – 15,000 per month") disagree, and the field answers there too.
 
+### 2026-09-29 (#859 review): a "k" rupee figure reads monthly only up to 300K
+
+"A figure the floor admits stays annual" did not hold for a "k" rupee figure. `_field_generic`
+refuses "110K+ INR" as annual (`_declines_k_figure`), and the monthly reading then took it,
+however large: "800K INR" read 9.6M a year. Nine served rows take that path on v45: eight "110K+
+INR" (techblissdigital) and one "120k+ INR" (selah). Six of their descriptions say contract, three
+of them six months, and the four that state experience ask for three to nine years. Every "k"
+rupee figure a served string gives a period for says a month: 26 of them, 3 fields and 23
+descriptions, up to "Budget: ₹ 270K per month". So those nine keep their monthly reading. Past 300K (`_MONTHLY_K_RUPEES_BELOW`) no evidence says which period applies, so the
+figure reads as nothing. No served row moves (ADR-0293).
+
 ## Known gaps, left honestly unresolved rather than guessed at
 
 - **Non-English postings** (confirmed: Italian, Dutch, French) — out of scope per this repo's
