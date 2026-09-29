@@ -350,13 +350,36 @@ test('a full page enables Next; a short page disables it', async () => {
   assert.ok(!nodes.pager.innerHTML.includes('Next ›" disabled'));
   const { t: t2, nodes: nodes2 } = loadApp(() => full.slice(0, 5));
   await t2.go();
-  assert.match(nodes2.pager.innerHTML, /disabled[^>]*onclick="goToPage\(2\)"|onclick="goToPage\(2\)"[^>]*disabled/);
+  assert.match(nodes2.pager.innerHTML, /disabled[^>]*data-goto-page="2"|data-goto-page="2"[^>]*disabled/);
 });
 
 test('page 1 never shows a Prev button as enabled', async () => {
   const { t, nodes } = loadApp(() => [job('a')]);
   await t.go();
-  assert.match(nodes.pager.innerHTML, /disabled[^>]*onclick="goToPage\(0\)"|onclick="goToPage\(0\)"[^>]*disabled/);
+  assert.match(nodes.pager.innerHTML, /disabled[^>]*data-goto-page="0"|data-goto-page="0"[^>]*disabled/);
+});
+
+test('drawn buttons carry no inline onclick, and one document listener runs them (#595)', async () => {
+  // The Content-Security-Policy refuses inline handlers, so a drawn button that relied on one
+  // would render and then do nothing when clicked.
+  const full = Array.from({ length: 20 }, (_, i) => job('j' + i));
+  const { t, nodes, fetches, docHandlers } = loadApp(() => full);
+  await t.go();
+  t.searchCompany(['workday:citi/2'], 'Citi');
+  await new Promise(resolve => setTimeout(resolve, 0));
+  for (const html of [nodes.pager.innerHTML, nodes.active.innerHTML])
+    assert.ok(!/\son[a-z]+=/.test(html), html);
+  const click = async dataset => {
+    const button = { dataset };
+    const target = { closest: sel => (sel.includes('button[data-goto-page]') ? button : null) };
+    for (const handler of docHandlers.click) await handler({ target });
+    await new Promise(resolve => setTimeout(resolve, 0));
+  };
+  await click({ gotoPage: '2' });
+  assert.strictEqual(qs(fetches.filter(u => u.startsWith('/search?')).at(-1)).page, '2');
+  await click({ dropFilter: 'board' });
+  assert.equal(new URLSearchParams(fetches.filter(u => u.startsWith('/search?')).at(-1).split('?')[1])
+    .getAll('board').length, 0);
 });
 
 test('an empty page 1 shows "nothing matched"; an empty later page shows "no more jobs"', async () => {

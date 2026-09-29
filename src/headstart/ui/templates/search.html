@@ -4,7 +4,7 @@
       <input id="q" type="text" autofocus aria-label="Describe the role you want"
              placeholder="Describe the role you want — e.g. backend engineer at a climate startup">
     </div>
-    <button class="go" onclick="go()">Search</button>
+    <button class="go" id="search-go">Search</button>
   </div>
   {# How the search bar's words are matched (ADR-0263): by meaning, or as words every job title
      must hold. One row of native radios beside the box: one click, arrow keys to walk it, and
@@ -23,9 +23,9 @@
   <a class="skip" href="#results">Skip the filters, go to results</a>
   <div class="hint">
     <span>Try:</span>
-    <button class="chip" onclick="tryIt(this)">backend engineer at a climate startup</button>
-    <button class="chip" onclick="tryIt(this)">ML infrastructure, PyTorch</button>
-    <button class="chip" onclick="tryIt(this)">frontend engineer, design systems</button>
+    <button class="chip">backend engineer at a climate startup</button>
+    <button class="chip">ML infrastructure, PyTorch</button>
+    <button class="chip">frontend engineer, design systems</button>
   </div>
 </section>
 
@@ -204,12 +204,12 @@
           </select></div>
       </div>
 
-      <button class="clear" onclick="clearAll()">Clear all filters</button>
+      <button class="clear" id="clear-all">Clear all filters</button>
     </aside>
   <div class="search-results">
     <div class="toolbar">
       {% if sets_on %}
-      <button class="ghost" id="savebtn" onclick="saveSearchToggle()">Save this search</button>
+      <button class="ghost" id="savebtn">Save this search</button>
       {% endif %}
       <span class="spacer"></span>
       {# Sort as a one-click row of options, not a <select> to open first (issue #755). The
@@ -229,7 +229,7 @@
     {% if sets_on %}
     <div class="row saverow" id="saverow" style="display:none">
       <input id="savename" type="text" placeholder="Name this search — e.g. backend roles" maxlength="60">
-      <button class="ghost" onclick="saveSearch()">Save</button>
+      <button class="ghost" id="savego">Save</button>
       <span class="note" id="savemsg" role="status"></span>
       <span class="note">Keyword filters and numeric salary brackets aren't saved yet.</span>
     </div>

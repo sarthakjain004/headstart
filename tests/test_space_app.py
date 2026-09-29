@@ -4839,10 +4839,64 @@ def test_every_response_carries_the_hardening_headers(sets_app, monkeypatch):
     ):
         assert r.headers["X-Content-Type-Options"] == "nosniff"
         assert r.headers["Referrer-Policy"] == "strict-origin-when-cross-origin"
-        assert (
-            r.headers["Content-Security-Policy"]
-            == "frame-ancestors 'self' https://huggingface.co"
-        )
+        policy = _csp(r)
+        assert policy["frame-ancestors"] == "'self' https://huggingface.co"
+        assert policy["script-src"] == "'self' https://accounts.google.com/gsi/client"
+
+
+def _csp(response) -> dict[str, str]:
+    """The response's Content-Security-Policy, directive -> its sources."""
+    return dict(
+        part.strip().split(" ", 1)
+        for part in response.headers["Content-Security-Policy"].split(";")
+    )
+
+
+_SCRIPT_TAG = re.compile(r"<script\b([^>]*)>", re.IGNORECASE)
+_INLINE_HANDLER = re.compile(r"<[a-zA-Z][^<>]*?\son[a-z]+\s*=", re.DOTALL)
+_GOOGLE_SIGN_IN = "https://accounts.google.com/gsi/client"
+
+
+@pytest.mark.parametrize("signed_in", [False, True], ids=["door", "app"])
+def test_every_inline_script_on_the_page_carries_this_response_s_nonce(
+    sets_app, monkeypatch, signed_in
+):
+    """#595: the policy runs an inline script only with the nonce its own response names, so
+    the page's four inline scripts must carry it, each response a fresh one."""
+    client = (
+        _signed_in(sets_app, monkeypatch) if signed_in else sets_app.app.test_client()
+    )
+    nonces = []
+    for _ in range(2):
+        r = client.get("/", base_url=_HTTPS)
+        sources = _csp(r)["script-src"].split()
+        nonce = next(s for s in sources if s.startswith("'nonce-"))[7:-1]
+        assert "'unsafe-inline'" not in sources and "'unsafe-eval'" not in sources
+        page = r.get_data(as_text=True)
+        tags = _SCRIPT_TAG.findall(page)
+        inline = [attrs for attrs in tags if "src=" not in attrs]
+        assert inline and all(f'nonce="{nonce}"' in attrs for attrs in inline)
+        for attrs in tags:
+            src = re.search(r'src="([^"]+)"', attrs)
+            assert src is None or src[1].startswith(("/static/", _GOOGLE_SIGN_IN))
+        assert not _INLINE_HANDLER.search(page)
+        nonces.append(nonce)
+    assert nonces[0] != nonces[1]
+
+
+def test_no_template_or_script_writes_an_inline_handler_or_an_unnonced_script():
+    """#595: the policy refuses every inline `on…=` handler, and an inline script without the
+    nonce, so a template or a script that draws HTML must use neither. Includes the templates
+    a page renders only when its tab is configured, which the page tests above may not reach."""
+    ui = Path(__file__).resolve().parents[1] / "src" / "headstart" / "ui"
+    files = [*(ui / "templates").glob("*.html"), *(ui / "static").rglob("*.js")]
+    assert len(files) > 10
+    for path in files:
+        text = path.read_text(encoding="utf-8")
+        assert not _INLINE_HANDLER.search(text), path.name
+        if path.suffix == ".html":
+            for attrs in _SCRIPT_TAG.findall(text):
+                assert "src=" in attrs or 'nonce="{{ csp_nonce }}"' in attrs, path.name
 
 
 def test_python_app_py_serves_through_waitress_not_the_dev_server():

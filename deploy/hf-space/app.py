@@ -16,6 +16,7 @@ import hmac
 import ipaddress
 import json
 import os
+import secrets
 import threading
 import time
 import traceback
@@ -412,13 +413,46 @@ _REPO = "https://github.com/sarthakjain004/headstart"
 # for no reason the visitor can see reads as broken rather than as honest.
 _DOOR_NEW_HOURS = 168
 
-#: Set on every answer (#595). Framing is limited, not forbidden: huggingface.co's Space page
-#: iframes this app, and its sign-in door is how a visitor there reaches the direct URL.
+#: Set on every answer (#595).
 _HARDENING_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "Referrer-Policy": "strict-origin-when-cross-origin",
-    "Content-Security-Policy": "frame-ancestors 'self' https://huggingface.co",
 }
+
+#: What the page may load and run (#595, ADR-0282), bar `script-src`'s nonce. Scripts: this
+#: Space's own files, Google's sign-in library, and an inline script only with this response's
+#: nonce, so no inline handler or injected script runs. Styles keep 'unsafe-inline': the page
+#: and the résumé builder write style attributes and `<style>` elements, the print frame's among
+#: them, and a style cannot run code. Google's origins are the ones its sign-in guide names.
+#: Framing is limited, not forbidden: huggingface.co's Space page iframes this app, and its
+#: sign-in door is how a visitor there reaches the direct URL.
+_CSP_SCRIPTS = "'self' https://accounts.google.com/gsi/client"
+_CSP_REST = (
+    "style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style",
+    "connect-src 'self' https://accounts.google.com/gsi/",
+    "frame-src https://accounts.google.com/gsi/",
+    "object-src 'none'",
+    "base-uri 'none'",
+    "form-action 'self'",
+    "frame-ancestors 'self' https://huggingface.co",
+)
+
+
+def _csp_nonce() -> str:
+    """This response's script nonce, made the first time a template asks for it."""
+    if "csp_nonce" not in g:
+        g.csp_nonce = secrets.token_urlsafe(16)
+    return g.csp_nonce
+
+
+@app.context_processor
+def _templates_get_the_csp_nonce():
+    return {"csp_nonce": _csp_nonce()}
+
+
+def _content_security_policy(nonce: str | None) -> str:
+    scripts = _CSP_SCRIPTS + (f" 'nonce-{nonce}'" if nonce else "")
+    return "; ".join(("default-src 'self'", f"script-src {scripts}", *_CSP_REST))
 
 
 @app.after_request
@@ -426,6 +460,9 @@ def _hardening_headers(response):
     """Headers only: a gzipped body, a 304 and the cache headers pass through untouched."""
     for name, value in _HARDENING_HEADERS.items():
         response.headers.setdefault(name, value)
+    response.headers.setdefault(
+        "Content-Security-Policy", _content_security_policy(g.get("csp_nonce"))
+    )
     return response
 
 
