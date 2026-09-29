@@ -20,10 +20,10 @@ import csv
 import json
 import re
 from pathlib import Path
-from urllib.parse import unquote_plus
 
 from curl_cffi.requests import AsyncSession
 
+from headstart.scrapers.ashby import AshbyScraper
 from headstart.scrapers.registry import SCRAPERS
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -201,10 +201,10 @@ PATTERNS = {
         r"api\.lever\.co/v0/postings/([a-zA-Z0-9_-]+)",
         r"jobs\.lever\.co/([a-zA-Z0-9_-]+)",
     ],
+    # An Ashby slug may hold a dot or a `%20`; the scraper says how a link writes it (ADR-0280).
     "ashby": [
-        # An Ashby Board name may hold a space, linked as %20 or + (#864): 30 live ledger rows.
-        r"api\.ashbyhq\.com/posting-api/job-board/((?:[a-zA-Z0-9_-]|%20|\+)+)",
-        r"jobs\.ashbyhq\.com/((?:[a-zA-Z0-9_-]|%20|\+)+)",
+        r"api\.ashbyhq\.com/posting-api/job-board/(" + AshbyScraper.slug_in_link + ")",
+        r"jobs\.ashbyhq\.com/(" + AshbyScraper.slug_in_link + ")",
     ],
     "zoho": [HOST + r"([a-z0-9][a-z0-9-]*)\.zohorecruit\.(?:com|eu|in|ca)"],
     "recruitee": [HOST + r"([a-z0-9][a-z0-9-]*)\.recruitee\.com"],
@@ -253,8 +253,9 @@ LOCALE = re.compile(
     re.IGNORECASE,
 )
 
-# ATSes whose captured slug keeps its capitals; every other slug is lower-cased. Each scraper
-# declares it as `keeps_slug_case`, and fingerprint_careers.py reads the same attribute, so the two
+# ATSes whose captured slug keeps its capitals; every other bare slug is lower-cased (Workday
+# builds its Board URL, and that URL's casing, in its own branch below). Each scraper declares
+# it as `keeps_slug_case`, and fingerprint_careers.py reads the same attribute, so the two
 # fingerprinters cannot disagree on an ATS both detect (ADR-0271).
 KEEPS_SLUG_CASE = frozenset(ats for ats, cls in SCRAPERS.items() if cls.keeps_slug_case)
 
@@ -271,18 +272,20 @@ def detect(html):
         for p in pats:
             for m in re.finditer(p, html, re.IGNORECASE):
                 raw = m.group(1) or ""
+                # `Blackpoint%20Cyber` names the ledger's "Blackpoint Cyber".
                 if ats == "ashby":
-                    raw = unquote_plus(
-                        raw
-                    )  # the ledger spells "Blackpoint Cyber", not %20
+                    raw = AshbyScraper.slug_from_link(raw)
                 tok = raw if ats in KEEPS_SLUG_CASE else raw.lower()
                 # require len 3-60: a 1-2 char token is almost always garbage from a minified
                 # JS path (e.g. a stray `apply.workable.com/j` -> "j"), not a real board slug.
                 # The split() check also screens host-shaped tokens (personio/eightfold), where
-                # the blocked word is the leading label: "www.eightfold.ai" is not a tenant.
+                # the blocked word is the leading label: "www.eightfold.ai" is not a tenant. A
+                # dotted Ashby slug is a path segment, a Company's domain: `careers.azx.io` lists.
                 lo = tok.lower()
                 if tok and 3 <= len(tok) <= 60:  # noqa: SIM102
-                    if lo not in BLOCK and lo.split(".")[0] not in BLOCK:
+                    if lo not in BLOCK and (
+                        ats == "ashby" or lo.split(".")[0] not in BLOCK
+                    ):
                         hits.add((ats, tok))
     for m in WORKDAY.finditer(html):
         # The Workday scraper's slug IS the full board URL — src/headstart/scrapers/workday.py

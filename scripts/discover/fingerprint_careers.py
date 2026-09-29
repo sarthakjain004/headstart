@@ -80,14 +80,7 @@ from functools import lru_cache
 from pathlib import Path
 from re import _constants as re_constants
 from re import _parser as re_parser
-from urllib.parse import (
-    parse_qs,
-    unquote_plus,
-    urlencode,
-    urljoin,
-    urlsplit,
-    urlunsplit,
-)
+from urllib.parse import parse_qs, urlencode, urljoin, urlsplit, urlunsplit
 
 import certifi
 from curl_cffi import requests as _requests
@@ -110,6 +103,7 @@ from headstart.boards.board_identity import board_key, lower_key
 from headstart.boards.company_ref import CompanyRef
 from headstart.scrapers import registry
 from headstart.scrapers.adp_recruiting import SLUG as ADP_RECRUITING_SLUG
+from headstart.scrapers.ashby import AshbyScraper
 from headstart.scrapers.zwayam import API_HOSTS as ZWAYAM_API_HOSTS
 
 try:
@@ -172,9 +166,14 @@ PATTERNS: dict[str, tuple[str, list[str]]] = {
     "ashby": (
         "ats",
         [
-            # An Ashby Board name may hold a space, linked as %20 or + (#864).
-            r"api\.ashbyhq\.com/posting-api/job-board/((?:[a-zA-Z0-9_-]|%20|\+)+)",
-            r"jobs\.ashbyhq\.com/(?:embed\?[^\"'\s]{0,80}?board=)?((?:[a-zA-Z0-9_-]|%20|\+)+)",
+            # An Ashby slug may hold a dot or a `%20`; the scraper says how a link writes it
+            # (ADR-0280).
+            r"api\.ashbyhq\.com/posting-api/job-board/("
+            + AshbyScraper.slug_in_link
+            + ")",
+            r"jobs\.ashbyhq\.com/(?:embed\?[^\"'\s]{0,80}?board=)?("
+            + AshbyScraper.slug_in_link
+            + ")",
         ],
     ),
     "zoho": (
@@ -596,8 +595,9 @@ BLOCK = {
     "http",
     "https",
 }
-# ATSes whose captured slug keeps its capitals; every other slug is lower-cased. Each scraper
-# declares it as `keeps_slug_case`, and resolve/fingerprint.py reads the same attribute, so the two
+# ATSes whose captured slug keeps its capitals; every other bare slug is lower-cased (Workday and
+# ADP build their Board, and its casing, in their own branches of `scan`). Each scraper declares
+# it as `keeps_slug_case`, and resolve/fingerprint.py reads the same attribute, so the two
 # fingerprinters cannot disagree on an ATS both detect (ADR-0271).
 KEEPS_SLUG_CASE = frozenset(
     ats for ats, cls in registry.SCRAPERS.items() if cls.keeps_slug_case
@@ -1081,7 +1081,7 @@ def scan(
                 else:
                     raw = (m.group(1) if m.lastindex else "") or ""
                     if ats == "ashby":
-                        raw = unquote_plus(raw)  # the ledger spells "Blackpoint Cyber"
+                        raw = AshbyScraper.slug_from_link(raw)  # "Blackpoint Cyber"
                     tok = raw if ats in KEEPS_SLUG_CASE else raw.lower()
                     if tok:
                         lo = tok.lower()

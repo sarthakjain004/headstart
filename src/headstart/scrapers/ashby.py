@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import re
 from typing import Any
+from urllib.parse import unquote
 
 from headstart.boards import company_name
 from headstart.jobs import salary
@@ -129,6 +130,21 @@ def _location(job: dict) -> str | None:
 class AshbyScraper(BaseScraper):
     ats = "ashby"
     url_shape = r"https://jobs\.ashbyhq\.com/[^/]+/[0-9a-f-]{36}"
+    #: How a link writes one slug, for a discovery script's regex to capture; every script that
+    #: reads an Ashby link shares it (ADR-0280). A slug may be a Company's domain, dots and all
+    #: (`ambient.ai`, 130 Live rows), or hold a space, which a link writes `%20`
+    #: (`Blackpoint%20Cyber`, 30). A `+` is not a space here: Ashby reads it as itself, and
+    #: `Blackpoint+Cyber` answers 404 (2026-09-29). The lookahead will not end a capture before
+    #: a slug character, a `+` or a `%`, so a link this cannot read whole yields nothing rather
+    #: than a prefix naming another Board (`affinity.co` cut to `affinity`, an empty one).
+    slug_in_link = r"[A-Za-z0-9](?:[A-Za-z0-9._-]|%20)*(?![A-Za-z0-9._%+-])"
+
+    @staticmethod
+    def slug_from_link(written: str) -> str:
+        """The slug a :attr:`slug_in_link` capture names: each ``%20`` read as its space, and a
+        space or dot at either end dropped. A link's trailing ``%20`` or a sentence's full stop
+        is not part of the slug: ``elveo%20`` answers 404 where ``elveo`` lists (2026-09-29)."""
+        return unquote(written).strip(" .")
 
     def url(self) -> str:
         # includeCompensation adds the structured compensation block to each posting

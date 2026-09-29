@@ -58,17 +58,51 @@ def _load_script(name: str, relative: str):
     return module
 
 
-def test_both_fingerprinters_keep_the_slug_case_their_scrapers_declare():
+#: One mixed-case link per ATS that declares `keeps_slug_case`, and the slug it names.
+_MIXED_CASE_LINKS = {
+    # `api.lever.co/v0/postings/CesiumAstro` lists 309, `cesiumastro` is "Document not found"
+    "lever": ("https://jobs.lever.co/CesiumAstro/5f1c3a8e", "CesiumAstro"),
+    # the ledger holds this Board as `01Systems`, and a lower-cased slug lands as a second row
+    "smartrecruiters": ("https://careers.smartrecruiters.com/01Systems", "01Systems"),
+}
+
+
+@pytest.fixture(scope="module")
+def fingerprinters():
+    """What each careers-page fingerprinter reads out of a page, as a set of (ats, slug)."""
+    resolve = _load_script(
+        "keeps_slug_case_fingerprint", "scripts/resolve/fingerprint.py"
+    )
+    careers = _load_script(
+        "keeps_slug_case_fingerprint_careers", "scripts/discover/fingerprint_careers.py"
+    )
+    return {
+        "resolve/fingerprint.py": resolve.detect,
+        "discover/fingerprint_careers.py": lambda page: {
+            (ats, slug) for ats, _kind, slug, _n in careers.scan(page, "example.org")
+        },
+    }
+
+
+@pytest.mark.parametrize(
+    "ats", sorted(ats for ats, cls in SCRAPERS.items() if cls.keeps_slug_case)
+)
+def test_both_fingerprinters_keep_a_declared_atss_slug_in_its_case(fingerprinters, ats):
     """The two fingerprinters used to hold one hand-kept set each, and #813 updated one of them:
     the other kept verifying live mixed-case Lever Boards as dead (#824, #827, ADR-0271)."""
-    declared = {ats for ats, cls in SCRAPERS.items() if cls.keeps_slug_case}
-    for relative in (
-        "scripts/resolve/fingerprint.py",
-        "scripts/discover/fingerprint_careers.py",
-    ):
-        fingerprinter = _load_script(f"keeps_slug_case_{Path(relative).stem}", relative)
-        detected = set(fingerprinter.PATTERNS)
-        assert fingerprinter.KEEPS_SLUG_CASE & detected == declared & detected, relative
+    assert ats in _MIXED_CASE_LINKS, (
+        f"add a mixed-case {ats} link that names a real Board"
+    )
+    link, slug = _MIXED_CASE_LINKS[ats]
+    for name, read in fingerprinters.items():
+        assert (ats, slug) in read(f'<a href="{link}">Jobs</a>'), name
+
+
+def test_both_fingerprinters_lower_case_an_undeclared_atss_slug(fingerprinters):
+    """Ashby leaves `keeps_slug_case` False: `Elveo` and `elveo` list the same 21 postings."""
+    for name, read in fingerprinters.items():
+        found = read('<a href="https://jobs.ashbyhq.com/Elveo">Jobs</a>')
+        assert ("ashby", "elveo") in found and ("ashby", "Elveo") not in found, name
 
 
 def test_only_atses_measured_to_lose_a_board_when_lower_cased_keep_slug_case():

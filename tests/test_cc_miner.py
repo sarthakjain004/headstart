@@ -286,3 +286,24 @@ def test_a_path_slug_keeps_the_casing_it_was_captured_in(miner):
         hits,
     )
     assert sorted(hits) == ["CesiumAstro", "USMobile"]
+
+
+def test_an_ashby_slug_is_read_as_the_scraper_says_a_link_writes_it(miner):
+    """Common Crawl writes a space in an Ashby slug as `%20`, and the pattern cut the slug there:
+    `Flock%20Safety` was read as `Flock`. A `+` is not a space on Ashby, so a link it cannot read
+    whole names no Board rather than a prefix (ADR-0280)."""
+    spec = miner.ATS_PATTERNS["ashby"]
+    pats = [re.compile(p, re.IGNORECASE) for p in spec["patterns"]]
+    hits: dict[str, str] = {}
+    miner.extract_tenants(
+        spec,
+        pats,
+        [
+            "https://jobs.ashbyhq.com/Flock%20Safety/000b225a-f4af-469e-8b50-691538e882ff",
+            "https://api.ashbyhq.com/posting-api/job-board/ambient.ai?includeCompensation=true",
+            "https://jobs.ashbyhq.com/Elveo%20",
+            "https://jobs.ashbyhq.com/Blackpoint+Cyber",
+        ],
+        hits,
+    )
+    assert sorted(hits) == ["Elveo", "Flock Safety", "ambient.ai"]
