@@ -468,9 +468,10 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
         if grouped:
             lines.append(
                 "A row repeating one above it is listed under it as 'also #N', with only what "
-                "differs: the same company and title (brackets aside), or the same title, first "
-                "city and countries under another spelling of the company, as one posting on two "
-                "of its Boards is."
+                "differs: the same company and title (brackets aside); the same title, first "
+                "city and countries under another spelling of the company; or the same title, "
+                "countries and stated pay under a shorter or longer name of it (ADR-0338), as "
+                "one posting on two of its Boards is."
             )
         lines += page_lines
         shown_to = first + len(rows) - 1
