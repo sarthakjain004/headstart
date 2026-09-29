@@ -19,11 +19,11 @@ The sets also mixed up two separate facts about an ATS:
   lower-cased slug loses the Board.
 - **SmartRecruiters.** Its API is case-insensitive: `01Systems` and `01systems` both answer 200
   with 6 postings (2026-09-29). But 8,059 of the 12,458 ledger rows carry capitals, and
-  `check_liveness.py` keys a ledger on the raw tenant. So a lower-cased slug lands as a second row
-  for a Board we already hold.
+  `check_liveness.py` keys a ledger on the raw slug spelling in its `tenant` column. So a
+  lower-cased slug lands as a second row for a Board we already hold.
 - **PyjamaHR** was in `fingerprint_careers.py`'s set. It does read a slug case-sensitively, but
   every PyjamaHR slug is lower-case. None of the 676 slugs in its jobs sitemap carries a capital,
-  and none of its 768 ledger rows does. Re-cased, 3 of 3 tenants tried answer `count: 0`
+  and none of its 768 ledger rows does. Re-cased, 3 of 3 slugs tried answer `count: 0`
   (`8Byte`, `1-Percent-Group`, `7th-Sky-Technologies-LLC`), and `jobs.pyjamahr.com/8Byte`
   answers 404 (2026-09-29). So keeping a captured capital can only name a dead slug.
 
@@ -47,15 +47,15 @@ The attribute covers only a bare slug token. An ATS whose Board is a URL (Workda
 `fingerprint_careers.py`) builds that URL, and its casing, in its own branch.
 
 `resolve/fingerprint.py` has no PyjamaHR pattern, so the two fingerprinters detect different ATSes.
-The test checks that each keeps case for exactly the declared ATSes it detects. So the two agree
-on every ATS both detect.
+`tests/test_scraper_registry.py` runs both on one mixed-case link per declared ATS, and on an
+undeclared Ashby link, so a fingerprinter that stops reading the attribute fails it.
 
 **`cc_miner`, `mine_lever` and `merge_harvest_into_tenants` do not read the attribute.** They
 lower-case no path slug for any ATS. They keep the slug as captured and match it case-insensitively
 (#813). That is a separate rule, and it cannot drift against the attribute, because it never
 lower-cases a Lever or SmartRecruiters slug. Making these scripts lower-case on the attribute's
-say-so would change what they write for every other ATS, including the 38 mixed-case Ashby tenants
-and 407 mixed-case Workday tenants among the ledgers' `live` rows.
+say-so would change what they write for every other ATS, including the 38 mixed-case Ashby slugs
+and 407 mixed-case Workday slugs among the ledgers' Live rows.
 
 ## Alternatives
 

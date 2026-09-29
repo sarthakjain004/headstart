@@ -50,6 +50,8 @@ from pathlib import Path
 import cc_data_host
 from curl_cffi import requests
 
+from headstart.scrapers.ashby import AshbyScraper
+
 ROOT = Path(__file__).resolve().parent.parent.parent
 WB = ROOT / "data" / "wayback-ats"
 OUT = WB / "ashby.csv"
@@ -64,10 +66,13 @@ CC_PACE = float(os.environ.get("ASHBY_CC_PACE") or 1.5)  # seconds between CDX c
 WAYBACK = "http://web.archive.org/cdx/search/cdx"
 CC_COLLINFO = "https://index.commoncrawl.org/collinfo.json"
 
-# Every URL shape an Ashby slug shows up in. Group 1 is the slug.
+# Every URL shape an Ashby slug shows up in. Group 1 is the slug as the link writes it: a space
+# is `%20` (`Flock%20Safety`), which `AshbyScraper.slug_from_link` reads (ADR-0280).
 PATTERNS = [
-    re.compile(r"api\.ashbyhq\.com/posting-api/job-board/([A-Za-z0-9][A-Za-z0-9._-]*)"),
-    re.compile(r"jobs\.ashbyhq\.com/([A-Za-z0-9][A-Za-z0-9._-]*)"),
+    re.compile(
+        r"api\.ashbyhq\.com/posting-api/job-board/(" + AshbyScraper.slug_in_link + ")"
+    ),
+    re.compile(r"jobs\.ashbyhq\.com/(" + AshbyScraper.slug_in_link + ")"),
 ]
 # First path segments that are Ashby's own app, not a Board.
 RESERVED = {
@@ -95,7 +100,7 @@ def valid(slug: str) -> bool:
     s = slug.lower()
     if s in RESERVED or len(s) < 2 or len(s) > 63:
         return False
-    if not re.fullmatch(r"[a-z0-9][a-z0-9._-]*", s):
+    if not re.fullmatch(r"[a-z0-9][a-z0-9._ -]*", s):
         return False
     return not s.endswith((".js", ".css", ".png", ".svg", ".ico", ".json", ".xml"))
 
@@ -103,12 +108,12 @@ def valid(slug: str) -> bool:
 def slugs_from(text: str) -> set[str]:
     found = set()
     for line in text.splitlines():
-        line = urllib.parse.unquote(line.strip())
+        line = line.strip()
         for pat in PATTERNS:
             m = pat.search(line)
             if not m:
                 continue
-            s = m.group(1).lower().split("?")[0].split("#")[0]
+            s = AshbyScraper.slug_from_link(m.group(1)).lower()
             if valid(s):
                 found.add(s)
             break

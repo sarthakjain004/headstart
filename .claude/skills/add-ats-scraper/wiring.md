@@ -23,6 +23,11 @@ Class attributes:
   URLs of that shape and confirm each lands on the posting — not a redirect to the board home
   (phenom's wrong country prefix 200s to the landing page; darwinbox's SPA routed bad links to
   the dashboard).
+- `keeps_slug_case` — leave it False unless a live measurement shows that a lower-cased slug
+  loses the Board: Lever reads its slug case-sensitively, and the SmartRecruiters ledger holds
+  its Boards under their capitals. Both careers-page fingerprinters read it (ADR-0271). Setting it
+  True means citing the measurement in ADR-0271, and adding the ATS to the pinned set and a
+  mixed-case link to `_MIXED_CASE_LINKS` in `tests/test_scraper_registry.py`.
 - `has_detail_pass = True` when a second per-Job request fills fields — read by the embed
   planner and `priority_ledger` (ADR-0050).
 - `detail_workers` — below the measured knee: `harvest` scrapes Boards concurrently, so peak

@@ -1,6 +1,7 @@
 import html
 import json
 import logging
+import re
 import xml.etree.ElementTree as ET
 from copy import deepcopy
 from pathlib import Path
@@ -634,6 +635,32 @@ def test_ashby_parse_skips_unlisted():
     assert j.salary is None
     # the board URL must request compensation or the block is absent
     assert "includeCompensation=true" in get_scraper("ashby", "ramp", "Ramp").url()
+
+
+@pytest.mark.parametrize(
+    ("text", "slug"),
+    [
+        # 30 Live rows hold a space, which a link writes %20
+        ("https://jobs.ashbyhq.com/Blackpoint%20Cyber/0af6c47b", "Blackpoint Cyber"),
+        # 130 Live rows are a Company's domain; `ambient` alone answers 404
+        ("https://jobs.ashbyhq.com/ambient.ai", "ambient.ai"),
+        ("https://jobs.ashbyhq.com/careers.azx.io?utm_source=x", "careers.azx.io"),
+        # `elveo%20` answers 404 where `elveo` lists, and a full stop ends the sentence
+        ('<a href="https://jobs.ashbyhq.com/Elveo%20">', "Elveo"),
+        ("Apply at https://jobs.ashbyhq.com/elveo.", "elveo"),
+        # Ashby reads `+` as itself (`Blackpoint+Cyber` answers 404), and a prefix would name
+        # another Board, so a link this cannot read whole names none
+        ("https://jobs.ashbyhq.com/Blackpoint+Cyber", None),
+        ("https://jobs.ashbyhq.com/acme%2Fjobs", None),
+    ],
+)
+def test_ashby_reads_a_slug_as_a_link_writes_it(text, slug):
+    """Every discovery script builds its Ashby regex from `slug_in_link` and decodes the capture
+    with `slug_from_link` (ADR-0280), so this is the one place the spelling is pinned."""
+    from headstart.scrapers.ashby import AshbyScraper
+
+    m = re.search(r"jobs\.ashbyhq\.com/(" + AshbyScraper.slug_in_link + ")", text)
+    assert (AshbyScraper.slug_from_link(m.group(1)) if m else None) == slug
 
 
 @pytest.mark.parametrize(

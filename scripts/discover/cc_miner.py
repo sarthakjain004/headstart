@@ -56,6 +56,7 @@ import cc_data_host
 from wayback_feeder import ADP_HOST, ADP_PAGE_URL, extract
 
 from headstart.scrapers.adp_recruiting import SLUG as ADP_RECRUITING_SLUG
+from headstart.scrapers.ashby import AshbyScraper
 
 CRAWL_ARG = sys.argv[1] if len(sys.argv) > 1 else None
 CSV = "data/discover/cc_ats_tenants.csv"
@@ -70,9 +71,9 @@ PACE = float(os.environ.get("CC_PACE") or 1.0)
 
 # Per ATS: the CDX hosts/domains to query (matchType=domain), the regexes that capture the tenant
 # from a matched URL (group 1, except workday which uses host+site groups), and how to read that
-# capture ("label" = subdomain label, "slug" = path slug, "host" = full careers host,
-# "workday" = rebuilt board URL, "oracle" = careers host). Regional data centres are folded into
-# the target list and the regex alternations.
+# capture ("label" = subdomain label, "slug" = path slug, "ashby" = path slug with its `%20`
+# read, "host" = full careers host, "workday" = rebuilt board URL, "oracle" = careers host).
+# Regional data centres are folded into the target list and the regex alternations.
 ATS_PATTERNS = {
     "adp": {
         # ADP Workforce Now: one fixed host, and the Board is two query values on the
@@ -122,12 +123,16 @@ ATS_PATTERNS = {
             r"jobs(?:\.eu)?\.lever\.co/([a-z0-9][a-z0-9-]+)",
         ],
     },
+    # A path slug may hold a dot or a `%20` (`Flock%20Safety`); the scraper says how a link
+    # writes it, and the `ashby` kind reads it back (ADR-0280).
     "ashby": {
         "targets": ["jobs.ashbyhq.com", "api.ashbyhq.com"],
-        "kind": "slug",
+        "kind": "ashby",
         "patterns": [
-            r"api\.ashbyhq\.com/posting-api/job-board/([a-z0-9][a-z0-9._-]+)",
-            r"jobs\.ashbyhq\.com/([a-z0-9][a-z0-9._-]+)",
+            r"api\.ashbyhq\.com/posting-api/job-board/("
+            + AshbyScraper.slug_in_link
+            + ")",
+            r"jobs\.ashbyhq\.com/(" + AshbyScraper.slug_in_link + ")",
         ],
     },
     "avature": {
@@ -621,6 +626,8 @@ def tenant_from(kind, match):
         return host, f"https://{host}"
     if kind == "label":
         tok = tok.lower()  # a host label, and hosts are case-insensitive
+    if kind == "ashby":
+        tok = AshbyScraper.slug_from_link(tok)  # `Flock%20Safety` is "Flock Safety"
     # A path slug stays as written: Lever reads it case-sensitively, so `CesiumAstro` lowercased
     # names no Board (`wayback_feeder.extract` keeps it for the same reason).
     if tok.lower() in BLOCK or len(tok) < 2 or tok.isdigit():
