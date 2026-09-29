@@ -2,11 +2,12 @@
 (``/requirements``, ADR-0324).
 
 A career switcher asks "what does a data engineer need", and the honest answer is a count over
-Jobs, not a paraphrase of one. :func:`summarize` takes the sampled rows (:meth:`JobSearch.
-requirements` picks them) and first makes each Job count once: a row whose company names nothing
-but its Board is named by the Company directory (ADR-0323's rule, `company_name.
-names_no_company`), and copies of one posting (`jobs.posting_copies`, the rule a search page lists
-them by) count as one Job, the first read. Then, per Job:
+Jobs, not a paraphrase of one. :func:`summarize` takes the sampled Jobs (:meth:`JobSearch.
+requirements` picks them) and first makes each requisition count once (ADR-0331): a Job whose
+company names nothing but its Board is shown under the Company directory's name
+(`company_name.with_directory_name`, ADR-0323's rule), and of the Jobs that copy one requisition
+(`jobs.requisition_copies`, the rule a search page lists them by) only the first read is counted.
+Then, per counted Job:
 
 - **skills**: the tech skills its description mentions (`tech_skills`), each as a share of the Jobs
   that carry a description, with how many distinct employers mention it. A skill named only in one
@@ -28,13 +29,13 @@ from __future__ import annotations
 import statistics
 from collections import Counter
 from collections.abc import Callable, Iterable, Mapping
-from typing import Any, Protocol
+from typing import Any
 
 from headstart.boards.board_identity import board_of
-from headstart.boards.company_name import names_no_company
-from headstart.jobs import posting_copies
+from headstart.boards.company_name import FROM_DIRECTORY, with_directory_name
+from headstart.jobs import requisition_copies
 from headstart.search_filters import country_filter, country_gazetteer
-from headstart.serving.location_counts import most_first
+from headstart.serving.count_ranking import most_first
 from headstart.serving.tech_skills import Vocabulary
 
 #: The columns a sampled row needs, besides ``id``.
@@ -63,10 +64,6 @@ EXPERIENCE_BANDS = (("0-1", 0, 1), ("2-4", 2, 4), ("5-7", 5, 7), ("8+", 8, None)
 #: `experience_source` values that mean the Job itself stated the years (ADR-0018): its ATS
 #: field, or a number read from its description. "seniority" is an estimate from the title.
 _STATED = frozenset({"field", "regex"})
-
-
-class Families(Protocol):
-    def family_of(self, job_id: str) -> str | None: ...
 
 
 def _band(years: int) -> str:
@@ -131,7 +128,7 @@ def _employer(job: Mapping[str, Any]) -> str:
     """Who a Job is at, for counting employers: its company case-folded, or its Board key when
     it names none, so Jobs naming no company are not all one employer."""
     name = " ".join(str(job.get("company") or "").split()).casefold()
-    return name or board_of(str(job.get("id") or ""))
+    return name or job["board"]
 
 
 def _companies(jobs: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
@@ -144,8 +141,8 @@ def _companies(jobs: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
     return [
         {
             "company": first[key].get("company") or None,
-            "board": board_of(str(first[key].get("id") or "")),
-            "from_directory": bool(first[key].get("from_directory")),
+            FROM_DIRECTORY: bool(first[key].get(FROM_DIRECTORY)),
+            "board": first[key]["board"],
             "jobs": count,
         }
         for key, count in most_first(counted)[:COMPANIES_SHOWN]
@@ -190,33 +187,34 @@ def _skills(
     ], described
 
 
-def _named(
-    row: Mapping[str, Any], name_of_board: Callable[[str], str | None] | None
+def _on_its_board(
+    job: Mapping[str, Any],
+    board_and_name: Callable[[str], tuple[str, str | None]] | None,
 ) -> dict[str, Any]:
-    """``row`` under the Company directory's name when its own names nothing but its Board."""
-    board = board_of(str(row.get("id") or ""))
-    if not names_no_company(row.get("company"), board):
-        return {**row, "from_directory": False}
-    name = name_of_board(board) if name_of_board else None
-    return {**row, "company": name, "from_directory": name is not None}
+    """``job`` with its Board key, shown under the directory's name when its own company names
+    nothing but that Board. Without a directory the Board is `board_of`'s guess."""
+    job_id = str(job.get("id") or "")
+    board, name = board_and_name(job_id) if board_and_name else (board_of(job_id), None)
+    return {**with_directory_name(dict(job), board, name), "board": board}
 
 
 def summarize(
-    rows: Iterable[Mapping[str, Any]],
+    jobs: Iterable[Mapping[str, Any]],
     vocabulary: Vocabulary,
-    families: Families | None = None,
-    name_of_board: Callable[[str], str | None] | None = None,
+    family_of: Callable[[str], str | None] | None = None,
+    board_and_name: Callable[[str], tuple[str, str | None]] | None = None,
 ) -> dict[str, Any]:
-    """The counts over ``rows``, each a sampled row with ``id`` and :data:`COLUMNS`, in the
-    order sampled. ``read`` is how many rows were read; ``sampled`` how many distinct Jobs they
-    hold, which every other count is over."""
-    rows = [_named(row, name_of_board) for row in rows]
-    jobs = [rows[group[0]] for group in posting_copies.groups(rows)]
+    """The counts over ``jobs``, the sampled Jobs with ``id`` and :data:`COLUMNS`, in the order
+    sampled. ``board_and_name`` gives a Job id's Board and its Company directory name
+    (`TrendHistory.board_and_name_of_job`). ``read`` is how many Jobs were read; ``distinct``
+    how many were counted, one per requisition, which every other count is over."""
+    read = [_on_its_board(job, board_and_name) for job in jobs]
+    jobs = [read[group[0]] for group in requisition_copies.groups(read)]
     skills, described = _skills(jobs, vocabulary)
     countries, no_country = _countries(jobs)
     counted: dict[str, Any] = {
-        "read": len(rows),
-        "sampled": len(jobs),
+        "read": len(read),
+        "distinct": len(jobs),
         "described": described,
         "skills": skills,
         "kinds": vocabulary.kinds,
@@ -228,11 +226,11 @@ def summarize(
         "countries": countries,
         "no_country": no_country,
     }
-    if families is not None:
+    if family_of is not None:
         placed = Counter(
             family
             for job in jobs
-            if (family := families.family_of(str(job.get("id") or ""))) is not None
+            if (family := family_of(str(job.get("id") or ""))) is not None
         )
         counted["categories"] = [
             {"family": family, "jobs": count} for family, count in most_first(placed)

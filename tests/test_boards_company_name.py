@@ -808,3 +808,45 @@ def test_a_missing_curated_map_says_so_once(caplog, monkeypatch, tmp_path):
     (line,) = [r.getMessage() for r in caplog.records]
     assert line.startswith("company_names.csv not found on ")
     assert line.endswith("candidate paths — curated names off")
+
+
+# ---- a served name that names only its Board (ADR-0323), and the directory's name for it ----
+
+
+@pytest.mark.parametrize(
+    ("name", "board", "names_none"),
+    [
+        ("", "oracle:hcbt.fa.em2.oraclecloud.com", True),
+        (None, "lever:acme", True),
+        ("egud.fa.us2.oraclecloud.com", "oracle:egud.fa.us2.oraclecloud.com", True),
+        (
+            "aah.wd5.myworkdayjobs.com/external",
+            "workday:aah.wd5.myworkdayjobs.com/External",
+            True,
+        ),
+        ("Checkout.com", "ashby:checkout.com", False),
+        ("capgemini", "successfactors:careers.capgemini.com", False),
+        ("Acme", "lever:acme", False),
+    ],
+)
+def test_names_no_company_reads_only_a_host_or_path_of_its_own_board(
+    name, board, names_none
+):
+    assert company_name.names_no_company(name, board) is names_none
+
+
+def test_with_directory_name_names_only_a_row_that_names_no_company():
+    board = "oracle:hcbt.fa.em2.oraclecloud.com"
+    host = {"id": f"{board}:1", "company": "hcbt.fa.em2.oraclecloud.com"}
+    assert company_name.with_directory_name(host, board, "Kotak") == {
+        **host,
+        "company": "Kotak",
+        company_name.FROM_DIRECTORY: True,
+    }
+    assert company_name.with_directory_name(host, board, None) == {
+        **host,
+        "company": None,
+        company_name.FROM_DIRECTORY: False,
+    }
+    named = {"id": "lever:acme:1", "company": "Acme"}
+    assert company_name.with_directory_name(named, "lever:acme", "Other") is named

@@ -409,8 +409,9 @@ of them, for a career switcher's "what does a data engineer typically need" (ADR
   the whole index; with `query` too, the closest within the category among the 2,000 closest to the
   query. Rows that copy one posting, per country or on two Boards of its employer, count once, by
   the rule a search page groups them by (ADR-0323). The answer's first line says which, over how
-  many, of how many: "counted over 263 distinct postings, of 500,568 that the filters admit (300
-  rows read; 37 copies of a posting counted once)". A query does not narrow, so that total is every
+  many, of how many: "counted over 263 distinct postings, of 514,163 postings that the filters
+  admit, copies included (300 postings read; 37 copies of one counted once)" (a local copy of the
+  served table, 2026-09-29; ADR-0331). A query does not narrow, so that total is every
   posting the filters admit; the answer gives the similarity range of the sample instead.
 - **Filters.** `company`, `country`, `india_place`, `location`, `remote` and `max_years`, the same
   schema as `search_jobs`' and read the same way.
@@ -487,8 +488,9 @@ since a public route can never carry one person's data.
 
 `src/headstart/space_mcp/` — `tools/` (one module per tool, and `REGISTRY`), `space_tool.py` (what a
 tool is), `server.py` (serves the registry), `space_client.py` (the one way it reaches the Space),
-`company_scope.py`, `shown_company.py`, `role_families.py` and `scraped_text.py` (the rule for
-copies of one posting is `headstart/jobs/posting_copies.py`, which the Space's `/requirements` reads
+`company_scope.py`, `shown_company.py`, `role_families.py`, `search_arguments.py` (the filter
+arguments `search_jobs` and `role_requirements` share) and `scraped_text.py` (the rule for copies of
+one requisition is `headstart/jobs/requisition_copies.py`, which the Space's `/requirements` reads
 too) — on the shared protocol module in `src/headstart/mcp_protocol/` (`messages.py`,
 and the `stdio.py` and `streamable_http.py` transports). The hosted route is `/mcp` in
 `deploy/hf-space/app.py`, and the three routes only the tools read are `/companies/locations` and

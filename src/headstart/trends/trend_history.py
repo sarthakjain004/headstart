@@ -33,7 +33,7 @@ from pathlib import Path
 
 import numpy as np
 
-from headstart.boards.board_identity import ats_of
+from headstart.boards.board_identity import ats_of, board_end, board_of, lower_key
 from headstart.boards.board_operator import company_operator
 from headstart.trends import company_suggestions, netting
 from headstart.trends.role_taxonomy import (
@@ -990,13 +990,30 @@ class TrendHistory:
         replaced whole."""
         if board in self._company_of:
             return self._company_of[board]
+        return self._folded_company_of().get(lower_key(board))
+
+    def _folded_company_of(self) -> dict[str, str]:
+        """`_company_of` keyed case-folded, built once per map it was read from."""
         folded = self._company_of_folded
         if folded is None or folded[0] is not self._company_of:
             folded = self._company_of_folded = (
                 self._company_of,
-                {held.lower(): key for held, key in self._company_of.items()},
+                {lower_key(held): key for held, key in self._company_of.items()},
             )
-        return folded[1].get(board.lower())
+        return folded[1]
+
+    def board_and_name_of_job(self, job_id: str) -> tuple[str, str | None]:
+        """The Board holding ``job_id`` and the Company directory's name for its company, or the
+        id's `board_of` guess and None when no directory Board holds it (ADR-0331). The Board is
+        matched among the directory's own keys (`board_end`), so an id whose native part carries a
+        colon names its real Board, never a phantom one (ADR-0049)."""
+        folded = self._folded_company_of()
+        end = board_end(job_id, folded)
+        if end is None:
+            return board_of(job_id), None
+        board = job_id[:end]
+        key = folded[lower_key(board)]
+        return board, self._company_labels([key])[key]
 
     def trailing_week(self) -> dict[str, str | None]:
         """The window Hot ranks over (ADR-0230), the trailing ``NEW_WINDOW_DAYS``, as

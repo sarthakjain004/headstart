@@ -85,6 +85,16 @@ def test_the_shipped_vocabulary_loads_from_config_and_names_each_skill_once(ship
         ("Excel in a fast-paced team", set(), {"Excel"}),
         ("Advanced Excel and Power BI", {"Excel", "Power BI"}, set()),
         ("Mobile device management (MDM) with Intune", {"Intune"}, set()),
+        # ADR-0331's re-measured terms.
+        ("Program PLC and HMI logic", {"PLC"}, set()),
+        ("QLC and PLC NAND for datacenter storage", set(), {"PLC"}),
+        ("Mixed-signal processing circuits", set(), {"Signal processing"}),
+        ("Digital signal processing on DSP processors", {"Signal processing"}, set()),
+        ("Amazon DSP buyers reach audiences", set(), {"Signal processing"}),
+        ("Cisco switches, firmware, IOS upgrades", {"Cisco", "Firmware"}, {"iOS"}),
+        ("You own backend Go services end to end", {"Go"}, set()),
+        ("Strong Go experience is required", {"Go"}, set()),
+        ("Let's Go! Go further with us", set(), {"Go"}),
     ],
 )
 def test_the_shipped_vocabulary_reads_the_hard_terms(shipped, text, named, not_named):

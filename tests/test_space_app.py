@@ -3403,7 +3403,7 @@ def test_requirements_count_a_sample_and_carry_no_description_text(app):
     r = app.app.test_client().get("/requirements?q=backend+engineer&strict=1")
     assert r.status_code == 200
     body = r.get_json()
-    assert (body["order"], body["sampled"], body["described"]) == ("closest", 2, 1)
+    assert (body["order"], body["distinct"], body["described"]) == ("closest", 2, 1)
     assert body["newest_tick"] is None and body["vocabulary_size"] >= 300
     assert "Build the payments API" not in r.get_data(as_text=True)
 

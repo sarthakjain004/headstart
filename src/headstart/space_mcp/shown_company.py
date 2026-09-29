@@ -21,12 +21,13 @@ from __future__ import annotations
 from typing import Any
 
 from headstart.boards.board_identity import board_of
-from headstart.boards.company_name import names_no_company
+from headstart.boards.company_name import (
+    FROM_DIRECTORY,
+    names_no_company,
+    with_directory_name,
+)
 from headstart.space_mcp import company_scope, scraped_text
 from headstart.space_mcp.space_client import InvalidRequest, SpaceClient, SpaceError
-
-#: The row key saying its ``company`` is the directory's name for its Board, not a served one.
-_FROM_DIRECTORY = "company_from_directory"
 
 #: The most Boards one answer looks up: `/companies/lookup`'s own bound.
 _MAX_BOARDS_LOOKED_UP = 10
@@ -74,8 +75,7 @@ def named(client: SpaceClient, rows: list[dict[str, Any]]) -> list[dict[str, Any
     out = list(rows)
     for i, board in unnamed.items():
         if board.casefold() in labels:
-            label = labels[board.casefold()]
-            out[i] = {**rows[i], "company": label, _FROM_DIRECTORY: label is not None}
+            out[i] = with_directory_name(rows[i], board, labels[board.casefold()])
     return out
 
 
@@ -85,4 +85,4 @@ def said(row: dict[str, Any], limit: int) -> str:
     if not str(row.get("company") or "").strip():
         return "no company name"
     text = scraped_text.quoted(row["company"], limit)
-    return f"{text} (directory name)" if row.get(_FROM_DIRECTORY) else text
+    return f"{text} (directory name)" if row.get(FROM_DIRECTORY) else text

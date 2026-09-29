@@ -599,3 +599,31 @@ def test_a_tick_written_from_a_given_replay_is_the_one_written_unaided(tmp_path)
     name = trend_history.tick_path(Path(trend_history.DELTAS), ts)
     written = pq.read_table(tmp_path / name)
     assert written.num_rows == 2 and written.equals(pq.read_table(other / name))
+
+
+def test_a_jobs_board_and_directory_name_come_from_the_directorys_own_keys(tmp_path):
+    """A Workday native id can carry a colon ("REQ: 228"), where `board_of` guesses a Board that
+    does not exist; the directory's own keys name the real one (ADR-0049, ADR-0331)."""
+    (tmp_path / "company_directory.json").write_text(
+        json.dumps(
+            {
+                "companies": [
+                    {"name": "Kotak", "boards": ["oracle:hcbt.fa.em2.oraclecloud.com"]},
+                    {
+                        "name": "Acme",
+                        "boards": ["workday:acme.wd1.myworkdayjobs.com/External"],
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    history = trend_history.TrendHistory.load(tmp_path, _REPO_FAMILIES.parent)
+    assert history.board_and_name_of_job("oracle:hcbt.fa.em2.oraclecloud.com:123") == (
+        "oracle:hcbt.fa.em2.oraclecloud.com",
+        "Kotak",
+    )
+    assert history.board_and_name_of_job(
+        "workday:acme.wd1.myworkdayjobs.com/External:REQ: 228"
+    ) == ("workday:acme.wd1.myworkdayjobs.com/External", "Acme")
+    assert history.board_and_name_of_job("lever:nobody:1") == ("lever:nobody", None)

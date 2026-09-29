@@ -713,8 +713,9 @@ def _keep_static_for_the_boot(response):
 # `required_years_at_least` and `exclude_company` on /search and /facets (ADR-0322).
 # 10: /companies/locations lists each country's cities, a place's first city merged across its
 # spellings ("Dublin" and "Dublin, Ireland"), not its places as written (ADR-0331).
-# 11: /requirements counts distinct Jobs under `jobs` keys, names a Board that names no company by
-# the directory, and says its `read`, `sample_size` and `category_window` (ADR-0324).
+# 11: /requirements counts one Job per requisition under `jobs` keys, names a Board that names no
+# company by the directory, and says its `read`, `distinct`, `sample_size` and `category_window`
+# (ADR-0332).
 _AGENT_API_VERSION = 11
 
 
@@ -1817,12 +1818,6 @@ def company_levels():
         return jsonify(body), status
 
 
-def _directory_name(board: str) -> str | None:
-    """The Company directory's name for the company holding ``board``, or None."""
-    key = _HISTORY.company_of(board)
-    return (_HISTORY.companies.get(key) or {}).get("name") if key else None
-
-
 @app.route("/requirements")
 def role_requirements():
     """What a sample of the served jobs for a role (``q=``) and/or a category (``family=``) ask
@@ -1833,7 +1828,7 @@ def role_requirements():
     description text is served."""
     try:
         answer = _searcher.requirements(
-            request.args, _ROLE_ASSIGNMENTS, _directory_name
+            request.args, _ROLE_ASSIGNMENTS, _HISTORY.board_and_name_of_job
         )
     except (ValueError, job_search.ScopeUnavailable) as exc:
         body, status = job_search.refusal(exc)

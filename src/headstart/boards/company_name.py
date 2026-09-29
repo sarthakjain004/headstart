@@ -939,6 +939,25 @@ def names_no_company(name: object, board_key: str) -> bool:
     )
 
 
+#: The row key saying its ``company`` is the Company directory's name for its Board, not a served
+#: one (ADR-0323).
+FROM_DIRECTORY = "company_from_directory"
+
+
+def with_directory_name(row: dict, board_key: str, directory_name: str | None) -> dict:
+    """``row`` shown under ``directory_name`` (marked :data:`FROM_DIRECTORY`), or under no name
+    when that is None, if its served company names nothing but ``board_key`` (ADR-0323); else
+    ``row`` itself. The one rule, whether the Space names a row from its own directory or an agent
+    tool names it from `/companies/lookup`."""
+    if not names_no_company(row.get("company"), board_key):
+        return row
+    return {
+        **row,
+        "company": directory_name,
+        FROM_DIRECTORY: directory_name is not None,
+    }
+
+
 def is_identifier(name: str, board_key: str) -> bool:
     """Whether a name the scraper was *constructed* with is an identifier rather than a
     company's name: lowercase identifier text ("wipro", "careers.persistent.com"), or it

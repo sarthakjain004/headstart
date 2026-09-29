@@ -28,6 +28,7 @@ from functools import lru_cache
 from typing import Any
 
 from headstart.search_filters import country_gazetteer
+from headstart.serving.count_ranking import most_first
 
 #: The most rows one answer reads. A company's Boards are bounded (`job_search.MAX_SCOPED_BOARDS`)
 #: and the largest measured is Amazon's 9,651 rows, so this is five of those; past it the counts
@@ -72,11 +73,6 @@ def _city(place: str, code: str) -> str:
     ("London" of "London, Dublin" under IE) leaves the whole place, as written."""
     head = _PLACES_SEPARATOR.split(place, maxsplit=1)[0].split(",", 1)[0].strip()
     return head if head and _countries_of(head) <= {code} else place
-
-
-def most_first(counted: Counter[str]) -> list[tuple[str, int]]:
-    """Most first, ties by name."""
-    return sorted(counted.items(), key=lambda item: (-item[1], item[0]))
 
 
 def _places(ranked: list[tuple[str, int]]) -> list[dict[str, Any]]:

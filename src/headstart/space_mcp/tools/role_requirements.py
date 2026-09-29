@@ -5,9 +5,10 @@ A career switcher's question, "what does a data engineer typically need", answer
 postings rather than by reading five of them: the tech skills their descriptions mention, the
 minimum years they state, their salaries, how many are remote, and where and at whom they are.
 The Space picks the sample (the postings closest to `query`, or a category's newest), counts each
-posting once however many Boards or countries copy it, and names a Board that names no company by
-the Company directory's name. This module only sends the arguments, which mean what they mean in
-`search_jobs` and are read by its rules, and says what was counted, over how many, of how many.
+requisition once however many Boards or countries copy it, and names a Board that names no company
+by the Company directory's name (ADR-0331). This module only sends the arguments, which are the
+Search filters `search_jobs` takes, read by the same rules (`search_arguments`), and says what was
+counted, over how many, of how many.
 Descriptions are scraped text, so the answer carries none of it: counts, the vocabulary's own
 skill names, and the quoted company names search already shows.
 """
@@ -22,10 +23,10 @@ from headstart.space_mcp import (
     company_scope,
     role_families,
     scraped_text,
+    search_arguments,
 )
 from headstart.space_mcp.space_client import SpaceClient, SpaceRoute
 from headstart.space_mcp.space_tool import SpaceTool
-from headstart.space_mcp.tools import search_jobs
 
 #: A company name past this is cut, as search cuts one.
 SHORT_FIELD = 60
@@ -34,14 +35,15 @@ SHORT_FIELD = 60
 #: description, which is written before any answer; an answer states its own.
 SAMPLE_SIZE = 300
 
-#: The filters this tool takes, each exactly as `search_jobs` takes it.
-FILTERS = ("company", "remote", "country", "india_place", "location", "max_years")
-_SENT_AS_VALUES = ("country", "india_place", "location", "max_years")
+#: The Search filters this tool takes, each as `search_jobs` takes it.
+_FILTERS = ("company", "remote", "country", "india_place", "location", "max_years")
 
 
 def _params(
     arguments: dict[str, Any], scope: company_scope.CompanyScope | None
 ) -> list[tuple[str, str]]:
+    """The query string: the role and the category by this route's names, then the company
+    scope and the other filters as `search_jobs` sends them."""
     params: list[tuple[str, str]] = [("strict", "1")]
     if query := (arguments.get("query") or "").strip():
         params.append(("q", query))
@@ -49,13 +51,7 @@ def _params(
         params.append(("family", category))
     if scope is not None:
         params += scope.params()
-    if arguments.get("remote"):
-        params.append((search_jobs.SPACE_NAME["remote"], "true"))
-    for argument in _SENT_AS_VALUES:
-        value = arguments.get(argument)
-        if value is not None and value != "":
-            params.append((search_jobs.SPACE_NAME[argument], str(value)))
-    return params
+    return params + search_arguments.filter_params(arguments)
 
 
 def _category(name: str | None) -> str:
@@ -76,19 +72,20 @@ def _subject(arguments: dict[str, Any]) -> str:
 
 
 def _lead(arguments: dict[str, Any], counted: dict[str, Any]) -> list[str]:
-    sampled, read, matching = counted["sampled"], counted["read"], counted["matching"]
+    distinct, read, matching = counted["distinct"], counted["read"], counted["matching"]
     query = (arguments.get("query") or "").strip()
     category = arguments.get("category")
     admitted = (
-        f"{matching:,} {'in the category ' if category else ''}that the filters admit"
+        f"{matching:,} postings {'in the category ' if category else ''}that the filters "
+        "admit, copies included"
     )
-    copies = read - sampled
+    copies = read - distinct
     lines = [
         (
-            f"What {_subject(arguments)} ask for: counted over {sampled:,} distinct postings, "
+            f"What {_subject(arguments)} ask for: counted over {distinct:,} distinct postings, "
             f"of {admitted}"
             + (
-                f" ({read:,} rows read; {copies:,} copies of a posting counted once)."
+                f" ({read:,} postings read; {copies:,} copies of one counted once)."
                 if copies
                 else "."
             )
@@ -99,12 +96,12 @@ def _lead(arguments: dict[str, Any], counted: dict[str, Any]) -> list[str]:
             "The query ranks postings but does not narrow them, so the total is every posting "
             "the filters admit; the sample is the ones most like the query."
         )
-    window = counted.get("category_window")
-    if window and read < min(counted.get("sample_size") or read, matching):
+    window = counted["category_window"]
+    if window and read < min(counted["sample_size"], matching):
         lines.append(
-            f"Only {read:,} of the category's postings are among the {window:,} closest to "
-            "the query, so the sample is smaller than it could be; a broader query, or the "
-            "category alone, reaches more."
+            f"Only {read:,} of the category's postings, copies included, are among the "
+            f"{window:,} closest to the query, so the sample is smaller than it could be; a "
+            "broader query, or the category alone, reaches more."
         )
     if counted.get("closest_score") is not None:
         lines.append(
@@ -153,21 +150,21 @@ def _experience_line(counted: dict[str, Any]) -> str:
     return (
         f"Minimum years the posting states: {bands}; estimated from the title's seniority: "
         f"{experience['estimated_from_title']:,}; not stated: {experience['not_stated']:,} "
-        f"(of {counted['sampled']:,})."
+        f"(of {counted['distinct']:,})."
     )
 
 
 def _salary_line(counted: dict[str, Any]) -> str:
     salary = counted["salary"]
     if not salary["stating"]:
-        return f"Salary: none of the {counted['sampled']:,} states one."
+        return f"Salary: none of the {counted['distinct']:,} states one."
     currencies = " · ".join(
         f"{c['currency']}, {c['jobs']:,} posting{'' if c['jobs'] == 1 else 's'}: "
         f"{c['p25']:,} / {c['median']:,} / {c['p75']:,}"
         for c in salary["currencies"]
     )
     return (
-        f"Salary, stated by {salary['stating']:,} of {counted['sampled']:,} (a year; the "
+        f"Salary, stated by {salary['stating']:,} of {counted['distinct']:,} (a year; the "
         f"middle of each stated range; 25th percentile / median / 75th, per currency): "
         f"{currencies}."
     )
@@ -175,13 +172,7 @@ def _salary_line(counted: dict[str, Any]) -> str:
 
 def _company_line(counted: dict[str, Any]) -> str:
     named = " · ".join(
-        company_names.said(
-            {
-                "company": c["company"],
-                company_names.FROM_DIRECTORY: c["from_directory"],
-            },
-            SHORT_FIELD,
-        )
+        company_names.said(c, SHORT_FIELD)
         + f" (key {scraped_text.quoted(c['board'], 300)}) {c['jobs']:,}"
         for c in counted["companies"]
     )
@@ -213,7 +204,7 @@ def _category_line(counted: dict[str, Any]) -> str | None:
     named = " · ".join(f"{_category(c['family'])} {c['jobs']:,}" for c in categories)
     return (
         f"Job categories of the sampled postings: {named}; other or no tech category: "
-        f"{counted['sampled'] - placed:,}."
+        f"{counted['distinct'] - placed:,}."
     )
 
 
@@ -246,8 +237,11 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
         scope = company_scope.for_search(client, company, needs_boards=False)
     counted = client.read(SpaceRoute.REQUIREMENTS, _params(arguments, scope))
     lines = _lead(arguments, counted)
-    lines.append(search_jobs.scope_line(arguments, scope))
-    if not counted["sampled"]:
+    if any(arguments.get(name) not in (None, "", False) for name in _FILTERS):
+        # The category is the lead's own subject, so the scope line leaves it out.
+        filters = {k: v for k, v in arguments.items() if k != "category"}
+        lines.append(search_arguments.scope_line(filters, scope))
+    if not counted["distinct"]:
         lines.append(_no_postings(client, counted, scope))
     else:
         lines.append(scraped_text.SCRAPED_NOTE)
@@ -257,8 +251,8 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
         lines.append(_experience_line(counted))
         lines.append(_salary_line(counted))
         lines.append(
-            f"Remote: {counted['remote']:,} of {counted['sampled']:,} "
-            f"({_share(counted['remote'], counted['sampled'])})."
+            f"Remote: {counted['remote']:,} of {counted['distinct']:,} "
+            f"({_share(counted['remote'], counted['distinct'])})."
         )
         lines.append(_company_line(counted))
         lines.append(_country_line(counted))
@@ -273,8 +267,6 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-_SEARCH_PROPERTIES = search_jobs.TOOL.input_schema["properties"]
-
 TOOL = SpaceTool(
     name="role_requirements",
     title="What a role's postings ask for",
@@ -284,9 +276,8 @@ TOOL = SpaceTool(
         "with how many employers mention it), the minimum years they state, salary quartiles "
         "per currency, the remote share, and the companies and countries with the most of "
         "them. `query` is the role only, as in search_jobs ('data engineer'); the sample is "
-        f"the {SAMPLE_SIZE} postings closest to it among those the filters admit, each posting "
-        "counted "
-        "once however many Boards or countries copy it. `category` alone samples the "
+        f"the {SAMPLE_SIZE} postings closest to it among those the filters admit, each "
+        "requisition counted once however many Boards or countries copy it. `category` alone samples the "
         "category's newest postings across the whole index; with `query`, the closest within "
         "it. Say what was counted: how many postings, of how many, and how they were picked, "
         "as the answer states it. Skills come from a fixed list of tech skills; a skill few "
@@ -306,7 +297,7 @@ TOOL = SpaceTool(
                 "A job category: its postings across the whole index, or with `query` the "
                 "closest within it."
             ),
-            **{name: _SEARCH_PROPERTIES[name] for name in FILTERS},
+            **{name: search_arguments.PROPERTIES[name] for name in _FILTERS},
         },
         "additionalProperties": False,
     },
@@ -316,5 +307,8 @@ TOOL = SpaceTool(
     ),
     answer=answer,
     max_chars=12_000,
-    argument_readers={"category": role_families.resolve},
+    argument_readers={
+        "category": role_families.resolve,
+        "country": search_arguments.read_country,
+    },
 )

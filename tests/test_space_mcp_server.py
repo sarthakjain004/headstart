@@ -2748,7 +2748,7 @@ def test_a_company_profile_answer_stays_inside_its_budget():
 # ---- role_requirements --------------------------------------------------------------------
 
 
-def _requirements(sampled=263, read=300, matching=12_400, **overrides):
+def _requirements(distinct=263, read=300, matching=12_400, **overrides):
     """A `/requirements` answer in the route's shape (ADR-0324)."""
     answer = {
         "matching": matching,
@@ -2758,8 +2758,8 @@ def _requirements(sampled=263, read=300, matching=12_400, **overrides):
         "closest_score": 0.87,
         "farthest_score": 0.81,
         "read": read,
-        "sampled": sampled,
-        "described": sampled - 4 if sampled else 0,
+        "distinct": distinct,
+        "described": distinct - 4 if distinct else 0,
         "skills": [
             {"skill": "SQL", "kind": "data", "jobs": 191, "employers": 162},
             {"skill": "Python", "kind": "language", "jobs": 189, "employers": 160},
@@ -2794,19 +2794,19 @@ def _requirements(sampled=263, read=300, matching=12_400, **overrides):
             {
                 "company": "Capgemini",
                 "board": "workday:capgemini",
-                "from_directory": False,
+                "company_from_directory": False,
                 "jobs": 13,
             },
             {
                 "company": "Capital One",
                 "board": "workday:capitalone.wd1.myworkdayjobs.com/capital_one",
-                "from_directory": True,
+                "company_from_directory": True,
                 "jobs": 4,
             },
             {
                 "company": None,
                 "board": "oracle:egud.fa.us2.oraclecloud.com",
-                "from_directory": False,
+                "company_from_directory": False,
                 "jobs": 2,
             },
         ],
@@ -2846,9 +2846,9 @@ def test_requirements_send_the_role_the_category_and_the_filters_in_the_spaces_n
             ("q", "data engineer"),
             ("family", "ai-ml-data-science"),
             ("remote", "true"),
+            ("max_years", "3"),
             ("country", "DE"),
             ("location", "Berlin"),
-            ("max_years", "3"),
         ]
     ]
 
@@ -2878,8 +2878,8 @@ def test_requirements_say_what_was_counted_over_how_many_and_how_picked():
     text = server.call(space, "role_requirements", {"query": "data engineer"})
     assert text.startswith(
         'What postings closest to "data engineer" ask for: counted over 263 distinct '
-        "postings, of 12,400 that the filters admit (300 rows read; 37 copies of a posting "
-        "counted once)."
+        "postings, of 12,400 postings that the filters admit, copies included (300 postings "
+        "read; 37 copies of one counted once)."
     )
     assert "ranks postings but does not narrow them" in text
     assert "0.87 (the closest) to 0.81 (the farthest counted)" in text
@@ -2911,21 +2911,25 @@ def test_a_category_alone_is_its_newest_postings_and_lists_no_category_mix():
     text = server.call(space, "role_requirements", {"category": "security"})
     assert text.startswith(
         "What the newest postings in Security (security) ask for: counted over 263 "
-        "distinct postings, of 12,400 in the category that the filters admit."
+        "distinct postings, of 12,400 postings in the category that the filters admit, "
+        "copies included."
     )
     assert "Similarity" not in text and "Job categories" not in text
 
 
 def test_a_query_within_a_category_says_when_the_window_held_fewer():
     space = FakeSpace(
-        requirements=_requirements(sampled=110, read=120, category_window=2_000)
+        requirements=_requirements(distinct=110, read=120, category_window=2_000)
     )
     text = server.call(
         space,
         "role_requirements",
         {"query": "data engineer", "category": "data-engineering"},
     )
-    assert "Only 120 of the category's postings are among the 2,000 closest" in text
+    assert (
+        "Only 120 of the category's postings, copies included, are among the 2,000 closest"
+        in text
+    )
     full = FakeSpace(requirements=_requirements(category_window=2_000))
     text = server.call(
         full,
@@ -2956,7 +2960,7 @@ def test_a_company_key_scopes_every_board_and_a_name_is_the_company_box():
 
 def test_nothing_to_count_says_so_and_offers_the_companies_a_name_may_mean():
     space = FakeSpace(
-        requirements=_requirements(sampled=0, read=0, matching=0, skills=[]),
+        requirements=_requirements(distinct=0, read=0, matching=0, skills=[]),
         companies_suggest={
             "companies": [_suggestion("greenhouse:stripe", "Stripe", "typo")]
         },
@@ -2984,7 +2988,7 @@ def test_a_role_requirements_answer_stays_inside_its_budget():
         {
             "company": long,
             "board": f"workday:{'b' * 280}",
-            "from_directory": True,
+            "company_from_directory": True,
             "jobs": 300,
         }
         for _ in range(10)
@@ -3009,7 +3013,7 @@ def test_a_role_requirements_answer_stays_inside_its_budget():
     ]
     space = FakeSpace(
         requirements=_requirements(
-            sampled=150,
+            distinct=150,
             skills=skills,
             kinds=kinds,
             companies=companies,

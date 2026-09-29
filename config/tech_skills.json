@@ -390,7 +390,7 @@
     {"name": "PLC", "kind": "embedded", "terms": [{"text": "PLC", "cased": true, "not_before": [" NAND"]}, {"text": "PLCs", "cased": true}, "programmable logic controller", "programmable logic controllers"]},
     {"name": "SCADA", "kind": "embedded", "terms": ["SCADA"]},
     {"name": "ROS", "kind": "embedded", "terms": [{"text": "ROS", "cased": true}, "ROS2", "ROS 2"]},
-    {"name": "Signal processing", "kind": "embedded", "terms": [{"text": "signal processing", "not_after": ["mixed-", "mixed"]}, {"text": "DSP", "cased": true, "not_before": ["/SSP", "/ SSP", "s/"]}]},
+    {"name": "Signal processing", "kind": "embedded", "terms": [{"text": "signal processing", "not_after": ["mixed-", "mixed"]}, {"text": "DSP algorithms", "cased": true}, {"text": "DSP algorithm", "cased": true}, {"text": "DSP processors", "cased": true}, {"text": "DSP processor", "cased": true}, {"text": "DSP systems", "cased": true}, {"text": "DSP concepts", "cased": true}, {"text": "DSP engineers", "cased": true}, {"text": "DSP engineer", "cased": true}, {"text": "DSP firmware", "cased": true}, {"text": "DSP software", "cased": true}, {"text": "DSP-based", "cased": true}, {"text": "audio DSP", "cased": true}, "digital signal processor", "digital signal processors"]},
     {"name": "Bluetooth", "kind": "embedded", "terms": ["Bluetooth", "BLE"]},
     {"name": "OpenGL and Vulkan", "kind": "embedded", "terms": ["OpenGL", "Vulkan", "DirectX", "Metal API"]},
     {"name": "Unity", "kind": "embedded", "terms": ["Unity3D", "Unity 3D", {"text": "Unity", "cased": true, "listed": true, "not_before": [" Catalog", " Connection", " Express"], "not_after": ["Cisco"]}]},

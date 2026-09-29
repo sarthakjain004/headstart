@@ -30,7 +30,10 @@ Salesforce's boilerplate is not a Salesforce skill.
 
 **Where the file is.** Found as `role_families.py` finds its list (ADR-0274): the wheel's copy
 beside this module (`pyproject.toml` force-includes it), else ``config/`` in the nearest ancestor
-directory, which is the repository on a checkout and ``/app`` in the Space's image.
+directory, which is the repository on a checkout and ``/app`` in the Space's image. This walk is one
+of several copies of the same config locator (`space_mcp/role_families`, `search_filters/fx`,
+`boards/company_name` and others); making them one helper touches modules outside this view, so it
+is left to its own change (ADR-0331).
 """
 
 from __future__ import annotations

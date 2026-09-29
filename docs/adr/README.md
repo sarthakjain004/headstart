@@ -298,6 +298,7 @@ supersedes it and note the supersession in both.
 | [0325](0325-the-model-retries-an-edge-failure-a-scan-runs-alone-and-the-eval-waits-for-its-server.md) | The model retries an edge failure, a scan runs alone, and the eval waits for its server | 2026-09-29 |
 | [0330](0330-trends-are-recomputed-from-recorded-job-facts-whenever-a-rule-changes.md) | Trends are recomputed from recorded Job facts whenever a rule changes | 2026-09-29 |
 | [0331](0331-a-copy-needs-one-companys-words-and-a-missing-id-gets-one-account.md) | A copy needs one company's words, and a missing id gets one account of why (amends 0323) | 2026-09-29 |
+| [0332](0332-a-requirements-sample-counts-each-requisition-once-under-its-directory-name.md) | A requirements sample counts each requisition once, under its directory name | 2026-09-29 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*

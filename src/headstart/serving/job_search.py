@@ -279,7 +279,7 @@ MAX_SCOPED_BOARDS = 200
 LOCATIONS_SHOWN = 10
 MAX_LOCATIONS = 50
 
-#: How many rows :meth:`JobSearch.requirements` reads for its sample (ADR-0324). At 300, a share
+#: How many Jobs :meth:`JobSearch.requirements` reads for its sample, fixed (ADR-0331). At 300, a share
 #: near 50% is known to about 6 points either way (95%), which a "most asked for" list needs.
 REQUIREMENTS_SAMPLE = 300
 #: How many of a query's closest Jobs a requirements view reads to find its sample within one
@@ -1687,7 +1687,7 @@ class JobSearch:
         self,
         args: Mapping[str, str],
         assignments: RoleAssignments | None,
-        name_of_board: Callable[[str], str | None] | None = None,
+        board_and_name: Callable[[str], tuple[str, str | None]] | None = None,
     ) -> dict[str, Any]:
         """What a sample of the Jobs matching ``args`` asks for (``/requirements``, ADR-0324).
 
@@ -1695,8 +1695,8 @@ class JobSearch:
         search filter and ``board=``. With ``q`` the sample is the :data:`REQUIREMENTS_SAMPLE`
         rows closest to it (with ``family`` too, the family's among the
         :data:`REQUIREMENTS_CATEGORY_WINDOW` closest); with ``family`` alone, the family's newest
-        to HeadStart. :func:`requirement_counts.summarize` counts it, naming a Board that names no
-        company by ``name_of_board`` (the Company directory's name). ``matching`` is how many Jobs
+        to HeadStart. :func:`requirement_counts.summarize` counts it, one Job per requisition, with
+        each Job's Board and directory name from ``board_and_name``. ``matching`` is how many Jobs
         the filters and family admit, which a query does not narrow. Only the sample's
         descriptions are read, by id. A :class:`ValueError` names what the request got wrong; a
         family without role assignments loaded is :class:`ScopeUnavailable`. Scoped by Boards and
@@ -1729,16 +1729,16 @@ class JobSearch:
         if cached is not None:
             return cached
         started = time.monotonic()
+        # A family implies assignments: its absence was refused above.
         in_family = (
             self._in_family(where, self._family_array(family, assignments))
-            if assignments is not None and family
+            if family
             else None
         )
         if query:
             ids, scores = self._closest_ids(query, where, in_family)
             matching = len(in_family) if in_family is not None else self._count(where)
         else:
-            assert in_family is not None  # a family is named when no query is
             ids, scores = in_family[:REQUIREMENTS_SAMPLE], []
             matching = len(in_family)
         answer = {
@@ -1753,8 +1753,8 @@ class JobSearch:
             **requirement_counts.summarize(
                 self._rows_for_requirements(ids),
                 tech_skills.vocabulary(),
-                assignments,
-                name_of_board,
+                assignments.family_of if assignments else None,
+                board_and_name,
             ),
         }
         elapsed_ms = (time.monotonic() - started) * 1000

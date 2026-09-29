@@ -1781,7 +1781,7 @@ def _requirements(search, **args):
 def test_a_query_samples_the_closest_jobs_and_counts_every_match(sampled):
     counted = _requirements(sampled, q="data engineer")
     assert counted["order"] == "closest" and counted["matching"] == 5
-    assert (counted["read"], counted["sampled"]) == (5, 5)
+    assert (counted["read"], counted["distinct"]) == (5, 5)
     assert counted["closest_score"] == 1.0 and counted["category_window"] is None
     assert counted["closest_score"] >= counted["farthest_score"]
     python = next(s for s in counted["skills"] if s["skill"] == "Python")
@@ -1794,7 +1794,7 @@ def test_a_query_samples_the_closest_jobs_and_counts_every_match(sampled):
 
 def test_a_query_is_narrowed_by_the_filters_and_the_boards(sampled):
     counted = _requirements(sampled, q="data engineer", board="lever:acme")
-    assert counted["matching"] == 3 and counted["sampled"] == 3
+    assert counted["matching"] == 3 and counted["distinct"] == 3
     remote = _requirements(sampled, q="data engineer", remote="true")
     assert remote["matching"] == 1 and remote["remote"] == 1
 
@@ -1814,7 +1814,7 @@ def test_a_category_alone_samples_its_newest_jobs(sampled, monkeypatch):
 
 def test_a_query_within_a_category_keeps_only_its_jobs(sampled):
     counted = _requirements(sampled, q="data engineer", family="data-engineering")
-    assert counted["matching"] == 3 and counted["sampled"] == 3
+    assert counted["matching"] == 3 and counted["distinct"] == 3
     assert counted["category_window"] == REQUIREMENTS_CATEGORY_WINDOW
     assert counted["categories"] == [{"family": "data-engineering", "jobs": 3}]
 
