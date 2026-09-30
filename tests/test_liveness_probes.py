@@ -952,6 +952,86 @@ def test_pyjamahr_inconclusive_answers_stay_unknown(monkeypatch):
     assert cl.p_pyjamahr("acme", "") == (cl.UNKNOWN, None)
 
 
+# --- spire2grow: the host's workspace lookup settles dead; the count needs the workspace ------
+
+
+def _spire2grow_get(
+    lookup_status, lookup_body, count_status=200, count_body=b"", calls=None
+):
+    """`_get` keyed on path: the domain lookup, then `_count` (which needs the workspace header)."""
+
+    def _get(url, headers=None):
+        if calls is not None:
+            calls.append((url, headers))
+        if "/workspaceId?" in url:
+            return lookup_status, lookup_body
+        return count_status, count_body
+
+    return _get
+
+
+def test_spire2grow_a_tenant_host_counts_its_postings(monkeypatch):
+    """Myntra, live 2026-09-30: the lookup names the workspace, and `_count` asked with it."""
+    calls: list = []
+    monkeypatch.setattr(
+        cl,
+        "_get",
+        _spire2grow_get(
+            200, b"MYNTRA-93as3", 200, b'{"totalCount":53,"hotJobCount":7}', calls
+        ),
+    )
+    assert cl.p_spire2grow("jobs.myntra.com", "https://jobs.myntra.com") == (
+        cl.LIVE,
+        53,
+    )
+    (lookup, _), (count, headers) = calls
+    assert lookup.endswith("/workspaceId?domain=jobs.myntra.com")
+    assert count.endswith("/requisition/_count")
+    assert headers["workspaceid"] == "MYNTRA-93as3"
+
+
+def test_spire2grow_a_workspace_with_nothing_open_is_live_and_empty(monkeypatch):
+    """godigit-careers.spire2grow.com, live 2026-09-30: a workspace, zero postings."""
+    monkeypatch.setattr(
+        cl,
+        "_get",
+        _spire2grow_get(
+            200, b"GODIGIT-7ekw3", 200, b'{"totalCount":0,"hotJobCount":0}'
+        ),
+    )
+    assert cl.p_spire2grow("godigit-careers.spire2grow.com", "") == (cl.LIVE, 0)
+
+
+def test_spire2grow_an_unknown_host_is_dead(monkeypatch):
+    body = (
+        b'{"errorMessages":["No Workspace Found for the domain name :: ci-jobs.spire2grow.com"],'
+        b'"status":404}'
+    )
+    monkeypatch.setattr(cl, "_get", _spire2grow_get(404, body))
+    assert cl.p_spire2grow("ci-jobs.spire2grow.com", "") == (cl.DEAD, None)
+
+
+def test_spire2grow_inconclusive_answers_stay_unknown(monkeypatch):
+    # A 404 that is not the API's own "no workspace" answer settles nothing.
+    monkeypatch.setattr(cl, "_get", _spire2grow_get(404, b"<html>Not Found</html>"))
+    assert cl.p_spire2grow("jobs.acme.com", "") == (cl.UNKNOWN, None)
+    # The API host failing to resolve is the local resolver, never the tenant.
+    monkeypatch.setattr(cl, "_get", _spire2grow_get("dns", b""))
+    assert cl.p_spire2grow("jobs.acme.com", "") == (cl.UNKNOWN, None)
+    # A lookup that answers 410, or 200 with no workspace in it, was never measured.
+    monkeypatch.setattr(cl, "_get", _spire2grow_get(410, b""))
+    assert cl.p_spire2grow("jobs.acme.com", "") == (cl.UNKNOWN, None)
+    monkeypatch.setattr(cl, "_get", _spire2grow_get(200, b"  "))
+    assert cl.p_spire2grow("jobs.acme.com", "") == (cl.UNKNOWN, None)
+    # The count unreadable or refused after a real lookup.
+    monkeypatch.setattr(cl, "_get", _spire2grow_get(200, b"ACME-1", 503, b""))
+    assert cl.p_spire2grow("jobs.acme.com", "") == (cl.UNKNOWN, None)
+    monkeypatch.setattr(cl, "_get", _spire2grow_get(200, b"ACME-1", 404, b""))
+    assert cl.p_spire2grow("jobs.acme.com", "") == (cl.UNKNOWN, None)
+    monkeypatch.setattr(cl, "_get", _spire2grow_get(200, b"ACME-1", 200, b"<html>"))
+    assert cl.p_spire2grow("jobs.acme.com", "") == (cl.UNKNOWN, None)
+
+
 # --- adp_recruiting: the site record answers first, and its token reads the count --------------
 
 _ADP_RM = json.loads(

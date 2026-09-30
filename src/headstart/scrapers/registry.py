@@ -45,6 +45,7 @@ from headstart.scrapers.ripplehire import RippleHireScraper
 from headstart.scrapers.rippling import RipplingScraper
 from headstart.scrapers.sensehq import SenseHQScraper
 from headstart.scrapers.smartrecruiters import SmartRecruitersScraper
+from headstart.scrapers.spire2grow import Spire2GrowScraper
 from headstart.scrapers.successfactors import SuccessFactorsScraper
 from headstart.scrapers.taleo_be import TaleoBEScraper
 from headstart.scrapers.taleo_enterprise import TaleoEnterpriseScraper
@@ -72,6 +73,7 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
         WpJobOpeningsScraper,
         WorkableScraper,
         SmartRecruitersScraper,
+        Spire2GrowScraper,
         RecruiteeScraper,
         OracleScraper,
         SenseHQScraper,

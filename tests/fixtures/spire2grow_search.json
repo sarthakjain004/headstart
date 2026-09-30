@@ -1,0 +1,561 @@
+{
+ "entities": [
+  {
+   "id": "r_712ec5a4a250311c8087cfc784d49953",
+   "displayId": "4524734408",
+   "workspaceId": "MYNTRA-93as3",
+   "jobTitle": "Technical Lead-Backend Engineering",
+   "requiredExperienceInMonths": {
+    "from": 60,
+    "to": 84
+   },
+   "jobType": "HYBRID",
+   "skills": [
+    {
+     "skill": "java",
+     "isMandatory": true,
+     "reqId": "r_712ec5a4a250311c8087cfc784d49953"
+    },
+    {
+     "skill": "distributed systems",
+     "isMandatory": true,
+     "reqId": "r_712ec5a4a250311c8087cfc784d49953"
+    },
+    {
+     "skill": "system design",
+     "isMandatory": true,
+     "reqId": "r_712ec5a4a250311c8087cfc784d49953"
+    },
+    {
+     "skill": "coding",
+     "isMandatory": true,
+     "reqId": "r_712ec5a4a250311c8087cfc784d49953"
+    }
+   ],
+   "jobLocation": [
+    {
+     "city": "Bangalore",
+     "state": "Karnataka",
+     "country": "India",
+     "fqLocationName": "Bangalore, Karnataka, India",
+     "cityCode": "Bangalore",
+     "stateCode": "Karnataka",
+     "countryCode": "India",
+     "geoCode": {
+      "lat": 12.9715987,
+      "lon": 77.5945627
+     },
+     "originalCityName": "MYNHQ",
+     "originalStatename": "Karnataka",
+     "originalCountryName": "India"
+    }
+   ],
+   "requiredEducation": [],
+   "hotJob": {
+    "isHot": false,
+    "markedOn": 1787581699000
+   },
+   "departmentName": "SF (F1216)",
+   "employmentType": "FULL_TIME",
+   "jobPosting": {
+    "startDate": 1787581699000,
+    "endDate": 1792765699000,
+    "status": "ACTIVE"
+   },
+   "createdOn": 1787581754000,
+   "updatedOn": 1787581754000,
+   "jobDescription": "<b><p>As a Technical Lead, you will play a crucial role in leading and guiding the technical aspects of projects and teams within the organization. With 5 to 8 years of experience in the field, you are expected to possess a diverse skill set that includes expertise in designing large scale systems, Systems Thinking, Performance Engineering, AI Orchestration &amp; Agentic Design and proficiency in programming languages like Java and GoLang</p><br><p>Your responsibilities will revolve around ensuring seamless collaboration, team leadership, requirement gathering and analysis, and technology evaluation. Additionally, you will be tasked with risk analysis, root cause analysis, and cost optimization to drive efficiency and effectiveness in project execution.</p><br><p>Your proficiency in working with databases such as Redis, Aerospike, MySQL and Mongo will be essential in managing data effectively and optimizing system performance. Strong analytical thinking, business acumen, and the ability to evaluate and adopt emerging technologies will set you apart in this role.&nbsp;</p><br><p>As a Technical Lead, you will be expected to drive operational excellence and provide technical guidance to your team members. Your strategic mindset and hands-on experience will be instrumental in shaping technology solutions that align with business objectives and meet stakeholder requirements. Your leadership will be crucial in fostering a culture of continuous learning, collaboration, and excellence in technical delivery. In summary, the role of a Technical Lead demands a proactive approach to technology, a strong foundation in leadership, and the ability to navigate complex technical landscapes to deliver impactful solutions that drive business success.</p></b><br>",
+   "aboutCompany": "<b>Who are we?</b><br><br> <p>Myntra is India’s leading fashion and lifestyle platform, where technology meets creativity. As pioneers in fashion e-commerce, we’ve always believed in disrupting the ordinary.</p> <p>We thrive on a shared passion for fashion, a drive to innovate to lead, and an environment that empowers each one of us to pave our own way. We’re bold in our thinking, agile in our execution, and collaborative in spirit.<br>Here, we create MAGIC by inspiring vibrant and joyous self-expression and expanding fashion possibilities for India, while staying true to what we believe in.</p> <p>We believe in taking bold bets and changing the fashion landscape of India. We are a company that is constantly evolving into newer and better forms and we look for people who are ready to evolve with us.<br>From our humble beginnings as a customization company in 2007 to being technology and fashion pioneers today, Myntra is going places and we want you to take part in this journey with us.</p> <p>Working at Myntra is challenging but fun - we are a young and dynamic team, firm believers in meritocracy, believe in equal opportunity, encourage intellectual curiosity and empower our teams with the right tools, space, and opportunities.</p>\n",
+   "isFresherJob": false,
+   "jobStatus": {
+    "statusDisplay": "Open",
+    "statusCode": "OPEN"
+   },
+   "fcpr": {
+    "id": null,
+    "roleSkill": null,
+    "jobFamily": null
+   }
+  },
+  {
+   "id": "r_e5731d0a8f763d999ed39c15aba398d4",
+   "displayId": "2123837363",
+   "workspaceId": "MYNTRA-93as3",
+   "jobTitle": "Lead Associate - Digital Marketing",
+   "requiredExperienceInMonths": {
+    "from": 60,
+    "to": 96
+   },
+   "jobType": "HYBRID",
+   "skills": [
+    {
+     "skill": "performance marketing",
+     "isMandatory": true,
+     "reqId": "r_e5731d0a8f763d999ed39c15aba398d4"
+    },
+    {
+     "skill": "ads",
+     "isMandatory": true,
+     "reqId": "r_e5731d0a8f763d999ed39c15aba398d4"
+    },
+    {
+     "skill": "campaign",
+     "isMandatory": true,
+     "reqId": "r_e5731d0a8f763d999ed39c15aba398d4"
+    },
+    {
+     "skill": "SEO",
+     "isMandatory": true,
+     "reqId": "r_e5731d0a8f763d999ed39c15aba398d4"
+    }
+   ],
+   "jobLocation": [
+    {
+     "city": "Bangalore",
+     "state": "Karnataka",
+     "country": "India",
+     "fqLocationName": "Bangalore, Karnataka, India",
+     "cityCode": "Bangalore",
+     "stateCode": "Karnataka",
+     "countryCode": "India",
+     "geoCode": {
+      "lat": 12.9715987,
+      "lon": 77.5945627
+     },
+     "originalCityName": "MYNHQ",
+     "originalStatename": "Karnataka",
+     "originalCountryName": "India"
+    }
+   ],
+   "requiredEducation": [],
+   "hotJob": {
+    "isHot": false,
+    "markedOn": 1790688409000
+   },
+   "departmentName": "Performance Marketing (F1340)",
+   "employmentType": "FULL_TIME",
+   "jobPosting": {
+    "startDate": 1790688409000,
+    "endDate": 1795872409000,
+    "status": "ACTIVE"
+   },
+   "createdOn": 1790688470000,
+   "updatedOn": 1790688470000,
+   "jobDescription": "<br><p>Principal associate</p><br><p>We are looking for a creative and results-driven Digital Marketing Specialist to develop, implement, and optimize our online marketing strategies. The ideal candidate will have experience in PPC, social media, content/ influencer marketing, and analytics to drive conversions &amp; revenue.</p><br><p>Roles and Responsibilities&nbsp;</p><ul><li><p>Develop and implement a comprehensive online marketing strategy aligned with overall business objectives across various channels, including SEM, SMM, SEO &amp; influencer marketing</p></li><li><p>Manage and optimize PPC campaigns on platforms like Google Ads, Facebook Ads &amp; Snapchat Ads Conduct keyword research and implement SEO strategies to improve website rankings and organic traffic</p></li><li><p>Lead the development and execution of integrated marketing campaigns across various third-party channels such as influencer marketing, affiliate partners, UPI platforms, etc.</p></li><li><p>Monitor and analyze campaign performance using tools like Google Analytics, SEMrush</p></li><li><p>Collaborate with the design and creative teams to create visually appealing and engaging creatives for paid channels</p></li><li><p>Manage media budgets effectively, optimizing campaigns for maximum ROI and achieving target KPIs</p></li><li><p>Devise campaign strategy and calendars basis overall platform goals and category specific goals.</p></li><li><p>Develop deep understanding of campaign performance and constantly optimize to improve marketing efficiencies and impact&nbsp;</p></li><li><p>Be the multi-functional anchor between category teams, creatives, product and rest of the marketing teams </p></li><li><p>Stay up-to-date with industry trends, tools, and best practices in digital marketing</p></li></ul><br><p>Success Measures:&nbsp;</p><ul><li><p>Lead category level growth initiatives and revenue goals across all channel campaigns ∙ Timely setup and execution of marketing campaigns</p></li><li><p>Continuous improvement in marketing impact and efficiencies&nbsp;</p></li><li><p>Ability to define clear success metrics and measurement framework to enable continuous tracking</p></li><li><p>Continuously bringing best practice ad-Tech thinking and innovations to Myntra&nbsp;</p></li></ul><p>Qualifications &amp; Experience&nbsp;</p><ul><li><p>3+ years of digital marketing experience with a fast-paced e-commerce environment with a strong focus on paid and social media marketing and managing growth marketing initiatives</p></li><li><p>Proven ability to develop and execute data-driven marketing strategies that deliver measurable results</p></li><li><p>Solid process-oriented along with high bias for action&nbsp;</p></li><li><p>Strong presentation, communication and stakeholder-management skills </p></li><li><p>Collaborative approach to work effectively with cross-functional teams&nbsp;</p></li><li><p>Analytical horsepower along with ability to drive insight from data&nbsp;</p></li><li><p>Strong creative mind to be able to contribute towards strategizing diverse campaigns</p></li><li><p>Ability to adapt and work in a fast-paced, structured environment</p></li><li><p>Google Ads and Facebook Blueprint certifications are a plus.</p></li></ul><br>",
+   "aboutCompany": "<b>Who are we?</b><br><br> <p>Myntra is India’s leading fashion and lifestyle platform, where technology meets creativity. As pioneers in fashion e-commerce, we’ve always believed in disrupting the ordinary.</p> <p>We thrive on a shared passion for fashion, a drive to innovate to lead, and an environment that empowers each one of us to pave our own way. We’re bold in our thinking, agile in our execution, and collaborative in spirit.<br>Here, we create MAGIC by inspiring vibrant and joyous self-expression and expanding fashion possibilities for India, while staying true to what we believe in.</p> <p>We believe in taking bold bets and changing the fashion landscape of India. We are a company that is constantly evolving into newer and better forms and we look for people who are ready to evolve with us.<br>From our humble beginnings as a customization company in 2007 to being technology and fashion pioneers today, Myntra is going places and we want you to take part in this journey with us.</p> <p>Working at Myntra is challenging but fun - we are a young and dynamic team, firm believers in meritocracy, believe in equal opportunity, encourage intellectual curiosity and empower our teams with the right tools, space, and opportunities.</p>\n",
+   "isFresherJob": false,
+   "jobStatus": {
+    "statusDisplay": "Open",
+    "statusCode": "OPEN"
+   },
+   "fcpr": {
+    "id": null,
+    "roleSkill": null,
+    "jobFamily": null
+   }
+  },
+  {
+   "id": "r_e9c773e816fc3535afe9fc26b8330c27",
+   "displayId": "6878339879",
+   "workspaceId": "MYNTRA-93as3",
+   "jobTitle": "Deputy Director - Brand Marketing",
+   "requiredExperienceInMonths": {
+    "from": 60,
+    "to": 120
+   },
+   "skills": [
+    {
+     "skill": "campaign planning",
+     "isMandatory": true,
+     "reqId": "r_e9c773e816fc3535afe9fc26b8330c27"
+    },
+    {
+     "skill": "brand strategy",
+     "isMandatory": true,
+     "reqId": "r_e9c773e816fc3535afe9fc26b8330c27"
+    },
+    {
+     "skill": "market communications",
+     "isMandatory": true,
+     "reqId": "r_e9c773e816fc3535afe9fc26b8330c27"
+    },
+    {
+     "skill": "market intelligence",
+     "isMandatory": true,
+     "reqId": "r_e9c773e816fc3535afe9fc26b8330c27"
+    }
+   ],
+   "jobLocation": [
+    {
+     "city": "Bangalore",
+     "state": "Karnataka",
+     "country": "India",
+     "fqLocationName": "Bangalore, Karnataka, India",
+     "cityCode": "Bangalore",
+     "stateCode": "Karnataka",
+     "countryCode": "India",
+     "geoCode": {
+      "lat": 12.9715987,
+      "lon": 77.5945627
+     },
+     "originalCityName": "MYNHQ",
+     "originalStatename": "Karnataka",
+     "originalCountryName": "India"
+    }
+   ],
+   "requiredEducation": [],
+   "hotJob": {
+    "isHot": false,
+    "markedOn": 1790597254000
+   },
+   "departmentName": "Brand Marketing (F1330)",
+   "employmentType": "FULL_TIME",
+   "jobPosting": {
+    "startDate": 1790597254000,
+    "endDate": 1795781254000,
+    "status": "ACTIVE"
+   },
+   "createdOn": 1790597315000,
+   "updatedOn": 1790597315000,
+   "jobDescription": "As the Deputy Director of Brand Marketing, you will play a key role in developing and implementing strategies to enhance brand awareness and promote products or services. With 5-10 years of experience in marketing, your expertise will drive the organization's brand initiatives and ensure alignment with overall business objectives.<div><br></div><div><b>Key Responsibilities:</b></div><div><br></div><div><ol><li>Lead the development and execution of brand marketing campaigns to drive customer engagement and loyalty.</li><li>Collaborate with internal teams to ensure brand consistency across all channels and touchpoints.</li><li>Analyze market trends and consumer behavior to identify opportunities for brand growth and differentiation.</li><li>Manage a team of marketing professionals, providing guidance and support to achieve brand goals.</li><li>Monitor and evaluate the performance of marketing campaigns, adjusting strategies as needed to optimize results.</li><li>Develop and maintain strong relationships with external partners, such as agencies and media outlets, to support brand initiatives.</li><li>Stay informed about industry best practices and emerging trends in brand marketing to drive innovation and competitiveness.</li></ol></div><div><br></div><div><b>Qualifications:</b></div><div><br></div><div><ul><li>Master's degree in Marketing, Business, or related field</li><li>Demonstrated experience in brand marketing, with a proven track record of leading successful campaigns.</li><li>Strong leadership and communication skills, with the ability to inspire and motivate teams.</li><li>Excellent analytical and problem-solving abilities to drive data-driven marketing decisions.</li><li>Proficiency in market research and consumer insights to inform brand strategies.</li><li>Ability to thrive in a fast-paced, dynamic environment and manage multiple priorities effectively.</li></ul></div><div><br></div><div>Overall, as the Deputy Director of Brand Marketing, you will be instrumental in shaping the organization's brand identity and driving growth through strategic marketing initiatives.</div>",
+   "aboutCompany": "<b>Who are we?</b><br><br> <p>Myntra is India’s leading fashion and lifestyle platform, where technology meets creativity. As pioneers in fashion e-commerce, we’ve always believed in disrupting the ordinary.</p> <p>We thrive on a shared passion for fashion, a drive to innovate to lead, and an environment that empowers each one of us to pave our own way. We’re bold in our thinking, agile in our execution, and collaborative in spirit.<br>Here, we create MAGIC by inspiring vibrant and joyous self-expression and expanding fashion possibilities for India, while staying true to what we believe in.</p> <p>We believe in taking bold bets and changing the fashion landscape of India. We are a company that is constantly evolving into newer and better forms and we look for people who are ready to evolve with us.<br>From our humble beginnings as a customization company in 2007 to being technology and fashion pioneers today, Myntra is going places and we want you to take part in this journey with us.</p> <p>Working at Myntra is challenging but fun - we are a young and dynamic team, firm believers in meritocracy, believe in equal opportunity, encourage intellectual curiosity and empower our teams with the right tools, space, and opportunities.</p>\n",
+   "isFresherJob": false,
+   "jobStatus": {
+    "statusDisplay": "Open",
+    "statusCode": "OPEN"
+   },
+   "fcpr": {
+    "id": null,
+    "roleSkill": null,
+    "jobFamily": null
+   }
+  },
+  {
+   "id": "r_a31550990ac9389796d8cef28118dcc9",
+   "displayId": "7729170962",
+   "workspaceId": "MYNTRA-93as3",
+   "jobTitle": "Udaan Category Management",
+   "requiredExperienceInMonths": {
+    "from": 12,
+    "to": 24
+   },
+   "jobType": "HYBRID",
+   "skills": [
+    {
+     "skill": "category management",
+     "isMandatory": true,
+     "reqId": "r_a31550990ac9389796d8cef28118dcc9"
+    },
+    {
+     "skill": "inventory management",
+     "isMandatory": true,
+     "reqId": "r_a31550990ac9389796d8cef28118dcc9"
+    },
+    {
+     "skill": "commercial operations",
+     "isMandatory": true,
+     "reqId": "r_a31550990ac9389796d8cef28118dcc9"
+    },
+    {
+     "skill": "data analysis",
+     "isMandatory": true,
+     "reqId": "r_a31550990ac9389796d8cef28118dcc9"
+    }
+   ],
+   "jobLocation": [
+    {
+     "city": "Bangalore",
+     "state": "Karnataka",
+     "country": "India",
+     "fqLocationName": "Bangalore, Karnataka, India",
+     "cityCode": "Bangalore",
+     "stateCode": "Karnataka",
+     "countryCode": "India",
+     "geoCode": {
+      "lat": 12.9715987,
+      "lon": 77.5945627
+     },
+     "originalCityName": "MYNHQ",
+     "originalStatename": "Karnataka",
+     "originalCountryName": "India"
+    }
+   ],
+   "requiredEducation": [],
+   "hotJob": {
+    "isHot": false,
+    "markedOn": 1786705152000
+   },
+   "departmentName": "Category Management (F1370)",
+   "employmentType": "PART_TIME",
+   "jobPosting": {
+    "startDate": 1786705152000,
+    "endDate": 1791889152000,
+    "status": "ACTIVE"
+   },
+   "createdOn": 1786705282000,
+   "updatedOn": 1786705282000,
+   "jobDescription": "&nbsp;We are seeking a highly analytical and proactive&nbsp;Category Management candidate&nbsp;to join our dynamic E-commerce team. In this pivotal role, you will bridge the gap between raw data and strategic business execution.<div><b>Key Responsibilities</b><ul><li><b>Data Analysis &amp; Insights:</b>&nbsp;Dive deep into consumer and retail data to uncover market trends, track category performance metrics, and translate complex datasets into actionable business insights.</li><li><b>\"White Space\" Identification:</b>&nbsp;Actively analyze market trends, run competitor gap analyses, and evaluate customer search queries to spot emerging product categories and unfulfilled consumer demands.</li><li><b>Cross-Functional Liaison:</b>&nbsp;Manage stakeholder relationships across Marketing, Supply Chain, and Product teams.</li><li><b>Operational Execution:</b>&nbsp;Collaborate daily to ensure healthy inventory levels, optimize digital storefront displays, and support the onboarding of new vendors to expand our product assortment.</li></ul>Requirements &amp; Qualifications.<ul><li><b>Technical Skills:</b>&nbsp;Advanced proficiency in Microsoft Excel and Google Sheets for heavy data manipulation, alongside an eager willingness to learn advanced analytics tools like SQL, Tableau, or Google Analytics.</li><li><b>Communication Skills:</b>&nbsp;Excellent verbal and written communication skills are absolutely essential, as you will be presenting data-backed recommendations directly to Category Managers and external partners.</li><li><b>Core Attributes:</b>&nbsp;A proactive problem-solver with high emotional intelligence, meticulous attention to detail, and the organizational agility to manage multiple project timelines simultaneously while thriving through ambiguity.</li></ul></div>",
+   "aboutCompany": "<b>Who are we?</b><br><br> <p>Myntra is India’s leading fashion and lifestyle platform, where technology meets creativity. As pioneers in fashion e-commerce, we’ve always believed in disrupting the ordinary.</p> <p>We thrive on a shared passion for fashion, a drive to innovate to lead, and an environment that empowers each one of us to pave our own way. We’re bold in our thinking, agile in our execution, and collaborative in spirit.<br>Here, we create MAGIC by inspiring vibrant and joyous self-expression and expanding fashion possibilities for India, while staying true to what we believe in.</p> <p>We believe in taking bold bets and changing the fashion landscape of India. We are a company that is constantly evolving into newer and better forms and we look for people who are ready to evolve with us.<br>From our humble beginnings as a customization company in 2007 to being technology and fashion pioneers today, Myntra is going places and we want you to take part in this journey with us.</p> <p>Working at Myntra is challenging but fun - we are a young and dynamic team, firm believers in meritocracy, believe in equal opportunity, encourage intellectual curiosity and empower our teams with the right tools, space, and opportunities.</p>\n",
+   "isFresherJob": false,
+   "jobStatus": {
+    "statusDisplay": "Open",
+    "statusCode": "OPEN"
+   },
+   "fcpr": {
+    "id": null,
+    "roleSkill": null,
+    "jobFamily": null
+   }
+  },
+  {
+   "id": "r_0c0184404acd3189b55a1a584450d0c5",
+   "displayId": "1845624696",
+   "workspaceId": "MYNTRA-93as3",
+   "jobTitle": "Apprentice",
+   "requiredExperienceInMonths": {
+    "from": 0,
+    "to": 0
+   },
+   "jobType": "ONSITE",
+   "skills": [
+    {
+     "skill": "excel",
+     "isMandatory": true,
+     "reqId": "r_0c0184404acd3189b55a1a584450d0c5"
+    }
+   ],
+   "jobLocation": [
+    {
+     "city": "Bangalore",
+     "state": "Karnataka",
+     "country": "India",
+     "fqLocationName": "Bangalore, Karnataka, India",
+     "cityCode": "Bangalore",
+     "stateCode": "Karnataka",
+     "countryCode": "India",
+     "geoCode": {
+      "lat": 12.9715987,
+      "lon": 77.5945627
+     },
+     "originalCityName": "MYNHQ",
+     "originalStatename": "Karnataka",
+     "originalCountryName": "India"
+    }
+   ],
+   "requiredEducation": [],
+   "hotJob": {
+    "isHot": false,
+    "markedOn": 1785839218000
+   },
+   "departmentName": "Supply (F1328)",
+   "employmentType": "APPRENTICESHIP",
+   "jobPosting": {
+    "startDate": 1785839218000,
+    "endDate": 1791023218000,
+    "status": "ACTIVE"
+   },
+   "createdOn": 1785839235000,
+   "updatedOn": 1785839235000,
+   "jobDescription": "<p><br></p><p></p><ul><li>Open to learn PO creation for Fwd Brands.</li><li>Ready to learn myntra system to solve daily operational issues.</li><li>Basic Knowledge of excel.</li><li>Coordination within the team and other stakeholder to get the work done within TAT.</li></ul><p></p><p><br></p><p><br></p>",
+   "aboutCompany": "<b>Who are we?</b><br><br> <p>Myntra is India’s leading fashion and lifestyle platform, where technology meets creativity. As pioneers in fashion e-commerce, we’ve always believed in disrupting the ordinary.</p> <p>We thrive on a shared passion for fashion, a drive to innovate to lead, and an environment that empowers each one of us to pave our own way. We’re bold in our thinking, agile in our execution, and collaborative in spirit.<br>Here, we create MAGIC by inspiring vibrant and joyous self-expression and expanding fashion possibilities for India, while staying true to what we believe in.</p> <p>We believe in taking bold bets and changing the fashion landscape of India. We are a company that is constantly evolving into newer and better forms and we look for people who are ready to evolve with us.<br>From our humble beginnings as a customization company in 2007 to being technology and fashion pioneers today, Myntra is going places and we want you to take part in this journey with us.</p> <p>Working at Myntra is challenging but fun - we are a young and dynamic team, firm believers in meritocracy, believe in equal opportunity, encourage intellectual curiosity and empower our teams with the right tools, space, and opportunities.</p>\n",
+   "isFresherJob": true,
+   "jobStatus": {
+    "statusDisplay": "Open",
+    "statusCode": "OPEN"
+   },
+   "fcpr": {
+    "id": null,
+    "roleSkill": null,
+    "jobFamily": null
+   }
+  },
+  {
+   "id": "r_792487057e4632a0b6f9e38b73337dba",
+   "displayId": "6446684148",
+   "workspaceId": "TCLPROD-c62po",
+   "jobTitle": "Engineer - IT Operations & Infrastructure",
+   "requiredExperienceInMonths": {
+    "from": 41,
+    "to": 66
+   },
+   "jobType": "NA",
+   "skills": [
+    {
+     "skill": "windows server administration",
+     "isMandatory": true,
+     "reqId": "r_792487057e4632a0b6f9e38b73337dba"
+    },
+    {
+     "skill": "server provisioning",
+     "isMandatory": true,
+     "reqId": "r_792487057e4632a0b6f9e38b73337dba"
+    },
+    {
+     "skill": "windows security hardening",
+     "isMandatory": true,
+     "reqId": "r_792487057e4632a0b6f9e38b73337dba"
+    },
+    {
+     "skill": "vulnerability remediation",
+     "isMandatory": true,
+     "reqId": "r_792487057e4632a0b6f9e38b73337dba"
+    },
+    {
+     "skill": "patch management",
+     "isMandatory": true,
+     "reqId": "r_792487057e4632a0b6f9e38b73337dba"
+    },
+    {
+     "skill": "incident management",
+     "isMandatory": true,
+     "reqId": "r_792487057e4632a0b6f9e38b73337dba"
+    }
+   ],
+   "jobLocation": [
+    {
+     "city": "Pune",
+     "state": "Maharashtra",
+     "country": "India",
+     "fqLocationName": "Pune, Maharashtra, India",
+     "cityCode": "Pune",
+     "stateCode": "Maharashtra",
+     "countryCode": "IND",
+     "geoCode": {
+      "lat": 18.5204303,
+      "lon": 73.8567437
+     },
+     "originalCityName": "PUNE-DIGHI",
+     "originalStatename": "Maharashtra",
+     "originalCountryName": "India"
+    }
+   ],
+   "requiredEducation": [],
+   "hotJob": {},
+   "departmentName": "EDITS",
+   "employmentType": "FULL_TIME",
+   "jobPosting": {
+    "startDate": 1790703092000,
+    "endDate": 1795887092000,
+    "status": "ACTIVE"
+   },
+   "createdOn": 1790703092000,
+   "updatedOn": 1790703092000,
+   "jobDescription": "<h4><b>Role Summary</b></h4><p>We are seeking a skilled and proactive <strong>Windows Administrator (L2)</strong> with 3 to 5 years of experience in managing and supporting enterprise Windows environments. The ideal candidate will be responsible for day-to-day administration, monitoring, troubleshooting, and maintenance of Windows servers while ensuring system availability, performance, and security.</p><h3><b>Key Responsibilities</b></h3><ul><li>Manage and administer Windows Server environments (2012, 2016, 2019, 2022).</li><li>Perform installation, configuration, monitoring, and troubleshooting of Windows Servers.</li><li>Administer and support Active Directory, Group Policy, DNS, DHCP, and File Services.</li><li>Handle user account management, permission assignments, and access control.</li><li>Monitor server health, performance, and capacity using monitoring tools.</li><li>Perform incident management, problem management, and root cause analysis for recurring issues.</li><li>Execute OS patching, security updates, and vulnerability remediation activities.</li><li>Manage and troubleshoot Windows services, IIS, and application-related issues.</li><li>Support backup and recovery operations using enterprise backup solutions.</li><li>Participate in disaster recovery and business continuity activities.</li><li>Create and maintain technical documentation, SOPs, and knowledge articles.</li><li>Work closely with cross-functional teams including Security, Network, Database, and Application teams.</li><li>Ensure adherence to ITIL processes and organizational compliance requirements.</li><li>Provide support during maintenance activities, audits, and critical incidents.</li></ul><h4><b>Windows Administration</b></h4><ul><li>Windows Server 2012/2016/2019/2022 Administration</li><li>DNS, DHCP, File &amp; Print Services</li><li>User and Access Management</li></ul><h4>Infrastructure &amp; Virtualization</h4><ul><li>VMware vSphere / Hyper-V Administration</li><li>Server Provisioning and Decommissioning</li><li>Cluster Services and High Availability Concepts</li></ul><h4>Security &amp; Compliance</h4><ul><li>Windows Security Hardening</li><li>Patch Management</li><li>Antivirus/Endpoint Security Management</li><li>Vulnerability Remediation</li></ul><h4>Automation &amp; Scripting</h4><ul><li>PowerShell Scripting</li><li>Batch Scripting (Basic to Intermediate)</li></ul><h3>Desired Skills</h3><ul><li>Basic understanding of Microsoft Azure and Cloud Infrastructure.</li><li>Experience in handling security advisories and remediation activities.</li><li>Knowledge of ITIL processes and ticketing tools such as ServiceNow.</li><li>Exposure to automation and infrastructure management tools.</li></ul><h3>Educational Qualification</h3><ul><li>Bachelor's Degree in Computer Science, Information Technology, or related field.</li><li>Relevant certifications preferred: <ul><li>Microsoft Certified: Windows Server / Azure Administrator</li><li>ITIL Foundation</li></ul></li></ul><h3>Soft Skills</h3><ul><li>Strong troubleshooting and analytical skills.</li><li>Excellent verbal and written communication.</li><li>Ability to work in a 24x7 support environment and rotational shifts.</li><li>Strong ownership and customer-focused attitude.</li><li>Ability to manage multiple priorities in a fast-paced environment.<br></li></ul>",
+   "aboutCompany": "Tata Communications Redefines Connectivity with Innovation and IntelligenceDriving the next level of intelligence powered by Cloud, Mobility, Internet of Things, Collaboration, Security, Media services and Network services, we at Tata Communications are envisaging a New World of Communications",
+   "isFresherJob": false,
+   "jobStatus": {
+    "statusCode": "OPEN"
+   },
+   "fcpr": {
+    "id": null,
+    "roleSkill": null,
+    "jobFamily": null
+   }
+  },
+  {
+   "id": "r_9189addb05e03494bfe253d8a27eb002",
+   "displayId": "S-049",
+   "workspaceId": "SPIRETA-t207n",
+   "jobTitle": "UI Designer",
+   "requiredExperienceInMonths": {
+    "from": 12,
+    "to": 36
+   },
+   "skills": [
+    {
+     "skill": "ui design",
+     "isMandatory": true,
+     "reqId": "r_9189addb05e03494bfe253d8a27eb002"
+    },
+    {
+     "skill": "figma",
+     "isMandatory": true,
+     "reqId": "r_9189addb05e03494bfe253d8a27eb002"
+    },
+    {
+     "skill": "adobe illustrator",
+     "isMandatory": true,
+     "reqId": "r_9189addb05e03494bfe253d8a27eb002"
+    },
+    {
+     "skill": "photoshop",
+     "isMandatory": true,
+     "reqId": "r_9189addb05e03494bfe253d8a27eb002"
+    },
+    {
+     "skill": "uizard",
+     "isMandatory": true,
+     "reqId": "r_9189addb05e03494bfe253d8a27eb002"
+    },
+    {
+     "skill": "galileo",
+     "isMandatory": true,
+     "reqId": "r_9189addb05e03494bfe253d8a27eb002"
+    },
+    {
+     "skill": "wireframes",
+     "isMandatory": true,
+     "reqId": "r_9189addb05e03494bfe253d8a27eb002"
+    },
+    {
+     "skill": "visual design",
+     "isMandatory": true,
+     "reqId": "r_9189addb05e03494bfe253d8a27eb002"
+    },
+    {
+     "skill": "typography",
+     "isMandatory": true,
+     "reqId": "r_9189addb05e03494bfe253d8a27eb002"
+    },
+    {
+     "skill": "chatgpt",
+     "isMandatory": true,
+     "reqId": "r_9189addb05e03494bfe253d8a27eb002"
+    }
+   ],
+   "jobLocation": [
+    {
+     "city": "Bengaluru",
+     "state": "Karnataka",
+     "country": "India",
+     "fqLocationName": "Bengaluru, Karnataka, India",
+     "geoCode": {
+      "lat": 12.9715987,
+      "lon": 77.5945627
+     }
+    },
+    {
+     "city": "Bengaluru",
+     "state": "Karnataka",
+     "country": "India",
+     "fqLocationName": "Bengaluru, Karnataka, India",
+     "geoCode": {
+      "lat": 12.9715987,
+      "lon": 77.5945627
+     }
+    }
+   ],
+   "requiredEducation": [],
+   "hotJob": {},
+   "employmentType": "FULL_TIME",
+   "jobPosting": {
+    "startDate": 1748707683000,
+    "endDate": 1811136002000,
+    "status": "ACTIVE"
+   },
+   "createdOn": 1748707683000,
+   "updatedOn": 1748707683000,
+   "jobDescription": "Job Title: UI Designer\n\nJob Information\nJob Title: UI Designer (1-3 yrs )\nAs a UI Designer, you will be responsible for crafting visually engaging and user-friendly interfaces for our digital products. You will work closely with UX designers, product managers, and developers to bring intuitive and visually cohesive user interfaces to life. Your creativity and attention to detail will help enhance user satisfaction and brand consistency across all platforms.\nRoles and Responsibilities:\nDesign high-quality user interfaces for web and mobile applications that align with brand guidelines.\nCollaborate with UX designers to translate wireframes and user flows into pixel-perfect designs.\nWork closely with product managers and developers to ensure design feasibility and implementation.\nContribute to the creation and maintenance of design systems and UI component libraries.\nStay updated with the latest UI trends, tools, and technologies to continually improve design quality.\nAssist in preparing and presenting design deliverables in team meetings and stakeholder reviews.\nQualifications:\nAny Bachelor s degree in Design\n1-3 years of experience in UI design\nProficiency in design tools such as Figma, Adobe Illustrator, and Photoshop.\nProficiency in AI Tools - Uizard, Chatgpt, Galileo, etc.\nBasic understanding of UX principles and user-centered design practices.\nStrong visual design skills with an eye for typography, layout, color, and brand consistency.\nAbility to accept and apply constructive feedback in a collaborative environment.\nPortfolio showcasing UI design work across digital platforms (web and/or mobile).\nGood communication and teamwork skills with attention to detail.\n\nPortfolio Requirement\n  Demonstrated ability through a portfolio showing UI work across digital platforms\n\nSkills Requirement\n\n\nFigma, Uizard, Galileo, Adobe Illustrator, and Photoshop\n",
+   "isFresherJob": false,
+   "jobStatus": {
+    "statusCode": "OPEN"
+   },
+   "fcpr": {
+    "id": null,
+    "roleSkill": null,
+    "jobFamily": "Design & UX"
+   }
+  }
+ ],
+ "total": 7
+}

@@ -1987,6 +1987,51 @@ def p_smartrecruiters(t, u):
     return (LIVE, 0) if served else (DEAD, None)
 
 
+def p_spire2grow(t, u):
+    # The Board is a career-site host. Its workspace lookup is the dead-versus-live question: an
+    # unknown host answers 404 "No Workspace Found for the domain name" (24 of 24 non-tenant hosts
+    # measured 2026-09-30, the vendor's UAT hosts among them), a tenant answers 200 with its
+    # workspace id. The count then needs that id as a header; an unknown workspace would read 0
+    # there, so a zero is trusted only after the lookup found one (`godigit-careers` is live and
+    # empty). `_count`, not the scraper's `_search`: the search is metered at about two calls a
+    # minute per server (spire2grow.py) and the count is not (600 calls at 167 req/s, zero 429s).
+    # io.spire2grow.com is one fixed host, so a DNS failure is the resolver's, never a verdict.
+    scraper = _scraper_for_row("spire2grow", t, u)
+    status, body = _get(scraper.url())
+    if status == "dns":
+        return _unknown_dns_on_a_shared_host()
+    if status == 404:
+        if b"No Workspace Found" in body:
+            return DEAD, None
+        _note("body-unparseable")
+        return UNKNOWN, None
+    if status != 200:
+        # `_get` already notes every status but 404 and 410; a 410 was never measured here.
+        if status == 410:
+            _note("http-410")
+        return UNKNOWN, None
+    if not body.strip():
+        _note("body-unparseable")
+        return UNKNOWN, None
+    workspace = body.decode("utf-8", "replace").strip()
+    status, body = _get(
+        "https://io.spire2grow.com/ies/v1/p/requisition/_count",
+        headers={"workspaceid": workspace, "language": "en"},
+    )
+    if status != 200:
+        if status in (404, 410):  # `_get` notes every other status
+            _note(f"http-{status}")
+        return UNKNOWN, None
+    try:
+        n = json.loads(body).get("totalCount")
+    except Exception:  # noqa: BLE001
+        n = None
+    if not isinstance(n, int):
+        _note("body-unparseable")
+        return UNKNOWN, None
+    return LIVE, n
+
+
 def _teamtailor_ids(body):
     """The item ids on one `jobs.json` page, or None if the body is not a JSON Feed."""
     try:
@@ -3310,6 +3355,7 @@ PROBES = {
     "ripplehire": p_ripplehire,
     "darwinbox": p_darwinbox,
     "smartrecruiters": p_smartrecruiters,
+    "spire2grow": p_spire2grow,
     "teamtailor": p_teamtailor,
     "rippling": p_rippling,
     "trakstar": p_trakstar,
