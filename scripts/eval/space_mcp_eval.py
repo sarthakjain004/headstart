@@ -1363,9 +1363,20 @@ def _states(answer: str, value: str) -> bool:
 
 #: What an answer line says of a company it calls a possible agency, not its own employer.
 _CALLED_AGENCY = re.compile(
-    r"unverified|staffing|agenc(?:y|ies)|recruit(?:er|ing firm|ment firm)|not the employer",
+    r"unverified|staffing|agenc(?:y|ies)|recruit(?:er|ing firm|ment firm)",
     re.IGNORECASE,
 )
+_NOT_ITS_EMPLOYER = re.compile(r"\bnot (?:the|its own|an?) employer", re.IGNORECASE)
+#: A clause that denies what follows: "not flagged as a staffing agency" says it is none.
+_DENIED = re.compile(
+    r"\b(?:not|no|never|nor|without|isn't|aren't|wasn't)\b[^.;:!?\n]*", re.IGNORECASE
+)
+
+
+def _calls_an_agency(line: str) -> bool:
+    return bool(
+        _NOT_ITS_EMPLOYER.search(line) or _CALLED_AGENCY.search(_DENIED.sub(" ", line))
+    )
 
 
 def verify_employer_unflagged(
@@ -1375,7 +1386,8 @@ def verify_employer_unflagged(
     the tools nor the answer may call it a possible agency: round 5's R5-P1-3 flagged Lockheed
     Martin "operator unverified" off SAP's host label `hr` (ADR-0366). Fails a tool result line
     naming one that carries the tag, an answer that leaves one unnamed, and an answer line
-    naming one that calls it unverified, a staffing firm, an agency or a recruiter."""
+    naming one that calls it unverified, a staffing firm, an agency, a recruiter or not the
+    employer; a clause denying it ("not flagged as a staffing agency") is no such call."""
     results = [
         line
         for call in transcript.calls
@@ -1395,7 +1407,7 @@ def verify_employer_unflagged(
         naming = [line for line in answer if _found(line, company)]
         if not naming:
             missing.append(f"the answer does not name {company}")
-        elif called := [line for line in naming if _CALLED_AGENCY.search(line)]:
+        elif called := [line for line in naming if _calls_an_agency(line)]:
             missing.append(
                 f"the answer calls {company} a possible agency: {called[0]!r}"
             )
