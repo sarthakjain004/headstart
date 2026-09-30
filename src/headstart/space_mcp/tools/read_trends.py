@@ -601,9 +601,7 @@ def _roles_head(payload: dict[str, Any], category: str, label: str) -> list[str]
     lines = payload["reading"].get("lines") or []
     # The Space adds up only the roles counted from the first row's run (ADR-0366); a role
     # counted for less of the window joined partway, and its stock is no change.
-    joined = [
-        line for line in lines if line["move"]["span_days"] < total["span_days"]
-    ]
+    joined = [line for line in lines if line["move"]["span_days"] < total["span_days"]]
     # Said from the lines themselves: since ADR-0270 and ADR-0304 a role's line has its counting
     # changes and Boards found sized, which this once denied.
     moves = [line["move"] for line in lines]
@@ -625,7 +623,9 @@ def _roles_head(payload: dict[str, Any], category: str, label: str) -> list[str]
     )
     if joined:
         names = [str(line.get("label")) for line in joined]
-        named = names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+        named = (
+            names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+        )
         roles += (
             f" {named} {'is' if len(names) == 1 else 'are'} left out of that total: counted "
             "only from partway through the window, their start is no like-for-like base."

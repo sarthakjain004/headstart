@@ -1396,7 +1396,9 @@ def verify_employer_unflagged(
         if not naming:
             missing.append(f"the answer does not name {company}")
         elif called := [line for line in naming if _CALLED_AGENCY.search(line)]:
-            missing.append(f"the answer calls {company} a possible agency: {called[0]!r}")
+            missing.append(
+                f"the answer calls {company} a possible agency: {called[0]!r}"
+            )
     return Verdict(not missing, "; ".join(missing) or "named, and flagged by no one")
 
 
@@ -1449,7 +1451,9 @@ def verify_watched_roles_total(
     own_changes = sum(move["latest"] - move["start"] for move in moves)
     mixed = sum(move["latest"] for move in moves) - sum(m["start"] for m in whole)
     said = _figures(transcript.final_answer)
-    like = [want for want in (from_start, own_changes) if any(_near(f, want) for f in said)]
+    like = [
+        want for want in (from_start, own_changes) if any(_near(f, want) for f in said)
+    ]
     wrong = any(_near(f, mixed) for f in said) and not any(
         _near(abs(mixed), want) for want in (from_start, own_changes)
     )
@@ -1482,7 +1486,9 @@ def _not_on_hot(fact: dict[str, Any], space: Space) -> str | None:
     ][: fact["within"]]
     if any(_found(str(row.get("company") or ""), fact["company"]) for row in rows):
         return None
-    return f"{fact['company']} is not in the first {fact['within']} rows of {fact['lens']}"
+    return (
+        f"{fact['company']} is not in the first {fact['within']} rows of {fact['lens']}"
+    )
 
 
 def _no_role_joined(fact: dict[str, Any], space: Space) -> str | None:
@@ -1751,7 +1757,11 @@ def run_task(
     try:
         gone = retired(task, space()) if task.get("requires") else None
     except (SpaceError, ToolFailure) as exc:
-        return {**unrun, "verdict": "error", "detail": f"its fixture went unread: {exc}"}
+        return {
+            **unrun,
+            "verdict": "error",
+            "detail": f"its fixture went unread: {exc}",
+        }
     if gone:
         return {**unrun, "verdict": "retired", "detail": gone}
     stem = f"{prefix.name}_{task['id']}_r{repeat}"
@@ -1836,14 +1846,10 @@ def summary(records: list[dict[str, Any]]) -> list[str]:
 
     tokens = f"{LARGE_RESULT_CHARS:,}, about 10,000 tokens"
     retired_line = (
-        [
-            f"retired: {len(gone)} of {len(records)} ({', '.join(gone)}), their fixture "
-            "gone from the live data: replace them"
-        ]
-        if gone
-        else []
+        f"retired: {len(gone)} of {len(records)} ({', '.join(gone)}), their fixture gone "
+        "from the live data: replace them"
     )
-    return retired_line + [
+    return ([retired_line] if gone else []) + [
         f"not judged: {len(unjudged)} of {len(records)}"
         + (f" ({', '.join(unjudged)})" if unjudged else "")
         + f" — {'MISSED' if unjudged else 'met'}",

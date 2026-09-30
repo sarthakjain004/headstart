@@ -1991,9 +1991,13 @@ def _lockheed(ev, row, answer):
     )
 
 
-def test_employer_unflagged_fails_a_tool_or_an_answer_calling_the_employer_an_agency(ev):
+def test_employer_unflagged_fails_a_tool_or_an_answer_calling_the_employer_an_agency(
+    ev,
+):
     """t40: SAP's host label `hr` flagged Lockheed Martin operator unverified (R5-P1-3)."""
-    listed = "18. Lockheed Martin, 1,201 open now.\nNone of the 20 reads like an agency."
+    listed = (
+        "18. Lockheed Martin, 1,201 open now.\nNone of the 20 reads like an agency."
+    )
     assert _lockheed(ev, _LOCKHEED_ROW, listed).passed
     flagged = _LOCKHEED_ROW + " · FLAG operator unverified"
     assert "a tool flagged Lockheed Martin" in _lockheed(ev, flagged, listed).detail
@@ -2078,7 +2082,9 @@ def test_a_task_whose_fixture_is_gone_is_retired_not_run_and_not_judged(ev, tmp_
 
 
 def test_the_hot_row_and_joined_role_fixtures_read_the_live_facts(ev):
-    t40 = {"requires": {"hot_row": {"lens": "volume", "company": "Lockheed", "within": 2}}}
+    t40 = {
+        "requires": {"hot_row": {"lens": "volume", "company": "Lockheed", "within": 2}}
+    }
     hot = {
         "hidden_by_default": ["staffing"],
         "lenses": {
@@ -2091,10 +2097,10 @@ def test_the_hot_row_and_joined_role_fixtures_read_the_live_facts(ev):
     }
     assert ev.retired(t40, FakeSpace({SpaceRoute.HOT: hot})) is None
     hot["lenses"]["volume"].insert(1, {"company": "Deloitte", "operator": "employer"})
-    assert "not in the first 2 rows" in ev.retired(t40, FakeSpace({SpaceRoute.HOT: hot}))
+    assert "not in the first 2 rows" in ev.retired(
+        t40, FakeSpace({SpaceRoute.HOT: hot})
+    )
     t41 = {"requires": {"roles_joined_partway": _T41}}
     assert ev.retired(t41, FakeSpace(_P5E_ROLES)) is None
-    level = {
-        SpaceRoute.TRENDS: {"reading": {"lines": [_role_move(1, 2, 5.5)] * 2}}
-    }
+    level = {SpaceRoute.TRENDS: {"reading": {"lines": [_role_move(1, 2, 5.5)] * 2}}}
     assert "no watched role" in ev.retired(t41, FakeSpace(level))

@@ -417,7 +417,9 @@ _VENDOR_HOST = re.compile(
 
 #: Second-level labels a country registry sells under (`isuzu.co.jp`, `nrc-cnrc.gc.ca`), so the
 #: registrable label is the one before them.
-_REGISTRY_LABELS = frozenset({"co", "com", "org", "net", "gov", "gc", "ac", "edu", "or", "ne", "go"})
+_REGISTRY_LABELS = frozenset(
+    {"co", "com", "org", "net", "gov", "gc", "ac", "edu", "or", "ne", "go"}
+)
 
 
 def _own_label(host_or_slug: str) -> str:
