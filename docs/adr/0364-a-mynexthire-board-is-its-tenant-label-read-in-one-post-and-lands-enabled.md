@@ -8,8 +8,8 @@ Swiggy and ShareChat, both absent from the ledgers, hire through MyNextHire (iss
 calls the vendor Nexthire; the product is Smaclify Technologies'). Each customer is a label on
 `{label}.mynexthire.com`, and the careers page reads its openings from one JSON call. Three public
 implementations existed; the measurement
-(`docs/mynexthire/2026-09-30_reqlist-measurement.md`: 32 tenants, 630 postings, a 12,360-label
-sieve) confirmed their listing call and killed two of their other claims — that a category filter
+(`docs/mynexthire/2026-09-30_reqlist-measurement.md`: 108 labels, 35 live, 630 postings, a
+45,465-label sieve) confirmed their listing call and killed two of their other claims — that a category filter
 must be iterated, and that the link `/employer/jobs/{reqId}` opens a posting.
 
 ## Decision
@@ -41,15 +41,17 @@ visible to a status check.
 `buName` kept plus 38 more (the gate is recall-biased, CLAUDE.md). `employment_type` maps the
 twelve measured values, because raw `third_party_consultant` reads part-time in the filter.
 `experience` is the stated bounds widened to whole years. No salary: the pay band is 0.0 on 630
-of 630. `company` is the client record's `clientName` (32 of 32), one extra GET for a Board with
+of 630. `company` is the client record's `clientName` (35 of 35 live tenants), one extra GET for a Board with
 postings; the vendor's own names are refused as aliases.
 
-**Vendor tenants are excluded, not landed**: `consultant` (the vendor's test tenant),
-`mars` (a trial whose postings are test requisitions) and `prodindefault` (the default tenant)
-are in `EXCLUDED_BOARDS`.
+**Vendor tenants are landed and excluded**: `consultant` (the vendor's test tenant), `try` (its
+demo, 164 template postings), `staging` (328 postings from 2020-2022), `mars` (a trial whose
+postings are test requisitions) and `prodindefault` (the default tenant) are live rows in the
+ledger and in `EXCLUDED_BOARDS`, so a re-probe keeps them visible without serving them. Together
+they list 527 postings, near as many as the 29 customer Boards' 622.
 
 **Enabled on arrival.** ADR-0158's bar is ~2 MB of fetched bytes per tech Job. MyNextHire's
-listings are 3,133,880 bytes for the 622 postings of the 28 customer Boards with postings, and the
+listings are 3,133,880 bytes for the 622 postings of the 29 customer Boards with postings, and the
 tech gate keeps 293 of them: **~10.7 KB per tech Job**, about 190x under the bar (~14 KB with the
 ~34 KB client record per Board). The yield is concentrated — aziro holds 156 of the 293, Swiggy
 yields 5 of 83 — but no measure of cost argues for holding it back.

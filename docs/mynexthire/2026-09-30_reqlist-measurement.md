@@ -10,10 +10,10 @@ confirmed or killed below. The probe scripts, captures, sweep logs and browser r
 locally (`experiment/mynexthire-reqlist/`), not committed; every number a reader needs is stated
 here. The decisions are ADR-0364.
 
-Sample: 94 pool labels probed (32 tenants hold a Board), every live Board's full listing read
-twice (345 postings over 12 Boards in the first read, 630 over 30 in the second), 35 client
-records, 2 detail records, 7 browser renders, a 704-request rate ramp, and a label sieve of
-12,360 candidate labels.
+Sample: 108 pool labels probed (35 hold a Board, 5 of them the vendor's own), every live
+Board's full listing read twice (345 postings over 12 Boards in the first read, 630 over 30 in
+the second), 35 client records, 2 detail records, 12 browser page loads, a 1,088-request rate ramp,
+and a label sieve of 45,465 candidate labels.
 
 ## Identity
 
@@ -69,10 +69,10 @@ returns (aziro 163, clarion 8, meesho 0).
 
 | answer | meaning | seen on |
 | --- | --- | --- |
-| 200, `reqDetailsBOList: [...]` | a live Board | 30 tenants |
+| 200, `reqDetailsBOList: [...]` | a live Board | 33 tenants |
 | 200, `reqDetailsBOList: null` | a live Board with nothing open; the page renders "There are no open requisitions at this time!" | meesho, prodindefault |
 | 417 `41703001:Invalid company short name: {label}` | no such tenant | an invented label, `app`, `msystechnologies`, and every sieve miss |
-| 402 `MyNextHire account subscription for client {LABEL} has expired.` | a lapsed customer | jupitermoney, sirion, and 27 more in the sieve |
+| 402 `MyNextHire account subscription for client {LABEL} has expired.` | a lapsed customer | most of the ledger's 69 dead rows: jupitermoney, razorpay, cleartax, urbancompany, … |
 | 417 `41701003:Invalid request URL` | vendor infrastructure | `wow` |
 | 500 "Unable to process your request at this time…" | unexplained | obmajesco, obquantinsti, spicinemas (the client record 500s too) |
 
@@ -144,7 +144,7 @@ and 162 on the title alone, and every posting `buName` kept, `careerStream` kept
 include real tech ("Associate Director - C/C++ Linux Kernel", "Flutter Architect", two "Python
 Automation QA") and creep ("Field Marketing Manager", "AI Animator").
 
-**Q18 — company.** The client record states `clientName` on 32 of 32 tenants: "Swiggy",
+**Q18 — company.** The client record states `clientName` on 35 of 35 live tenants: "Swiggy",
 "ShareChat", "Aziro", "Medline India Pvt Ltd", "Dailyrounds/Marrow". The page `<title>` is the
 vendor's ("Approved Jobs, powered by Smaclify Technologies!"). The vendor's own tenant `smaclify`
 states "MyNextHire".
@@ -158,13 +158,13 @@ and 128 concurrent — 43.3, 107.9, 133.6 req/s, every one 200. No gate is seede
 
 **Q20 — User-Agent.** `headstart/0.1`, no UA and `python-requests/2.32` all answered 200.
 
-**Q21 — size.** 5,038 bytes a posting on average (3,133,880 bytes for the 622 postings of the 28
+**Q21 — size.** 5,038 bytes a posting on average (3,133,880 bytes for the 622 postings of the 29
 customer Boards with postings); the largest listing is aziro's 731,166 bytes. The client record
 is ~34 KB.
 
 ## Population
 
-**Q22 — tech share and volume.** Second read, the 28 customer Boards with postings (the vendor's
+**Q22 — tech share and volume.** Second read, the 29 customer Boards with postings (the vendor's
 test tenants excluded, below): 622 postings, of which the tech gate keeps **293 (47.1%)** over 26
 Boards; aziro alone holds 156. Swiggy's 83 yield 5 (its "Engineering" stream is mostly "Sales
 Manager II"), ShareChat's 5 yield 4 only through its "Engineering" stream default.
@@ -186,7 +186,9 @@ live at 0. The duplication is 2 postings; no gate is needed.
 "this is test jd", at places "aassrr11"). `mars` names itself "Mars" but is a trial: 7 of its 8
 postings are "test mars2", "mdl test" or a "Software Tester" described "Test JD", "ok" or nothing,
 ids 3-47 over two years. `prodindefault` is the default tenant. All three are in
-`EXCLUDED_BOARDS`. `smaclify` (4 real postings, the vendor hiring for itself) and `indevia`
+`EXCLUDED_BOARDS`, as are two the sieve found: `try` (client "MyNextHire Trial Instance", 164
+template postings) and `staging` (client 999, "Staging", site `www.staging_on_production.com`,
+328 postings dated 2020-2022). `smaclify` (4 real postings, the vendor hiring for itself) and `indevia`
 (1 real posting, 2 test ones) are kept.
 
 ## Discovery
@@ -194,7 +196,27 @@ ids 3-47 over two years. `prodindefault` is the default tenant. All three are in
 The client ids run from 1001 (the vendor's own) to 1165, so the vendor has had at most ~165
 customers; the pool is the search for those still subscribed.
 
-DISCOVERY_TABLE
+Every source was swept to completion; the pool holds 108 labels.
+
+| source | labels | live customer Boards | found only there |
+| --- | --- | --- | --- |
+| Wayback CDX, `*.mynexthire.com` (5 pages) and `*.careers.mynexthire.io` (1) | 82 | 23 | 41 labels, 8 live (aziro, medline, coindcx, cstep, azentio, clarion, conseroglobal, smaclify) |
+| Common Crawl, 33 crawls from CC-MAIN-2023-40 to CC-MAIN-2026-39 | 43 | 16 | 1 label (linarc, lapsed) |
+| `careers.js`'s own list of India-region clients | 8 | 6 | 8 labels, 6 live (bindz, dailyrounds, daloopa, indevia, licious, meesho) |
+| Label sieve: 12,360 labels of the keka, darwinbox, zwayam, freshteam, pyjamahr, ripplehire and peoplestrong ledgers | 13 live, 28 lapsed | 13, all already held | 11 lapsed labels |
+| Label sieve: 33,105 labels of the lever, ashby and greenhouse ledgers | 8 live, 16 lapsed | 6, all already held | 2 vendor tenants (`try`, `staging`), 2 lapsed (eclipse, workshop; a third, `testing`, left out as a test label), 1 at 500 (tomtom) |
+| The earlier harvest pool and the 2026-09-29 discovery captures | 3 | 3 | none |
+
+The sieve is the HTTP form of a DNS sieve: the listing POST separates a tenant (any answer but
+417 "Invalid company short name") from an unknown label, since DNS cannot. Four labels answer
+neither way and stay UNKNOWN (three 500s, one timeout); three vendor infrastructure labels
+(`iqa`, `wow`, `myra-ui`) were dropped from the pool rather than probed forever. crt.sh was down
+(502) and Cert Spotter lists only wildcard certificates (`*.mynexthire.com`,
+`*.careers.mynexthire.io`, `*.prod.us1.mynexthire.io`), so certificate transparency names no
+tenant.
+
+The ledger: **108 rows, 35 live, 69 dead, 4 unknown**; with the 5 vendor tenants excluded, **30
+Scrapable Boards, 29 Hiring**.
 
 ## Reproducing
 

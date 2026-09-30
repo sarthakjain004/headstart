@@ -23,7 +23,7 @@ nothing open answers 200 with `reqDetailsBOList: null` (meesho's page renders "C
 [0]"), which is an empty Board, not an unreadable one.
 
 **The company** is the `clientName` of the tenant's client record, the record the careers page
-fetches first (`/employer/jobboard/details_by_shortname/get/{slug}/`, 32 of 32 live tenants
+fetches first (`/employer/jobboard/details_by_shortname/get/{slug}/`, 35 of 35 live tenants
 state one). One GET, only for a Board with postings.
 
 **Fields.** No salary: `ctcBandLowEnd`/`ctcBandHighEnd` read 0.0 on 630 of 630 postings.

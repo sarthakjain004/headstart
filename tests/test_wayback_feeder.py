@@ -589,7 +589,9 @@ def test_a_mynexthire_io_front_collapses_onto_its_com_label():
         "https://azentio.mynexthire.com/employer/jobs/careers", "mynexthire.com", "sub"
     )
     assert front == board == ("azentio", "https://azentio.mynexthire.com")
-    assert wf.extract("https://exmac.iqa.mynexthire.com/", "mynexthire.com", "sub") is None
+    assert (
+        wf.extract("https://exmac.iqa.mynexthire.com/", "mynexthire.com", "sub") is None
+    )
 
 
 def test_alias_hosts_collapse_but_regional_pods_do_not():
