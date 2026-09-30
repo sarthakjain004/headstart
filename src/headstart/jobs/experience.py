@@ -827,6 +827,7 @@ def _stated(
             # Where the wording of a ceiling starts, if the number sits right after one.
             ceiling_at = None
             ceiling_word = False
+            closes_range = False
             if hi is None:
                 window_from = max(0, match.start(1) - 24)
                 word = _CEILING_WORDS_BEFORE.search(text[window_from : match.start(1)])
@@ -841,7 +842,12 @@ def _stated(
             if ceiling_at is not None and _FLOOR_BEFORE.search(
                 text[max(0, ceiling_at - 70) : ceiling_at]
             ):
-                continue
+                if not ceiling_word:
+                    continue
+                # The clause closes a range a floor opened ("minimum of 6 years ... a maximum of 10"): it is no
+                # 0..N span, and its number keeps main's reading, a plain floor, which a smaller cohort's
+                # ("BS and 3 to 5 years or MS and less than 2 years") never lifts the answer past.
+                closes_range = True
             if ceiling_at is not None:
                 # "up to N years": the number is the top of the range, and the posting states no
                 # floor at all. The top faces the requirement ceiling the floor just faced — this
@@ -852,7 +858,7 @@ def _stated(
                     if top <= _MAX_PLAUSIBLE_REQUIREMENT:
                         spans.append((ExperienceSpan(0, top, "regex"), True))
                     continue
-                if top <= _MAX_PLAUSIBLE_REQUIREMENT:
+                if top <= _MAX_PLAUSIBLE_REQUIREMENT and not closes_range:
                     soft_ceilings.append((ExperienceSpan(0, top, "regex"), True))
             if hi is None:
                 # Recover the floor when this match is a range's ceiling ("2-4 years" -> 2, not 4).

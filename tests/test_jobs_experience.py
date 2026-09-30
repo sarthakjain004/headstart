@@ -1339,3 +1339,15 @@ def test_a_slash_range_is_read_as_main_reads_it():
     assert from_description(
         "At least 5/7 years of experience in integrating HRIS solutions"
     ) == _regex(7)
+
+
+def test_a_ceiling_clause_of_another_cohort_never_lifts_the_answer_past_main():
+    # BS holders need 3-5, master's holders "less than 2": main reads the 2 as a floor and answers 2, and a guard
+    # that drops the clause outright would answer 3 and hide the job from a master's holder with a year of work.
+    assert from_description(
+        "BS and 3 to 5 years related experience or MS and less than 2 years related experience"
+    ) == _regex(2)
+    # A ceiling that does close the range still cannot lower it.
+    assert from_description(
+        "Minimum of 6 years of experience in software development with a maximum of 10 years"
+    ) == _regex(6)
