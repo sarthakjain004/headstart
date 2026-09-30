@@ -75,13 +75,14 @@ refuses it (ADR-0353 Decision 2). Both stand unchanged.
 ## Measurement
 
 Rules at `origin/main` `90037521` (ADR-0353's, shipped as agent contract 21), then at this
-branch's commit `8dd4aa59` once Decision 2 was made. Draws read the live Space's
+branch once Decision 2 was made, committed before draw 2 and unchanged to this ADR's merge. Draws
+read the live Space's
 `offers_sponsorship` listing per ATS, then `/job` for each description, on 2026-09-30.
 
 | Draw | Rules | Pool | Strict | Lenient | US strict | Elsewhere strict |
 | --- | --- | --- | --- | --- | --- | --- |
 | 1 (seed 4101) | shipped, ADR-0353 | 3,193 of 3,507 unlabelled | **40 of 50 (0.80)** | 50 of 50 | 19 of 25 | 21 of 25 |
-| 2 (seed 5202) | frozen at `8dd4aa59` | 3,122 of 3,476 unlabelled | **46 of 50 (0.92)** | 49 of 50 | 24 of 25 | 22 of 25 |
+| 2 (seed 5202) | Decision 2, as merged | 3,122 of 3,476 unlabelled | **46 of 50 (0.92)** | 49 of 50 | 24 of 25 | 22 of 25 |
 
 Draw 1's ten strict misses, every one hedged or limited, none a refusal: Anthropic ×4 ("not for
 every role"), Cartesia (case by case, in the same sentence past the window), GPTZero and Lavendo
