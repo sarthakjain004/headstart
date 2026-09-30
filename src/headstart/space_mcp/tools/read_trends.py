@@ -19,6 +19,11 @@ began counting it on 2026-09-25, so over a longer window it cannot say whether h
 (ADR-0321). A company breakdown has no first row, and it read "OpenAI: 9 opened, 5 closed" over 14
 days with no word that they were 3.4 days'. A counting change is named by short tags, glossed
 once, and a line of a category HeadStart has since retired names the category that took it over.
+
+A picked company's first row, and each company's line under the company breakdown, says when most
+of its opened was found late rather than newly posted (`trends.found_late`, ADR-0369): Deloitte
+US read "509 opened, net +495" over the first week its Avature Board was read whole, while 410 of
+its postings first seen then were posted over 14 days before.
 """
 
 from __future__ import annotations
@@ -33,6 +38,7 @@ from headstart.space_mcp import company_scope, role_families, scraped_text
 from headstart.space_mcp.space_client import SpaceClient, SpaceRoute
 from headstart.space_mcp.space_tool import SpaceTool
 from headstart.space_mcp.turnover_span import span_sentence
+from headstart.trends import found_late
 from headstart.trends.netting import (
     GROWTH_RESCALED_WHEN,
     METHODOLOGY_WORDS,
@@ -340,6 +346,8 @@ def _line(
     their split."""
     split = _Split.of(move)
     said = [_turnover(move)] if move.get("turnover") else []
+    if late := found_late.clause(move.get("turnover")):
+        said.append(late)
     said.append(
         f"{what} {move['start']:,} → {move['latest']:,} ({_signed(split.change)}"
         f"{_span(move, window_days)})"
@@ -519,6 +527,8 @@ def _total(
         )
     elif turnover := _turnover(move):
         out.append(f"{who}hiring, as postings opened and closed: {turnover}.")
+        if late := found_late.sentence(move.get("turnover")):
+            out.append(late)
     else:
         out.append(f"{who}opened and closed are not counted in this view.")
     if not new:
@@ -813,8 +823,9 @@ TOOL = SpaceTool(
         "(and their net), never the change in openings listed: that change also holds "
         "re-counting (Boards found or dropped, duplicates removed, HeadStart's own counting "
         "changes), and the answer says how much of it turnover and sized steps explain and "
-        "how much HeadStart could not size. Report the opened/closed net as hiring; never "
-        "call the change in openings listed hiring. Whole index by default, or one job "
+        "how much HeadStart could not size. Report the opened/closed net as hiring, but where "
+        "the answer says most of a company's opened was found, not newly posted, say that "
+        "instead; never call the change in openings listed hiring. Whole index by default, or one job "
         "category, or up to 10 named companies. A company is a directory company: a key such "
         "as 'greenhouse:stripe', or its exact name (read as the site's Trends picker reads "
         "it). Tell the user which directory company each name was read as, with its key and "
@@ -890,8 +901,8 @@ TOOL = SpaceTool(
     },
     when_to_use=(
         "Use read_trends for how hiring is changing overall, in a category or at named "
-        "companies; report postings opened and closed as hiring; say which directory company "
-        "each name was read as."
+        "companies; report opened and closed as hiring unless found late; say which "
+        "directory company each name was read as."
     ),
     answer=answer,
     max_chars=20_000,

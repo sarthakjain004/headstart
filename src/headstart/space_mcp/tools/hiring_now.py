@@ -37,7 +37,7 @@ from headstart.space_mcp import noun_counts, scraped_text
 from headstart.space_mcp.space_client import SpaceClient, SpaceRoute
 from headstart.space_mcp.space_tool import SpaceTool
 from headstart.space_mcp.turnover_span import span_sentence
-from headstart.trends import hot_ranking
+from headstart.trends import found_late
 
 #: A company name past this is cut, as search cuts one.
 COMPANY_FIELD = 60
@@ -49,11 +49,6 @@ FLAG_MARK = " · FLAG "
 #: flagged: at 25 openings each posting opened moves its rate 4 points. RadNet read 48% on
 #: 2026-09-29: 12 postings opened on 25 openings.
 SMALL_BASE_FLOORS = 2
-
-#: Below this many postings opened, a row is never flagged as found late: one posting moves the
-#: share too far. Box read 8 found late of 11 opened on 2026-09-29, each of the 8 first published
-#: on Greenhouse in July or August (ADR-0351).
-FOUND_LATE_MIN_OPENED = 10
 
 
 class Flag(StrEnum):
@@ -235,21 +230,11 @@ def _net_not_backed(row: dict[str, Any], pace: float) -> bool:
 
 
 def _opened_mostly_found_late(row: dict[str, Any]) -> bool:
-    """Whether most of the row's postings opened were found late (ADR-0351): postings posted more
-    than `hot_ranking.FOUND_LATE_DAYS` before first sight number at least half its opened, and
-    those posted since fewer than half. Both are needed, as the counts are of postings still
-    served, first seen in any run: the first alone would flag a row whose found-late postings
-    mostly never reached its opened (Accenture Federal Services, 234 found late on 38 opened, 19
-    fresh), the second alone one whose opened left no served posting at all (New York Life's
-    re-listed ids, which its closures flag already)."""
-    opened, fresh, late = (
-        row.get("opened"),
-        row.get("opened_fresh"),
-        row.get("opened_found_late"),
+    """Whether most of the row's postings opened were found late, by the one rule every reader
+    of the split uses (`found_late.mostly_found_late`, ADR-0351, ADR-0369)."""
+    return found_late.mostly_found_late(
+        row.get("opened"), row.get("opened_fresh"), row.get("opened_found_late")
     )
-    if opened is None or fresh is None or late is None:
-        return False
-    return opened >= FOUND_LATE_MIN_OPENED and 2 * fresh < opened <= 2 * late
 
 
 def _flags(
@@ -274,7 +259,7 @@ def _said(flag: Flag, row: dict[str, Any]) -> str:
     if flag is Flag.FOUND_LATE:
         return (
             f"{flag.value}: of its postings first seen since turnover began, "
-            f"{row['opened_found_late']:,} were posted more than {hot_ranking.FOUND_LATE_DAYS} days before "
+            f"{row['opened_found_late']:,} were posted more than {found_late.FOUND_LATE_DAYS} days before "
             f"HeadStart saw them and {row['opened_fresh']:,} since"
         )
     if flag is Flag.SMALL_BASE:

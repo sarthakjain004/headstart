@@ -2534,6 +2534,75 @@ def test_company_lines_are_quoted_as_the_employers_own_names():
     )
 
 
+_DELOITTE_TURNOVER = {
+    "opened": 509,
+    "closed": 14,
+    "net": 495,
+    "opened_fresh": 112,
+    "opened_found_late": 410,
+}
+_FOUND_LATE_SAID = (
+    "ost of the 509 postings opened were found, not newly posted: of the postings HeadStart "
+    "first saw in these runs and still lists, 410 were posted over 14 days before HeadStart "
+    "first saw them and 112 within 14 days or with no date"
+)
+
+
+def test_a_company_whose_opened_was_mostly_found_late_says_so_beside_its_opened():
+    """Round-5 critique R5-P1-1 (ADR-0369): Deloitte US's first whole read of its Avature Board
+    read as "509 opened, 14 closed, net +495" while hiring_now flagged 410 of its postings as
+    posted weeks before HeadStart saw them. The first row and each company line say so, by the
+    one rule hiring_now flags by."""
+    lookup = {"companies": [_suggestion("avature:deloitteus", "Deloitte US")]}
+    total = _line("__total__", "", _move(14, 509, 495, turnover=_DELOITTE_TURNOVER))
+    one = server.call(
+        FakeSpace(trends=_trends([], total=total), companies_lookup=lookup),
+        "read_trends",
+        {"companies": ["avature:deloitteus"], "days": 7},
+    )
+    assert (
+        "Hiring, as postings opened and closed: 509 opened, 14 closed, net +495.\nM"
+        + _FOUND_LATE_SAID
+        + ". So most of this opened is not hiring.\n"
+    ) in one
+    lines = [
+        _line(
+            "a", "Deloitte US", _move(14, 509, 495, turnover=_DELOITTE_TURNOVER), True
+        ),
+        _line(
+            "b",
+            "Deloitte South Asia",
+            _move(
+                1019,
+                1033,
+                14,
+                turnover={
+                    "opened": 94,
+                    "closed": 156,
+                    "net": -62,
+                    "opened_fresh": 89,
+                    "opened_found_late": 8,
+                },
+            ),
+            True,
+        ),
+    ]
+    both = server.call(
+        FakeSpace(trends=_trends(lines), companies_lookup=lookup),
+        "read_trends",
+        {
+            "companies": ["avature:deloitteus", "successfactors:x"],
+            "breakdown": "company",
+        },
+    )
+    assert (
+        '  "Deloitte US": 509 opened, 14 closed, net +495; m'
+        + _FOUND_LATE_SAID
+        + "; listed"
+    ) in both
+    assert '  "Deloitte South Asia": 94 opened, 156 closed, net -62; listed' in both
+
+
 def test_a_mostly_recounted_line_says_so():
     move = _move(100, 150, 5, percent=None, percent_withheld="mostly_recounted")
     text = server.call(
@@ -3334,6 +3403,33 @@ def test_a_profile_leads_with_postings_opened_and_closed_then_names_the_recount(
         "HeadStart, not hiring; read_trends with companies [greenhouse:stripe] breaks the "
         "change down." in text
     )
+
+
+def test_a_profiles_recent_hiring_says_when_its_opened_was_mostly_found_late():
+    """Round-5 critique R5-P1-1 (ADR-0369): the Deloitte roll-up read "612 postings opened"
+    with no caveat."""
+    trends = _profile_trends()
+    trends["reading"]["total"]["move"]["turnover"] = {
+        "opened": 612,
+        "closed": 172,
+        "opened_fresh": 210,
+        "opened_found_late": 418,
+    }
+    text = server.call(
+        _profile_space(trends=trends), "company_profile", {"company": "Stripe"}
+    )
+    assert (
+        "612 postings opened and 172 closed (counted since 2026-09-25). Most of the 612 "
+        "postings opened were found, not newly posted: of the postings HeadStart first saw in "
+        "these runs and still lists, 418 were posted over 14 days before HeadStart first saw "
+        "them and 210 within 14 days or with no date. So most of this opened is not hiring. "
+        "Tech openings counted 199 → 218"
+    ) in text
+    trends["reading"]["total"]["move"]["turnover"]["opened_fresh"] = 400
+    text = server.call(
+        _profile_space(trends=trends), "company_profile", {"company": "Stripe"}
+    )
+    assert "(counted since 2026-09-25). Tech openings counted" in text
 
 
 def test_a_profile_lists_categories_largest_first_with_their_turnover():

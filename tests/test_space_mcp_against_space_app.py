@@ -40,8 +40,9 @@ def companies_app(trends_app, monkeypatch, tmp_path):  # noqa: F811 — the impo
     monkeypatch.setattr(read_trends, "_now", lambda: _FIXTURE_NOW)
     monkeypatch.setattr(company_profile, "_now", lambda: _FIXTURE_NOW)
     history = space_tests._company_history(trends_app, monkeypatch, tmp_path)
-    company_boards, hot = trends_app._derive_from_history(history)
+    company_boards, first_seen, hot = trends_app._derive_from_history(history)
     monkeypatch.setattr(trends_app, "_COMPANY_BOARDS", company_boards)
+    monkeypatch.setattr(trends_app, "_FIRST_SEEN", first_seen)
     monkeypatch.setattr(trends_app, "_HOT", hot)
     return trends_app
 
