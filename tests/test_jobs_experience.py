@@ -1323,3 +1323,12 @@ def test_the_first_pass_still_reads_a_preferred_number_as_it_always_did():
 )
 def test_the_third_pass_reads_no_number_the_posting_says_it_would_like(text):
     assert from_description(text) is None
+
+
+def test_the_half_of_a_mixed_fraction_is_not_a_number_of_years():
+    assert (
+        from_description(
+            "commensurate with job duties to be performed; additional 3 1/2 years (42 mos.) exp. in the field"
+        )
+        is None
+    )

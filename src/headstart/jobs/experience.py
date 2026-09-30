@@ -279,7 +279,8 @@ _DIGITS_OR_WORDS = r"(\d{1,3}|t(?:hree|welve|wo|en)|f(?:our|ive)|s(?:ix|even)|e(
 
 # `_scan` reads a range's ceiling off the digits the pattern captured, so it needs the fraction the pattern consumed.
 _FRACTION = re.compile(r"[.,](\d{1,2})(?!\d)")
-_NOT_A_WHOLE_NUMBER = re.compile(r"\d$|\d[.,]$")
+# A mixed fraction is another tail: the 2 of "additional 3 1/2 years (42 mos.) exp" is half a year, not two.
+_NOT_A_WHOLE_NUMBER = re.compile(r"\d$|\d[.,/]$")
 
 
 def _years_from_token(token: str) -> int:
