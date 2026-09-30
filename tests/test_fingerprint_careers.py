@@ -644,6 +644,18 @@ def test_radancy_and_real_workdaysite_shapes():
     )
 
 
+def test_a_spire2grow_site_is_its_own_host():
+    # The Flutter shell's app title on jobs.myntra.com/home (2026-09-30); no vendor host is in
+    # the HTML, so the Board is the page's host.
+    page = '<meta name="apple-mobile-web-app-title" content="iexchange">'
+    hits = fp.scan(page, "jobs.myntra.com")
+    assert [hit[:2] for hit in hits] == [("spire2grow", "ats")]
+    assert (
+        fp.normalise_tenant("spire2grow", hits[0][2], "https://jobs.myntra.com/home")
+        == "jobs.myntra.com"
+    )
+
+
 def test_a_wp_job_openings_site_is_its_own_host():
     # The plugin's asset path on a real careers page (finac.io, 2026-09-28); the Board is the
     # page's host, whichever host served the stylesheet.

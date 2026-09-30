@@ -165,6 +165,11 @@ belong in README and CONTEXT.md, where `tests/test_board_counts.py` checks them.
   otherwise land as a second row. The probe reads such a spelling DEAD only once the site has a
   posting to link, so an empty pair can sit in the ledger as two live rows at 0. The vendor's demo
   sites (`demo.hirezoot.com`, `demo.wpjobopenings.com`) are in `EXCLUDED_BOARDS`.
+- **Spire2Grow lands one host per workspace.** A Board is a career-site host, and one workspace can
+  answer on several: Tata Communications' `TCLPROD-c62po` reads the same postings on four hosts.
+  Resolve each new host with `io.spire2grow.com/ies/v1/p/workspaceId?domain={host}`; a host whose
+  workspace is already held goes in `PARKED_BOARDS`, and the company's own domain is the one kept
+  (ADR-0362). A host that resolves only on `io-uat.spire2grow.com` is a vendor staging copy.
 - **SuccessFactors holds RMK sites only.** `p_successfactors` accepts any `<urlset>`, so a corporate
   site or a Radancy career front probes `live`, and the scraper reads it as 0 jobs or as page titles
   ("Working at TUI"). Before landing a host, confirm a `/job/` page from its sitemap (urlset, RSS or

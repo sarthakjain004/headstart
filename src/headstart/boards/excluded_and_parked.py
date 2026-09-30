@@ -1474,6 +1474,14 @@ PARKED_BOARDS: frozenset[str] = frozenset(
         # A front whose robots.txt is `Disallow: /` (2026-09-28): nothing on it may be read.
         # Un-park if its robots.txt opens the sitemap.
         "radancy:www.intel-jobs.com",
+        # Second hosts of Tata Communications' Spire2Grow workspace (ADR-0362): each resolves
+        # to `TCLPROD-c62po`, the workspace `spire2grow:jobs.tatacommunications.com` reads
+        # (2026-09-30, 210 postings on all four), so each would serve every posting again under
+        # its own job ids. The company's own host is the one kept. Un-park none of them while
+        # that host resolves.
+        "spire2grow:i-exchange-row.web.app",
+        "spire2grow:tcl-career.iexchange.ai",
+        "spire2grow:tcl-career.spire2grow.com",
         # Phenom skins over a Board we already hold (CLAUDE.md's Phenom landing rule): every
         # posting's `applyUrl` sits on that Board, so each would be served twice under two ATS
         # labels. Measured 2026-09-28 by walking each skin's whole listing: jobs.sutterhealth.org
