@@ -790,7 +790,9 @@ def _keep_static_for_the_boot(response):
 # 21: `places=1` on /facets, where every matching job is by country and city, and
 # /companies/locations reads every place's country, so it no longer sends `places_unread`
 # (ADR-0355).
-_AGENT_API_VERSION = 21
+# 22: /trends' tracked-roles first row adds up only the roles counted from its first run, and
+# /hot's `operator_unverified` reads a Board's own label, not its vendor's host (ADR-0366).
+_AGENT_API_VERSION = 22
 
 
 @app.after_request

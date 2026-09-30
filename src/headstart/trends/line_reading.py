@@ -275,7 +275,8 @@ class TrendReading:
     """Every figure the Trends tab shows for one question (ADR-0233 decision 1).
 
     ``total`` is the first row: every line added together, netted as a whole (None on a Company
-    breakdown, which has no first row). ``lines`` are the answer's series in its order, and
+    breakdown, which has no first row); in the tracked-roles drill only the roles counted from
+    its first run (ADR-0366). ``lines`` are the answer's series in its order, and
     ``other`` the lines past the first ``charted`` added together, the page's Other row.
     ``charted`` is LINES_CHARTED, or fewer where the answer lists fewer lines: a hidden family's
     line (the answer's ``unlisted_series``, always last) is never charted, so it is always in
@@ -560,8 +561,22 @@ class _Reader:
         self, series: list[_Line]
     ) -> tuple[_Line, int | None, _Exact | None]:
         """The first row: every line added together (under one pick, the company's own line),
-        the run its counting starts at, and its figures before rounding (None with no count)."""
+        the run its counting starts at, and its figures before rounding (None with no count).
+
+        Under the tracked-roles drill only the roles counted from the earliest run any is, so its
+        start and latest count the same roles (ADR-0366): a role the watch list began counting
+        partway added its whole stock to the latest alone, and Java and Python joining turned
+        a fall of 3,427 into a rise of 12,044. A breakdown's rows need no such rule: each starts
+        at the first row's run, at 0 where it was not counted yet, and a counting change sizes
+        what sorted in."""
         width = len(self.stamps)
+        if self.is_tracked_roles_view:
+            firsts = [
+                next((j for j, v in enumerate(line.points) if v is not None), None)
+                for line in series
+            ]
+            earliest = min((j for j in firsts if j is not None), default=None)
+            series = [line for line, j in zip(series, firsts) if j == earliest]
         parts = [line.turnover for line in series if line.turnover]
         line = _Line(
             _TOTAL,

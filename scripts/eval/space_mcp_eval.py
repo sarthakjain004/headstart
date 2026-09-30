@@ -1359,6 +1359,163 @@ def _states(answer: str, value: str) -> bool:
     )
 
 
+# --- employer_unflagged --------------------------------------------------------------------
+
+#: What an answer line says of a company it calls a possible agency, not its own employer.
+_CALLED_AGENCY = re.compile(
+    r"unverified|staffing|agenc(?:y|ies)|recruit(?:er|ing firm|ment firm)|not the employer",
+    re.IGNORECASE,
+)
+
+
+def verify_employer_unflagged(
+    expect: dict[str, Any], transcript: Transcript, space: Space
+) -> Verdict:
+    """Each of ``expect["companies"]`` is an employer, read from its own postings, and neither
+    the tools nor the answer may call it a possible agency: round 5's R5-P1-3 flagged Lockheed
+    Martin "operator unverified" off SAP's host label `hr` (ADR-0366). Fails a tool result line
+    naming one that carries the tag, an answer that leaves one unnamed, and an answer line
+    naming one that calls it unverified, a staffing firm, an agency or a recruiter."""
+    results = [
+        line
+        for call in transcript.calls
+        if call.succeeded
+        for line in (call.result or "").splitlines()
+    ]
+    answer = transcript.final_answer.splitlines()
+    missing = []
+    for company in expect["companies"]:
+        tagged = [
+            line
+            for line in results
+            if _found(line, company) and _found(line, "operator unverified")
+        ]
+        if tagged:
+            missing.append(f"a tool flagged {company}: {tagged[0].strip()[:160]!r}")
+        naming = [line for line in answer if _found(line, company)]
+        if not naming:
+            missing.append(f"the answer does not name {company}")
+        elif called := [line for line in naming if _CALLED_AGENCY.search(line)]:
+            missing.append(
+                f"the answer calls {company} a possible agency: {called[0]!r}"
+            )
+    return Verdict(not missing, "; ".join(missing) or "named, and flagged by no one")
+
+
+# --- watched_roles_total -------------------------------------------------------------------
+
+#: A figure an answer states, signed or not: "+593", "−3,427", "12,044".
+_FIGURE = re.compile(r"(?<![\w.])[+−-]?\d[\d,]*(?![\d.]\d)")
+
+
+def _figures(answer: str) -> list[int]:
+    return [
+        abs(int(re.sub(r"[+−,-]", "", said)))
+        for said in _FIGURE.findall(answer)
+        if re.sub(r"[+−,-]", "", said)
+    ]
+
+
+def _near(figure: int, want: int) -> bool:
+    return abs(figure - abs(want)) <= max(5, 0.02 * abs(want))
+
+
+def _watched_roles(expect: dict[str, Any], space: Space) -> list[dict[str, Any]]:
+    """The watched roles' lines of ``expect["category"]`` since ``expect["since"]``, read from
+    the Space's own reading, not from read_trends."""
+    payload = space.read(
+        SpaceRoute.TRENDS,
+        [
+            ("since", f"{expect['since']}T00:00:00+00:00"),
+            ("family", expect["category"]),
+            ("split", "roles"),
+        ],
+    )
+    return [line["move"] for line in (payload.get("reading") or {}).get("lines") or []]
+
+
+def verify_watched_roles_total(
+    expect: dict[str, Any], transcript: Transcript, space: Space
+) -> Verdict:
+    """One total for a category's watched roles, on one basis (round 5's R5-P1-4, ADR-0366).
+    A role counted only from partway through the window adds its whole stock to the end alone,
+    so the total that mixes bases is no change at all: p5e read +12,044 where the roles counted
+    from the start moved +593 and every role's own change summed to −3,427. The answer passes
+    when it states either like-for-like figure and not the mixed one."""
+    moves = _watched_roles(expect, space)
+    if not moves:
+        return Verdict(False, "the Space read no watched roles for this category")
+    longest = max(move["span_days"] for move in moves)
+    whole = [move for move in moves if move["span_days"] == longest]
+    from_start = sum(move["latest"] - move["start"] for move in whole)
+    own_changes = sum(move["latest"] - move["start"] for move in moves)
+    mixed = sum(move["latest"] for move in moves) - sum(m["start"] for m in whole)
+    said = _figures(transcript.final_answer)
+    like = [
+        want for want in (from_start, own_changes) if any(_near(f, want) for f in said)
+    ]
+    wrong = any(_near(f, mixed) for f in said) and not any(
+        _near(abs(mixed), want) for want in (from_start, own_changes)
+    )
+    detail = (
+        f"roles counted from the start {from_start:+,}, each role's own change summed "
+        f"{own_changes:+,}, the mixed-basis total {mixed:+,}"
+    )
+    if wrong:
+        return Verdict(False, f"the answer states the mixed-basis total; {detail}")
+    if not like:
+        return Verdict(False, f"the answer states no like-for-like total; {detail}")
+    return Verdict(True, detail)
+
+
+# --- retiring a task whose fixture is gone -------------------------------------------------
+
+
+def _jobs_gone(ids: list[str], space: Space) -> str | None:
+    missing = space.read(SpaceRoute.JOB, [("id", i) for i in ids]).get("missing") or []
+    return f"postings {', '.join(missing)} are no longer served" if missing else None
+
+
+def _not_on_hot(fact: dict[str, Any], space: Space) -> str | None:
+    hot = space.read(SpaceRoute.HOT)
+    hidden = set(hot.get("hidden_by_default") or ())
+    rows = [
+        row
+        for row in (hot.get("lenses") or {}).get(fact["lens"]) or []
+        if row.get("operator") not in hidden
+    ][: fact["within"]]
+    if any(_found(str(row.get("company") or ""), fact["company"]) for row in rows):
+        return None
+    return (
+        f"{fact['company']} is not in the first {fact['within']} rows of {fact['lens']}"
+    )
+
+
+def _no_role_joined(fact: dict[str, Any], space: Space) -> str | None:
+    moves = _watched_roles(fact, space)
+    if len({move["span_days"] for move in moves}) > 1:
+        return None
+    return f"no watched role of {fact['category']} joined partway since {fact['since']}"
+
+
+#: A task's ``requires``: the live facts its premise rests on, each read before the run.
+_REQUIREMENTS: dict[str, Callable[[Any, Space], str | None]] = {
+    "jobs": _jobs_gone,
+    "hot_row": _not_on_hot,
+    "roles_joined_partway": _no_role_joined,
+}
+
+
+def retired(task: dict[str, Any], space: Space) -> str | None:
+    """Why ``task`` cannot be judged today, or None: a fact its premise rests on (``requires``)
+    is gone from the live data, as t32's Eversource pair closed (round-5 critique R5-P2-9,
+    ADR-0366). Its run is not made, and is counted apart from the judged ones, never failed."""
+    for kind, fact in (task.get("requires") or {}).items():
+        if reason := _REQUIREMENTS[kind](fact, space):
+            return reason
+    return None
+
+
 # --- any_of --------------------------------------------------------------------------------
 
 
@@ -1411,6 +1568,8 @@ VERIFIERS: dict[str, Verifier] = {
     "blocking_named": verify_blocking_named,
     "mentions": verify_mentions,
     "country_split": verify_country_split,
+    "employer_unflagged": verify_employer_unflagged,
+    "watched_roles_total": verify_watched_roles_total,
     "any_of": verify_any_of,
     "all_of": verify_all_of,
 }
@@ -1585,7 +1744,26 @@ def run_task(
 ) -> dict[str, Any]:
     """Run one task, saving its transcript as it streams, and return its result record. A run
     whose server was not connected at its start is an error, not judged: the model had no
-    tools. ``repeat`` numbers the pass this run belongs to."""
+    tools. ``repeat`` numbers the pass this run belongs to. A task whose fixture is gone
+    (:func:`retired`) is not run: its record says why, as ``retired``."""
+    unrun = {
+        "id": task["id"],
+        "repeat": repeat,
+        "verifier": task["verifier"],
+        "tool_calls": 0,
+        "largest_tool_result_chars": 0,
+        "wall_s": 0.0,
+    }
+    try:
+        gone = retired(task, space()) if task.get("requires") else None
+    except (SpaceError, ToolFailure) as exc:
+        return {
+            **unrun,
+            "verdict": "error",
+            "detail": f"its fixture went unread: {exc}",
+        }
+    if gone:
+        return {**unrun, "verdict": "retired", "detail": gone}
     stem = f"{prefix.name}_{task['id']}_r{repeat}"
     transcript_path = prefix.with_name(f"{stem}_transcript.jsonl")
     stderr_path = prefix.with_name(f"{stem}_stderr.log")
@@ -1651,9 +1829,11 @@ def summary(records: list[dict[str, Any]]) -> list[str]:
     The bars score only the runs that were judged. A run not judged (its server was not
     connected, or its verifier could not read the Space) says nothing about the model, so it is
     named on a line of its own, first, and that line is missed while any is left. With nothing
-    judged, no bar is met."""
+    judged, no bar is met. A retired task (its fixture is gone, ADR-0366) is neither: it is
+    named on a line that holds no bar, saying to replace it."""
     unjudged = [r["id"] for r in records if r["verdict"] == "error"]
-    judged = [r for r in records if r["verdict"] != "error"]
+    gone = [r["id"] for r in records if r["verdict"] == "retired"]
+    judged = [r for r in records if r["verdict"] not in ("error", "retired")]
     n = len(judged)
     correct = sum(r["verdict"] == "pass" for r in judged)
     median = statistics.median(r["tool_calls"] for r in judged) if judged else 0
@@ -1665,7 +1845,11 @@ def summary(records: list[dict[str, Any]]) -> list[str]:
         return "met" if met and judged else "MISSED"
 
     tokens = f"{LARGE_RESULT_CHARS:,}, about 10,000 tokens"
-    return [
+    retired_line = (
+        f"retired: {len(gone)} of {len(records)} ({', '.join(gone)}), their fixture gone "
+        "from the live data: replace them"
+    )
+    return ([retired_line] if gone else []) + [
         f"not judged: {len(unjudged)} of {len(records)}"
         + (f" ({', '.join(unjudged)})" if unjudged else "")
         + f" — {'MISSED' if unjudged else 'met'}",
@@ -1696,7 +1880,8 @@ def tally(passes: list[list[dict[str, Any]]]) -> list[str]:
         for record in records:
             by_task.setdefault(record["id"], []).append(record["verdict"])
     return [
-        f"{task}: {verdicts.count('pass')} of {len(verdicts) - verdicts.count('error')} "
+        f"{task}: {verdicts.count('pass')} of "
+        f"{len(verdicts) - verdicts.count('error') - verdicts.count('retired')} "
         f"judged passed ({', '.join(verdicts)})"
         for task, verdicts in by_task.items()
     ]

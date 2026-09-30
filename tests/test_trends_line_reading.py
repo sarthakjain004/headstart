@@ -1037,3 +1037,22 @@ def test_comparable_coverage_takes_its_cohorts_removal_out_and_not_a_later_board
     assert removed == {
         f"removed@{at}/{removal_state.MICRO}": -removal_state.REMOVED_TECH
     }
+
+
+def test_a_tracked_role_counted_partway_is_left_out_of_the_first_row() -> None:
+    """ADR-0366: a watched role the list began counting inside the window adds its whole stock
+    to the latest alone, so the first row counts only the roles counted from its first run.
+    Java and Python joining turned Software Engineering's watched roles from -3,427 to +12,044."""
+    answer = _golden("tracked_role_in_a_category")["answer_input"]
+    llm = answer["series"][0]
+    answer["series"].append(
+        {**llm, "name": "watch:java", "label": "Java", "points": [None, 900]}
+    )
+    reading = read_answer(answer).to_json()
+    assert (reading["total"]["move"]["start"], reading["total"]["move"]["latest"]) == (
+        llm["points"][0],
+        llm["points"][-1],
+    )
+    java = next(line for line in reading["lines"] if line["name"] == "watch:java")
+    assert java["move"]["latest"] == 900
+    assert reading["violations"] == []
