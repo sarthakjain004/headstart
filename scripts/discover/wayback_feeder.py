@@ -446,6 +446,8 @@ ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
     # `hire.trakstar.com`'s 20 — the larger half of this provider's archive. Alias, so
     # `_CANONICAL_HOST` rewrites it and the two spellings collapse.
     "trakstar": _with_style("sub", "hire.trakstar.com", "recruiterbox.com"),
+    # One host: every career page is `{label}.turbohire.co`, the label `turbohire.py` keys on.
+    "turbohire": _with_style("sub", "turbohire.co"),
     # Two shapes at once: 15,238 ledger rows are `apply.workable.com/{slug}`, 1,623 are
     # `{slug}.workable.com`. Sweeping only the first leaves those 1,623 unreachable. The `sub`
     # half has a dense apex that sorts ahead of the slugs in urlkey order, so its page 1 is all
@@ -482,7 +484,7 @@ ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
 #   greythr, qandle, beehive, taleo, HirePro, iSmartRecruit, Recruit CRM, Ceipal — verified dead
 #             ends (CLAUDE.md's build list); the retired PowerShell feeder still swept
 #             qandle and beehive.
-# An ATS with no scraper yet (turbohire, jobsoid, …) can still be swept ad hoc:
+# An ATS with no scraper yet (jobsoid, …) can still be swept ad hoc:
 # `--domain HOST --style sub` bypasses this table.
 
 

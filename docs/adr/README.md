@@ -326,6 +326,7 @@ supersedes it and note the supersession in both.
 | [0358](0358-a-sitemap-that-states-no-title-is-read-from-its-portals-search-pages.md) | A sitemap that states no posting's title is read from its portals' search pages (amends 0245) | 2026-09-29 |
 | [0359](0359-sponsorship-precision-is-quoted-from-a-fresh-strict-draw-and-a-hedge-holds-back-a-firm-offer.md) | Sponsorship precision is quoted from a fresh strict draw, and a hedge holds back a firm offer (amends 0353) | 2026-09-30 |
 | [0362](0362-a-spire2grow-board-is-its-career-host-and-lands-enabled.md) | A Spire2Grow Board is its career-site host, and the ATS lands enabled | 2026-09-30 |
+| [0363](0363-a-turbohire-board-is-its-career-page-label-resolved-to-its-organization.md) | A TurboHire Board is its career-page label, resolved to its organization, and lands active | 2026-09-30 |
 | [0364](0364-a-mynexthire-board-is-its-tenant-label-read-in-one-post-and-lands-enabled.md) | A MyNextHire Board is its tenant label, read in one POST, and lands enabled | 2026-09-30 |
 | [0366](0366-an-agency-name-is-read-off-a-boards-own-label-and-a-watched-roles-total-counts-one-basis.md) | An agency name is read off a Board's own label, and a watched-roles total counts one basis (amends 0335, 0233) | 2026-09-30 |
 | [0367](0367-answers-name-a-may-offers-kind-a-loose-match-a-small-sample-a-passed-end-date-and-a-near-id.md) | Answers name a may-offer's kind, a loose match, a small sample, a passed end date and a near id | 2026-09-30 |

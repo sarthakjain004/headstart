@@ -483,6 +483,10 @@ _VENDOR_ALIASES: dict[str, frozenset[str]] = {
     # like phenom's this entry is reached by a real Board, not only by a failed render: that one
     # tenant keeps its slug, which reads the same.
     "pyjamahr": frozenset({"pyjamahr"}),
+    # Read by `from_field` off the organization record's `OrgName` (65 of 65 name the employer,
+    # 2026-09-30). The vendor's own hiring org states "TurboHire Technologies Private Limited
+    # (Official)", which this does not refuse; the bare brand would be a placeholder.
+    "turbohire": frozenset({"turbohire"}),
     "personio": frozenset({"personio"}),
     # No matched-wrapper case reached this in the 150-Board sample — "Oracle Taleo" and
     # "Taleo | Mercedes-Benz Group AG" are both already refused for being unwrapped or not

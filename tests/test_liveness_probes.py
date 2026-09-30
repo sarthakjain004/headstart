@@ -1032,6 +1032,83 @@ def test_spire2grow_inconclusive_answers_stay_unknown(monkeypatch):
     assert cl.p_spire2grow("jobs.acme.com", "") == (cl.UNKNOWN, None)
 
 
+# --- turbohire: every label serves the SPA, so the organization lookup settles dead -------------
+
+
+def _turbohire_stubs(
+    monkeypatch, *, token=200, org=200, listing=(200, None), calls=None
+):
+    """`_get` for the token and organization calls, `_post` for the listing, as live 2026-09-30."""
+    org_body = (
+        b'{"OrgID": "4d757ba0-3d57-448a-b82c-238ed87ac90f", "OrgName": "Flipkart"}'
+    )
+
+    def _get(url, headers=None):
+        if calls is not None:
+            calls.append((url, dict(headers or {})))
+        if url.endswith("/api/token/noauth"):
+            return token, b'{"access_token": "tok-1", "expires_in": 3600}'
+        return org, (org_body if org == 200 else b"")
+
+    def _post(url, body, headers):
+        if calls is not None:
+            calls.append((url, dict(headers)))
+        status, payload = listing
+        return status, payload
+
+    monkeypatch.setattr(cl, "_get", _get)
+    monkeypatch.setattr(cl, "_post", _post)
+
+
+def test_turbohire_a_live_board_counts_its_listing(monkeypatch):
+    calls: list = []
+    rows = {"Total": 2, "Result": [{"JobId": "a"}, {"JobId": "b"}]}
+    _turbohire_stubs(monkeypatch, listing=(200, rows), calls=calls)
+    assert cl.p_turbohire("flipkart", "https://flipkart.turbohire.co") == (cl.LIVE, 2)
+    (_, token_h), (org_url, org_h), (list_url, list_h) = calls
+    assert token_h["Referer"] == "https://flipkart.turbohire.co/"
+    assert "Authorization" not in token_h
+    assert org_url.endswith("/api/publicorganizations?accountName=flipkart")
+    assert org_h["Authorization"] == "Bearer tok-1"
+    assert list_url.endswith(
+        "/api/careerpagev2/filteredjobs?orgId=4d757ba0-3d57-448a-b82c-238ed87ac90f&pageType=0"
+    )
+    assert list_h["Authorization"] == "Bearer tok-1"
+
+
+def test_turbohire_an_organization_with_nothing_open_is_a_live_empty_board(monkeypatch):
+    """olacareers, live 2026-09-30: `{"Total":0,"Result":[]}`."""
+    _turbohire_stubs(monkeypatch, listing=(200, {"Total": 0, "Result": []}))
+    assert cl.p_turbohire("olacareers", "https://olacareers.turbohire.co") == (
+        cl.LIVE,
+        0,
+    )
+
+
+def test_turbohire_a_label_no_organization_holds_is_dead(monkeypatch):
+    """The organization lookup's 404 with an empty body (39 of 104 pool labels)."""
+    _turbohire_stubs(monkeypatch, org=404)
+    assert cl.p_turbohire("cleartrip", "https://cleartrip.turbohire.co") == (
+        cl.DEAD,
+        None,
+    )
+
+
+def test_turbohire_inconclusive_answers_stay_unknown(monkeypatch):
+    _turbohire_stubs(monkeypatch, token=403)
+    assert cl.p_turbohire("acme", "") == (cl.UNKNOWN, None)
+    _turbohire_stubs(monkeypatch, org=503)
+    assert cl.p_turbohire("acme", "") == (cl.UNKNOWN, None)
+    _turbohire_stubs(monkeypatch, listing=(500, None))
+    assert cl.p_turbohire("acme", "") == (cl.UNKNOWN, None)
+    # One fixed API host: a failed lookup is the local resolver, never a verdict.
+    _turbohire_stubs(monkeypatch, token="dns")
+    assert cl.p_turbohire("acme", "") == (cl.UNKNOWN, None)
+    # A 200 that is not the listing envelope is not a count of zero.
+    _turbohire_stubs(monkeypatch, listing=(200, {"Message": "An error has occurred."}))
+    assert cl.p_turbohire("acme", "") == (cl.UNKNOWN, None)
+
+
 # --- adp_recruiting: the site record answers first, and its token reads the count --------------
 
 _ADP_RM = json.loads(

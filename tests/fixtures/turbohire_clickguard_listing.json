@@ -1,0 +1,144 @@
+{
+ "Total": 6,
+ "Result": [
+  {
+   "JobId": "5dc6ae04-d1df-4f1d-af2a-dacca1126c7b",
+   "JobIdObfuscated": "4zkN3X3U_JbJv9MIUjGAIyS7SpPChs8byDSuOpqD0MRmzrRpa%2FLkG3PA%2Ft7F6FMe",
+   "JobCode": "CI-73498",
+   "JobTitle": "GTM Engineer - Demand Generation",
+   "Department": "Leadership and Management",
+   "UpdatedDate": "2026-09-24T17:34:07.9833333",
+   "PublishedDate": "2026-08-12T18:33:58.0104087Z",
+   "Location": "[{\"Address\":\"Remote Job\",\"PlaceId\":null},{\"Address\":\"South America\",\"PlaceId\":\"ChIJtTRdNRw0CZQRK-PGyc8M1Gk\"},{\"Address\":\"America\",\"PlaceId\":\"ChIJCzYy5IS16lQRQrfeQ5K5Oxw\"},{\"Address\":\"Central America\",\"PlaceId\":\"ChIJEQho98BYC48RcCULBsfgrI0\"},{\"Address\":\"Europe\",\"PlaceId\":\"ChIJhdqtz4aI7UYRefD8s-aZ73I\"},{\"Address\":\"United States\",\"PlaceId\":\"ChIJCzYy5IS16lQRQrfeQ5K5Oxw\"}]",
+   "Type": "UNSPECIFIED",
+   "CTCInfo": {
+    "Type": "UNSPECIFIED",
+    "Negotiable": false,
+    "IsHidden": false
+   },
+   "ShowClientName": true,
+   "ClientName": "ClickGUARD Inc",
+   "Experience": {
+    "MinExp": 5,
+    "MaxExp": 10
+   },
+   "JobDescV2": "<p>We are seeking a high-leverage, systems-driven GTM Engineer (Demand Generation) to own the top of the funnel for both of our motions: direct outbound to advertisers and partner recruitment outbound to PPC agencies for our referral program. One engine, two scored universes, two message tracks. This is the classic GTM performance high-velocity, &quot;AI-First&quot; performance channel role. You will serve as the architect and operator of our entire demand engine: the scored account universe, th"
+  },
+  {
+   "JobId": "246dd96f-853c-400d-8a99-1453da04cfca",
+   "JobIdObfuscated": "YmeSg8uUfqOIKL9lhicuWZU2v3ffGv03EuL66YkECGNnycH9Iuo_m1yRnGQ5SwjS",
+   "JobCode": "CI-41665",
+   "JobTitle": "Head of Growth & Pipeline",
+   "Department": "Marketing",
+   "UpdatedDate": "2026-09-21T19:00:21.77",
+   "PublishedDate": "2026-09-03T22:51:08.3485442Z",
+   "Location": "[{\"Address\":\"Remote Job\",\"PlaceId\":null}]",
+   "Type": "UNSPECIFIED",
+   "CTCInfo": {
+    "Type": "UNSPECIFIED",
+    "Negotiable": false,
+    "IsHidden": false
+   },
+   "ShowClientName": true,
+   "ClientName": "ClickGUARD Inc",
+   "Experience": {
+    "MinExp": 3,
+    "MaxExp": 6
+   },
+   "JobDescV2": "<h2><span style=\"font-family: Arial, sans-serif\"><span style=\"font-size: 17pt\"><span style=\"color:rgba(0, 0, 0, 1);\">About the Job</span></span></span></h2><p><span style=\"font-family: Arial, sans-serif\"><span style=\"font-size: 11pt\"><span style=\"color:rgba(0, 0, 0, 1);\">Our GTM thesis is defined: who we sell to, the motions we run, and the economics behind them. Your job is to turn that strategy into a measurable pipeline.</span></span></span></p><p><span style=\"font-family: Arial, sans-serif\">"
+  },
+  {
+   "JobId": "b304bd08-1856-429b-8f56-0f21816b33b3",
+   "JobIdObfuscated": "pS7HaG3LctGXCzieT4lsffVuAEKpeZcahuyFtU4Av1AtxGofktxjS7EJVLtLLYe_",
+   "JobCode": "CI-60487",
+   "JobTitle": "Head of Marketing",
+   "Department": "Marketing",
+   "UpdatedDate": "2026-09-10T18:11:53.0533333",
+   "PublishedDate": "2026-08-03T18:33:08.6213074Z",
+   "ExpiryDates": {
+    "CAREERPAGE": "2026-11-29T04:59:00.286Z"
+   },
+   "Location": "[{\"Address\":\"United States\",\"PlaceId\":\"ChIJCzYy5IS16lQRQrfeQ5K5Oxw\"},{\"Address\":\"Europe\",\"PlaceId\":\"ChIJhdqtz4aI7UYRefD8s-aZ73I\"},{\"Address\":\"Africa\",\"PlaceId\":\"ChIJ1fWMlApsoBARs_CQnslwghA\"},{\"Address\":\"South America\",\"PlaceId\":\"ChIJtTRdNRw0CZQRK-PGyc8M1Gk\"},{\"Address\":\"Remote Job\",\"PlaceId\":null}]",
+   "Type": "UNSPECIFIED",
+   "CTCInfo": {
+    "Type": "UNSPECIFIED",
+    "Negotiable": false,
+    "IsHidden": false
+   },
+   "ShowClientName": true,
+   "ClientName": "ClickGUARD Inc",
+   "Experience": {
+    "MinExp": 5,
+    "MaxExp": 10
+   },
+   "JobDescV2": "<h2>About the Job</h2><p>Our GTM thesis is defined: who we sell to, the three motions we run, and the economics behind them. You own turning that into a working machine. You&#39;ll set channel strategy, build the quarterly plan, allocate budget, direct the specialists, and run the operating rhythm. You&#39;ll also be the person who tells the founder when the thesis needs to change and brings the evidence. </p><p>The leadership team makes final calls on positioning, pricing, and ICP; everything e"
+  },
+  {
+   "JobId": "daf144b8-9d31-4c31-b804-99419c05aed6",
+   "JobIdObfuscated": "DAhu7TwOjdrD9cd8Sbx1HkhnrQTOkywAd2amYTe8mV67wfqb7G1h%2FcDDpMjDLr_l",
+   "JobCode": "CI-16782",
+   "JobTitle": "Head of Sales & Customer Success",
+   "Department": "Sales",
+   "UpdatedDate": "2026-07-27T18:58:39.8533333",
+   "PublishedDate": "2026-04-14T14:19:23.5523436Z",
+   "Location": "[{\"Address\":\"Remote Job\",\"PlaceId\":null},{\"Address\":\"Latin America\",\"PlaceId\":\"ChIJNfUKtP-e-ZARnLalAr89Z9I\"},{\"Address\":\"Colombia\",\"PlaceId\":\"ChIJo5QVrjqkFY4RQKPy7wSaDZo\"},{\"Address\":\"Argentina\",\"PlaceId\":\"ChIJZ8b99fXKvJURqA_wKpl3Lz0\"},{\"Address\":\"Brazil\",\"PlaceId\":\"ChIJzyjM68dZnAARYz4p8gYVWik\"},{\"Address\":\"Mexico\",\"PlaceId\":\"ChIJU1NoiDs6BIQREZgJa760ZO0\"},{\"Address\":\"Portugal\",\"PlaceId\":\"ChIJ1SZCvy0kMgsRQfBOHAlLuCo\"},{\"Address\":\"Spain\",\"PlaceId\":\"ChIJi7xhMnjjQgwR7KNoB5Qs7KY\"},{\"Address\":\"South America\",\"PlaceId\":\"ChIJtTRdNRw0CZQRK-PGyc8M1Gk\"}]",
+   "Type": "UNSPECIFIED",
+   "CTCInfo": {
+    "Type": "UNSPECIFIED",
+    "Negotiable": false,
+    "IsHidden": false
+   },
+   "ShowClientName": true,
+   "ClientName": "ClickGUARD Inc",
+   "Experience": {
+    "MinExp": 5,
+    "MaxExp": 8
+   },
+   "JobDescV2": "<h2><span style=\"font-family: Arial, sans-serif\"><span style=\"font-size: 16pt\"><span style=\"color:rgba(14, 14, 14, 1);\">Role Overview</span></span></span></h2><p style=\"text-align: justify\"><span style=\"font-family: Arial, sans-serif\"><span style=\"font-size: 10pt\"><span style=\"color:rgba(14, 14, 14, 1);\">The </span></span></span><span style=\"font-family: Arial, sans-serif\"><span style=\"font-size: 10pt\"><span style=\"color:rgba(14, 14, 14, 1);\">Head of Sales &amp; Customer Success</span></span></s"
+  },
+  {
+   "JobId": "f172ad9b-9b28-41b1-a7da-e7923dfb07f6",
+   "JobIdObfuscated": "hkKvUZdiXkZDL2XCfTkXy5Ytthscb_yLN3LquL%2FO%2FNwj%2FdKNXvzwrtNfmL7qOs7o",
+   "JobCode": "CI-50688",
+   "JobTitle": "Performance & Growth Manager",
+   "Department": "Marketing",
+   "UpdatedDate": "2026-07-29T16:06:42.8233333",
+   "PublishedDate": "2026-02-02T23:41:26.4649928Z",
+   "Location": "[{\"Address\":\"Remote Job\",\"PlaceId\":null},{\"Address\":\"Latin America\",\"PlaceId\":\"ChIJNfUKtP-e-ZARnLalAr89Z9I\"},{\"Address\":\"Central America\",\"PlaceId\":\"ChIJEQho98BYC48RcCULBsfgrI0\"},{\"Address\":\"Portugal\",\"PlaceId\":\"ChIJ1SZCvy0kMgsRQfBOHAlLuCo\"},{\"Address\":\"Spain\",\"PlaceId\":\"ChIJi7xhMnjjQgwR7KNoB5Qs7KY\"},{\"Address\":\"Brazil\",\"PlaceId\":\"ChIJzyjM68dZnAARYz4p8gYVWik\"},{\"Address\":\"Colombia\",\"PlaceId\":\"ChIJo5QVrjqkFY4RQKPy7wSaDZo\"}]",
+   "Type": "UNSPECIFIED",
+   "CTCInfo": {
+    "Type": "UNSPECIFIED",
+    "Negotiable": false,
+    "IsHidden": false
+   },
+   "ShowClientName": true,
+   "ClientName": "ClickGUARD Inc",
+   "Experience": {
+    "MinExp": 4
+   },
+   "JobDescV2": "<h2>About the Job<br /><span style=\"font-family: Montserrat, sans-serif\"><span style=\"font-size: 9.5pt\"><span style=\"color:rgba(14, 14, 14, 1);\">We’re hiring a hands-on Performance &amp; Growth Manager.</span></span></span></h2><p><span style=\"font-family: Montserrat, sans-serif\"><span style=\"font-size: 9.5pt\"><span style=\"color:rgba(14, 14, 14, 1);\">This is not a traditional PPC role.</span></span></span></p><p><span style=\"font-family: Montserrat, sans-serif\"><span style=\"font-size: 9.5pt\"><sp"
+  },
+  {
+   "JobId": "9ec6f99b-1fee-48b9-81f7-6acddd3474e8",
+   "JobIdObfuscated": "yhroLJ1O7keAnYTYIpZDScj24J861EbPG9ofg7e2EjKwZVah%2F1ZgT7MyzTrp3SUH",
+   "JobCode": "CI-64228",
+   "JobTitle": "Sales Development Representative (SDR)",
+   "Department": "Sales",
+   "UpdatedDate": "2026-03-06T05:00:03.77",
+   "PublishedDate": "2026-01-31T03:10:25.7868795Z",
+   "Location": "[{\"Address\":\"Remote Job\",\"PlaceId\":null},{\"Address\":\"Mexico\",\"PlaceId\":\"ChIJU1NoiDs6BIQREZgJa760ZO0\"},{\"Address\":\"Colombia\",\"PlaceId\":\"ChIJo5QVrjqkFY4RQKPy7wSaDZo\"},{\"Address\":\"Brazil\",\"PlaceId\":\"ChIJzyjM68dZnAARYz4p8gYVWik\"},{\"Address\":\"Latin America\",\"PlaceId\":\"ChIJNfUKtP-e-ZARnLalAr89Z9I\"}]",
+   "Type": "UNSPECIFIED",
+   "CTCInfo": {
+    "Type": "UNSPECIFIED",
+    "Negotiable": false,
+    "IsHidden": false
+   },
+   "ShowClientName": true,
+   "ClientName": "ClickGUARD Inc",
+   "Experience": {
+    "MinExp": 2
+   },
+   "JobDescV2": "<p><span style=\"font-family: Arial\"><strong>Role Overview</strong></span></p><p><span style=\"font-family: Arial\">This role is for a true go-getter who likes to move fast, own outcomes, and see their work turn directly into results. If high-volume outreach, tight follow-through, and clear scoreboards motivate you, you’ll feel right at home at ClickGuard.</span></p><p><span style=\"font-family: Arial\"></span></p><p><span style=\"font-family: Arial\">The SDR drives a qualified pipeline through consist"
+  }
+ ]
+}

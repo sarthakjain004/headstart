@@ -170,6 +170,12 @@ belong in README and CONTEXT.md, where `tests/test_board_counts.py` checks them.
   Resolve each new host with `io.spire2grow.com/ies/v1/p/workspaceId?domain={host}`; a host whose
   workspace is already held goes in `PARKED_BOARDS`, and the company's own domain is the one kept
   (ADR-0362). A host that resolves only on `io-uat.spire2grow.com` is a vendor staging copy.
+- **TurboHire parks an organization whose postings a held Board already lists.** A company can
+  run TurboHire beside another ATS and mirror it: Cipla's 18 TurboHire titles were 17 on its held
+  SuccessFactors Board, so `turbohire:cipla` and `turbohire:ciplasouthafrica` are in
+  `PARKED_BOARDS` (ADR-0363). Before landing a new label, compare its titles with the employer's
+  Boards on other ledgers. A company with no label of its own may still be served by a parent's
+  (Cleartrip's careers link to `flipkart`).
 - **SuccessFactors holds RMK sites only.** `p_successfactors` accepts any `<urlset>`, so a corporate
   site or a Radancy career front probes `live`, and the scraper reads it as 0 jobs or as page titles
   ("Working at TUI"). Before landing a host, confirm a `/job/` page from its sitemap (urlset, RSS or
@@ -193,8 +199,6 @@ Evidence for the first two is in `docs/discovery/2026-09-23_indeed-sweep-landing
   the landing rule above. Open: reading `/search-jobs/results` on capped fronts whose robots.txt
   allows it (ADR-0246 §Alternatives), and revisiting the no-gate decision from each run's **Front
   duplication** lines.
-- **TurboHire** — token flow: `/api/token/noauth` (needs Referer), then `POST
-  /api/careerpagev2/filteredjobs?orgId={GUID}` (verified live 2026-07-21; Cleartrip, Flipkart, Ola).
 - **Jobsoid** (`{slug}.jobsoid.com/api/v1/jobs`, low yield) — opportunistic.
 - Single-company unlocks, a manual slug each rather than a scraper: Skillate
   (`{slug}.skillate.com` — Zetwerk, Ola, Pristyn Care), Kula (`careers.kula.ai/{slug}` —

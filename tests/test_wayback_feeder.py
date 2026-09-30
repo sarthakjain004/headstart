@@ -365,7 +365,7 @@ def test_hosts_for_falls_back_to_the_table_and_can_be_overridden():
     ]
     assert wf.hosts_for("workable", "workable.com") == [("workable.com", "sub")]
     # an ATS with no scraper yet is still sweepable by hand
-    assert wf.hosts_for("turbohire", "turbohire.co", "sub") == [("turbohire.co", "sub")]
+    assert wf.hosts_for("jobsoid", "jobsoid.com", "sub") == [("jobsoid.com", "sub")]
 
 
 @pytest.mark.parametrize(
