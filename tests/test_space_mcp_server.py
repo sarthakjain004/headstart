@@ -896,6 +896,24 @@ def test_max_years_says_it_keeps_jobs_that_state_no_experience_and_marks_them():
     assert "experience not stated" not in unfiltered
 
 
+def test_a_new_users_search_tags_a_senior_title_but_still_lists_it():
+    """Round-4 review SP3 (ADR-0359, under ADR-0079): a senior role served at 1 year may owe it
+    to a side clause. Disclosure only: every row stays."""
+    rows = [
+        _job(1, title="Senior Backend Engineer", min_years=1),
+        _job(2, title="Associate Engineering Manager", min_years=0),
+        _job(3, title="Backend Engineer", min_years=0),
+        _job(4, title="Staff Engineer", min_years=1),
+    ]
+    text = server.call(_search_space(rows), "search_jobs", {"max_years": 1})
+    assert text.count(search_jobs.SENIOR_TITLE_TAG) == 2
+    assert all(f'"{row["title"]}"' in text for row in rows)
+    for years in (3, None):
+        arguments = {} if years is None else {"max_years": years}
+        wider = server.call(_search_space(rows), "search_jobs", arguments)
+        assert search_jobs.SENIOR_TITLE_TAG not in wider
+
+
 def test_the_salary_bounds_say_they_are_an_overlap_across_converted_currencies():
     text = server.call(
         _search_space([_job(1)]),

@@ -1888,7 +1888,8 @@ def test_the_recording_covers_every_task_whose_verifier_reads_tool_results(ev):
     def reads_results(task):
         checks = (task.get("expect") or {}).get("checks") or [task]
         return any(
-            c["verifier"] in ("blocking_named", "title_keyword_rows", "operator_mix")
+            c["verifier"]
+            in ("blocking_named", "title_keyword_rows", "operator_mix", "senior_caveat")
             or {"tool_results_all", "answer_carries", "answer_any"}
             & set(c.get("expect") or {})
             for c in checks
@@ -1905,19 +1906,71 @@ def test_hot_top_fails_an_answer_that_lists_a_found_late_row_above_an_unflagged_
     answer that presents it higher fails even when it says it was found late."""
     space = _hot_space()
     rows = space.answers[SpaceRoute.HOT]["lenses"]["expansion"]
-    rows[0].update(company="Starbucks", opened=50, opened_fresh=22, opened_found_late=28)
+    rows[0].update(
+        company="Starbucks", opened=50, opened_fresh=22, opened_found_late=28
+    )
     expect = {"lens": "expansion", "top": 6}
     rest = "Borealis Data\n3. Cobalt Payments\n4. Dune Analytics\n5. Ember Health\n6. Fjord"
     above = ev.verify_hot_top(
         expect,
-        _transcript(ev, answer=f"1. Starbucks (opened mostly found late)\n2. {rest} Security"),
+        _transcript(
+            ev, answer=f"1. Starbucks (opened mostly found late)\n2. {rest} Security"
+        ),
         space,
     )
     below = ev.verify_hot_top(
         expect,
-        _transcript(ev, answer=f"1. {rest} Security\n6. Starbucks (opened mostly found late)"),
+        _transcript(
+            ev, answer=f"1. {rest} Security\n6. Starbucks (opened mostly found late)"
+        ),
         space,
     )
     assert not above.passed
     assert "names Starbucks above a row hiring_now lists before it" in above.detail
     assert below.passed, below.detail
+
+
+# --- senior_caveat -------------------------------------------------------------------------
+
+_NEW_GRAD_PAGE = (
+    "12 jobs match these filters; the query only ranks them and does not narrow this count. "
+    "Showing 1–3.\n"
+    ' 1. 0.71 "Senior Backend Engineer" · "Acme" · "Austin, TX" · 1+ yrs · senior title: its '
+    "stated minimum may be a side clause\n"
+    '    id "greenhouse:acme:1" · "https://example.com/1"\n'
+    ' 2. 0.70 "Backend Engineer I" · "Borealis" · "Remote, US" · 0+ yrs\n'
+    '    id "greenhouse:borealis:2" · "https://example.com/2"\n'
+    ' 3. 0.69 "Associate Engineering Manager" · "Cobalt" · "NYC" · 0+ yrs\n'
+    '    id "greenhouse:cobalt:3" · "https://example.com/3"\n'
+)
+
+
+def _new_grad(ev, answer, arguments=None):
+    if arguments is None:
+        arguments = {"query": "backend engineer", "max_years": 0}
+    calls = [("search_jobs", arguments, _NEW_GRAD_PAGE, False)]
+    return ev.verify_senior_caveat({}, _transcript(ev, calls, answer), None)
+
+
+def test_senior_caveat_fails_a_senior_row_offered_to_a_new_grad_without_a_caveat(ev):
+    """Round-4 review SP3 (ADR-0359, under ADR-0079)."""
+    bare = "1. Senior Backend Engineer at Acme\n2. Backend Engineer I at Borealis"
+    said = (
+        "1. Senior Backend Engineer at Acme: a senior title, so its stated minimum may be a "
+        "side clause; check the full posting\n2. Backend Engineer I at Borealis"
+    )
+    dropped = (
+        "Backend Engineer I at Borealis. I left out Senior Backend Engineer at Acme."
+    )
+    assert not _new_grad(ev, bare).passed
+    assert "'Senior Backend Engineer'" in _new_grad(ev, bare).detail
+    assert _new_grad(ev, said).passed
+    assert _new_grad(ev, dropped).passed
+    # "Associate" reads as entry level, and a search for experienced users is not judged.
+    assert _new_grad(ev, "Associate Engineering Manager at Cobalt.").passed
+    assert _new_grad(ev, bare, {"query": "backend engineer", "max_years": 5}).passed
+
+
+def test_senior_rows_reads_titles_the_eval_judges_itself(ev):
+    calls = [("search_jobs", {"max_years": 1}, _NEW_GRAD_PAGE, False)]
+    assert ev.senior_rows(_transcript(ev, calls)) == ["Senior Backend Engineer"]

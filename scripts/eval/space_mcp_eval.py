@@ -1081,6 +1081,66 @@ def verify_sponsorship_polarity(
     )
 
 
+# --- senior_caveat -------------------------------------------------------------------------
+
+#: A search_jobs row's title as the tool prints it: rank, an optional score, then the title.
+_SEARCH_ROW_TITLE = re.compile(r'^\s*\d+\. (?:\d\.\d+ )?("(?:[^"\\]|\\.)*")', re.MULTILINE)
+
+#: A title above a new graduate's level, read here apart from the tool's own tag (ADR-0359).
+_SENIOR_WORD = re.compile(r"(?i)\b(?:senior|sr\.?|staff|principal|lead|manager|director)\b")
+_JUNIOR_WORD = re.compile(r"(?i)\b(?:associate|junior|jr\.?)\b")
+
+#: Words by which an answer says a senior-titled job may not fit a new graduate, or drops it.
+_SENIOR_CAVEAT = re.compile(
+    r"(?i)side clause|stated minimum|floors?\b|may not (?:be )?(?:a )?(?:good )?fit|"
+    r"not (?:an? )?(?:entry|junior|new[- ]grad)|too senior|senior (?:title|role|level)|"
+    r"likely (?:needs|requires|wants|expects)|probably (?:needs|requires|expects)|stretch|"
+    r"caveat|check (?:get_job|the (?:full )?(?:posting|description))|verify|"
+    r"dropped|left (?:it |them )?out|excluded|skipped|leaving out"
+)
+
+
+def senior_rows(transcript: Transcript) -> list[str]:
+    """The titles of rows search_jobs listed, at a `max_years` of 2 or less, that read Senior,
+    Staff, Principal, Lead, Manager or Director and not Associate or Junior."""
+    schema = BY_NAME["search_jobs"].input_schema
+    titles = []
+    for call in transcript.calls:
+        if call.name != "search_jobs" or not call.succeeded:
+            continue
+        years = tool_arguments.with_defaults(schema, call.arguments).get("max_years")
+        if years is None or years > 2:
+            continue
+        for quoted in _SEARCH_ROW_TITLE.findall(call.result or ""):
+            title = json.loads(quoted)
+            if _SENIOR_WORD.search(title) and not _JUNIOR_WORD.search(title):
+                titles.append(title)
+    return list(dict.fromkeys(titles))
+
+
+def verify_senior_caveat(
+    expect: dict[str, Any], transcript: Transcript, space: Space
+) -> Verdict:
+    """No senior-titled row a new graduate's search listed (:func:`senior_rows`) is named in the
+    answer without a caveat on a line that names it: its served floor is the smallest its
+    description states (ADR-0079), which may be a side clause (round-4 review SP3, ADR-0359)."""
+    lines = transcript.final_answer.splitlines()
+    bare = [
+        title
+        for title in senior_rows(transcript)
+        if _found(transcript.final_answer, title)
+        and not any(_found(line, title) and _SENIOR_CAVEAT.search(line) for line in lines)
+    ]
+    return Verdict(
+        not bare,
+        "presents "
+        + ", ".join(repr(t) for t in bare)
+        + " as a fit for a new graduate without a caveat"
+        if bare
+        else "names no senior-titled row without a caveat",
+    )
+
+
 # --- operator_mix --------------------------------------------------------------------------
 
 #: One company on role_requirements' companies line: its quoted name, any tags, its quoted key,
@@ -1337,6 +1397,7 @@ VERIFIERS: dict[str, Verifier] = {
     "title_keyword_rows": verify_title_keyword_rows,
     "sponsorship_polarity": verify_sponsorship_polarity,
     "operator_mix": verify_operator_mix,
+    "senior_caveat": verify_senior_caveat,
     "trend_sign": verify_trend_sign,
     "hot_top": verify_hot_top,
     "blocking_named": verify_blocking_named,

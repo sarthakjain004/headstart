@@ -131,7 +131,9 @@ def _salary(job: dict[str, Any]) -> str | None:
     low, high = job.get("min_salary_annual"), job.get("max_salary_annual")
     said = []
     if job.get("salary"):
-        said.append(f"stated {scraped_text.quoted(job['salary'], scraped_text.SHORT_FIELD)}")
+        said.append(
+            f"stated {scraped_text.quoted(job['salary'], scraped_text.SHORT_FIELD)}"
+        )
     if low is not None or high is not None:
         currency = job.get("salary_currency") or ""
         if low is not None and high is not None and high != low:
@@ -254,7 +256,9 @@ def _job(number: int, job: dict[str, Any], share: _DescriptionShare) -> list[str
     if job.get("remote"):
         place.append("remote")
     if job.get("employment_type"):
-        place.append(scraped_text.quoted(job["employment_type"], scraped_text.SHORT_FIELD))
+        place.append(
+            scraped_text.quoted(job["employment_type"], scraped_text.SHORT_FIELD)
+        )
     if job.get("department"):
         place.append(
             f"department {scraped_text.quoted(job['department'], scraped_text.SHORT_FIELD)}"

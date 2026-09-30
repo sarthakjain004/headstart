@@ -39,7 +39,9 @@ def company(row: Mapping[str, Any]) -> str:
     requirements sample's, the Company directory's), else `board_of` its id. The one employer key
     of a per-company cap, a requirements sample's employer counts and a search page's held line."""
     name = " ".join(str(row.get("company") or "").split()).casefold()
-    return name or str(row.get("board") or board_of(str(row.get("id") or ""))).casefold()
+    return (
+        name or str(row.get("board") or board_of(str(row.get("id") or ""))).casefold()
+    )
 
 
 def spread(rows: list[dict[str, Any]], per_company: int) -> list[dict[str, Any]]:

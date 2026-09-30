@@ -277,7 +277,9 @@ def _posted_ages(
         end = board_end(job_id, company_of)
         if end is None:
             continue
-        counts[company_of[lower_key(job_id[:end])]][_posting_found_late(seen, posted)] += 1
+        counts[company_of[lower_key(job_id[:end])]][
+            _posting_found_late(seen, posted)
+        ] += 1
     return {key: (fresh, late) for key, (fresh, late) in counts.items()}
 
 
