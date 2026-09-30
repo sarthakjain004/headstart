@@ -603,6 +603,287 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         # hiring site, `awsm.in`, is a real employer and is not here.
         "wp_job_openings:demo.hirezoot.com",
         "wp_job_openings:demo.wpjobopenings.com",
+        # Pinpoint's auto-seeded sample postings, found 2026-09-30 by reading every Board landed from
+        # the Common Crawl host graph, the CrUX origin list, the sitemap index and jobseek (319 live):
+        # 122 of them serve only Pinpoint's own onboarding set, 471 postings none of which is an
+        # employer's. 116 serve one of three fixed sets and nothing else: "Head of DEI - UK",
+        # "Marketing Manager", "Customer Service Rep" (43 Boards, e.g. `100ms`, created 2025-06-04),
+        # the same with "Marketing Executive" (44 more, e.g. `zendesk`, 2025-12-12) or, in the older
+        # copy, "Head of DEI - Belfast" and "- US" under Hipster Ipsum text ("Vape tattooed gentrify
+        # pug", 28 Boards, e.g. `assemblyosm`, 2024-11-05), and one Board with the second set minus
+        # its service rep. Every one of the 116 opens its descriptions with the same three or four
+        # lines, gives each posting a department and city that rotate regardless of the title
+        # ("Marketing Manager" under Engineering in Paris, "Customer Service Rep" under Engineering
+        # in New York), and 104 were created within 5 seconds of each other (the other 12 span
+        # longer). Real employers' names sit on them (`zendesk`, `hellofresh`, `razorpay`,
+        # `kraken`, `legalzoom`): trial accounts nobody published a job on. Six more serve only
+        # filler: `fountain` and `jwplayer` retitle it ("Software Engineer- Platform", "Staff
+        # Software Engineer (Backend)") over the same rotating departments and cities and the
+        # Hipster Ipsum text, `obsidian` ("Test Job 3"), `mateusz-testing` ("Test Job") and
+        # `tdpfund` ("Test Job 1", "Test Job 2", "Vet Tech") carry it in every posting, and
+        # `crystalblockchain` is the seeded five plus "AB Test Job 1". Other Boards hold some of these
+        # sample postings beside real ones (`ada`, `gearset`, `oviva`, `dermavant`, `kodland`,
+        # `pmaconsultants`): they stay, and so do their real postings. Two more, read 2026-09-30 after
+        # the landing, serve only seeded postings: `sofi` ("Head of DEI - UK", "Customer Service Rep")
+        # and `innovaccer` ("Head of DEI - UK", "Marketing Manager").
+        "pinpoint:100ms",
+        "pinpoint:174powerglobal",
+        "pinpoint:60decibels",
+        "pinpoint:aiven",
+        "pinpoint:alliance",
+        "pinpoint:assemblyosm",
+        "pinpoint:astropay",
+        "pinpoint:athabascacatering",
+        "pinpoint:badrobotgames",
+        "pinpoint:beautybarrage",
+        "pinpoint:bhhc",
+        "pinpoint:boomi",
+        "pinpoint:brightnetwork",
+        "pinpoint:built",
+        "pinpoint:buzzbingo",
+        "pinpoint:chas",
+        "pinpoint:chattermill",
+        "pinpoint:cielotalent",
+        "pinpoint:coit",
+        "pinpoint:consensus",
+        "pinpoint:corvias",
+        "pinpoint:coverdash",
+        "pinpoint:crystalblockchain",
+        "pinpoint:cvent",
+        "pinpoint:deltacapita",
+        "pinpoint:dreamweave-designs",
+        "pinpoint:drfirst",
+        "pinpoint:editasmedicine",
+        "pinpoint:ekimetrics",
+        "pinpoint:enable",
+        "pinpoint:endlesswest",
+        "pinpoint:eqvilent",
+        "pinpoint:everbridge",
+        "pinpoint:exadel",
+        "pinpoint:exp",
+        "pinpoint:fetchrewards",
+        "pinpoint:fountain",
+        "pinpoint:fourthrev",
+        "pinpoint:fundingcircle",
+        "pinpoint:gett",
+        "pinpoint:goldcast",
+        "pinpoint:groundtruth",
+        "pinpoint:hellofresh",
+        "pinpoint:hermeus",
+        "pinpoint:hubvisory",
+        "pinpoint:humane",
+        "pinpoint:improbable",
+        "pinpoint:includedhealth",
+        "pinpoint:innovaccer",
+        "pinpoint:inspiresleep",
+        "pinpoint:instrumental",
+        "pinpoint:intellectt",
+        "pinpoint:isscareers",
+        "pinpoint:jerry",
+        "pinpoint:jobandtalent",
+        "pinpoint:jwplayer",
+        "pinpoint:kiwi",
+        "pinpoint:koleyjessen",
+        "pinpoint:kraken",
+        "pinpoint:legalzoom",
+        "pinpoint:lhh",
+        "pinpoint:lionsbot",
+        "pinpoint:logicmanager",
+        "pinpoint:mantelgroup",
+        "pinpoint:mateusz-testing",
+        "pinpoint:matrix",
+        "pinpoint:mercerkitchenhall",
+        "pinpoint:mks",
+        "pinpoint:moengage",
+        "pinpoint:moneyboxapp",
+        "pinpoint:netcomlearning",
+        "pinpoint:next",
+        "pinpoint:nextovation",
+        "pinpoint:notablefi",
+        "pinpoint:obsidian",
+        "pinpoint:odysseyhotelgroup",
+        "pinpoint:onboardmeetings",
+        "pinpoint:onepeloton",
+        "pinpoint:oneworkplace",
+        "pinpoint:paymentop",
+        "pinpoint:pentera",
+        "pinpoint:penumbrainc",
+        "pinpoint:pinnaclegroup",
+        "pinpoint:planhat",
+        "pinpoint:planner5d",
+        "pinpoint:primient",
+        "pinpoint:productschool",
+        "pinpoint:rand",
+        "pinpoint:razorpay",
+        "pinpoint:recruitaero",
+        "pinpoint:renewal",
+        "pinpoint:reply",
+        "pinpoint:rewind",
+        "pinpoint:riverflex",
+        "pinpoint:saga",
+        "pinpoint:shorelight",
+        "pinpoint:smallgirlspr",
+        "pinpoint:smarsh",
+        "pinpoint:sofi",
+        "pinpoint:solis-academy",
+        "pinpoint:sonatype",
+        "pinpoint:spartaglobal",
+        "pinpoint:synopsys",
+        "pinpoint:tandem",
+        "pinpoint:tdpfund",
+        "pinpoint:tealium",
+        "pinpoint:teza",
+        "pinpoint:thndr",
+        "pinpoint:tidio",
+        "pinpoint:trailerparkgroup",
+        "pinpoint:trailofbits",
+        "pinpoint:travelperk",
+        "pinpoint:trint",
+        "pinpoint:typescouts",
+        "pinpoint:uvcyber",
+        "pinpoint:vastspace",
+        "pinpoint:version1",
+        "pinpoint:viooh",
+        "pinpoint:weightwatchers",
+        "pinpoint:worldremit",
+        "pinpoint:you",
+        "pinpoint:zeffy",
+        "pinpoint:zendesk",
+        "pinpoint:zeta",
+        # Gem test tenants, each read on 2026-09-30. `candoriq`, `fireflies-ats`, `getcedar-ai-ats`,
+        # `pin` and `staffeto-com` serve exactly the 6 stock postings the four sandboxes above serve
+        # (CFO, Data Scientist, Enterprise Account Executive, Senior Software Engineer, Senior
+        # Technical Recruiter, Software Engineering Intern) under different names. `oats-testing` is
+        # a test tenant: 134 postings ("iulia test posting", "Integration Test Job", "Lucia's Personal
+        # Assistant", "Thrall in Tiger's Undead Army") at a location named "Toooo...ronto is a long
+        # name". `frigade-co` posts "frigade-test-Jobs-1" and "frigade-test-ATS-job1" in department
+        # "frigade-test-ATS-dept". `testbox-buffer2` is 12 generic postings created within two
+        # minutes on 2026-08-31 with "About the role We are hiring a ..." text. `sandboxvectorsolutions-com`
+        # is 4 postings whose description reads "-Recruit Jobs -Use LinkedIn -Find a new ATS -Hire BOMB
+        # Candidates" or nothing.
+        "gem:candoriq",
+        "gem:fireflies-ats",
+        "gem:frigade-co",
+        "gem:getcedar-ai-ats",
+        "gem:oats-testing",
+        "gem:pin",
+        "gem:sandboxvectorsolutions-com",
+        "gem:staffeto-com",
+        "gem:testbox-buffer2",
+        # JazzHR (board page, postings and their descriptions), each read 2026-09-30. `bigclicinc`
+        # posts "Sample Job" (JazzHR's default description text, "You can enter a detailed, formatted
+        # description of your position") and "Testing Job". `demonotforactualuse16` names itself
+        # "Demo: NOT FOR ACTUAL USE" and posts JazzHR's template ad ("Bob's is looking for a customer
+        # service representative to join our team in our St Louis office"). `sproutsolutionsdemo`
+        # posts "Registered Nurse (RN) [test only]", "Senior Graphic Designer [test only]" and "THIS
+        # IS TEST ONLY Job Title: Field Technician Location: [City, State]". `prestigedemo` is
+        # "Prestige Demo/NFR": four "Barista"s and JazzHR's "Sample Job" (the real `prestige` Board
+        # is separate). `mevitae94` posts 36 test-shaped titles of 38 ("Accountant Demo Job -
+        # MeVitae-2865269-ME1", "Test Job 639009648685488365"). `zenefitness1` posts "Test Engineer"
+        # and "Test manager" with the same HR boilerplate ("Maintains staff by recruiting, selecting,
+        # orienting..."). `mayweatherboxingfitnesssandbox`, `prosesandbox`, `thedesignerysandbox`
+        # and `verifiedfirstsandbox` name themselves "- Sandbox": copies of a real Board's ads
+        # placed at the bare location "United States", or "Come work for us!". The real Boards are
+        # separate ledger rows. Deliberately NOT excluded: `csptest2025`, whose three postings are
+        # real, dated "2027 Start" ads for CornerStone Partners.
+        "jazzhr:bigclicinc",
+        "jazzhr:demonotforactualuse16",
+        "jazzhr:mayweatherboxingfitnesssandbox",
+        "jazzhr:mevitae94",
+        "jazzhr:prestigedemo",
+        "jazzhr:prosesandbox",
+        "jazzhr:sproutsolutionsdemo",
+        "jazzhr:thedesignerysandbox",
+        "jazzhr:verifiedfirstsandbox",
+        "jazzhr:zenefitness1",
+        # Personio's own demo tenant, read 2026-09-30: `demorecruiting` serves 154 postings ("adas",
+        # "dsadasda", "Ana test some description", "DEMO JULY", one "Engineering Manager" title
+        # repeated twelve times) at "A really long office name that is very unlikely to be so long",
+        # the company named after its host. The slug is the host, so both TLDs are listed.
+        "personio:demorecruiting.jobs.personio.com",
+        "personio:demorecruiting.jobs.personio.de",
+        # Teamtailor (jobs.json and each posting), read 2026-09-30: `airelogicsandbox` ("Aire Logic
+        # Sandbox") posts "We have a business that needs analysing and we need a business analyst
+        # to do the analysing." and "Someone who analyses data". `sandboxnytlaegejob-1732104705`
+        # ("Sandbox: Nytlaegejob") is Teamtailor's stock sample: nine postings created within ten
+        # seconds on 2024-11-20, all opening "We're committed to helping companies look their best
+        # to potential candidates". `emsjotestvarjedag` posts "Account Manager for Puppy" and "Looking
+        # for the next "right hand" to Darth Vader". `simoncase` ("Simon Demo") posts two "test"
+        # postings and Teamtailor's own recruiting copy ("Teamtailor is an Employer Branding & ATS
+        # SaaS platform used by over 5.000 companies"). Deliberately NOT excluded, though their slugs
+        # invite it: `demojobbusters`, `helppokatsastusoydemo`, `hrwithyoudemo` and `kanrestaoydemo`,
+        # whose postings, read, are real, current, fully described ads by the named employers.
+        "teamtailor:airelogicsandbox",
+        "teamtailor:emsjotestvarjedag",
+        "teamtailor:sandboxnytlaegejob-1732104705",
+        "teamtailor:simoncase",
+        # SmartRecruiters (postings API, every page and each posting), read 2026-09-30 across all
+        # 6,727 live Boards landed from the amikai roster. Seven are the vendor's own QA automation,
+        # named `{Scenario}Test{yymmdd}{random}00`, whose postings are "Job 180414ToIh3u04" (a date
+        # and a random id), "Job in Afghanistan" and "Job in Poland", at fixture places such as
+        # Szczebrzeszyn, Coast City and Kabul: `allofferstabtest1804148clgqr00`,
+        # `channeljointest171018wiojhl00`, `emailstest190829rxev1f00`, `emailnotificationssendgridtest170113thhun100`,
+        # `multipleapplicationtest170516dzeoul00`, `rejectionwithdelayedrejectionfeaturetest180426kgkcxq01`
+        # and `createandpublishjobwithdifferentjoblocationprecisiontest180126gn8fmf00`.
+        # Eighteen are integration partners' test accounts, each posting test titles ("AC 1.7 test -
+        # please ignore this job" on both `apex-linkedinacone` and `-two`; "test job post - do not
+        # apply" on all 13 of `traitify`; "Test Job SR Ewa" on `moseeker`; "Smart Recruiters Test" on
+        # `saassyco`; "asdgasdf", "edit to testeez" on `vinformatix`; "Demo deny list ATS" on
+        # `visageinc`; "Teststelle NICHT BEWERBEN" on `time4hires`; "KATH GALBIZO - TEST 1" on
+        # `uplunitedphosphoruslimited`; "CENTRL Test Job I", "Cielo Test Job I" on `joshdemotwo`;
+        # "Really Really Really Long Job Name" and "Nowhere Creek, VIC" on `gem1`, a company named Gem).
+        # Twelve more are test accounts, most named for it, posting placeholder content: `barbarasandbox`
+        # ("Poste test", "Copy of Poste test"), the three `cobra`/`testcobra` companies ("please do
+        # not apply for this job", 13 of 13 on `testcobratjcompany`), `mcdsandbox` ("job23",
+        # "pentest"), `partnerssandbox` ("Job Example 2"), `clientdemosandbox163` ("Rubrik Demo"),
+        # `targetcwsandbox` (five 2019 ads for a staffing firm, "TargetCW Sandbox"), `timburnettsandbox`,
+        # `seeksrtestaccount` (five "Nurse" postings in Information Technology whose descriptions are
+        # commercial-strategy text, a generic nurse ad or empty), `mariposainc` (5 postings, one City-benefits text
+        # under "test", "driver" and "Test Longitude & Latitude") and `donscompany` ("Another Test":
+        # "This is another job description"). Deliberately NOT excluded: `alignment1`, `brunel1` and
+        # `monsterworldwide1`, which mix a test posting or two with real (if 2015-2019) ads, and
+        # `alliedglobaljobs`-style Boards that only carry "sandbox" in the name.
+        "smartrecruiters:allofferstabtest1804148clgqr00",
+        "smartrecruiters:apex-linkedinacone",
+        "smartrecruiters:apex-linkedinactwo",
+        "smartrecruiters:barbarasandbox",
+        "smartrecruiters:channeljointest171018wiojhl00",
+        "smartrecruiters:clientdemosandbox163",
+        "smartrecruiters:cobralivetestcompany6",
+        "smartrecruiters:cobralivetestcompany7",
+        "smartrecruiters:createandpublishjobwithdifferentjoblocationprecisiontest180126gn8fmf00",
+        "smartrecruiters:donscompany",
+        "smartrecruiters:emailnotificationssendgridtest170113thhun100",
+        "smartrecruiters:emailstest190829rxev1f00",
+        "smartrecruiters:ewatest",
+        "smartrecruiters:gem1",
+        "smartrecruiters:joshdemotwo",
+        "smartrecruiters:linkedininternaltest",
+        "smartrecruiters:mariposainc",
+        "smartrecruiters:mcdsandbox",
+        "smartrecruiters:moseeker",
+        "smartrecruiters:multipleapplicationtest170516dzeoul00",
+        "smartrecruiters:partnerssandbox",
+        "smartrecruiters:pitchyouintegration",
+        "smartrecruiters:rejectionwithdelayedrejectionfeaturetest180426kgkcxq01",
+        "smartrecruiters:remotive",
+        "smartrecruiters:resume-library",
+        "smartrecruiters:saassyco",
+        "smartrecruiters:seeksrtestaccount",
+        "smartrecruiters:shazamme",
+        "smartrecruiters:targetcwsandbox",
+        "smartrecruiters:testcobratjcompany",
+        "smartrecruiters:timburnettsandbox",
+        "smartrecruiters:time4hires",
+        "smartrecruiters:traitify",
+        "smartrecruiters:uplunitedphosphoruslimited",
+        "smartrecruiters:vinformatix",
+        "smartrecruiters:visageinc",
+        "smartrecruiters:work42",
+        # `assets.freshteam.com`, a vendor infrastructure host that a host-graph sweep read as a
+        # tenant and the liveness probe left `unknown`, read 2026-09-30: it answers S3's
+        # AccessDenied XML. It has no openings board.
+        "freshteam:assets",
     }
 )
 
