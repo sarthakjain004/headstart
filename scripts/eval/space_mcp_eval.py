@@ -870,7 +870,7 @@ def _found_late_turnover(
     /trends by the verifier itself, so a bug in a tool cannot hide here (ADR-0369)."""
     picks = [company_scope.for_trends(space, c) for c in fact.get("companies") or []]
     days = int(fact.get("days") or 7)
-    since = (datetime.now(UTC) - timedelta(days=days)).isoformat(timespec="seconds")
+    since = (_now() - timedelta(days=days)).isoformat(timespec="seconds")
     payload = space.read(
         SpaceRoute.TRENDS, [("since", since), *(("company", p.key) for p in picks)]
     )
@@ -1809,11 +1809,18 @@ VERIFIERS: dict[str, Verifier] = {
 RECORDED_CALLS = _ROOT / "tests" / "fixtures" / "space_mcp_eval_recorded_calls.json"
 
 
+def _now() -> datetime:
+    """The verifiers' "now", which :func:`tools_clock_at` holds with the tools'."""
+    return datetime.now(UTC)
+
+
 @contextmanager
 def tools_clock_at(when: datetime) -> Iterator[None]:
-    """Every tool's "now" held at ``when`` while inside: a window or an age is counted back
-    from it into the URLs a tool reads, which a replay must build exactly as recorded."""
+    """Every tool's "now", and the verifiers', held at ``when`` while inside: a window or an age
+    is counted back from it into the URLs a tool or a verifier reads, which a replay must build
+    exactly as recorded."""
     patched = [
+        (sys.modules[__name__], "_now", lambda: when),
         (company_profile, "_now", lambda: when),
         (read_trends, "_now", lambda: when),
         (answer_date, "today", lambda: when.date()),
