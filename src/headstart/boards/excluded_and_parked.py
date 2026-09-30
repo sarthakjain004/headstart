@@ -171,6 +171,35 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         "darwinbox:training14",  # 30 postings
         "darwinbox:training2",  # 8 postings
         "darwinbox:treebotest",  # 142 postings
+        # Six more Darwinbox demo tenants the DNS sieve (`mine_darwinbox_dns.py`) turned up, each
+        # confirmed by reading its own postings through the scraper on 2026-09-29, not by slug.
+        # `stark` names itself "Darwinbox" and its 4 postings are other employers' and pasted text,
+        # none its own: a "Circle Head – Wireline Deployment" whose description is "Group Company:
+        # Darwinbox ... ND Sales Director", an "Operations Manager (BYD Cubao)" under the
+        # department "Privy Organics (DEP_227)", and a "Senior Sales Manager" whose HTML still
+        # carries the class `font-claude-response-body` of a pasted chat answer. `windchasers`
+        # (also "Darwinbox"; both postings from 2020-11) reads "Demo Job description" and "Please
+        # enter job description ... Demo Description 1 2". `paisa` ("DarwinBox Digital Solutions
+        # Pvt Ltd") posts "No recommendations for this Designation", a "Product AD" whose
+        # description is "Please enter job description" eight times over, and a Product Manager
+        # whose template says "Group Company: Google India" with every other field blank. `oneassist` is a real employer (OneAssist Consumer Solutions) but both of
+        # its postings are titled "TEST" with "Please enter job description" (2020-05 and
+        # 2020-09): revisit it if it ever posts a real role. `docs` (company name "Docs") has one
+        # "Manager" Intern posting, description "Please enter job description", at three
+        # unrelated places at once (Nizamabad, Ahmednagar, Abu Al Khasib in Iraq). `global`
+        # (company name "Global") has two postings from 2020-10, one whose description is "This
+        # is a sample job description for the IT Group Head position in JG Summit ... sample text
+        # 1" and one that is Darwinbox's stock Sales Manager template, on a tenant whose banners
+        # are Cement Industries of Malaysia's: the least clear-cut of the six, so first to revisit.
+        # Read and deliberately kept: `dei` — one "HR and Admin Assistant" with a real department
+        # ("Human Resources (DEI UAE_Human Resources)") and place (Dubai Internet City), whose only
+        # oddity is a description reading "test", which does not make the posting a test.
+        "darwinbox:stark",  # 4 postings
+        "darwinbox:windchasers",  # 2 postings
+        "darwinbox:paisa",  # 3 postings
+        "darwinbox:oneassist",  # 2 postings
+        "darwinbox:docs",  # 1 posting
+        "darwinbox:global",  # 2 postings
         "greenhouse:staging",  # company "Staging Site Board"; its one posting is titled "TEST"
         "greenhouse:test1",  # company "Test"
         # Keka's own demo/QA tenants (found during keka's salary-extraction pass, 2026-08-22,
