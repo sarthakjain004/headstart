@@ -2006,6 +2006,17 @@ def test_employer_unflagged_fails_a_tool_or_an_answer_calling_the_employer_an_ag
         _lockheed(ev, _LOCKHEED_ROW, doubted).detail
     )
     assert not _lockheed(ev, _LOCKHEED_ROW, "Twenty companies, none an agency.").passed
+    # A denial on its line is the right answer, not a call (the prompt asks exactly this).
+    denied = (
+        "Yes, Lockheed Martin is #18 by volume. HeadStart does not flag it as a staffing "
+        "agency or recruiter; it is the employer."
+    )
+    assert _lockheed(ev, _LOCKHEED_ROW, denied).passed
+    for called in (
+        "Lockheed Martin is listed, not flagged; it may be a staffing agency.",
+        "Lockheed Martin is not the employer of these postings.",
+    ):
+        assert not _lockheed(ev, _LOCKHEED_ROW, called).passed, called
 
 
 def _role_move(start, latest, span_days):

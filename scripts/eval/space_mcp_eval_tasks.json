@@ -562,13 +562,13 @@
     },
     {
       "id": "t40",
-      "prompt": "List the 20 companies HeadStart's Hiring now tab ranks highest by volume this week. Which of them might be a staffing agency or recruiter rather than the employer?",
+      "prompt": "Is Lockheed Martin among the companies HeadStart's Hiring now tab ranks by volume this week? Does HeadStart suggest it might be a staffing agency or recruiter rather than the employer?",
       "verifier": "employer_unflagged",
       "expect": {"companies": ["Lockheed Martin"]},
       "requires": {
         "hot_row": {"lens": "volume", "company": "Lockheed Martin", "within": 20}
       },
-      "why": "Round-5 critique R5-P1-3 (ADR-0366): the operator-unverified rule read SAP's host label `hr` in `lockheed.jobs.hr.cloud.sap` as an agency name, so hiring_now listed Lockheed Martin after every unflagged row, marked a possible agency, as it would every Board on that SAP host (82 Scrapable Boards). The verifier fails a tool result line or an answer line that calls Lockheed Martin unverified, a staffing firm, an agency or a recruiter, and an answer that leaves it out. Data-dependent: retired while Lockheed Martin is not among the volume Lens's first 20 shown rows (it was #18 on 2026-09-30)."
+      "why": "Round-5 critique R5-P1-3 (ADR-0366): the operator-unverified rule read SAP's host label `hr` in `lockheed.jobs.hr.cloud.sap` as an agency name, so hiring_now listed Lockheed Martin after every unflagged row, marked a possible agency, as it would every Board on that SAP host (82 Scrapable Boards). The verifier fails a tool result line or an answer line that calls Lockheed Martin unverified, a staffing firm, an agency or a recruiter, and an answer that leaves it out. Data-dependent: retired while Lockheed Martin is not among the volume Lens's first 20 rows on the site (it was #18 on 2026-09-30). The prompt names Lockheed rather than asking for a top 20: its closures went uncounted, so hiring_now lists it after every unflagged row, past a limit of 20, and a denial on its line (\"not flagged as a staffing agency\") passes (follow-up to ADR-0366)."
     },
     {
       "id": "t41",
