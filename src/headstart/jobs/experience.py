@@ -279,8 +279,9 @@ _DIGITS_OR_WORDS = r"(\d{1,3}|t(?:hree|welve|wo|en)|f(?:our|ive)|s(?:ix|even)|e(
 
 # `_scan` reads a range's ceiling off the digits the pattern captured, so it needs the fraction the pattern consumed.
 _FRACTION = re.compile(r"[.,](\d{1,2})(?!\d)")
-# A mixed fraction is another tail: the 2 of "additional 3 1/2 years (42 mos.) exp" is half a year, not two.
-_NOT_A_WHOLE_NUMBER = re.compile(r"\d$|\d[.,/]$")
+# A mixed fraction is another tail: the 2 of "additional 3 1/2 years (42 mos.) exp" is half a year, not two. Only with
+# the space ("3 1/2"): "5/7 years" is a range, read as main reads it.
+_NOT_A_WHOLE_NUMBER = re.compile(r"\d$|\d[.,]$|\d\s\d/$")
 
 
 def _years_from_token(token: str) -> int:
@@ -777,7 +778,7 @@ def _stated(
         while (match := pattern.search(text, pos)) is not None:
             pos = match.start(1) + len(match.group(1))
             if _NOT_A_WHOLE_NUMBER.search(
-                text[max(0, match.start(1) - 2) : match.start(1)]
+                text[max(0, match.start(1) - 4) : match.start(1)]
             ):
                 continue  # the tail of a longer number ("160,000") or a decimal's fraction ("0.5")
             lo = _years_from_token(match.group(1))

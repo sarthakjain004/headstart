@@ -1332,3 +1332,10 @@ def test_the_half_of_a_mixed_fraction_is_not_a_number_of_years():
         )
         is None
     )
+
+
+def test_a_slash_range_is_read_as_main_reads_it():
+    # "5/7 years" is five to seven: the guard for a mixed fraction ("3 1/2") must not reach it.
+    assert from_description(
+        "At least 5/7 years of experience in integrating HRIS solutions"
+    ) == _regex(7)
