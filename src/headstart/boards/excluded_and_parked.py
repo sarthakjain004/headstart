@@ -128,6 +128,33 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         "cornerstone:maestrademo",  # 45 postings
         "cornerstone:pservsmartdreamers",  # 60 postings
         "cornerstone:pservsqeptech",  # 69 postings
+        # More Cornerstone demo, template and test tenants, found by the csod.com DNS sweep of
+        # 2026-09-29 and confirmed by READING each Board's listing the same day, not from its slug
+        # (every slug below looks like an employer). Each was landed `live` with postings by
+        # `check_liveness.py cornerstone`, and none is an employer's: `empower` (55 postings),
+        # `tsg` (55) and `medbridge` (53) are the awavedemo/demohk template, "Coordinator Call
+        # Center- Madrid", "Sales Associate" in Milan and Rome, "Training Manager, Italy", dated
+        # 2018-2020, with 49-55 of their requisitionId+title pairs equal to `demohk`'s and
+        # `pservsmartdreamers`'s; `appiphony`, `extend` and `levelaccess` (47 each) are `demojk`
+        # again — the same 47 requisitions, "Customer Service Representative" opening in AU and NZ,
+        # "Registered Nurse", "Cashier" in Miami, dated 2021-2025 — and name no employer;
+        # `explore` (6) shares two requisitions with `demojk` by id, title and date ("Customer
+        # Service Specialist" 6/21/2021, "Customer Service Associate - Full Remote" 11/22/2021)
+        # and its other four sit in Santa Monica, Cornerstone's own headquarters city. `evolus`
+        # is a real employer's tenant (Newport Beach) whose six postings are all test copies
+        # ("Talent Specialist - TEST", "Systems Administrator - TEST 2", "Talent Acquisition
+        # Coordinator - TESTING"), and `ncp` (National Car Parks Ltd.) lists one, "TEST ADMIN",
+        # dated 2022. The last two are the employer's own test data rather than a vendor's: lift
+        # them once either lists a posting that is not a test.
+        "cornerstone:empower",  # 55 postings
+        "cornerstone:tsg",  # 55 postings
+        "cornerstone:medbridge",  # 53 postings
+        "cornerstone:appiphony",  # 47 postings
+        "cornerstone:extend",  # 47 postings
+        "cornerstone:levelaccess",  # 47 postings
+        "cornerstone:explore",  # 6 postings
+        "cornerstone:evolus",  # 6 postings
+        "cornerstone:ncp",  # 1 posting
         # `eczy-test.fa.us2.oraclecloud.com` was once kept despite its "-test" slug, for want of
         # content: it reported TotalJobsCount 4,947 while serving zero rows. It serves them now,
         # 23 of 24 sampled also open on `eczy` (2026-09-23), and is dead by ADR-0034's Oracle
