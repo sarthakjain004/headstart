@@ -6784,6 +6784,62 @@ def test_successfactors_an_empty_job_description_label_token_reads_no_descriptio
     assert _page_fields(page)["description"] is None
 
 
+_SF_UNCLOSED_LABEL_PAGE = (
+    "<html><head><title>Engineer Job Details | Acme</title></head><body>"
+    '<div><span class="joblayouttoken-label">Job Description: </span>'
+    '<span class="rtltextaligneligible"><div><p>Build things.</p></div>'
+)
+_SF_PAGE_CHROME = (
+    '<footer><span class="legal">Privacy notice</span> Cookie settings</footer>'
+    "</div></body></html>"
+)
+
+
+def test_successfactors_an_unclosed_label_value_span_reads_nothing_not_the_rest_of_the_page():
+    from headstart.scrapers.successfactors import _label_description, _page_fields
+
+    page = _SF_UNCLOSED_LABEL_PAGE + _SF_PAGE_CHROME
+    assert _label_description(page) is None
+    assert _page_fields(page)["description"] is None
+
+
+def test_successfactors_an_unclosed_label_value_span_ends_at_the_next_label():
+    from headstart.scrapers.successfactors import _label_description
+
+    page = (
+        _SF_UNCLOSED_LABEL_PAGE
+        + '</div><div class="joblayouttoken"><span class="joblayouttoken-label">Job Location: </span>'
+        '<span class="rtltextaligneligible">Durham</span></div>' + _SF_PAGE_CHROME
+    )
+    description = _label_description(page)
+    assert "Build things." in description
+    assert "Job Location" not in description
+    assert "Durham" not in description
+    assert "Privacy notice" not in description
+
+
+def test_successfactors_a_closed_label_value_span_keeps_only_its_own_text_before_another_label():
+    from headstart.jobs.job import html_to_text
+    from headstart.scrapers.successfactors import _label_description
+
+    page = (
+        '<span class="joblayouttoken-label">Job Description: </span>'
+        '<span class="rtltextaligneligible"><p>Build things.</p></span>'
+        '<span class="joblayouttoken-label">Job Location: </span>'
+        '<span class="rtltextaligneligible">Durham</span>' + _SF_PAGE_CHROME
+    )
+    assert html_to_text(_label_description(page)) == "Build things."
+
+
+def test_successfactors_a_label_value_longer_than_the_cap_reads_nothing(monkeypatch):
+    from headstart.scrapers import successfactors
+    from headstart.scrapers.successfactors import _label_description
+
+    assert _label_description(_SF_LABEL_DESCRIPTION_PAGE)
+    monkeypatch.setattr(successfactors, "_MAX_LABEL_DESCRIPTION", 50)
+    assert _label_description(_SF_LABEL_DESCRIPTION_PAGE) is None
+
+
 def test_successfactors_page_fields_csb_meta_microdata():
     from headstart.scrapers.successfactors import _page_fields
 

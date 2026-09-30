@@ -1109,6 +1109,14 @@ def _csb_description(page: str) -> str | None:
 _DESCRIPTION_LABELS = ("Job Description:",)
 
 
+#: The most HTML a label's value may hold. The longest description read on the sample pages was
+#: 43,834 characters (itemprop, 119 pages) and the longest label fill 17,543 (30 pages), so a value
+#: past this is page chrome swept in by a tag that never closed, not a posting.
+_MAX_LABEL_DESCRIPTION = 100_000
+#: The opening tag of the next ``joblayouttoken`` label: where a value that never closed ends.
+_NEXT_LABEL = re.compile(r'<[^<>]*joblayouttoken-label"', re.IGNORECASE)
+
+
 def _label_description(page: str) -> str | None:
     """The inner HTML of the value span after a :data:`_DESCRIPTION_LABELS` token, or None.
 
@@ -1116,7 +1124,11 @@ def _label_description(page: str) -> str | None:
     keeps it, so a page read before this existed reads exactly as it did. Found by the same
     label-then-value-span shape :func:`_label_value` reads, but the value is the whole posting, so
     its span is closed by tag counting (:func:`_matched_content`) rather than at the first ``<``.
-    A value with no text in it reads None."""
+
+    The value ends at a real boundary or reads nothing. That is its own closing tag; failing that
+    (an unclosed span), the next label token's opening tag; failing both, None, never the rest of
+    the page, whose footer and scripts are not the posting. A value past
+    :data:`_MAX_LABEL_DESCRIPTION`, or with no text in it, reads None."""
     for label in _DESCRIPTION_LABELS:
         match = re.search(
             rf'joblayouttoken-label"[^>]*>\s*{re.escape(label)}\s*</span>\s*<(span)\b[^>]*>',
@@ -1124,14 +1136,27 @@ def _label_description(page: str) -> str | None:
             re.IGNORECASE,
         )
         if match:
-            content = _matched_content(page, match)
-            if html_to_text(content):
+            next_label = _NEXT_LABEL.search(page, match.end())
+            content = _matched_content(
+                page[: next_label.start()] if next_label else page,
+                match,
+                strict=next_label is None,
+            )
+            if (
+                content
+                and len(content) <= _MAX_LABEL_DESCRIPTION
+                and html_to_text(content)
+            ):
                 return content
     return None
 
 
-def _matched_content(page: str, open_match: re.Match) -> str:
-    """Inner HTML of the element opened at ``open_match``, by open/close tag counting."""
+def _matched_content(
+    page: str, open_match: re.Match, *, strict: bool = False
+) -> str | None:
+    """Inner HTML of the element opened at ``open_match``, by open/close tag counting.
+
+    An element that never closes reads as the rest of ``page``, or as None when ``strict``."""
     tag = open_match.group(1).lower()
     token = re.compile(rf"<{tag}\b|</{tag}\s*>", re.IGNORECASE)
     depth = 1
@@ -1139,7 +1164,7 @@ def _matched_content(page: str, open_match: re.Match) -> str:
         depth += -1 if match.group(0).startswith("</") else 1
         if depth == 0:
             return page[open_match.end() : match.start()]
-    return page[open_match.end() :]
+    return None if strict else page[open_match.end() :]
 
 
 # The tenant names its own tokens, so these are the labels a 38-Board sample of job pages used
