@@ -66,8 +66,9 @@ transfer with no new visa) or this ADR's. It no longer needs the hedge within 8 
 sponsorship word. ADR-0359 recorded that it did not read them. The type and city scopes are not
 read there: `/job`'s quoted sentences do not carry the job's type.
 
-**6. One fresh draw, published as found.** The rules were committed and frozen (branch commit
-`9883e7bb`, unchanged to this ADR's merge), then 50 jobs were drawn once. The figure below
+**6. One fresh draw, published as found.** The rules were committed and frozen in this
+branch's first commit, and `work_authorization.py` is unchanged from it to this ADR's merge.
+Then 50 jobs were drawn once. The figure below
 is the one the `work_authorization` argument's description quotes. Its three misses are not
 fixed.
 
@@ -103,6 +104,7 @@ every sentence about sponsorship, citizenship or relocation.
 | **This draw (seed 6303)** | **ADR-0368, frozen** | **2,729** | **47 of 50 (0.94)** | **50 of 50** | **25 of 25** | **22 of 25** |
 
 Strict is read as ADR-0359 reads it:
+
 - Capital One's and GEICO's "will consider sponsoring a new qualified applicant for this
   position" count as the employer's yes (7 rows).
 - So do "for exceptional talent" (Multiply Labs) and "If you are exceptional, we will sponsor"
@@ -110,6 +112,7 @@ Strict is read as ADR-0359 reads it:
   make strict 45 of 50 (0.90).
 
 The three misses, left standing:
+
 - **Fusion Consulting**: "Get help with visas, permits, and international assignments". This is
   a global-mobility benefit, the same posting type ADR-0359's draw missed.
 - **Titanium Birch**: "If you need an Employment Pass, we can sponsor it, but you must already
@@ -124,6 +127,7 @@ All three at least may offer, so lenient precision is 1.00.
 **The shipped figure is 0.94 strict and 1.00 lenient, on 50 fresh jobs.**
 
 **The fixture grows from 989 to 1,062 rows** (`tests/fixtures/work_authorization_labelled.jsonl`).
+
 - `critic-round5`: the critic's 4 misses.
 - `neighbours-v5`: 19 rows. There are 12 from the change set, one or two per phrase. There are
   also 5 the new scopes touch but leave offering: Jump Trading's two full-time roles, and fal,
@@ -135,6 +139,7 @@ All three at least may offer, so lenient precision is 1.00.
   template, becomes `may_offer`.
 
 Over all 1,062 rows the rules read:
+
 - `offers_sponsorship` at 0.985 precision and 0.985 recall;
 - the hedged tier at 1.00 and 0.90 (0.93 before, since this draw added three hedges the rules
   do not read);
