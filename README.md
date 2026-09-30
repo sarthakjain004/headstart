@@ -295,16 +295,16 @@ table in lockstep with the committed ledger:
 | live rows in the ledger | 197,599 | a row, not a board — 6,628 of them are duplicate spellings |
 | − `registry.DISABLED_ATS` | −25,488 | all of it `join` |
 | − `excluded_and_parked.EXCLUDED_BOARDS` | −225 | vendor and customer test/sandbox/demo/dev boards and one historical feed, confirmed by reading their postings |
-| − alias ledger | −1,839 | one board under a second hostname or label, a career section or career site another of the same tenant already covers, an Eightfold career site its backing ATS board already serves, or a Radancy front another front already lists (ADR-0111, ADR-0182, ADR-0186, ADR-0202, ADR-0205, ADR-0222, ADR-0254, ADR-0265, ADR-0301) |
+| − alias ledger | −1,849 | one board under a second hostname or label, a career section or career site another of the same tenant already covers, an Eightfold career site its backing ATS board already serves, or a Radancy front another front already lists (ADR-0111, ADR-0182, ADR-0186, ADR-0202, ADR-0205, ADR-0222, ADR-0254, ADR-0265, ADR-0301) |
 | − case-variant dedupe | −6,625 | `company/External` and `company/external` are one board (ADR-0023) |
 | − newer `dead` row | −4 | a board is read only if no `dead` row is newer than its newest `live` one; all 4 re-probed dead (ADR-0219) |
 | − `excluded_and_parked.PARKED_BOARDS` | −348 | real boards withheld for now — six for scrape cost, two for near-duplicate spam, six Jibe clients whose every posting is on a Workday or Oracle board already held, 288 whose every posting is on an iCIMS board we scrape (ADR-0240), five employee-only Radancy fronts (ADR-0246), 31 Happydance fronts whose Backing Board is held (ADR-0264), four Phenom skins over a board already held (CLAUDE.md's Phenom landing rule), one Taleo section whose postings a held Phenom front already serves, one Radancy front whose robots.txt disallows everything, one WP Job Openings content site whose "postings" are mostly articles (ADR-0266), three login-walled iCIMS internal portals (#810) |
-| = **Scrapable Board** | **163,070** | |
+| = **Scrapable Board** | **163,060** | |
 
 That order matters: excluding before deduping reads −225 and −6,625, deduping first reads −222,
-because three excluded boards were themselves duplicates. Both land on 163,070.
+because three excluded boards were themselves duplicates. Both land on 163,060.
 
-Of those, **109,212 are currently hiring** — the 53,858 live-but-empty boards are skipped as having
+Of those, **109,202 are currently hiring** — the 53,858 live-but-empty boards are skipped as having
 nothing to read. A run takes a bounded slice and splits it between a scored head (top boards by a
 sticky measure of tech-job yield, large enough to hold every board that yields tech) and a tail
 that rotates through everything else, the boards looked at longest ago first, so

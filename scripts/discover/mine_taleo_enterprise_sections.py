@@ -20,7 +20,7 @@ What an answer means (`classify_probe`), read from the body and never from the s
 Sections that exist and whose Board key the ledger does not hold (`slug_from` + lower-cased key, any status) are
 appended to the pool CSV (`ats,tenant,url`, tenant == url, the ledger's own spelling); land them with
 `python scripts/validate/check_liveness.py taleo_enterprise --dir data/wayback-ats`, then re-run
-`taleo_enterprise_subset_sections.py`. Each hit row is flushed as it is found.
+`taleo_enterprise_subset_sections.py`. A host's hit rows are flushed together, once that host's section list is read.
 
     PYTHONPATH=src python scripts/discover/mine_taleo_enterprise_sections.py hosts.txt --cdx [--workers 8]
 """

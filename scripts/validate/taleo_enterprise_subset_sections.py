@@ -70,7 +70,8 @@ SIGNAL = "subset-reqs"
 #: ledger rows are compared, so a twin section the linked host has no row for
 #: (`percepta.taleo.net/careersection/10000`) is still scraped from the twin.
 TWIN_HOSTS = {
-    # Seven pairs a DNS-sieve landing of 2026-09-29 exposed, each read through the scraper's own listing walk: the
+    # Seven pairs a DNS-sieve landing of 2026-09-29 exposed (ADR-0307's amendment of 2026-09-30 has their
+    # evidence), each read through the scraper's own listing walk: the
     # two sections list the same ids, and the same `contestNo` and title on every shared id (46 of 46, 8 of 8,
     # 100 of 100, 6 of 6, 104 of 104, 2 of 2, 697 of 697). The linked host is `vontier` (the Phenom front
     # careers.vontier.com applies through vontier.taleo.net/careersection/external/jobapply.ftl), `mlgw` (mlgw.com
