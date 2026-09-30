@@ -51,8 +51,8 @@ Run (a live run needs only the network and a signed-in ``claude``):
   python scripts/eval/space_mcp_eval.py --repeat 3
 ``HEADSTART_SPACE_URL``, when set, points both the server and the verifiers at another Space.
 ``--http`` registers the hosted Streamable HTTP endpoint (ADR-0267) in place of the stdio server,
-and runs ``claude`` with ``MCP_CONNECTION_NONBLOCKING=false`` so it waits for that server to
-connect; the verifiers still read ``HEADSTART_SPACE_URL`` or the deployed Space. ``--repeat N``
+and runs ``claude`` with ``MCP_CONNECTION_NONBLOCKING=false`` and ``MCP_CONNECT_TIMEOUT_MS``
+so it waits for that server to connect; the verifiers still read ``HEADSTART_SPACE_URL`` or the deployed Space. ``--repeat N``
 runs the set N times and tallies each task.
 """
 
@@ -1897,7 +1897,7 @@ def judge(
 
 #: How long, in milliseconds, ``claude`` waits for the server to connect before a run starts.
 #: Waiting was not enough on a slow client network: 44 of 123 round-4 runs still started with
-#: the server "pending", and 0 of 15 did with this set (round-4 critique P1-4).
+#: the server "pending" (round-4 critique P1-4).
 MCP_CONNECT_TIMEOUT_MS = "60000"
 
 
@@ -1905,11 +1905,17 @@ def run_env(env: dict[str, str], http_url: str | None) -> dict[str, str]:
     """The environment ``claude`` runs in. Claude Code 2.1.212's ``-p`` does not wait for an
     HTTP server to connect: the run starts with it "pending" and no tools, and every task fails
     with 0 calls (round-2 critique, 2026-09-29). ``MCP_CONNECTION_NONBLOCKING=false`` makes it
-    wait (ADR-0325), and ``MCP_TIMEOUT`` for up to :data:`MCP_CONNECT_TIMEOUT_MS`, unless the
-    caller's environment sets its own."""
+    wait (ADR-0325), but only for ``MCP_CONNECT_TIMEOUT_MS``, 5,000 ms by default, and the
+    hosted server connects and lists its tools in about 3 to 10 s, so the start waits up to
+    :data:`MCP_CONNECT_TIMEOUT_MS` too. ``MCP_TIMEOUT`` bounds each connection attempt, not the
+    start. The caller's environment may set its own of either."""
     env = {"MCP_TIMEOUT": MCP_CONNECT_TIMEOUT_MS, **env}
     if http_url:
-        return {**env, "MCP_CONNECTION_NONBLOCKING": "false"}
+        return {
+            "MCP_CONNECT_TIMEOUT_MS": MCP_CONNECT_TIMEOUT_MS,
+            **env,
+            "MCP_CONNECTION_NONBLOCKING": "false",
+        }
     return env
 
 
