@@ -45,7 +45,7 @@ from werkzeug.test import EnvironBuilder
 
 from headstart.llm_router import RouterUnavailable
 from headstart.serving import concurrency_limit, rate_limit
-from headstart.trends import line_reading, netting, trend_history
+from headstart.trends import found_late, line_reading, netting, trend_history
 
 pytest.importorskip("flask")  # in [dev] so this runs in CI; guards a bare env
 waitress = pytest.importorskip("waitress")  # likewise; app.py serves through it (#595)
@@ -1009,7 +1009,7 @@ def test_a_caller_cannot_claim_the_in_process_mark_with_a_header(auth_app, monke
 
 # ---- the app's own mark on every reply (ADR-0253) ----
 
-_OWN_REPLY = "app; agent-api=24"
+_OWN_REPLY = "app; agent-api=25"
 
 
 def test_a_routes_own_answer_is_marked(auth_app):
@@ -4688,25 +4688,28 @@ def test_hot_is_ranked_at_boot_from_the_history_the_trends_tab_reads(
     history = _company_history(trends_app, monkeypatch, tmp_path)
     seen = {}
 
-    def rank(given, directory, first_seen):
-        seen.update(history=given, directory=directory, first_seen=first_seen)
+    def rank(given, directory, postings):
+        seen.update(history=given, directory=directory, postings=postings)
         return {"window": {"base": _T1}, "lenses": {}, "counts": {"ranked": 0}}
 
-    # The served postings first seen since turnover began date each row's opened (ADR-0351).
-    postings = [("workday:hpe/a:1", "2026-09-20T00:00:00+00:00", "2026-05-05")]
+    # The served postings first seen since turnover began date each row's opened (ADR-0351),
+    # counted once for Hot and every /trends company line (ADR-0369).
+    rows = [("workday:hpe/a:1", "2026-09-20T00:00:00+00:00", "2026-05-05")]
     asked = []
     monkeypatch.setattr(
-        trends_app, "_first_seen_since", lambda stamp: asked.append(stamp) or postings
+        trends_app, "_first_seen_since", lambda stamp: asked.append(stamp) or rows
     )
     monkeypatch.setattr(trends_app.hot_ranking, "rank", rank)
-    ranked = trends_app._rank_hot(history)
+    postings = trends_app._first_seen_postings(history)
+    assert asked == [history.turnover_since]
+    assert postings.split(["workday:hpe/a"], "2026-09-19", "2026-09-21") == (0, 1)
+    ranked = trends_app._rank_hot(history, postings)
     assert ranked["window"]["base"] == _T1
     assert seen == {
         "history": history,
         "directory": history.companies,
-        "first_seen": postings,
+        "postings": postings,
     }
-    assert asked == [history.trailing_week()["turnover_from"]]
     monkeypatch.setattr(trends_app, "_HOT", ranked)
     assert trends_app.app.test_client().get("/hot").get_json() == ranked
 
@@ -4782,8 +4785,10 @@ def test_boot_derives_its_company_boards_and_hot_through_the_one_function(
         tmp_path / "state", env={"SECRET_KEY": "", "GOOGLE_CLIENT_ID": ""}
     ) as module:
         assert module._HISTORY is history
-        company_boards, hot = module._derive_from_history(history)
+        company_boards, first_seen, hot = module._derive_from_history(history)
         assert (module._COMPANY_BOARDS, module._HOT) == (company_boards, hot)
+        # This app's table cannot be read for first-seen postings, so none were counted.
+        assert module._FIRST_SEEN is first_seen is None
         # The Operators' Boards reach search from the same directory (ADR-0335).
         assert module._searcher.operator_boards == module._operator_boards(history)
         assert company_boards["workday:hpe/b"] == ("workday:hpe/a", "workday:hpe/b")
@@ -4827,7 +4832,7 @@ def test_a_hot_ranking_that_fails_darkens_hot_only(trends_app, monkeypatch, tmp_
         raise KeyError("counted_since")
 
     monkeypatch.setattr(trends_app.hot_ranking, "rank", broken)
-    assert trends_app._rank_hot(history) == {}
+    assert trends_app._rank_hot(history, None) == {}
     monkeypatch.setattr(trends_app, "_HOT", {})
     assert trends_app.app.test_client().get("/hot").status_code == 503
 
@@ -5001,6 +5006,55 @@ def test_each_line_carries_the_turnover_its_change_is_made_of(
     )
     by_label = {s["label"]: s["turnover"]["opened"] for s in split["series"]}
     assert by_label == {"Hpe": [None, 0, 2], "Citi": [None, 0, 5]}
+
+
+def test_a_picked_companys_turnover_carries_its_found_late_split(
+    company_trends, trends_app, monkeypatch, tmp_path
+):
+    """Round-5 critique R5-P1-1 (ADR-0369): `/trends` gives a pick's first row, and each company
+    line under the company split, the served postings first seen in the runs its opened counts,
+    split as `/hot`'s rows are, from the one set boot counts. Not under a category or an ATS."""
+    _with_turnover(trends_app, monkeypatch, tmp_path, _HPE_TURNOVER)
+    between = (
+        "2026-08-12T12:00:00+00:00"  # after turnover began (T2), by the last run (T3)
+    )
+    rows = [
+        ("workday:hpe/b:1", between, "2026-06-01"),
+        ("workday:hpe/a:2", between, "2026-08-11"),
+        ("workday:hpe/a:3", "2026-08-11T12:00:00+00:00", "2026-01-01"),  # before T2
+        ("workday:citi/2:4", between, None),
+    ]
+    postings = found_late.FirstSeenPostings(
+        rows, [b for e in _COMPANY_DIRECTORY.values() for b in e["boards"]]
+    )
+    monkeypatch.setattr(trends_app, "_FIRST_SEEN", postings)
+    served = company_trends.get("/trends?company=workday:hpe/a").get_json()
+    assert served["reading"]["total"]["move"]["turnover"] == {
+        "opened": 2,
+        "closed": 7,
+        "net": -5,
+        "opened_fresh": 1,
+        "opened_found_late": 1,
+    }
+    split = company_trends.get(
+        "/trends?split=company&company=workday:hpe/a&company=workday:citi/2"
+    ).get_json()
+    by_name = {
+        line["name"]: line["move"]["turnover"] for line in split["reading"]["lines"]
+    }
+    assert (
+        by_name["workday:hpe/a"]["opened_fresh"],
+        by_name["workday:hpe/a"]["opened_found_late"],
+    ) == (1, 1)
+    assert (
+        by_name["workday:citi/2"]["opened_fresh"],
+        by_name["workday:citi/2"]["opened_found_late"],
+    ) == (1, 0)
+    for narrowed in ("family=software-engineering&", "ats=workday&"):
+        answer = company_trends.get(
+            f"/trends?{narrowed}company=workday:hpe/a"
+        ).get_json()
+        assert "opened_fresh" not in answer["reading"]["total"]["move"]["turnover"]
 
 
 def test_no_closed_count_where_every_board_had_its_closures_go_uncounted(

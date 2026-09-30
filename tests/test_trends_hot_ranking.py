@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 
 old_layout_converter = pytest.importorskip("old_layout_trends_state_converter")
-from headstart.trends import hot_ranking, line_reading, trend_history
+from headstart.trends import found_late, hot_ranking, line_reading, trend_history
 from headstart.trends.line_reading import CompanyMove, LineMove, Turnover
 
 _CONFIG = Path(__file__).resolve().parents[1] / "config"
@@ -403,7 +403,7 @@ def test_a_row_says_whether_its_employer_label_is_only_the_default() -> None:
 
 def test_a_row_counts_its_postings_first_seen_in_the_window_by_posted_date() -> None:
     """ADR-0351: Starbucks' opened was mostly postings posted months before HeadStart first saw
-    them. A posting counts as found late past FOUND_LATE_DAYS; an undated or unreadable one, as
+    them. A posting counts as found late past `found_late.FOUND_LATE_DAYS`; an undated or unreadable one, as
     fresh; one first seen outside the window's turnover, or on a Board no company holds, not
     at all. A Board key holding a colon is matched whole (ADR-0049)."""
     directory = {
@@ -434,13 +434,16 @@ def test_a_row_counts_its_postings_first_seen_in_the_window_by_posted_date() -> 
         dict.fromkeys(directory, 500),
         {key: _Move(net=5, opened=5) for key in directory},
     )
-    payload = hot_ranking.rank(history, directory, first_seen)
+    boards = [board for entry in directory.values() for board in entry["boards"]]
+    payload = hot_ranking.rank(
+        history, directory, found_late.FirstSeenPostings(first_seen, boards)
+    )
     rows = {row["key"]: row for row in payload["lenses"]["expansion"]}
     starbucks = rows["eightfold:starbucks.eightfold.ai"]
     assert (starbucks["opened_fresh"], starbucks["opened_found_late"]) == (3, 2)
     acme = rows["workday:acme/Site:One"]
     assert (acme["opened_fresh"], acme["opened_found_late"]) == (0, 1)
-    assert payload["counts"]["found_late_days"] == hot_ranking.FOUND_LATE_DAYS == 14
+    assert payload["counts"]["found_late_days"] == found_late.FOUND_LATE_DAYS == 14
 
 
 def test_a_row_whose_postings_or_turnover_went_unread_dates_nothing() -> None:
@@ -455,7 +458,9 @@ def test_a_row_whose_postings_or_turnover_went_unread_dates_nothing() -> None:
     assert all(r["opened_fresh"] is r["opened_found_late"] is None for r in unread)
     rows = {
         r["key"]: r
-        for r in hot_ranking.rank(history, directory, [])["lenses"]["expansion"]
+        for r in hot_ranking.rank(
+            history, directory, found_late.FirstSeenPostings([], [])
+        )["lenses"]["expansion"]
     }
     assert (rows["gh:a"]["opened_fresh"], rows["gh:a"]["opened_found_late"]) == (0, 0)
     assert rows["gh:b"]["opened_fresh"] is rows["gh:b"]["opened_found_late"] is None

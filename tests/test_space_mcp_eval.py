@@ -398,6 +398,100 @@ def _trends_space(hiring=None, reading="default", lines=()):
 _T03 = {"companies": ["Stripe"], "category": None, "days": 14}
 
 
+# --- found_late_share ----------------------------------------------------------------------
+
+_DELOITTE = {**_STRIPE, "key": "avature:deloitteus", "label": "Deloitte US"}
+_DELOITTE_TASK = {"companies": ["Deloitte US"], "days": 7}
+
+
+def _found_late_space(fresh=112, late=410, opened=509):
+    turnover = {"opened": opened, "closed": 14, "net": opened - 14}
+    if fresh is not None:
+        turnover.update(opened_fresh=fresh, opened_found_late=late)
+    return FakeSpace(
+        {
+            SpaceRoute.COMPANIES_SUGGEST: {"companies": [_DELOITTE]},
+            SpaceRoute.TRENDS: {"reading": {"total": {"move": {"turnover": turnover}}}},
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        (
+            "Deloitte US opened 509 postings, but 410 of them were posted more than 14 days "
+            "before HeadStart first saw them, so they were found late, not new hires."
+        ),
+        "Hard to say: about 80% of the 509 postings opened were found late, not newly posted.",
+        "HeadStart found them late: 78% of the postings it dated were posted weeks before.",
+    ],
+)
+def test_found_late_share_passes_an_answer_that_names_how_many_were_found_late(
+    ev, answer
+):
+    """ADR-0369. The count, or its share of opened (80.5%) or of the dated postings (78.5%),
+    beside words that say they were found late. No tool call is needed: whichever tool gave it,
+    the answer is what is judged (ADR-0354)."""
+    space = _found_late_space()
+    verdict = ev.verify_found_late_share(
+        _DELOITTE_TASK, _transcript(ev, answer=answer), space
+    )
+    assert verdict.passed, verdict.detail
+    route, params = space.asked[-1]
+    assert route is SpaceRoute.TRENDS
+    assert [name for name, _ in params] == ["since", "company"]
+    assert ("company", "avature:deloitteus") in params
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "Deloitte US hired a net 495 tech people this week: 509 opened and 14 closed.",
+        "509 opened, but most of them were found late, not newly posted.",  # how many?
+        "410 of the 509 openings are in India.",  # the number, but not what it means
+        "About 50% were found late.",  # a share the Space does not give
+    ],
+)
+def test_found_late_share_fails_an_answer_that_reports_the_burst_as_hiring(ev, answer):
+    verdict = ev.verify_found_late_share(
+        _DELOITTE_TASK, _transcript(ev, answer=answer), _found_late_space()
+    )
+    assert not verdict.passed, verdict.detail
+
+
+@pytest.mark.parametrize(
+    "space",
+    [
+        _found_late_space(fresh=400, late=100),  # the burst is over
+        _found_late_space(fresh=None),  # a Space that gives no split
+        _found_late_space(fresh=3, late=5, opened=8),  # too few opened to judge
+    ],
+)
+def test_found_late_share_retires_once_the_live_data_shows_no_burst(ev, space):
+    """A data-dependent task retires itself (ADR-0366's `requires`), and a burst gone between
+    that check and the verdict is not judged: never failed on data that moved."""
+    task = {
+        "verifier": "found_late_share",
+        "expect": _DELOITTE_TASK,
+        "requires": {"found_late_burst": _DELOITTE_TASK},
+    }
+    assert "not mostly found late" in ev.retired(task, space)
+    answer = "Deloitte US opened 509 postings and closed 14 this week."
+    outcome, detail = ev.judge(task, _transcript(ev, answer=answer), space)
+    assert outcome == "error", detail
+    assert "not mostly found late" in detail
+    assert ev.retired(task, _found_late_space()) is None
+
+
+def test_the_deloitte_task_rests_on_its_burst(ev):
+    """t43's premise is read before its run, and its verifier is the one named."""
+    tasks = json.loads(ev.ITERATION_TASKS.read_text())["tasks"]
+    (t43,) = [t for t in tasks if t["id"] == "t43"]
+    assert t43["verifier"] == "found_late_share"
+    assert t43["requires"] == {"found_late_burst": t43["expect"]}
+
+
 def test_trend_sign_compares_the_spaces_own_sign_with_the_answer(ev):
     space = _trends_space(hiring=11)
     answer = "Stripe is hiring **more** than two weeks ago: hiring +11, not less."

@@ -954,6 +954,12 @@ class TrendHistory:
         until the pipeline writes one."""
         return self._companies
 
+    @property
+    def turnover_since(self) -> str | None:
+        """The first tick that booked turnover (ADR-0227), before which no run measured any; None
+        before ADR-0227's data."""
+        return self._turnover_since
+
     def openings(self) -> dict[str, int]:
         """Every Board the history has counted tech openings on, with its tech openings now (0
         once closed)."""

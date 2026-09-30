@@ -22,7 +22,10 @@ counts a curated staffing firm or job board it was not asked for, or more of one
 postings than the cap (ADR-0352). ``country_split`` reads `/facets` once per country the task
 names, with the filters of a search_jobs call the agent made, and needs each total stated
 beside that country's name (ADR-0355). ``page_companies`` needs a search page, and the answer, to
-name at least so many companies (ADR-0365). ``all_of`` and ``any_of`` combine checks.
+name at least so many companies (ADR-0365). ``found_late_share`` reads `/trends` for a company
+whose postings opened were mostly found late and needs the answer to say so and name how many;
+its task is retired while the live data no longer shows that (ADR-0369). ``all_of`` and
+``any_of`` combine checks.
 A run whose server was not connected at its start is not judged: it is an error, left out of the
 summary's scores and named on a line of its own, first.
 
@@ -102,6 +105,7 @@ from headstart.space_mcp.tools import (
     role_requirements,
     search_jobs,
 )
+from headstart.trends.found_late import MIN_OPENED as FOUND_LATE_MIN_OPENED
 
 ITERATION_TASKS = _ROOT / "scripts" / "eval" / "space_mcp_eval_tasks.json"
 ARTIFACTS = _ROOT / "experiment" / "space-mcp-eval" / "artifacts"
@@ -688,7 +692,7 @@ def _days_between(start: str, end: str) -> float:
 
 def _opened_mostly_found_late(row: dict[str, Any]) -> bool:
     """Whether most of ``row``'s postings opened were found late, posted weeks before HeadStart
-    first saw them (ADR-0351): of `hiring_now.FOUND_LATE_MIN_OPENED` or more opened, its served postings first seen in the window
+    first saw them (ADR-0351): of `found_late.MIN_OPENED` or more opened, its served postings first seen in the window
     and posted long before are at least half, and those posted since fewer than half."""
     opened, fresh, late = (
         row.get("opened"),
@@ -699,7 +703,7 @@ def _opened_mostly_found_late(row: dict[str, Any]) -> bool:
         opened is None
         or fresh is None
         or late is None
-        or opened < hiring_now.FOUND_LATE_MIN_OPENED
+        or opened < FOUND_LATE_MIN_OPENED
     ):
         return False
     return 2 * fresh < opened <= 2 * late
@@ -760,9 +764,11 @@ def expected_hot_order(
     return rows[:limit]
 
 
-#: Words by which an answer says a company's postings opened were not newly posted (ADR-0351).
+#: Words by which an answer says a company's postings opened were not newly posted (ADR-0351),
+#: the tools' own "posted over 14 days before" among them (ADR-0369).
 _FOUND_LATE_SAID = re.compile(
     r"found late|posted (?:weeks|months|long|well) (?:before|earlier|ago)|posted earlier"
+    r"|posted (?:more than |over )?(?:\d+|two|three|four) (?:days|weeks) (?:before|earlier)"
     r"|older postings|not newly posted|backfill|listed again|re-?listed|re-?posted",
     re.IGNORECASE,
 )
@@ -840,6 +846,81 @@ def verify_hot_top(
             if early
             else ""
         ),
+    )
+
+
+# --- found_late_share ----------------------------------------------------------------------
+
+
+class NotJudged(Exception):
+    """A data-dependent task whose case went from the live data between its `requires` check
+    and its verdict: the run says nothing about the model, so it is not judged, never failed."""
+
+
+#: How far, in percentage points, a stated share may sit from the Space's own.
+SHARE_TOLERANCE = 3
+_NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?")
+_PERCENT = re.compile(r"(\d+(?:\.\d+)?)\s*%")
+
+
+def _found_late_turnover(
+    fact: dict[str, Any], space: Space
+) -> tuple[str, dict[str, Any]]:
+    """The companies' keys, and their first row's turnover over the trailing ``days``, read from
+    /trends by the verifier itself, so a bug in a tool cannot hide here (ADR-0369)."""
+    picks = [company_scope.for_trends(space, c) for c in fact.get("companies") or []]
+    days = int(fact.get("days") or 7)
+    since = (datetime.now(UTC) - timedelta(days=days)).isoformat(timespec="seconds")
+    payload = space.read(
+        SpaceRoute.TRENDS, [("since", since), *(("company", p.key) for p in picks)]
+    )
+    move = ((payload.get("reading") or {}).get("total") or {}).get("move") or {}
+    return ", ".join(pick.key for pick in picks), move.get("turnover") or {}
+
+
+def _no_found_late_burst(fact: dict[str, Any], space: Space) -> str | None:
+    """Why the companies' postings opened over ``days`` are not mostly found late in today's
+    data, by the rule re-derived from /trends' own fields, or None while they are."""
+    names, turnover = _found_late_turnover(fact, space)
+    if _opened_mostly_found_late(turnover):
+        return None
+    return (
+        f"{names}'s postings opened over {fact.get('days') or 7} days are not mostly found "
+        f"late in today's data (opened {turnover.get('opened')}, found late "
+        f"{turnover.get('opened_found_late')}, fresh {turnover.get('opened_fresh')})"
+    )
+
+
+def verify_found_late_share(
+    expect: dict[str, Any], transcript: Transcript, space: Space
+) -> Verdict:
+    """For companies whose postings opened over ``days`` were mostly found late, posted weeks
+    before HeadStart first saw them (ADR-0369), the answer must say so and name how many: the
+    found-late count, or its share of opened or of the postings the counts date, within
+    SHARE_TOLERANCE points. Any tool path that gives the split passes. The task's `requires`
+    retires it while the burst is gone (`_no_found_late_burst`); a burst gone by the verdict is
+    not judged (NotJudged), never failed."""
+    if gone := _no_found_late_burst(expect, space):
+        raise NotJudged(gone)
+    names, turnover = _found_late_turnover(expect, space)
+    opened, late = turnover["opened"], turnover["opened_found_late"]
+    fresh = turnover["opened_fresh"]
+    answer = transcript.final_answer
+    said = bool(_FOUND_LATE_SAID.search(answer))
+    numbers = {float(n.replace(",", "")) for n in _NUMBER.findall(answer)}
+    shares = (100 * late / opened, 100 * late / (late + fresh))
+    percents = [float(p) for p in _PERCENT.findall(answer)]
+    named = late in numbers or any(
+        abs(p - share) <= SHARE_TOLERANCE for p in percents for share in shares
+    )
+    return Verdict(
+        said and named,
+        f"{names}: {late:,} found late and {fresh:,} fresh against {opened:,} opened "
+        f"({shares[0]:.0f}% of opened); the answer "
+        + ("says" if said else "does not say")
+        + " they were found late, and "
+        + ("names" if named else "does not name")
+        + " how many",
     )
 
 
@@ -1597,6 +1678,7 @@ _REQUIREMENTS: dict[str, Callable[[Any, Space], str | None]] = {
     "hot_row": _not_on_hot,
     "roles_joined_partway": _no_role_joined,
     "piled_ranking": _ranking_spread_out,
+    "found_late_burst": _no_found_late_burst,
 }
 
 
@@ -1659,6 +1741,7 @@ VERIFIERS: dict[str, Verifier] = {
     "senior_caveat": verify_senior_caveat,
     "trend_sign": verify_trend_sign,
     "hot_top": verify_hot_top,
+    "found_late_share": verify_found_late_share,
     "blocking_named": verify_blocking_named,
     "mentions": verify_mentions,
     "country_split": verify_country_split,
@@ -1801,12 +1884,13 @@ def judge(
     task: dict[str, Any], transcript: Transcript, space: Space
 ) -> tuple[str, str]:
     """The task's outcome, ``"pass" | "fail" | "error"``, and why; error is a verifier that could
-    not read the Space or resolve a company, so the task was not judged."""
+    not read the Space or resolve a company, or whose case is gone from the live data
+    (:class:`NotJudged`), so the task was not judged."""
     try:
         verdict = VERIFIERS[task["verifier"]](
             task.get("expect") or {}, transcript, space
         )
-    except (SpaceError, ToolFailure) as exc:
+    except (SpaceError, ToolFailure, NotJudged) as exc:
         return "error", f"the verifier could not judge: {exc}"
     return ("pass" if verdict.passed else "fail"), verdict.detail
 

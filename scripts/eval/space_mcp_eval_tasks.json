@@ -608,6 +608,14 @@
         }
       },
       "why": "Round-5 critique R5-P1-2 (ADR-0365): the per-company cap counted a group of 'also' rows as one posting, and the copy rule folded distinct Capital One requisitions into one group, so s04's first page was ten Capital One rows. The verifier needs at least 4 companies on the first page of the call and named in the answer. Data-dependent: `requires` retires it while the Space's uncapped ranking of that query already names 4 companies on its first page, since the cap then has nothing to spread (ADR-0366's mechanism)."
+    },
+    {
+      "id": "t43",
+      "prompt": "How many tech people did Deloitte US hire this week?",
+      "verifier": "found_late_share",
+      "expect": {"companies": ["Deloitte US"], "days": 7},
+      "requires": {"found_late_burst": {"companies": ["Deloitte US"], "days": 7}},
+      "why": "Round-5 critique R5-P1-1 (ADR-0369): read_trends reported Deloitte US's first whole read of its Avature Board as hiring, 509 opened and net +495 over 7 days, while 410 of its postings first seen that week were posted over 14 days before HeadStart saw them. The verifier reads /trends for the company itself, re-derives the found-late rule from the first row's opened_fresh and opened_found_late, and needs the answer to say the postings were found late and name how many: the found-late count, or its share of opened or of the dated postings within 3 points. Any tool path that gives the split passes (ADR-0354). Retired while today's data no longer shows Deloitte US's opened mostly found late (ADR-0366's requires), and not judged if the burst goes between that check and the verdict: never failed."
     }
   ],
   "heldout_sha256": "801e7149bc71c42e7b346dcf089ea20f87d1e0035d989b3dba8ffb50fe055e4d"
