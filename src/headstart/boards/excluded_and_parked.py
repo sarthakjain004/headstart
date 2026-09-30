@@ -1113,6 +1113,12 @@ PARKED_BOARDS: frozenset[str] = frozenset(
         "phenom:jobs.corecivic.com",
         "phenom:careers.associaonline.com",
         "phenom:careers.soprasteria.co.uk",
+        # A Taleo section a held Phenom front already serves: `vontier/4` lists 46 postings and 38
+        # of those reqs are on the held `phenom:careers.vontier.com` (133 postings; Vontier's Taleo
+        # `external` section redirects to that site), so each would be served twice under two ATS
+        # labels. Read 2026-09-29. Its twin host `aa246` is already buried onto `vontier`. Un-park
+        # if the Phenom front goes dead, or once cross-ATS deduplication exists.
+        "taleo_enterprise:https://vontier.taleo.net/careersection/4",
         # Happydance career fronts whose Backing Board is a Scrapable Board (ADR-0264): each
         # would serve its postings a second time under the front's key. Measured 2026-09-28 by
         # the apply URLs of up to 25 sampled job pages each, by Greenhouse job id (Box, Dropbox,

@@ -1,6 +1,6 @@
 # ADR-0307: A Taleo section its twin host mirrors is buried onto the linked host
 
-**Status:** accepted · **Date:** 2026-09-29 · **Amends:** [ADR-0186](0186-a-taleo-section-another-section-already-lists-is-an-alias.md) (a section is compared only with sections of its own host) · **Relates to:** [ADR-0188](0188-a-dedup-rule-change-is-a-trends-epoch.md) (`DEDUP_VERSION`), [ADR-0223](0223-a-taleo-or-adp-requisition-is-served-once-per-tenant.md) (one row per Tenant and requisition), [ADR-0265](0265-a-radancy-front-listing-only-what-another-front-lists-is-an-alias.md) (the front the company's site links to is kept), #888
+**Status:** accepted · **Date:** 2026-09-29 (amended 2026-09-30) · **Amends:** [ADR-0186](0186-a-taleo-section-another-section-already-lists-is-an-alias.md) (a section is compared only with sections of its own host) · **Relates to:** [ADR-0188](0188-a-dedup-rule-change-is-a-trends-epoch.md) (`DEDUP_VERSION`), [ADR-0223](0223-a-taleo-or-adp-requisition-is-served-once-per-tenant.md) (one row per Tenant and requisition), [ADR-0265](0265-a-radancy-front-listing-only-what-another-front-lists-is-an-alias.md) (the front the company's site links to is kept), #888
 
 ## Context
 
@@ -192,3 +192,37 @@ held on v499 and again on v45, read after HF's history reset. By section:
   under two host names. Nothing detects it.
 - **The burial is only as fresh as the last run**, as with ADR-0186. A twin section with no
   same-path row that starts listing its own reqs comes back on the next run.
+
+## Amendment, 2026-09-30: seven more pairs from the DNS-sieve landing
+
+Landing 290 Taleo Enterprise sections found by a DNS sieve exposed seven more twin pairs. Each was
+read through the scraper's own listing walk on 2026-09-29: the two sections list the same ids, and
+the same `contestNo` and title on every shared id. `TWIN_HOSTS` in
+`scripts/validate/taleo_enterprise_subset_sections.py` now carries all fifteen.
+
+| twin host | linked host | shared ids | why that host is linked |
+| --- | --- | ---: | --- |
+| `teletech` | `ttec` | 100 of 100 | as for `percepta` above: ttecjobs.com links `ttec.taleo.net` |
+| `aa246` | `vontier` | 46 of 46 | careers.vontier.com job pages apply through `vontier.taleo.net/careersection/external/jobapply.ftl` |
+| `aa333` | `mlgw` | 8 of 8 | mlgw.com links `mlgw.taleo.net/careersection/ext` |
+| `tas-tgh` | `tgh` | 697 of 697 | tgh.org/careers links `tgh.taleo.net/careersection/ex` |
+| `westpacnz` | `westpac` | 6 of 6 | nothing read; the lower name |
+| `wsp` | `golder` | 104 of 104 | nothing read; the lower name |
+| `kearney` | `atkcareers` | 2 of 2 | nothing read; the lower name |
+
+- **Three of the seven rest on the lower-name fallback**, as `hkmu` did. For `wsp` and `kearney`
+  the lower name looks like the older brand host, not necessarily the one each company links to
+  today (wsp.com and kearney.com answered 403, so this could not be read). If the company's site
+  links the other host, swap the pair; the election is by path, so nothing else changes.
+- **An id-only overlap is not a twin.** `rossstores` and `schneider` share 129 ids and no title.
+- **`tas-tgh` and `tgh` were both held before this landing**, so that pair was already served
+  twice; landing more sections on the twin widened it before the pair was added.
+- **`vontier`'s section 4 is parked, not landed as a Board** (`PARKED_BOARDS`,
+  `taleo_enterprise:https://vontier.taleo.net/careersection/4`). It lists 46 postings and 38 of
+  those reqs are on the held `phenom:careers.vontier.com` (133 postings; Vontier's Taleo
+  `external` section redirects to that site), so each would be served twice under two ATS labels,
+  the Phenom landing rule read in the other direction. Parking drops the 8 reqs only the Taleo
+  section lists. `aa246`'s section 4 is buried onto it, so neither is served. Un-park if the Phenom
+  front goes dead, or once cross-ATS deduplication exists.
+- **Westpac** also has `workday:westpacnz` (22 postings) beside its old Taleo sections (6). Not
+  acted on: names alone are a lead, not proof of a shared posting.
