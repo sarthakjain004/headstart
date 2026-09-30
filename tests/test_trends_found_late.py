@@ -147,25 +147,22 @@ def test_a_picked_companys_first_row_carries_its_split_from_its_own_first_count(
     """Each pick counts from the latest of the window's first tick, turnover's first tick and its
     own first count: gh:beta was first counted at noon on the 26th, after its posting's run
     that morning would have been its backlog."""
-    payload = found_late.attach(_payload(), TrendQuestion(), _postings())
+    payload = _payload()
+    found_late.attach(payload, TrendQuestion(), _postings())
     total = payload["reading"]["total"]["move"]
     assert _split(total) == (2, 2)
     assert all(
         "opened_fresh" not in line["move"]["turnover"]
         for line in payload["reading"]["lines"]
     ), "a category line under a pick is the pick's, and is given nothing"
-    late_count = found_late.attach(
-        _payload(counted_since={"gh:beta": "2026-09-27T12:00:00+00:00"}),
-        TrendQuestion(),
-        _postings(),
-    )
+    late_count = _payload(counted_since={"gh:beta": "2026-09-27T12:00:00+00:00"})
+    found_late.attach(late_count, TrendQuestion(), _postings())
     assert _split(late_count["reading"]["total"]["move"]) == (1, 2)
 
 
 def test_each_company_line_carries_its_own_split_under_the_company_split():
-    payload = found_late.attach(
-        _payload(split_by="company"), TrendQuestion(), _postings()
-    )
+    payload = _payload(split_by="company")
+    found_late.attach(payload, TrendQuestion(), _postings())
     lines = {line["name"]: line["move"] for line in payload["reading"]["lines"]}
     assert _split(lines["workday:acme/Site:One"]) == (1, 2)
     assert _split(lines["gh:beta"]) == (1, 0)
@@ -187,10 +184,11 @@ def test_no_split_where_opened_counts_only_part_of_what_the_postings_do(
 ):
     """A category, an ATS or comparable coverage counts part of a pick's opened, and measure new
     and the whole index have none to set the postings against (ADR-0369)."""
-    given = found_late.attach(payload, question, _postings())
-    assert _split(given["reading"]["total"]["move"]) == (None, None)
+    found_late.attach(payload, question, _postings())
+    assert _split(payload["reading"]["total"]["move"]) == (None, None)
 
 
 def test_unread_postings_give_nothing():
-    payload = found_late.attach(_payload(), TrendQuestion(), None)
+    payload = _payload()
+    found_late.attach(payload, TrendQuestion(), None)
     assert _split(payload["reading"]["total"]["move"]) == (None, None)

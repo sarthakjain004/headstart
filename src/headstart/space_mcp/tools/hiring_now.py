@@ -61,6 +61,7 @@ class Flag(StrEnum):
     CLOSURES_UNCOUNTED = "closures not counted"
     CLOSURES_PARTLY_UNCOUNTED = "closures counted on only some Boards"
     OPERATOR_UNVERIFIED = "operator unverified"
+    # A row says it in `found_late.clause`'s words, as every tool does (`_said`).
     FOUND_LATE = "opened mostly found late, not newly posted"
 
 
@@ -229,14 +230,6 @@ def _net_not_backed(row: dict[str, Any], pace: float) -> bool:
     return net * turnover_net < 0 and abs(net) > abs(turnover_net) * pace
 
 
-def _opened_mostly_found_late(row: dict[str, Any]) -> bool:
-    """Whether most of the row's postings opened were found late, by the one rule every reader
-    of the split uses (`found_late.mostly_found_late`, ADR-0351, ADR-0369)."""
-    return found_late.mostly_found_late(
-        row.get("opened"), row.get("opened_fresh"), row.get("opened_found_late")
-    )
-
-
 def _flags(
     row: dict[str, Any], lens: Lens, pace: float, min_stock: int
 ) -> tuple[Flag, ...]:
@@ -250,18 +243,18 @@ def _flags(
         Flag.CLOSURES_PARTLY_UNCOUNTED: row.get("closed") is not None
         and bool(row.get("closures_uncounted_boards")),
         Flag.OPERATOR_UNVERIFIED: bool(row.get("operator_unverified")),
-        Flag.FOUND_LATE: _opened_mostly_found_late(row),
+        # The one rule every reader of the split uses (ADR-0351, ADR-0369).
+        Flag.FOUND_LATE: found_late.mostly_found_late(
+            row.get("opened"), row.get("opened_fresh"), row.get("opened_found_late")
+        ),
     }
     return tuple(flag for flag in lens.checks if carried[flag])
 
 
 def _said(flag: Flag, row: dict[str, Any]) -> str:
     if flag is Flag.FOUND_LATE:
-        return (
-            f"{flag.value}: of its postings first seen since turnover began, "
-            f"{row['opened_found_late']:,} were posted more than {found_late.FOUND_LATE_DAYS} days before "
-            f"HeadStart saw them and {row['opened_fresh']:,} since"
-        )
+        # In the words every tool says it in (`found_late.clause`, ADR-0369).
+        return str(found_late.clause(row))
     if flag is Flag.SMALL_BASE:
         stock = row["stock"]
         return (
@@ -397,7 +390,7 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
     if listing.flagged_cut:
         lines.append(
             f"{noun_counts.counted(listing.flagged_cut, 'flagged row')} the site ranks above "
-            f"rows shown here {'is' if listing.flagged_cut == 1 else 'are'} not shown (limit "
+            f"rows shown here {noun_counts.verb(listing.flagged_cut, 'is', 'are')} not shown (limit "
             f"{arguments['limit']}); raise limit to see them."
         )
     for flag, summary in _FLAG_SUMMARY.items():

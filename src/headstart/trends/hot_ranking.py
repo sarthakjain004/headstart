@@ -56,8 +56,8 @@ A company's jobs **Opened** are ids new on a Board already counted, and some of 
 weeks earlier: a Board read again after a gap, postings listed again under new ids, a scraper or
 filter change that let old postings in. Starbucks stood third on Opened less closed on 2026-09-29
 on 50 opened; 28 of its postings first seen that week were posted more than 14 days before
-HeadStart first saw them. So each row also says, from the served postings first seen since its
-turnover began, how many were posted within ``found_late.FOUND_LATE_DAYS`` of first sight
+HeadStart first saw them. So each row also says, from the served postings first seen in the
+week's ticks with turnover, how many were posted within ``found_late.FOUND_LATE_DAYS`` of first sight
 (``opened_fresh``, undated ones included) and how many longer before (``opened_found_late``),
 counted by :mod:`headstart.trends.found_late`, which ``/trends`` counts its company lines by too
 (ADR-0369).
@@ -187,8 +187,9 @@ def rank(
                 "opened_less_closed": None
                 if closed is None or company.closures_uncounted_boards
                 else opened - closed,
-                # Of its served postings first seen since turnover began, those posted within
-                # FOUND_LATE_DAYS of first sight (or undated), and those posted longer before.
+                # Of its served postings first seen after the week's first tick with turnover
+                # and by its last, those posted within found_late.FOUND_LATE_DAYS of first sight
+                # (or undated), and those posted longer before.
                 "opened_fresh": fresh,
                 "opened_found_late": late,
             }

@@ -3,6 +3,7 @@ held-out hash guard and --dry-run. Nothing here starts Claude Code or reaches th
 
 from __future__ import annotations
 
+import collections
 import hashlib
 import importlib.util
 import json
@@ -12,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+from headstart.jobs import work_authorization
 from headstart.space_mcp.space_client import InvalidRequest, SpaceRoute
 from headstart.space_mcp.tools import REGISTRY
 
@@ -1163,6 +1165,36 @@ def test_sponsorship_polarity_reads_a_hedge_before_a_negation(ev, mention):
     assert ev._not_offering(job, {}).startswith("hedged")
 
 
+def test_sponsorship_polarity_catches_a_hedge_the_spaces_rules_read_as_firm(ev):
+    """Round-5 review SP7: the eval's hedges are its own, so it sees an error of the Space's."""
+    mention = "We sponsor visas, pending company approval."
+    held = work_authorization.stances(mention, title="Software Engineer")
+    assert held == {work_authorization.OFFERS_SPONSORSHIP}, "the Space's rules err here"
+    job = {"id": "lever:acme:1", "work_authorization": {"mentions": [mention]}}
+    assert ev._not_offering(job, {}).startswith("hedged")
+
+
+def test_sponsorship_polaritys_hedges_are_its_own_and_no_labelled_firm_offer_says_one(
+    ev,
+):
+    """Written from the may_offer labels, not imported from the Space's rules (SP7): no
+    description a person labelled a firm offer has a sponsorship sentence carrying one."""
+    source = Path(ev.__file__).read_text(encoding="utf-8")
+    assert "work_authorization import" not in source
+    assert "import work_authorization" not in source
+    lines = ev.LABELLED_DESCRIPTIONS.read_text(encoding="utf-8").splitlines()
+    carrying = collections.Counter()
+    for row in map(json.loads, filter(None, lines)):
+        sentences = re.split(r"(?<=[.!?])\s+|\n", (row.get("text") or "").casefold())
+        if any(
+            ev._SPONSORSHIP_TOPIC.search(s) and any(p in s for p in ev._HEDGE_PHRASES)
+            for s in sentences
+        ):
+            carrying[row["sponsorship"]] += 1
+    assert carrying["offers"] == 0, carrying
+    assert carrying["may_offer"] >= 40, carrying
+
+
 @pytest.mark.parametrize(
     "mention",
     [
@@ -2222,9 +2254,20 @@ def test_employer_unflagged_fails_a_tool_or_an_answer_calling_the_employer_an_ag
         "agency or recruiter; it is the employer."
     )
     assert _lockheed(ev, _LOCKHEED_ROW, denied).passed
+    for denied in (
+        "Lockheed Martin is not a staffing agency.",
+        "Lockheed Martin (#18): not an agency or recruiter, a real employer.",
+        "Lockheed Martin carries no staffing flag.",
+        "There is no sign that Lockheed Martin... no sign that it is a recruiter.",
+        "Lockheed Martin: HeadStart does not suggest it might be a staffing agency.",
+    ):
+        assert _lockheed(ev, _LOCKHEED_ROW, denied).passed, denied
     for called in (
         "Lockheed Martin is listed, not flagged; it may be a staffing agency.",
         "Lockheed Martin is not the employer of these postings.",
+        # Round-5 review SP8: a "not" that denies something else is no denial of agency.
+        "Lockheed Martin: HeadStart does not verify it, so it may be a staffing agency.",
+        "Lockheed Martin is not on any curated list and may be a recruiter.",
     ):
         assert not _lockheed(ev, _LOCKHEED_ROW, called).passed, called
 

@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import re
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, date, datetime
+from datetime import date
 from typing import Any
 
 from headstart.boards.board_identity import board_of
@@ -34,8 +34,10 @@ from headstart.search_filters import (
 )
 from headstart.serving import per_company_cap
 from headstart.space_mcp import (
+    answer_date,
     company_scope,
     job_places,
+    may_offer_words,
     noun_counts,
     role_families,
     scraped_text,
@@ -165,7 +167,7 @@ def _keyword_note(arguments: dict[str, Any]) -> str | None:
     return _RELOCATION_KEYWORD_NOTE if found else None
 
 
-def _params(
+def space_params(
     arguments: dict[str, Any], scope: company_scope.CompanyScope | None
 ) -> list[tuple[str, str]]:
     """The query string both routes are asked, in `JobSearch.parse_filters`' own names."""
@@ -252,11 +254,6 @@ def _money(row: dict[str, Any]) -> str | None:
     return None
 
 
-def _today() -> date:
-    """Today in UTC, what a posting's age is counted to; its own function so a test can pin it."""
-    return datetime.now(UTC).date()
-
-
 def _age(day: str, today: date) -> str:
     try:
         days = (today - date.fromisoformat(day[:10])).days
@@ -337,10 +334,7 @@ def _sponsorship(row: dict[str, Any]) -> str | None:
         return None
     if read.get("stance") == work_authorization.OFFERS_SPONSORSHIP:
         return "sponsorship: offers"
-    because = search_arguments.may_offer_said(read.get("because") or [])
-    return (
-        f"sponsorship: may offer ({because})" if because else "sponsorship: may offer"
-    )
+    return f"sponsorship: may offer ({may_offer_words.not_firm(read.get('because') or [])})"
 
 
 def _weak_match_line(
@@ -411,9 +405,9 @@ def _page_lines(
     """One page's rows numbered from ``first``, and whether any went under another: a row copying
     an earlier row's posting (`requisition_copies`) is listed under it as "also #N". Only within the
     page, so paging and the header's row numbers are the Space's."""
-    today = _today()
+    today = answer_date.today()
     facts = [_facts(row, today, max_years) for row in rows]
-    groups = requisition_copies.groups(rows)
+    groups = requisition_copies.posting_groups(rows)
     lines = []
     for head, *others in groups:
         lines.append(_row(first + head, rows[head], facts[head]))
@@ -590,7 +584,7 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
         scope = company_scope.for_search(
             client, company, needs_boards=bool(arguments.get("category"))
         )
-    params = _params(arguments, scope)
+    params = space_params(arguments, scope)
     full = arguments.get("detail") == "full"
     # Concise prints only the total, so it asks for nothing else (ADR-0274): under a description
     # keyword every option's count re-scans the matches, 98.7 s against 10.6 s for the page.

@@ -34,7 +34,7 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from headstart.mcp_protocol.messages import ToolFailure
-from headstart.space_mcp import company_scope, role_families, scraped_text
+from headstart.space_mcp import company_scope, noun_counts, role_families, scraped_text
 from headstart.space_mcp.space_client import SpaceClient, SpaceRoute
 from headstart.space_mcp.space_tool import SpaceTool
 from headstart.space_mcp.turnover_span import span_sentence
@@ -439,7 +439,7 @@ def _rest_contains(
             + ", ".join(changes.number(label) for label in changes.unsized)
             + ")"
         )
-    return held[0] if len(held) == 1 else ", ".join(held[:-1]) + " and " + held[-1]
+    return noun_counts.listed(held)
 
 
 def _turnover_lead(payload: dict[str, Any], window: dict[str, str]) -> list[str]:
@@ -633,11 +633,9 @@ def _roles_head(payload: dict[str, Any], category: str, label: str) -> list[str]
     )
     if joined:
         names = [str(line.get("label")) for line in joined]
-        named = (
-            names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
-        )
         roles += (
-            f" {named} {'is' if len(names) == 1 else 'are'} left out of that total: counted "
+            f" {noun_counts.listed(names)} {noun_counts.verb(len(names), 'is', 'are')} left "
+            "out of that total: counted "
             "only from partway through the window, their start is no like-for-like base."
         )
     return [roles]

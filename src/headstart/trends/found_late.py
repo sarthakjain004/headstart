@@ -158,10 +158,10 @@ def attach(
     payload: dict[str, Any],
     question: TrendQuestion,
     postings: FirstSeenPostings | None,
-) -> dict[str, Any]:
-    """``payload`` (a ``/trends`` answer with its reading) with each company line's turnover
-    given ``opened_fresh`` and ``opened_found_late`` (ADR-0369): the first row where companies
-    are picked, and each company's line under the company split.
+) -> None:
+    """Gives each company line's turnover in ``payload`` (a ``/trends`` answer with its
+    reading) ``opened_fresh`` and ``opened_found_late``, in place (ADR-0369): the first row where
+    companies are picked, and each company's line under the company split.
 
     Each pick counts its postings first seen after the latest of the window's first tick, the
     first tick with turnover, and the pick's own first count, and by the window's last tick: the
@@ -181,7 +181,7 @@ def attach(
         or payload.get("family")
         or question.ats
     ):
-        return payload
+        return
     began = payload.get("turnover_since")
     counted = payload.get("counted_since") or {}
 
@@ -208,4 +208,3 @@ def attach(
         for line in reading.get("lines") or []:
             if line.get("name") in picks:
                 given(line.get("move"), [line["name"]])
-    return payload

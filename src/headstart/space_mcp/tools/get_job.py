@@ -24,7 +24,7 @@ from __future__ import annotations
 import json
 import re
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, date, datetime
+from datetime import date
 from typing import Any, NamedTuple
 
 from headstart.boards.board_identity import board_of
@@ -34,10 +34,11 @@ from headstart.jobs import work_authorization
 from headstart.mcp_protocol.messages import ToolFailure
 from headstart.serving.job_absence import WHY_NOT_SERVED
 from headstart.space_mcp import (
+    answer_date,
     company_scope,
+    may_offer_words,
     noun_counts,
     scraped_text,
-    search_arguments,
     shown_company,
 )
 from headstart.space_mcp.space_client import (
@@ -89,7 +90,7 @@ def _floors_stated(job: dict[str, Any]) -> str | None:
     floors = experience_extraction.stated_floors(job["description"])
     if len(floors) < 2 or job.get("min_years") != floors[0]:
         return None
-    listed = ", ".join(str(n) for n in floors[:-1]) + f" and {floors[-1]}"
+    listed = noun_counts.listed([str(n) for n in floors])
     return (
         f"   States {listed} years in separate clauses; HeadStart shows the smallest "
         "(ADR-0079), so check which applies to you."
@@ -223,10 +224,6 @@ def _description(job: dict[str, Any], share: _DescriptionShare) -> list[str]:
 
 
 #: What the weaker sponsorship stance means, beside its name (ADR-0353).
-_MAY_OFFER_SAID = (
-    " (not a firm offer: hedged, as 'not guaranteed' or 'case by case', or limited to a "
-    "country or level this job's place or title does not show)"
-)
 
 
 def _work_authorization(job: dict[str, Any]) -> list[str]:
@@ -239,8 +236,7 @@ def _work_authorization(job: dict[str, Any]) -> list[str]:
     held = read.get("stances") or []
     stances = ", ".join(held) or "none"
     if work_authorization.MAY_OFFER_SPONSORSHIP in held:
-        because = search_arguments.may_offer_said(read.get("may_offer_because") or [])
-        stances += f" (not a firm offer: {because})" if because else _MAY_OFFER_SAID
+        stances += f" ({may_offer_words.not_firm(read.get('may_offer_because') or [])})"
     lines = [
         (
             f"   Work authorisation read from the whole description by HeadStart's rules (they "
@@ -305,10 +301,6 @@ def _job(number: int, job: dict[str, Any], share: _DescriptionShare) -> list[str
     return lines + _work_authorization(job) + _description(job, share)
 
 
-def _today() -> date:
-    return datetime.now(UTC).date()
-
-
 def _ended(job: dict[str, Any]) -> str | None:
     """A line when the description states an end day that has passed (ADR-0367): the Board still
     lists it, so it may have closed, or the date may be one the employer never updated."""
@@ -319,7 +311,7 @@ def _ended(job: dict[str, Any]) -> str | None:
         day = date.fromisoformat(stated["day"])
     except ValueError:
         return None
-    if day >= _today():
+    if day >= answer_date.today():
         return None
     said = scraped_text.quoted(stated.get("said"), scraped_text.SHORT_FIELD)
     return (

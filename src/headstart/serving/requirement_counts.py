@@ -5,9 +5,9 @@ A career switcher asks "what does a data engineer need", and the honest answer i
 Jobs, not a paraphrase of one. :func:`summarize` takes the sampled Jobs (:meth:`JobSearch.
 requirements` picks them) and first makes each requisition count once (ADR-0332): a Job whose
 company names nothing but its Board is shown under the Company directory's name
-(`company_name.with_directory_name`, ADR-0323's rule), and of the Jobs that are one posting on
-two Boards (`jobs.requisition_copies`, the rule a search page lists them by, ADR-0365) only the
-first read is counted.
+(`company_name.with_directory_name`, ADR-0323's rule), and of the Jobs that are one requisition
+(`jobs.requisition_copies.one_requisition`: one posting on two Boards, or one requisition posted
+per country, ADR-0370) only the first read is counted.
 Given ``per_company``, at most that many of one company's are counted (ADR-0352). Then, per
 counted Job:
 
@@ -154,11 +154,11 @@ def _companies(
 def _capped(
     jobs: list[Mapping[str, Any]], per_company: int | None
 ) -> list[Mapping[str, Any]]:
-    """``jobs``, one per posting, with each company's past its first ``per_company`` left out
-    (ADR-0352): one company's boilerplate would otherwise set the skills and years of the whole
-    sample. Every Job counts, as every row does on a search page (ADR-0365); a page's
-    `per_company_cap.spread` would also keep a posting's copies, which the sample's grouping has
-    already folded, and two group heads can be one another's copies, so it is not used here."""
+    """``jobs``, one per requisition, with each company's past its first ``per_company`` left
+    out (ADR-0352): one company's boilerplate would otherwise set the skills and years of the
+    whole sample. A page's `per_company_cap.spread` is not used here: it marks the rows it moves,
+    and its keeping of a posting's copies has nothing to keep once each requisition is one Job
+    (ADR-0370)."""
     if not per_company:
         return jobs
     seen: Counter[str] = Counter()
@@ -252,7 +252,7 @@ def summarize(
     (ADR-0352), which every other count is over; ``over_company_cap`` how many requisitions that
     cap left out. ``companies`` still says how many of each company's were sampled."""
     read = [_on_its_board(job, board_and_name) for job in jobs]
-    sampled = [read[group[0]] for group in requisition_copies.groups(read)]
+    sampled = [read[group[0]] for group in requisition_copies.requisition_groups(read)]
     jobs = _capped(sampled, per_company)
     skills, described = _skills(jobs, vocabulary)
     countries, no_country = _countries(jobs)

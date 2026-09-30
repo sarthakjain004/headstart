@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from headstart.jobs.requisition_copies import groups
+from headstart.jobs.requisition_copies import posting_groups, requisition_groups
 
 _EVERSOURCE_FRONT = (
     "Berlin, CT, United States of America; Westwood, Massachusetts, United States; "
@@ -55,7 +55,7 @@ def test_one_posting_on_its_workday_board_and_its_radancy_front_is_one_group():
             _CAPITAL_ONE_FRONT,
         ),
     ]
-    assert groups(rows) == [[0, 1]]
+    assert posting_groups(rows) == [[0, 1]]
 
 
 def test_same_titled_requisitions_on_one_board_are_each_a_posting_with_its_own_copy():
@@ -70,7 +70,7 @@ def test_same_titled_requisitions_on_one_board_are_each_a_posting_with_its_own_c
         _row("R1001268", title, "Capital One", workday, _CAPITAL_ONE_WORKDAY),
         _row(100950230848, title, "Capital One", front, _CAPITAL_ONE_FRONT),
     ]
-    assert groups(rows) == [[0, 1], [2, 3]]
+    assert posting_groups(rows) == [[0, 1], [2, 3]]
 
 
 @pytest.mark.parametrize(
@@ -101,7 +101,7 @@ def test_another_title_or_city_is_another_posting(
         _row(1, title, "Capital One", place, _CAPITAL_ONE_WORKDAY),
         _row(2, other_title, "Capital One", other_place, _CAPITAL_ONE_FRONT),
     ]
-    assert groups(rows) == [[0], [1]]
+    assert posting_groups(rows) == [[0], [1]]
 
 
 @pytest.mark.parametrize(
@@ -118,12 +118,62 @@ def test_one_first_place_written_with_more_words_is_one_place(place, other_place
         _row(1, "Data Engineer", "Amgen", place, "workday:amgen/Careers"),
         _row(2, "Data Engineer", "Amgen", other_place, "radancy:careers.amgen.com"),
     ]
-    assert groups(rows) == [[0, 1]]
+    assert posting_groups(rows) == [[0, 1]]
+
+
+@pytest.mark.parametrize(
+    ("place", "other_place"),
+    [
+        # The round-5 review's SP6: one first place's word inside another's name.
+        ("York, PA", "New York, NY"),
+        ("Naples, FL, US", "East Naples, FL, US"),
+        ("Amityville, NY, US", "North Amityville, NY, US"),
+    ],
+)
+def test_a_place_inside_another_places_name_is_another_place(place, other_place):
+    """A word that begins a place's name makes another place (ADR-0370)."""
+    rows = [
+        _row(1, "Data Engineer", "Amgen", place, "workday:amgen/Careers"),
+        _row(2, "Data Engineer", "Amgen", other_place, "radancy:careers.amgen.com"),
+    ]
+    assert posting_groups(rows) == [[0], [1]]
+
+
+def test_one_requisition_posted_per_country_is_one_requisition_but_not_one_posting():
+    """A requirements sample counts a requisition once however many countries it was posted in
+    (ADR-0332, kept by ADR-0370); a search page lists each country's posting (ADR-0365)."""
+    rows = [
+        _row(1, "Backend Developer (Peru)", "Anyone AI", "Lima", "lever:anyone"),
+        _row(2, "Backend Developer (Chile)", "Anyone AI", "Santiago", "lever:anyone"),
+        _row(3, "Backend Developer", "ANYONE AI", "Bogotá", "lever:anyone"),
+        _row(4, "Frontend Developer (Peru)", "Anyone AI", "Lima", "lever:anyone"),
+    ]
+    assert posting_groups(rows) == [[0], [1], [2], [3]]
+    assert requisition_groups(rows) == [[0, 1, 2], [3]]
+
+
+def test_one_requisition_needs_one_company_and_unnamed_rows_one_board():
+    rows = [
+        _row(1, "Developer", "Acme", "Lima", "lever:acme"),
+        _row(2, "Developer", "Acme Robotics", "Lima", "lever:acme-robotics"),
+        _row(3, "Developer", "", "Lima", "oracle:a.fa.us2.oraclecloud.com"),
+        _row(4, "Developer (Chile)", "", "Santiago", "oracle:a.fa.us2.oraclecloud.com"),
+        _row(5, "Developer", "", "Lima", "oracle:b.fa.us2.oraclecloud.com"),
+    ]
+    assert requisition_groups(rows) == [[0], [1], [2, 3], [4]]
+
+
+def test_one_posting_on_two_boards_is_one_requisition():
+    rows = [
+        _row(1, "Data Engineer", "EVERSOURCE", "Berlin, CT, US", "radancy:x"),
+        _row(2, "Data Engineer", "Eversource Energy", "Berlin, CT", "workday:e/s"),
+    ]
+    assert requisition_groups(rows) == [[0, 1]]
 
 
 def test_rows_on_one_board_are_never_copies():
     rows = [_row(1), _row(2), _row(3, "Data Engineer", "ACME", "london")]
-    assert groups(rows) == [[0], [1], [2]]
+    assert posting_groups(rows) == [[0], [1], [2]]
 
 
 def test_one_posting_on_two_boards_under_two_spellings_is_one_group():
@@ -144,7 +194,7 @@ def test_one_posting_on_two_boards_under_two_spellings_is_one_group():
             "workday:eversource/externalsite",
         ),
     ]
-    assert groups(rows) == [[0, 1]]
+    assert posting_groups(rows) == [[0, 1]]
 
 
 @pytest.mark.parametrize(
@@ -161,7 +211,7 @@ def test_spellings_that_differ_by_legal_and_generic_words_are_one_company(one, o
         _row(1, company=one, location="McLean, VA"),
         _row(2, company=other, location="McLean, Virginia", board="workday:x/y"),
     ]
-    assert groups(rows) == [[0, 1]]
+    assert posting_groups(rows) == [[0, 1]]
 
 
 @pytest.mark.parametrize(
@@ -183,7 +233,7 @@ def test_other_companies_or_places_are_not_copies(one, other, place, elsewhere):
         _row(1, company=one, location=place),
         _row(2, company=other, location=elsewhere, board="workday:x/y"),
     ]
-    assert groups(rows) == [[0], [1]]
+    assert posting_groups(rows) == [[0], [1]]
 
 
 _TSMC_PAY = {
@@ -204,7 +254,7 @@ def test_one_posting_under_a_short_and_a_long_name_is_one_group():
         },
         {**_row(2, title, long_name, "USA-Washington", "avature:tsmc"), **_TSMC_PAY},
     ]
-    assert groups(rows) == [[0, 1]]
+    assert posting_groups(rows) == [[0, 1]]
 
 
 @pytest.mark.parametrize(
@@ -226,7 +276,7 @@ def test_a_short_and_a_long_name_need_one_stated_pay_range(one, other):
             **other,
         },
     ]
-    assert groups(rows) == [[0], [1]]
+    assert posting_groups(rows) == [[0], [1]]
 
 
 def test_a_short_and_a_long_name_need_the_same_countries():
@@ -237,7 +287,7 @@ def test_a_short_and_a_long_name_need_the_same_countries():
             **_TSMC_PAY,
         },
     ]
-    assert groups(rows) == [[0], [1]]
+    assert posting_groups(rows) == [[0], [1]]
 
 
 def test_rows_naming_no_company_are_never_copies():
@@ -247,9 +297,9 @@ def test_rows_naming_no_company_are_never_copies():
         _row(2, "Developer", None, "Lima", "oracle:a.fa.us2.oraclecloud.com"),
         _row(3, "Developer", "", "Lima", "oracle:b.fa.us2.oraclecloud.com"),
     ]
-    assert groups(rows) == [[0], [1], [2]]
+    assert posting_groups(rows) == [[0], [1], [2]]
 
 
 def test_a_row_with_no_title_groups_with_nothing():
     rows = [_row(1, ""), _row(2, "", board="workday:x/y")]
-    assert groups(rows) == [[0], [1]]
+    assert posting_groups(rows) == [[0], [1]]
