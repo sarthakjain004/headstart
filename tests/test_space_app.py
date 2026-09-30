@@ -1009,7 +1009,7 @@ def test_a_caller_cannot_claim_the_in_process_mark_with_a_header(auth_app, monke
 
 # ---- the app's own mark on every reply (ADR-0253) ----
 
-_OWN_REPLY = "app; agent-api=22"
+_OWN_REPLY = "app; agent-api=23"
 
 
 def test_a_routes_own_answer_is_marked(auth_app):
@@ -4315,7 +4315,27 @@ def test_a_job_read_by_id_answers_its_detail_and_lists_what_is_missing(app):
     assert job["description_chars"] == 42 and job["description_cut"] is False
     assert job["unconfirmed"] is None  # no grace set pulled on this deployment
     assert body["missing"] == ["gone:x:9"]
+    assert body["closest"] == {}  # no Board gone:x holds a like id
+    assert job["stated_end_date"] is None
     assert body["description_limit"] == 12_000 and body["newest_tick"] is None
+
+
+def test_a_missing_id_is_answered_with_the_closest_id_on_its_board(app, monkeypatch):
+    """R5-P2-10 (ADR-0367): what `JobSearch.closest_ids` finds is sent for the missing ids."""
+    asked = []
+    near = {"id": "greenhouse:acme:1", "title": "Backend Engineer"}
+    monkeypatch.setattr(
+        app._searcher,
+        "closest_ids",
+        lambda missing: asked.append(missing) or {"greenhouse:acme:11": near},
+    )
+    body = (
+        app.app.test_client()
+        .get("/job?id=greenhouse:acme:11&id=greenhouse:acme:1")
+        .json
+    )
+    assert asked == [["greenhouse:acme:11"]]
+    assert body["closest"] == {"greenhouse:acme:11": near}
 
 
 def test_a_job_read_by_id_says_whether_the_latest_scrape_missed_it(app, monkeypatch):

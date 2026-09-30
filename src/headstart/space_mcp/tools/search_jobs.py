@@ -71,6 +71,12 @@ LAST_PAGE = 20
 SORT_WINDOW = 2_000
 SORT_FLOOR = 0.67
 
+#: Under this, a ranking's closest row matches nothing closely (ADR-0367). On 2026-09-30, the
+#: closest row of 22 queries naming real tech roles, 5 of them in one country, scored 0.733 to
+#: 0.871, and of 15 naming no tech role ("pastry chef", injection text) 0.611 to 0.793: 9 of those
+#: 15 score under it, and none of the 22.
+WEAK_MATCH = 0.72
+
 _ARGUMENT_OF = {
     space: argument for argument, space in search_arguments.SPACE_NAME.items()
 }
@@ -317,9 +323,39 @@ def _facts(row: dict[str, Any], today: date, max_years: int | None) -> list[str]
     if seen:
         age = "" if posted else _age(str(seen), today)
         facts.append(f"first seen {str(seen)[:10]}{age}")
+    if sponsorship := _sponsorship(row):
+        facts.append(sponsorship)
     if row.get(per_company_cap.PAST_COMPANY_CAP):
         facts.append("past per_company: its company's closer jobs are listed earlier")
     return facts
+
+
+def _sponsorship(row: dict[str, Any]) -> str | None:
+    """Which kind of sponsorship a `may_offer_sponsorship` row's description states (ADR-0367)."""
+    read = row.get("sponsorship")
+    if not isinstance(read, dict):
+        return None
+    if read.get("stance") == work_authorization.OFFERS_SPONSORSHIP:
+        return "sponsorship: offers"
+    because = search_arguments.may_offer_said(read.get("because") or [])
+    return (
+        f"sponsorship: may offer ({because})" if because else "sponsorship: may offer"
+    )
+
+
+def _weak_match_line(
+    arguments: dict[str, Any], rows: list[dict[str, Any]]
+) -> str | None:
+    """A first page whose closest row scores under :data:`WEAK_MATCH`: nothing is close."""
+    scores = [row["score"] for row in rows if row.get("score") is not None]
+    if int(arguments["page"]) != 1 or not scores or max(scores) >= WEAK_MATCH:
+        return None
+    return (
+        f"Nothing matches closely: the closest row scores {max(scores):.2f}, under "
+        f"{WEAK_MATCH:.2f}, where rows naming the role asked for usually score. These rows "
+        "are loose matches, most likely other roles; say so rather than presenting them as "
+        "matches."
+    )
 
 
 def _score(row: dict[str, Any]) -> str:
@@ -612,6 +648,8 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
             0,
             f"{_matched(total, arguments)} Showing {first:,}–{first + len(rows) - 1:,}.",
         )
+        if weak := _weak_match_line(arguments, rows):
+            lines.insert(1, weak)
         lines.append(_order_line(arguments, rows))
         lines.append(scraped_text.SCRAPED_NOTE)
         page_lines, grouped = _page_lines(first, rows, arguments.get("max_years"))

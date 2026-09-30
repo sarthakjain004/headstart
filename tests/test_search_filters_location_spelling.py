@@ -471,6 +471,30 @@ def test_the_folded_clause_keeps_every_row_the_substring_clause_kept(table):
         assert old <= _hits(table, term), term
 
 
+@pytest.mark.parametrize(
+    "spellings",
+    [
+        ("Bangalore", "Bengaluru", "BENGALURU"),
+        ("Zürich", "Zurich", "ZURICH"),
+        ("Kraków", "Krakow", "Cracow"),
+        ("St. Louis", "Saint Louis", "St Louis"),
+        ("Vienna", "Wien"),
+        ("Tel Aviv-Yafo", "Tel Aviv"),
+        ("Ho Chi Minh City", "Saigon"),
+    ],
+)
+def test_place_key_is_one_key_for_every_spelling_the_filter_reads_alike(spellings):
+    """ADR-0367: the Where-snapshot groups a country's cities by this key."""
+    assert len({location_spelling.place_key(s) for s in spellings}) == 1
+
+
+def test_place_key_keeps_other_places_apart():
+    keys = {location_spelling.place_key(s) for s in ("Pune", "Mumbai", "Madrid")}
+    assert len(keys) == 3
+    # A spelling inside a longer word is not the renamed place: "Madrasa" is not Madras.
+    assert location_spelling.place_key("Madrasa") == "madrasa"
+
+
 def test_a_plain_term_compiles_to_the_old_clause_exactly():
     assert _sql("london") == "lower(location) LIKE '%london%'"
     assert _sql("new_york") == r"lower(location) LIKE '%new\_york%'"

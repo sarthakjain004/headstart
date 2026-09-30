@@ -71,8 +71,10 @@ SPACE_URL = "https://imposeidon-headstart-search.hf.space"
 #: `opened_found_late` (ADR-0351); since 20, `may_offer_sponsorship` and offers read against each
 #: Job's place and title (ADR-0353); since 21, `/facets`' `places=1` (ADR-0355); since 22,
 #: `/trends`' tracked-roles first row on one basis and `/hot`'s `operator_unverified` off a
-#: Board's own label (ADR-0366). The app states the one it serves on every reply.
-AGENT_API = 22
+#: Board's own label (ADR-0366); since 23, each `may_offer_sponsorship` row's
+#: `sponsorship` and `/job`'s `stated_end_date` and `closest` (ADR-0367). The app states the
+#: one it serves on every reply.
+AGENT_API = 23
 
 #: The measured boot, said when a call gives up waiting for one.
 BOOT_MEASURED = "a boot measured 4 min 13 s on 2026-09-28"

@@ -88,6 +88,30 @@ def test_may_offer_keeps_the_hedged_the_out_of_reach_and_the_firm_offers(tmp_pat
     ]
 
 
+def test_each_kept_job_says_whether_it_offers_or_why_it_only_may(tmp_path):
+    """R5-P2-2 (ADR-0367): read with the stances, so a page tags its rows by a lookup."""
+    table = _table(
+        tmp_path,
+        [
+            ("lever:a:1", "Visa sponsorship is available for this role."),
+            ("lever:a:2", "Sponsorship for this role is not guaranteed."),
+            ("lever:a:3", "Visa sponsorship: H-1B transfer sponsorship available."),
+        ],
+    )
+    rows = _read(table)
+    assert rows.sponsorship("lever:a:1") == {
+        "stance": work_authorization.OFFERS_SPONSORSHIP,
+        "because": [],
+    }
+    assert rows.sponsorship("lever:a:2") == {
+        "stance": work_authorization.MAY_OFFER_SPONSORSHIP,
+        "because": [work_authorization.HEDGED],
+    }
+    assert rows.sponsorship("lever:a:3")["because"] == [
+        work_authorization.TRANSFER_ONLY
+    ]
+
+
 def test_a_stance_no_job_holds_keeps_nothing(tmp_path):
     table = _table(tmp_path, [("lever:a:1", "Build distributed systems in Go.")])
     rows = _read(table)

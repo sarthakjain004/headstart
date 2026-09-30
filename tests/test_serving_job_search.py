@@ -2377,6 +2377,18 @@ def test_a_stance_keeps_the_jobs_whose_description_states_it(families_served):
     assert search.facets(keyed)["total"] == 1
 
 
+def test_a_may_offer_page_tags_each_row_with_its_stance(families_served):
+    """R5-P2-2 (ADR-0367): p1f's rows carried no stance, so a reader read each job."""
+    search = _stances_read(families_served)
+    page = search.run({"work_authorization": "may_offer_sponsorship"})
+    assert page and all(
+        row["sponsorship"]["stance"] == "offers_sponsorship" for row in page
+    )
+    assert (
+        "sponsorship" not in search.run({"work_authorization": "offers_sponsorship"})[0]
+    )
+
+
 def test_a_stance_costing_everything_is_named_as_the_blocking_filter(families_served):
     search = _stances_read(families_served)
     counted = search.facets(
@@ -2403,6 +2415,7 @@ def test_a_read_by_id_says_what_its_whole_description_states(families_served):
     job = families_served.jobs_by_id(["lever:acme:1"])["lever:acme:1"]
     assert job["work_authorization"] == {
         "stances": ["offers_sponsorship"],
+        "may_offer_because": [],
         "mentions": ["We sponsor visas."],
     }
 
@@ -2421,8 +2434,13 @@ def test_a_read_by_id_judges_a_scoped_offer_against_its_own_place():
     ] == ["offers_sponsorship"]
     assert _job_row({**row, "location": "New York, NY"})["work_authorization"] == {
         "stances": [],
+        "may_offer_because": [],
         "mentions": ["We can sponsor visas to Germany."],
     }
+    # A place no country is read from: it may offer, and says why (ADR-0367).
+    assert _job_row({**row, "location": "Remote"})["work_authorization"][
+        "may_offer_because"
+    ] == ["scope_unread"]
 
 
 # ---- location: accents folded, a city's other spellings tried (ADR-0344) ----
@@ -2471,6 +2489,29 @@ def located(tmp_path_factory):
     db = lancedb.connect(tmp_path_factory.mktemp("located"))
     table = db.create_table("jobs", data=pa.Table.from_pylist(rows, schema=schema))
     return JobSearch(_Model(), table)
+
+
+def test_a_mistyped_id_is_matched_to_the_closest_id_on_its_board(tmp_path):
+    """R5-P2-10 (ADR-0367): eval t35 typed ``…8ffd9ce792c1b`` for ``…8ffd9ce92c1b``."""
+    lancedb = pytest.importorskip("lancedb")
+    pa = pytest.importorskip("pyarrow")
+    uuid = "3f0c1a2e-7b44-4d8e-9a51-8ffd9ce92c1b"
+    ids = [
+        f"ashby:acme:{uuid}",
+        "ashby:acme:9b2d5e10-1c3f-4a77-8e02-5d6c7b8a9f01",
+        f"ashby:other:{uuid[:-1]}c",
+    ]
+    rows = [{"id": i, "title": f"Engineer {n}"} for n, i in enumerate(ids)]
+    schema = pa.schema([("id", pa.string()), ("title", pa.string())])
+    table = lancedb.connect(tmp_path).create_table(
+        "jobs", data=pa.Table.from_pylist(rows, schema=schema)
+    )
+    search = JobSearch.__new__(JobSearch)
+    search._table = table
+    typed = f"ashby:acme:{uuid[:-5]}7{uuid[-5:]}"
+    assert search.closest_ids([typed, "ashby:acme:1", "ashby:nobody:x"]) == {
+        typed: {"id": ids[0], "title": "Engineer 0"}
+    }
 
 
 def test_the_words_the_table_spells_with_accents_are_learned_at_boot(located):

@@ -792,7 +792,9 @@ def _keep_static_for_the_boot(response):
 # (ADR-0355).
 # 22: /trends' tracked-roles first row adds up only the roles counted from its first run, and
 # /hot's `operator_unverified` reads a Board's own label, not its vendor's host (ADR-0366).
-_AGENT_API_VERSION = 22
+# 23: /search under `may_offer_sponsorship` tags each row's `sponsorship` stance and why a possible
+# offer is not firm; /job carries `may_offer_because`, `stated_end_date` and `closest` (ADR-0367).
+_AGENT_API_VERSION = 23
 
 
 @app.after_request
@@ -946,7 +948,8 @@ def read_jobs():
     search field plus the description (cut at ``description_limit``), department, the raw stated
     experience and ``unconfirmed`` — whether the latest scrape of its Board missed it, or null
     where this deployment does not know. An id the table does not hold is listed in ``missing``,
-    not refused: why one may be (`job_absence.WHY_NOT_SERVED`) is an answer."""
+    not refused: why one may be (`job_absence.WHY_NOT_SERVED`) is an answer, and ``closest``
+    names the served id on its Board most like it, where one is close (ADR-0367)."""
     ids = list(
         dict.fromkeys(i.strip() for i in request.args.getlist("id") if i.strip())
     )
@@ -954,6 +957,7 @@ def read_jobs():
         found = _searcher.jobs_by_id(ids)
     except ValueError as exc:
         return jsonify(error="invalid request", detail=str(exc)), 400
+    missing = [i for i in ids if i not in found]
     ticks = _HISTORY.ticks
     return jsonify(
         {
@@ -965,7 +969,9 @@ def read_jobs():
                 for i in ids
                 if i in found
             ],
-            "missing": [i for i in ids if i not in found],
+            "missing": missing,
+            # A missing id's likeliest mistyping: the id on its Board most like it (ADR-0367).
+            "closest": _searcher.closest_ids(missing) if missing else {},
             "description_limit": job_search.JOB_DESCRIPTION_LIMIT,
             "newest_tick": ticks[-1] if ticks else None,
         }

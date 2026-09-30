@@ -214,6 +214,29 @@ def _also() -> dict[str, tuple[str, ...]]:
 
 _ALSO = _also()
 
+#: Every spelling of :data:`GROUPS` and :data:`ONE_WAY`, as the one name it is counted under:
+#: its group's first, and a one-way spelling's own. A place counted within one country cannot be
+#: the other place a one-way spelling also names ("Wien" under Austria is Vienna).
+_PLACE_NAME = {spelling: group[0] for group in GROUPS for spelling in group} | {
+    spelling: first
+    for first, others in ONE_WAY.items()
+    for spelling in (first, *others)
+}
+_PLACE_SPELLING = re.compile(
+    r"(?<![a-z0-9])(?:"
+    + "|".join(re.escape(k) for k in sorted(_PLACE_NAME, key=lambda k: (-len(k), k)))
+    + r")(?![a-z0-9])"
+)
+
+
+def place_key(place: str) -> str:
+    """``place`` as one key for all its spellings that the filter reads alike: folded, each
+    renamed or re-spelled word as its group's first. "Bangalore", "Bengaluru" and "BENGALURU" are
+    one key, as are "Zürich" and "Zurich", and "Kraków" and "Krakow" (ADR-0367)."""
+    folded = " ".join(fold(place).split())
+    return _PLACE_SPELLING.sub(lambda m: _PLACE_NAME[m.group()], folded)
+
+
 #: One whole word (or phrase) of a term that is a key of :data:`_ALSO`, longest first so "ho
 #: chi minh city" is read before "ho chi minh".
 _KEYS = re.compile(
