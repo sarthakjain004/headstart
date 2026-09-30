@@ -198,6 +198,18 @@ _EXPERIENCE_WIDE = r"(?:experience|expertise|exp\b)"
 # experience". No full stop at all, so the gap cannot run into the next sentence (and is cheaper than a lookahead per
 # character); a description whose gap holds "(M.S.)" or "e.g." is left to the first two passes.
 _GAP_LONG = r"[\w\s'\":/()&,·•+#-]{46,80}?"
+# Eighty characters also reach benefits and company prose: "5 years of paid parental leave benefits, flexible
+# schedules, and an amazing employee experience", "20 years and we take pride in our people and culture, and our
+# experience". A match whose words are first person, pay, leave, tenure or culture, or whose anchor is HR's
+# "employee experience" / "candidate experience", is not a requirement.
+_GAP_PROSE = re.compile(
+    r"\b(?:we|our|ours|benefits?|leave|paid|pay|salary|compensation|perks?|vacation|insurance|bonus|tenure|history|"
+    r"founded|since|culture|pride|proud)\b|\b(?:employee|candidate)s?\s+\w+$",
+    re.IGNORECASE,
+)
+# "more than 15 years of expertise" is a company's own, never a requirement: nobody asks for 15 years of expertise
+# and not of experience. Read on the third pass's "expertise" anchor only ("Exp: 15+ Years" is a requirement).
+_MAX_EXPERTISE_YEARS = 15
 
 # Number words, because a requirement is as often written out as digitised: "A minimum of four
 # years of relevant experience", "Minimum five years of experience designing software", "Two years
@@ -290,9 +302,7 @@ class _Tier2Pattern(NamedTuple):
     guarded: bool
 
 
-def _tier2_patterns(
-    num: str, experience: str = "experience", long_gap: bool = False
-) -> list[_Tier2Pattern]:
+def _tier2_patterns(num: str, third: bool = False) -> list[_Tier2Pattern]:
     """The Tier-2 pattern set, over whichever number group is passed in.
 
     Built by a factory so the digits-only pass and the digits-or-words pass cannot drift apart:
@@ -306,9 +316,13 @@ def _tier2_patterns(
     true only while the work-word patterns were the sole unguarded-context ones, and silently
     reported False for any new pattern built from something other than `_WORK`.
 
-    `experience` is the word the anchored patterns need and `long_gap` adds the forward pattern with a
-    46-80 character gap: both are for the third pass only (`_THIRD_PATTERNS`).
+    `third` builds the recall widenings of the third pass (`_THIRD_PATTERNS`): "expertise" and "exp" for the
+    anchor word, reversed only for "experience" and "exp" ("expertise of 20 years" is how a company describes
+    itself), the forward pattern with a 46-80 character gap, and every pattern guarded, since the wider anchor
+    can reach prose the literal word "experience" could not.
     """
+    experience = _EXPERIENCE_WIDE if third else "experience"
+    reversed_experience = r"(?:experience|exp\b)" if third else "experience"
     return [
         # number-first range then "experience": "7 to 12 years of experience", "3-5 years' experience"
         _Tier2Pattern(
@@ -322,12 +336,12 @@ def _tier2_patterns(
                 + experience,
                 re.IGNORECASE,
             ),
-            guarded=False,
+            guarded=third,
         ),
         # "experience" then a range (reversed): "Experience: 8 – 12 Years"
         _Tier2Pattern(
             re.compile(
-                experience
+                reversed_experience
                 + _GAP
                 + num
                 + r"\s*(?:to|-)\s*"
@@ -336,7 +350,7 @@ def _tier2_patterns(
                 + _YEARS,
                 re.IGNORECASE,
             ),
-            guarded=False,
+            guarded=third,
         ),
         # "7+ years of proven experience", "5 plus years … experience", "minimum 3 years of experience"
         _Tier2Pattern(
@@ -344,21 +358,21 @@ def _tier2_patterns(
                 num + r"\s*(?:\+|plus)?\s*" + _YEARS + _GAP + experience,
                 re.IGNORECASE,
             ),
-            guarded=False,
+            guarded=third,
         ),
         # reversed single: "experience of 5+ years", "Experience: 5 years"
         _Tier2Pattern(
             re.compile(
-                experience + _GAP + num + r"\s*(?:\+|plus)?\s*" + _YEARS,
+                reversed_experience + _GAP + num + r"\s*(?:\+|plus)?\s*" + _YEARS,
                 re.IGNORECASE,
             ),
-            guarded=False,
+            guarded=third,
         ),
         *(
             [
                 # "2+ years of hardware troubleshooting and repair experience" with a gap of 46-80 characters.
-                # Forward only (the reversed pattern reads "experience … we've spent 10 years"), and guarded,
-                # since eighty characters can span prose.
+                # Forward only (the reversed pattern reads "experience … we've spent 10 years"), guarded, and
+                # screened for benefits and company prose, since eighty characters can span it.
                 _Tier2Pattern(
                     re.compile(
                         num + r"\s*(?:\+|plus)?\s*" + _YEARS + _GAP_LONG + experience,
@@ -367,7 +381,7 @@ def _tier2_patterns(
                     guarded=True,
                 )
             ]
-            if long_gap
+            if third
             else []
         ),
         # "5+ years in software testing", "7 years of professional engineering", "4+ years building …"
@@ -430,7 +444,7 @@ _NUM_WORD_PATTERNS = _tier2_patterns(_DIGITS_OR_WORDS)
 #: Third pass, tried only when both passes above find nothing (see `from_description`). Digits only: the spelled
 #: numbers with their digits are collapsed to digits first, and the alternation of number words costs +1.1 s per
 #: 3,000 descriptions where the digit patterns cost +0.3.
-_THIRD_PATTERNS = _tier2_patterns(_DIGITS, _EXPERIENCE_WIDE, long_gap=True)
+_THIRD_PATTERNS = _tier2_patterns(_DIGITS, third=True)
 
 # Company age, founder tenure, benefits: "N years" that is never a requirement. These read as
 # requirements to a work-word pattern ("spent the last 15 years building …") and were previously
@@ -495,11 +509,15 @@ _NARRATIVE_SPAN = re.compile(
     # requirement followed by the next list item); "or above" is not here ("3 years or above" is a floor).
     r"|(?<![sS])\s+(?:(?:technical|engineering|bachelor'?s?|associate'?s?|master'?s?|accredited|college|university)[\s/-]+){0,2}"
     r"(?:degree|diploma)\b"
-    r"|(?:(?<![sS])\s+|\s+of\s+)(?:college|university|undergraduate|post-?secondary|schooling|studies|study)\b"
-    r"(?!\s+(?:teaching|experience|lectur\w+|instruct\w+|research|faculty))"
+    # Only an education noun that ends the phrase: "2 years of college education in a technical discipline", not
+    # "2 years of college-level Java programming" or "3+ years of study design and data analysis experience".
+    r"|(?:(?<![sS])\s+|\s+of\s+)(?:college|university|undergraduate|post-?secondary)(?:[\s-]+level)?\b"
+    r"(?=\s*(?:education|coursework|course\s*work|study|studies|programs?|degrees?|credits?|classes|courses?|training"
+    r"|schooling)\b|\s*(?:or|and|in)\b|\s*[,.;:)]|(?:\s+[a-z]+){1,2}\s+(?:program|degree|coursework)\b)"
+    r"|\s+of\s+(?:schooling|studies|study)\s*(?:[,.;:)]|(?:in|at|or|and|beyond|after|program)\b)"
     r"|\s+(?:of\s+age\b|old\b|(?:or|and)\s+older\b)"
     r"|(?<![sS])\s+(?:fixed[\s-]term\s+)?(?:contract|term)\b"
-    r"(?:\s*[-),.;:(]|\s*$|\s+(?:basis|position|role|renewable|extension|appointment|duration|hybrid|with|"
+    r"(?:\s*[),.;:(]|\s+-\s|\s*$|\s+(?:basis|position|role|renewable|extension|appointment|duration|hybrid|with|"
     r"starting|beginning|from|opportunity|only|and|maternity|cover))"
     r"|\s+(?:fixed[\s-]term\s+)?(?:contract|term)\s*\))",
     re.IGNORECASE,
@@ -534,11 +552,18 @@ _SUBST_BEFORE = re.compile(
 # preposition is what separates it from requirement prose that uses the same words: "Minimum of
 # the past 2 years working with M365" states a requirement, and keeps it.
 #
-# Also "for the past 5 years" (residency), "3 out of the past 5 years", "within last 3 years" without the "the", and a
-# window that is a range ("in the last 1-2 years": the match is the range's ceiling).
+# Also "3 out of the past 5 years", "within last 3 years" without the "the", and a window that is a range ("in the
+# last 1-2 years": the match is the range's ceiling). "for the past 5 years" is a window only after a residency or
+# record cue ("resident in the UK for the past 5 years"); elsewhere it is a requirement ("Experience with Python for
+# the last 3 years is required", "Proven track record for the past 4 years in backend development").
 _WINDOW_BEFORE = re.compile(
-    r"\b(?:\d+\s+(?:out\s+)?of|in|over|during|within|throughout|for)\s+(?:the\s+)?(?:last|past|previous|preceding)\s*"
+    r"\b(?:\d+\s+(?:out\s+)?of|in|over|during|within|throughout)\s+(?:the\s+)?(?:last|past|previous|preceding)\s*"
     r"(?:\d{1,3}\s*(?:-|to)\s*)?$",
+    re.IGNORECASE,
+)
+_RESIDENCY_WINDOW_BEFORE = re.compile(
+    r"\b(?:resident|resided|resides?|residing|lived|living|citizen\w*|domicile\w*|violations?|convictions?)\b"
+    r"[^.;]{0,60}\bfor\s+(?:the\s+)?(?:last|past|previous|preceding)\s*(?:\d{1,3}\s*(?:-|to)\s*)?$",
     re.IGNORECASE,
 )
 
@@ -624,6 +649,15 @@ def _collapse_paren_number(match: re.Match) -> str:
     return digits.ljust(len(match.group(0)))
 
 
+def _passes(text: str):
+    """The three Tier-2 passes in the order they are tried, each as (text, patterns, third). Lazy, so the third
+    pass's collapse of "five (5)" is paid only by a description the first two leave without an answer."""
+    folded = text.translate(_FOLD)
+    yield folded, _DESC_PATTERNS, False
+    yield folded, _NUM_WORD_PATTERNS, False
+    yield _PAREN_NUMBER.sub(_collapse_paren_number, folded), _THIRD_PATTERNS, True
+
+
 def from_description(text: str | None) -> ExperienceSpan | None:
     """Tier 2 — mine the description with experience-anchored regex (for sources without a field).
 
@@ -631,14 +665,10 @@ def from_description(text: str | None) -> ExperienceSpan | None:
     recall widenings in it can add a reading and cannot change one (ADR-0066)."""
     if not text:
         return None
-    text = text.translate(_FOLD)
-    return (
-        _scan(text, _DESC_PATTERNS)
-        or _scan(text, _NUM_WORD_PATTERNS)
-        or _scan(
-            _PAREN_NUMBER.sub(_collapse_paren_number, text), _THIRD_PATTERNS, third=True
-        )
-    )
+    for found in (_scan(*one_pass) for one_pass in _passes(text)):
+        if found:
+            return found
+    return None
 
 
 def stated_floors(text: str | None) -> list[int]:
@@ -647,17 +677,10 @@ def stated_floors(text: str | None) -> list[int]:
     says so when there are several (ADR-0357)."""
     if not text:
         return []
-    text = text.translate(_FOLD)
-    stated = (
-        _stated(text, _DESC_PATTERNS)
-        or _stated(text, _NUM_WORD_PATTERNS)
-        or _stated(
-            _PAREN_NUMBER.sub(_collapse_paren_number, text),
-            _THIRD_PATTERNS,
-            third=True,
-        )
-    )
-    return sorted({span.min_years for span, ceiling in stated if not ceiling})
+    for stated in (_stated(*one_pass) for one_pass in _passes(text)):
+        if stated:
+            return sorted({span.min_years for span, ceiling in stated if not ceiling})
+    return []
 
 
 def _scan(
@@ -681,10 +704,23 @@ def _scan(
 def _stated(
     text: str, patterns: list[_Tier2Pattern], third: bool = False
 ) -> list[tuple[ExperienceSpan, bool]]:
-    """Every match of one pass that survives the guards, each with whether it is an "up to N"
-    ceiling rather than a stated floor."""
+    """Every match of one pass that survives the guards, each with whether it is a ceiling ("up to N",
+    "less than N") rather than a stated floor.
+
+    A ceiling word ("less than", "maximum", ...) reads as a 0..N span only when the pass states no floor at
+    all. Where it does, the clause keeps the reading main gave its number, a plain floor N, so the answer
+    never rises above main's and ADR-0079's smallest floor is what chooses among them."""
     spans: list[tuple[ExperienceSpan, bool]] = []
+    soft_ceilings: list[
+        tuple[ExperienceSpan, bool]
+    ] = []  # "less than N": a 0..N span if no floor is stated
+    soft_floors: list[
+        tuple[ExperienceSpan, bool]
+    ] = []  # the same numbers, read as main read them
     for pattern, guarded in patterns:
+        screened = (
+            third and _GAP_LONG in pattern.pattern
+        )  # the long gap reaches benefits and company prose
         # Every occurrence, so a rejected match falls through to the next one — "Founded 12 years
         # ago. Requires 5+ years building …" still yields 5 rather than nothing. Resumed from just
         # past the matched *number* rather than from the match's end, because `finditer`'s
@@ -710,6 +746,14 @@ def _stated(
                 fraction = _FRACTION.match(text, match.end(2))
                 if fraction and int(fraction.group(1)):
                     hi += 1  # "3.6 years" is up to 4, the way from_field rounds a ceiling up
+            if screened and _GAP_PROSE.search(match.group(0)):
+                continue
+            if (
+                third
+                and lo >= _MAX_EXPERTISE_YEARS
+                and text[max(0, match.end() - 9) : match.end()].lower() == "expertise"
+            ):
+                continue  # a company's own years of expertise
             if _NARRATIVE_SPAN.match(text[match.start(1) : match.end() + 20]):
                 continue
             if _SUBST_AFTER.match(text, match.end(1)):
@@ -718,8 +762,9 @@ def _stated(
                 text[max(0, match.start(1) - 90) : match.start(1)]
             ):
                 continue
-            if _WINDOW_BEFORE.search(
-                text[max(0, match.start(1) - 30) : match.start(1)]
+            before = text[max(0, match.start(1) - 90) : match.start(1)]
+            if _WINDOW_BEFORE.search(before[-30:]) or _RESIDENCY_WINDOW_BEFORE.search(
+                before
             ):
                 continue
             if lo > _MAX_PLAUSIBLE_REQUIREMENT:
@@ -728,11 +773,13 @@ def _stated(
                 continue
             # Where the wording of a ceiling starts, if the number sits right after one.
             ceiling_at = None
+            ceiling_word = False
             if hi is None:
                 window_from = max(0, match.start(1) - 24)
                 word = _CEILING_WORDS_BEFORE.search(text[window_from : match.start(1)])
                 if word and not _CEILING_NEGATED.match(text, match.end()):
                     ceiling_at = window_from + word.start()
+                    ceiling_word = True
             if ceiling_at is None:
                 up_to_from = max(0, match.start(1) - 10)
                 up_to = _CEILING_BEFORE.search(text[up_to_from : match.start(1)])
@@ -748,9 +795,12 @@ def _stated(
                 # branch skips the span rules below, so without it "up to 8 to 150 years" would
                 # write a 150 no other path can produce (ADR-0072).
                 top = hi if hi is not None else lo
+                if not ceiling_word:
+                    if top <= _MAX_PLAUSIBLE_REQUIREMENT:
+                        spans.append((ExperienceSpan(0, top, "regex"), True))
+                    continue
                 if top <= _MAX_PLAUSIBLE_REQUIREMENT:
-                    spans.append((ExperienceSpan(0, top, "regex"), True))
-                continue
+                    soft_ceilings.append((ExperienceSpan(0, top, "regex"), True))
             if hi is None:
                 # Recover the floor when this match is a range's ceiling ("2-4 years" -> 2, not 4).
                 tail = _RANGE_TAIL.search(
@@ -768,8 +818,12 @@ def _stated(
                 continue
             if hi is not None and (hi < lo or hi > _MAX_PLAUSIBLE_YEARS):
                 hi = None
-            spans.append((ExperienceSpan(lo, hi, "regex"), False))
-    return spans
+            (soft_floors if ceiling_word else spans).append(
+                (ExperienceSpan(lo, hi, "regex"), False)
+            )
+    if any(not ceiling for _, ceiling in spans):
+        return spans + soft_floors
+    return spans + soft_ceilings
 
 
 # --- Tier 3 (fallback): map a seniority label to a floor-years estimate --------------------------

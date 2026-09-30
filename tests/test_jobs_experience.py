@@ -1165,3 +1165,86 @@ def test_netflix_titles_read_on_netflixs_own_ladder_only_when_no_number_is_state
     )
     assert extract(None, None, "Business Security Partner (L5)", "Acme") is None
     assert extract(None, None, "Windows 11 Engineer", "Netflix") is None
+
+
+# --- What the combined review of ADR-0350 found: a guard must not drop a real requirement, and the long gap must ---
+# --- not read benefits or company prose (a false floor hides a job from someone who qualifies, ADR-0079) ---------
+
+
+@pytest.mark.parametrize(
+    "text, years",
+    [
+        ("Experience with Python for the last 3 years is required", 3),
+        ("Proven track record for the past 4 years in backend development with Go", 4),
+        ("3+ years of study design and data analysis experience", 3),
+        ("3 year contract-management system experience", 3),
+        ("2 years of college-level Java programming", 2),
+        ("5 years of university-level teaching experience", 5),
+    ],
+)
+def test_a_guard_leaves_a_requirement_shape_as_main_reads_it(text, years):
+    assert from_description(text) == _regex(years)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "20 years and we take pride in our people and culture, and our experience",
+        "5 years of paid parental leave benefits, flexible schedules, and an amazing employee experience",
+        "8 years of tenure at the company, with a record of steady promotion and a long career experience",
+        "2 years of pay progression, transparent levels, and a great candidate experience",
+        "With expertise of 20 years we serve customers",
+        "AISWEI has more than 15 years of expertise in R&D and manufacturing",
+    ],
+)
+def test_the_third_pass_reads_no_benefit_or_company_prose(text):
+    assert from_description(text) is None
+
+
+def test_the_third_pass_reads_a_requirement_the_prose_screen_must_not_touch():
+    assert from_description(
+        "1+ years of computer/server hardware troubleshooting or related IT experience"
+    ) == _regex(1)
+    assert from_description("Exp: 14+ Years") == _regex(14)
+
+
+def test_a_floor_stated_anywhere_beats_a_ceiling_clause_and_reads_as_main_reads_it():
+    # A 0..N read needs a posting that states no floor at all; with one, the ceiling clause keeps main's
+    # reading of its number, so the answer never rises above main's (ADR-0079, unchanged).
+    assert from_description(
+        "Minimum of 5 years' experience. Exceptions can be made for less than 5 years"
+    ) == _regex(5)
+    assert from_description(
+        "8+ years of experience. Below 5 years of experience need not apply"
+    ) == _regex(5)
+    assert from_description(
+        "7+ years of experience. Fewer than 2 years of experience is a non-starter"
+    ) == _regex(2)
+    # With no floor anywhere, the ceiling is still a 0..N span.
+    assert from_description("Candidates with less than 2 years of experience") == (
+        _regex(0, 2)
+    )
+
+
+# --- The seams nothing pinned ---------------------------------------------------------------------------------
+
+
+def test_a_guard_that_withdraws_a_first_pass_answer_lets_the_third_pass_supply_one():
+    # Main reads the substitution clause's 4; the guard withdraws it, so passes one and two find nothing and the
+    # third pass reads "Two (2)". These are the rows ADR-0350 counts as a main regex answer the guards withdrew.
+    text = "An additional 4 years of experience may be substituted for the degree. Two (2) years of experience in Java"
+    assert from_description(text) == _regex(2)
+
+
+def test_the_before_number_substitution_guard_runs_in_the_third_pass_only():
+    # The same clause read by pass one keeps its number (an "N years" beside a substitution is at least as often
+    # the requirement there); spelled with its digits, the third pass refuses it.
+    assert from_description(
+        "A master's degree can be substituted for 2 years of experience"
+    ) == _regex(2)
+    assert (
+        from_description(
+            "A master's degree can be substituted for two (2) years of experience"
+        )
+        is None
+    )
