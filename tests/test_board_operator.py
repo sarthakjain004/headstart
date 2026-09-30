@@ -250,6 +250,14 @@ def test_a_narrowed_entry_still_labels_its_own_board() -> None:
         (["jazzhr:acme"], "Acme HR Solutions", True),
         # A Board's tenant counts too, as HIKINEX's `breezy:recruiting` did.
         (["breezy:recruiting"], "Acme", True),
+        # Only the tenant's own label (ADR-0366): SAP's `hr` host and a recruiting subdomain
+        # are the vendor's and the site's, while the label before them is the company's.
+        (["successfactors:lockheed.jobs.hr.cloud.sap"], "Lockheed Martin", False),
+        (["successfactors:recruit.lg.com"], "LG", False),
+        (["successfactors:recruitment-recrutement.nrc-cnrc.gc.ca"], "NRC", False),
+        (["zwayam:recruitedge.cluster3.openings.co"], "Acme", True),
+        (["zoho:3m-consultancy.zohorecruit.com.au"], "3M", True),
+        (["successfactors:jobs.hr-path.com"], "Acme", True),
         # Only at the start of a word: none of these names says "consult" or "hr".
         (["greenhouse:cerebras"], "Cerebras Systems", False),
         (["greenhouse:shrine"], "Shrine Technologies", False),

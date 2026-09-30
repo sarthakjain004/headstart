@@ -405,6 +405,38 @@ _AGENCY_NAME = re.compile(
     r"|international)(?![a-z0-9])"
 )
 
+#: Host suffixes an ATS vendor serves many tenants under, each recurring across at least 27
+#: Scrapable Boards' tenants on 2026-09-30 (ADR-0366). The labels before one are the tenant's
+#: own; the suffix is the vendor's, and SAP's `hr` in `lockheed.jobs.hr.cloud.sap` flagged all
+#: 82 of its Boards as agencies.
+_VENDOR_HOST = re.compile(
+    r"\.(?:jobs\.hr\.cloud\.sap|zohorecruit\.[a-z.]+|icims\.com|oraclecloud\.com"
+    r"|(?:cluster\d+\.)?openings\.co|taleo\.net|eightfold\.ai|jobs2web\.com"
+    r"|myworkdayjobs\.com|successfactors\.(?:com|eu))$"
+)
+
+#: Second-level labels a country registry sells under (`isuzu.co.jp`, `nrc-cnrc.gc.ca`), so the
+#: registrable label is the one before them.
+_REGISTRY_LABELS = frozenset({"co", "com", "org", "net", "gov", "gc", "ac", "edu", "or", "ne", "go"})
+
+
+def _own_label(host_or_slug: str) -> str:
+    """The part of a Board's tenant that its company chose (ADR-0366): a slug whole, the labels
+    before a vendor's host suffix, else a host's registrable label. `recruit.lg.com` is LG's
+    recruiting site and `lockheed.jobs.hr.cloud.sap` Lockheed's SAP one; neither says "hr" or
+    "recruit" of the company, while `hr-path.com` and `3m-consultancy.zohorecruit.com` do."""
+    host = host_or_slug.lower()
+    if "." not in host:
+        return host
+    vendor = _VENDOR_HOST.search(host)
+    if vendor:
+        return host[: vendor.start()]
+    labels = host.split(".")
+    if len(labels) > 2 and labels[-2] in _REGISTRY_LABELS:
+        return labels[-3]
+    return labels[-2]
+
+
 _SPLIT = re.compile(r"[^a-z0-9]+")
 _TRAILING_DIGITS = re.compile(r"\d+$")
 
@@ -472,8 +504,9 @@ def company_operator(boards: Iterable[str], name: str) -> Operator:
 
 
 def unverified(boards: Iterable[str], name: str) -> bool:
-    """Whether a company is an employer only by default and its name, or a Board's tenant, reads
-    like an agency's (``_AGENCY_NAME``): nobody has read its postings, and its name says someone
+    """Whether a company is an employer only by default and its name, or a Board's own label
+    (:func:`_own_label`), reads like an agency's (``_AGENCY_NAME``): nobody has read its
+    postings, and its name says someone
     should (ADR-0335). Vrinda International ranked third on the Hiring now tab as an employer
     while posting clinical psychologists in Oman. A company on any list here, as an Operator, an
     exception or a verified employer, is not unverified."""
@@ -483,5 +516,5 @@ def unverified(boards: Iterable[str], name: str) -> bool:
     forms = _forms(name).union(*(_forms(tenant(board)) for board in boards))
     if forms & (EXCEPTIONS | VERIFIED_EMPLOYERS):
         return False
-    texts = [name.lower(), *(tenant(board).lower() for board in boards)]
+    texts = [name.lower(), *(_own_label(tenant(board)) for board in boards)]
     return any(_AGENCY_NAME.search(text) for text in texts)

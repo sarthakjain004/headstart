@@ -598,9 +598,15 @@ def _roles_head(payload: dict[str, Any], category: str, label: str) -> list[str]
     if not total:
         return []
     change = _signed(total["latest"] - total["start"])
+    lines = payload["reading"].get("lines") or []
+    # The Space adds up only the roles counted from the first row's run (ADR-0366); a role
+    # counted for less of the window joined partway, and its stock is no change.
+    joined = [
+        line for line in lines if line["move"]["span_days"] < total["span_days"]
+    ]
     # Said from the lines themselves: since ADR-0270 and ADR-0304 a role's line has its counting
     # changes and Boards found sized, which this once denied.
-    moves = [line["move"] for line in payload["reading"].get("lines") or []]
+    moves = [line["move"] for line in lines]
     turnover = (
         "Opened and closed are given per watched role"
         if any(move.get("turnover") for move in moves)
@@ -611,11 +617,19 @@ def _roles_head(payload: dict[str, Any], category: str, label: str) -> list[str]
         if any(move.get("not_hiring_total") for move in moves)
         else "HeadStart sizes no re-counting on them"
     )
+    counted = "counted from the window's start, " if joined else ""
     roles = (
-        f"Watched roles within {label}, added together (not the whole category): listed "
-        f"{total['start']:,} → {total['latest']:,} ({change}). {turnover}, and {sized}, so "
-        "each role's change in openings listed mixes hiring with re-counting."
+        f"Watched roles within {label}, {counted}added together (not the whole category): "
+        f"listed {total['start']:,} → {total['latest']:,} ({change}). {turnover}, and "
+        f"{sized}, so each role's change in openings listed mixes hiring with re-counting."
     )
+    if joined:
+        names = [str(line.get("label")) for line in joined]
+        named = names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+        roles += (
+            f" {named} {'is' if len(names) == 1 else 'are'} left out of that total: counted "
+            "only from partway through the window, their start is no like-for-like base."
+        )
     return [roles]
 
 

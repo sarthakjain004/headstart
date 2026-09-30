@@ -33,7 +33,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any, NamedTuple
 
-from headstart.space_mcp import scraped_text
+from headstart.space_mcp import noun_counts, scraped_text
 from headstart.space_mcp.space_client import SpaceClient, SpaceRoute
 from headstart.space_mcp.space_tool import SpaceTool
 from headstart.space_mcp.turnover_span import span_sentence
@@ -186,6 +186,8 @@ class _Listing:
     hidden: int
     #: Whether a flag moved any row from its place on the page.
     moved: bool
+    #: Flagged rows the cut left out that the site ranks above a row shown (ADR-0366).
+    flagged_cut: int
 
 
 def _change(value: int | None) -> str:
@@ -300,7 +302,9 @@ def _listing(hot: dict[str, Any], lens: str, limit: int, show_hidden: bool) -> _
     listed.sort(key=lambda listed_row: bool(listed_row.flags))
     shown = listed[:limit]
     moved = [r.page_place for r in shown] != list(range(1, len(shown) + 1))
-    return _Listing(shown, len(ranked) - len(rows), moved)
+    last = max((r.page_place for r in shown), default=0)
+    flagged_cut = sum(1 for r in listed[limit:] if r.flags and r.page_place < last)
+    return _Listing(shown, len(ranked) - len(rows), moved, flagged_cut)
 
 
 def _row(rank: int, listed: ListedRow, moved: bool) -> str:
@@ -405,6 +409,12 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
     ]
     if not listing.rows:
         lines.append("No company qualified on this Lens this week.")
+    if listing.flagged_cut:
+        lines.append(
+            f"{noun_counts.counted(listing.flagged_cut, 'flagged row')} the site ranks above "
+            f"rows shown here {'is' if listing.flagged_cut == 1 else 'are'} not shown (limit "
+            f"{arguments['limit']}); raise limit to see them."
+        )
     for flag, summary in _FLAG_SUMMARY.items():
         if carried := sum(flag in listed.flags for listed in listing.rows):
             lines.append(f"{carried} of these rows {summary}")

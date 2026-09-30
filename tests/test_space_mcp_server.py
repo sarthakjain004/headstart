@@ -2305,6 +2305,36 @@ def test_a_role_breakdown_is_watched_roles_within_the_category_beside_its_own_to
     assert "  AI Engineer: listed 5,089 → 5,856 (+767)" in text
 
 
+def test_a_role_breakdown_names_the_roles_left_out_of_its_like_for_like_total():
+    """p5e (round 5): Java and Python, counted for the window's last 4.8 of 5.5 days, joined
+    the watched roles' end figure alone, which read +12,044 for a like-for-like -3,427. The
+    Space now adds up only the roles counted from the start (ADR-0366), and the answer names
+    the rest."""
+    late = {"turnover": None, "span_days": 4.8}
+    roles = _trends(
+        [
+            _line("java", "Java", _move(11_557, 7_468, -282, **late)),
+            _line("fs", "Full Stack", _move(12_307, 13_018, 711, turnover=None)),
+            _line("py", "Python", _move(3_914, 3_983, 5, **late)),
+        ],
+        total=_line("__total__", "", _move(12_307, 13_018, 711, turnover=None)),
+        family_label="Software Engineering",
+        watch_parents=["software-engineering"],
+    )
+    space = _role_space(roles, _move(84_250, 72_973, -832))
+    text = server.call(
+        space, "read_trends", {"category": "software-engineering", "breakdown": "role"}
+    )
+    assert (
+        "Watched roles within Software Engineering, counted from the window's start, added "
+        "together (not the whole category): listed 12,307 → 13,018 (+711)." in text
+    )
+    assert (
+        "Java and Python are left out of that total: counted only from partway through the "
+        "window, their start is no like-for-like base." in text
+    )
+
+
 def test_a_role_breakdown_says_what_re_counting_is_sized_on_its_roles():
     """Review of #865: it said "HeadStart sizes no re-counting on them" beside "AI Engineer:
     … sized re-counting +928" (ADR-0270, ADR-0304)."""
@@ -2717,6 +2747,29 @@ def test_a_small_limit_on_a_site_lens_still_leads_with_a_real_row():
     )
     [only] = _listed(text)
     assert only.startswith(' 1. site #2 · "Company 2"')
+    # p5f (round 5): the site's #1 was cut without a word; now the answer says so (ADR-0366).
+    assert (
+        "1 flagged row the site ranks above rows shown here is not shown (limit 1); raise "
+        "limit to see them." in text
+    )
+
+
+def test_hiring_now_counts_only_the_flagged_rows_the_site_ranks_above_one_shown():
+    """A flagged row the site ranks below every row shown is not hidden by the limit."""
+    rows = [
+        _hot_row(1, net=442, opened=23, closed=33),
+        _hot_row(2, net=441, opened=23, closed=33),
+        _hot_row(3),
+        _hot_row(4, net=440, opened=23, closed=33),
+    ]
+    text = server.call(
+        FakeSpace(hot=_hot(rows)), "hiring_now", {"lens": "expansion", "limit": 1}
+    )
+    assert "2 flagged rows the site ranks above rows shown here are not shown" in text
+    whole = server.call(
+        FakeSpace(hot=_hot(rows)), "hiring_now", {"lens": "expansion", "limit": 4}
+    )
+    assert "not shown (limit" not in whole
 
 
 def test_a_closed_count_read_on_only_some_boards_is_flagged_on_a_site_lens():

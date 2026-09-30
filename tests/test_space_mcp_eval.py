@@ -1974,3 +1974,127 @@ def test_senior_caveat_fails_a_senior_row_offered_to_a_new_grad_without_a_caveat
 def test_senior_rows_reads_titles_the_eval_judges_itself(ev):
     calls = [("search_jobs", {"max_years": 1}, _NEW_GRAD_PAGE, False)]
     assert ev.senior_rows(_transcript(ev, calls)) == ["Senior Backend Engineer"]
+
+
+# --- round 5: retired tasks, employer_unflagged, watched_roles_total (ADR-0366) ------------
+
+_LOCKHEED_ROW = (
+    '18. site #18 · "Lockheed Martin" · key successfactors:lockheed.jobs.hr.cloud.sap · '
+    "employer · 1,201 open now · net +40 · opened 90 · closed 50 · rate 7%"
+)
+
+
+def _lockheed(ev, row, answer):
+    calls = [("hiring_now", {"lens": "volume", "limit": 20}, row, False)]
+    return ev.verify_employer_unflagged(
+        {"companies": ["Lockheed Martin"]}, _transcript(ev, calls, answer), None
+    )
+
+
+def test_employer_unflagged_fails_a_tool_or_an_answer_calling_the_employer_an_agency(ev):
+    """t40: SAP's host label `hr` flagged Lockheed Martin operator unverified (R5-P1-3)."""
+    listed = "18. Lockheed Martin, 1,201 open now.\nNone of the 20 reads like an agency."
+    assert _lockheed(ev, _LOCKHEED_ROW, listed).passed
+    flagged = _LOCKHEED_ROW + " · FLAG operator unverified"
+    assert "a tool flagged Lockheed Martin" in _lockheed(ev, flagged, listed).detail
+    doubted = "18. Lockheed Martin: possibly a staffing agency, unverified."
+    assert "calls Lockheed Martin a possible agency" in (
+        _lockheed(ev, _LOCKHEED_ROW, doubted).detail
+    )
+    assert not _lockheed(ev, _LOCKHEED_ROW, "Twenty companies, none an agency.").passed
+
+
+def _role_move(start, latest, span_days):
+    return {"move": {"start": start, "latest": latest, "span_days": span_days}}
+
+
+#: p5e's watched Software Engineering roles: Java and Python counted for the last 4.8 days.
+_P5E_ROLES = {
+    SpaceRoute.TRENDS: {
+        "reading": {
+            "lines": [
+                _role_move(11_557, 7_468, 4.8),
+                _role_move(12_307, 13_018, 5.5),
+                _role_move(7_646, 7_394, 5.5),
+                _role_move(2_738, 2_872, 5.5),
+                _role_move(3_914, 3_983, 4.8),
+            ]
+        }
+    }
+}
+_T41 = {"category": "software-engineering", "since": "2026-09-25"}
+
+
+def _roles_total(ev, answer, space=None):
+    return ev.verify_watched_roles_total(
+        _T41, _transcript(ev, answer=answer), space or FakeSpace(_P5E_ROLES)
+    )
+
+
+def test_watched_roles_total_passes_a_like_for_like_total_and_fails_the_mixed_one(ev):
+    """t41: +12,044 added Java's and Python's stock to the end alone (R5-P1-4); +593 is the
+    roles counted from the start, and -3,427 every role's own change summed."""
+    assert _roles_total(ev, "Together they moved +593 openings.").passed
+    assert _roles_total(ev, "Summing each role's own change: −3,427.").passed
+    mixed = _roles_total(ev, "They rose from 22,691 to 34,735, +12,044 (+53%).")
+    assert not mixed.passed and "mixed-basis total +12,044" in mixed.detail
+    assert not _roles_total(ev, "They moved a lot.").passed
+    space = FakeSpace(_P5E_ROLES)
+    _roles_total(ev, "+593", space)
+    assert space.asked == [
+        (
+            SpaceRoute.TRENDS,
+            [
+                ("since", "2026-09-25T00:00:00+00:00"),
+                ("family", "software-engineering"),
+                ("split", "roles"),
+            ],
+        )
+    ]
+
+
+def test_a_task_whose_fixture_is_gone_is_retired_not_run_and_not_judged(ev, tmp_path):
+    """R5-P2-9: t32's Eversource pair closed and the task failed 0/3 for it."""
+    t32 = {
+        "id": "t32",
+        "prompt": "p",
+        "verifier": "mentions",
+        "expect": {"all": ["Eversource"]},
+        "requires": {"jobs": ["radancy:a:1", "workday:b:2"]},
+    }
+    closed = FakeSpace({SpaceRoute.JOB: {"jobs": [], "missing": ["radancy:a:1"]}})
+    assert ev.retired(t32, closed) == "postings radancy:a:1 are no longer served"
+    served = FakeSpace({SpaceRoute.JOB: {"jobs": [{}, {}], "missing": []}})
+    assert ev.retired(t32, served) is None
+    record = ev.run_task(t32, {}, tmp_path / "run", lambda: closed)
+    assert (record["verdict"], record["tool_calls"]) == ("retired", 0)
+    lines = ev.summary([_record("t01", "pass"), {**_record("t32", "retired")}])
+    assert lines[0].startswith("retired: 1 of 2 (t32)")
+    assert "not judged: 0 of 2 — met" in lines
+    assert "correct: 1 of 1 judged" in lines[2]
+    assert ev.tally([[_record("t32", "retired")]]) == [
+        "t32: 0 of 0 judged passed (retired)"
+    ]
+
+
+def test_the_hot_row_and_joined_role_fixtures_read_the_live_facts(ev):
+    t40 = {"requires": {"hot_row": {"lens": "volume", "company": "Lockheed", "within": 2}}}
+    hot = {
+        "hidden_by_default": ["staffing"],
+        "lenses": {
+            "volume": [
+                {"company": "Randstad", "operator": "staffing"},
+                {"company": "Amazon", "operator": "employer"},
+                {"company": "Lockheed Martin", "operator": "employer"},
+            ]
+        },
+    }
+    assert ev.retired(t40, FakeSpace({SpaceRoute.HOT: hot})) is None
+    hot["lenses"]["volume"].insert(1, {"company": "Deloitte", "operator": "employer"})
+    assert "not in the first 2 rows" in ev.retired(t40, FakeSpace({SpaceRoute.HOT: hot}))
+    t41 = {"requires": {"roles_joined_partway": _T41}}
+    assert ev.retired(t41, FakeSpace(_P5E_ROLES)) is None
+    level = {
+        SpaceRoute.TRENDS: {"reading": {"lines": [_role_move(1, 2, 5.5)] * 2}}
+    }
+    assert "no watched role" in ev.retired(t41, FakeSpace(level))
