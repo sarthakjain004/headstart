@@ -1,6 +1,8 @@
 import importlib.util
 from pathlib import Path
 
+import pytest
+
 _HARNESS = Path(__file__).resolve().parents[1] / "scripts/eval/verify_filters.py"
 
 
@@ -97,3 +99,45 @@ def test_a_space_that_refuses_the_switch_is_a_violation(monkeypatch):
     assert all(
         c["n_violations"] == 1 for c in harness.run_non_tech_checks("https://space")
     )
+
+
+def _http_error(code: int, retry_after: str | None = None):
+    import email.message
+    import urllib.error
+
+    headers = email.message.Message()
+    if retry_after is not None:
+        headers["Retry-After"] = retry_after
+    return urllib.error.HTTPError("https://space/search", code, "x", headers, None)
+
+
+def test_a_rate_limited_read_waits_out_its_retry_after_and_is_asked_again(monkeypatch):
+    """The Space limits reads per address; a 429 is it pacing the harness, not an answer."""
+    harness = _load_harness()
+    answers = [_http_error(429, "7"), _http_error(429, "3"), "ok"]
+    slept: list[float] = []
+
+    def fake_urlopen(url, timeout):
+        answer = answers.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    monkeypatch.setattr(harness.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(harness.time, "sleep", slept.append)
+    assert harness._open("https://space/search") == "ok"
+    assert slept == [7, 3]
+
+
+def test_any_other_status_is_not_retried(monkeypatch):
+    harness = _load_harness()
+    calls: list[str] = []
+
+    def fake_urlopen(url, timeout):
+        calls.append(url)
+        raise _http_error(400)
+
+    monkeypatch.setattr(harness.urllib.request, "urlopen", fake_urlopen)
+    with pytest.raises(harness.urllib.error.HTTPError, match="HTTP Error 400"):
+        harness._open("https://space/search")
+    assert calls == ["https://space/search"]

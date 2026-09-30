@@ -52,10 +52,18 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         # "Java Developer" whose description is "this is test jd", at places "aassrr11" and
         # "abb10".
         "mynexthire:consultant",
-        # Two more non-customer tenants, read 2026-09-30. `mars` names itself "Mars" but is a
-        # trial: 7 of its 8 postings are "test mars2", "mdl test" or a "Software Tester" whose
-        # description is "Test JD", "ok" or nothing, with ids 3-47 over two years. `prodindefault`
-        # is the vendor's default tenant (client name "prodindefault", site "prodindefault.com").
+        # Four more non-customer tenants, read 2026-09-30. `staging` is client 999, "Staging",
+        # site "www.staging_on_production.com": 328 postings dated 2020-2022, one described
+        # "Additional Comment: this statement should appear in JD". `try` is the vendor's
+        # demo, client name "MyNextHire Trial Instance": 164 template postings ("Role
+        # Overview: We are seeking a talented SDE2 Mobile Developer…") placed from Atlanta to
+        # Bengaluru. `mars` names
+        # itself "Mars" but is a trial: 7 of its 8 postings are "test mars2", "mdl test" or a
+        # "Software Tester" whose description is "Test JD", "ok" or nothing, with ids 3-47 over
+        # two years. `prodindefault` is the vendor's default tenant (client name
+        # "prodindefault", site "prodindefault.com").
+        "mynexthire:staging",
+        "mynexthire:try",
         "mynexthire:mars",
         "mynexthire:prodindefault",
         # Jibe clients that are not a board of openings (ADR-0189), each read 2026-09-24.

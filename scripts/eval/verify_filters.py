@@ -84,9 +84,10 @@ def _open(url: str):
     """``urlopen``, waiting out a 429 for as long as its ``Retry-After`` says.
 
     The Space limits reads per address (`_limit_each_caller`), and this harness sends well over
-    that limit in a run: on 2026-09-30, with other sessions probing from the same address, 71 of
-    its checks came back 429 and counted as check errors. A 429 is the Space pacing its caller,
-    not a filter's answer, so it is waited out; any other status still raises at once."""
+    that limit in a run: on 2026-09-30, with other sessions probing from the same address, 86 of
+    its 150 checks came back 429 (79 as check errors, 7 as violations of an expected 400 or
+    200). With this wait, the next run had none. A 429 is the Space pacing its caller, not a
+    filter's answer, so it is waited out; any other status still raises at once."""
     for _ in range(_RATE_LIMIT_WAITS):
         try:
             return urllib.request.urlopen(url, timeout=120)
