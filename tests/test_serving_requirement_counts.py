@@ -173,6 +173,18 @@ def test_each_work_authorization_stance_is_counted_over_the_described_jobs():
     }
 
 
+def test_a_work_authorization_stance_is_read_against_each_jobs_type():
+    # ADR-0368: "for full-time positions" offers an internship nothing.
+    offer = "Python. We sponsor work visas for full-time positions."
+    counted = _summary(
+        [
+            _job(1, description=offer, employment_type="Full time"),
+            _job(2, description=offer, employment_type="Intern"),
+        ]
+    )
+    assert counted["work_authorization"]["offers_sponsorship"] == 1
+
+
 def test_minimum_years_are_banded_and_kept_apart_by_source():
     jobs = [
         _job(1, min_years=0, experience_source="regex"),

@@ -428,6 +428,105 @@ def test_what_the_draw_after_the_last_freeze_got_wrong(text, want):
     )
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        # Thinking Machines, round-5 critique: the hedge is in its own sentence, which offers
+        # nothing itself.
+        (
+            "Visa sponsorship: We sponsor visas. While we can't guarantee success for every "
+            "candidate or role, if you're the right fit, we're committed to working through the "
+            "visa process together."
+        ),
+        # coera, round-5 critique.
+        (
+            "We support visa sponsorship and relocation within Europe, where it makes the "
+            "difference between hiring the right person and not."
+        ),
+        # Trade Republic, round-5 critique: offered to candidates already there.
+        (
+            "Relocation and visa support is provided if required (only if already based in the "
+            "United Kingdom or Europe)."
+        ),
+        # The hedges ADR-0359 deferred: Magic and SoftLabs; Krea and iGii beside them.
+        "Visa sponsorship and relocation stipend to bring you to SF, if possible",
+        "Full work rights and work right visa sponsorship shall be considered for the right skill sets",
+        "We're open to sponsoring international visas where we can (e.g., STEM OPT, H-1B, O-1).",
+        "Where possible we will offer visa sponsorship and relocation assistance.",
+    ],
+)
+def test_what_the_round_5_critique_read_as_firm_only_may_offer(text):
+    held = wa.stances(
+        text, title="Software Engineer", location="London, United Kingdom"
+    )
+    assert held & {OFFERS, MAY, REFUSES} == {MAY}
+
+
+def test_a_hedge_needs_a_visa_near_it_to_hold_back_an_offer():
+    firm = "We sponsor visas. "
+    far = "Relocation is not always needed, and travel is not guaranteed."
+    assert wa.stances(firm + far, title="Engineer", location="Austin, TX") == {OFFERS}
+
+
+@pytest.mark.parametrize(
+    ("title", "employment_type", "want"),
+    [
+        # Jump Trading, round-5 critique: an internship is not a full-time position.
+        ("Campus Software Engineer (Intern)", "Jump Trading - Intern", set()),
+        ("Campus ML Research Engineer (Intern)", None, set()),
+        ("Software Engineer", "Part-time", set()),
+        ("Software Engineer", "Contract", set()),
+        # A full-time job, or one stating no type (ADR-0341), is in scope.
+        ("Campus Software Engineer (Full-Time)", "Full-time - Campus", {OFFERS}),
+        ("Software Engineer", None, {OFFERS}),
+        ("Software Engineer", "Regular", {OFFERS}),
+    ],
+)
+def test_an_offer_for_full_time_positions_is_judged_against_the_jobs_type(
+    title, employment_type, want
+):
+    text = "We accept students eligible for CPT/OPT and we sponsor work visas for full-time positions."
+    held = wa.stances(
+        text, title=title, location="Chicago", employment_type=employment_type
+    )
+    assert held & {OFFERS, MAY, REFUSES} == want
+
+
+def test_an_offer_for_full_time_positions_only_refuses_an_internship():
+    text = "We sponsor work visas for full-time positions only."
+    assert wa.stances(
+        text, title="Software Engineering Intern", location="Chicago"
+    ) == {REFUSES}
+
+
+@pytest.mark.parametrize(
+    ("location", "want"),
+    [
+        # Raydar: sponsorship for a later move to San Francisco, on a London job.
+        ("London, England, United Kingdom", set()),
+        ("San Francisco, California, United States", {OFFERS}),
+        ("Remote", {MAY}),
+    ],
+)
+def test_an_offer_for_a_move_to_a_city_is_judged_against_the_jobs_place(location, want):
+    text = "Visa sponsorship is available for relocation to San Francisco."
+    assert wa.stances(text, title="Founding Engineer", location=location) == want
+
+
+def test_a_city_the_job_is_in_is_not_read_as_a_move():
+    # Fastwater: a Montreal job its location field lists in France, the US and the UK.
+    text = (
+        "The company provides full relocation support, including immigration assistance, and "
+        "offers a relocation bonus upon arrival in Montreal."
+    )
+    held = wa.stances(
+        text,
+        title="Payload Engineer",
+        location="Toulouse, FR; United States; United Kingdom",
+    )
+    assert OFFERS in held
+
+
 def test_mentions_quote_a_us_person_requirement():
     text = "Applicants will be asked to verify U.S. person status under the ITAR."
     assert wa.mentions(text) == [text]
@@ -548,8 +647,14 @@ def _labelled(sample=None):
 
 
 def _stances(row):
-    """What the rules read in a labelled row, against its job's own title and place."""
-    return wa.stances(row["text"], title=row["title"], location=row["location"])
+    """What the rules read in a labelled row, against its job's own title, place and, where the
+    row carries it, type (ADR-0368)."""
+    return wa.stances(
+        row["text"],
+        title=row["title"],
+        location=row["location"],
+        employment_type=row.get("employment_type"),
+    )
 
 
 def _precision_recall(rows, stance):
@@ -603,8 +708,9 @@ def test_offers_hold_their_precision_on_the_50_drawn_after_the_last_freeze():
         if OFFERS in _stances(row)
     ]
     field, true = _TRUE_WHEN[OFFERS]
-    # ADR-0359 reads two of the 48 as hedged (an approval, a transfer only): 46 of 46.
-    assert len(rows) >= 46 and sum(row[field] in true for row in rows) >= 46
+    # ADR-0359 reads two of the 48 as hedged (an approval, a transfer only): 46 of 46. ADR-0368
+    # reads River AI's "can't guarantee success for every candidate or role" as a hedge too.
+    assert len(rows) == 45 and sum(row[field] in true for row in rows) == 45
 
 
 def test_every_labelled_row_carries_its_jobs_title_and_place():
@@ -626,24 +732,26 @@ def test_a_jobs_title_and_place_are_passed_by_name():
 
 def test_offers_hold_their_measured_precision_on_the_fresh_draw_after_adr_0359():
     # ADR-0359: 50 live offers drawn after its rules froze, read strictly: 46 right (0.92).
-    # Four misses stand, not fixed after the draw: a global-mobility benefit, "if possible",
+    # Four misses stood, not fixed after that draw: a global-mobility benefit, "if possible",
     # "shall be considered" and an internship whose employer sponsors full-time roles only.
+    # ADR-0368 reads the last three, so this draw is now rules tuned on it: 46 of 47.
     rows = [
         row
         for row in _labelled("predicted-offers-v4-frozen")
         if OFFERS in _stances(row)
     ]
     field, true = _TRUE_WHEN[OFFERS]
-    assert len(rows) == 50 and sum(row[field] in true for row in rows) == 46
+    assert len(rows) == 47 and sum(row[field] in true for row in rows) == 46
 
 
 def test_the_first_adr_0359_draw_is_what_its_rules_were_tuned_on():
     # 40 of 50 right strictly before the rules changed; 46 of the rows are still served, and
-    # of the 39 the tuned rules still read as offers, 37 are right.
+    # of the 39 the tuned rules still read as offers, 37 are right. ADR-0368 reads Raydar's
+    # offer for a move to San Francisco against its London job: 37 of 38.
     rows = [
         row
         for row in _labelled("predicted-offers-v4-first-draw")
         if OFFERS in _stances(row)
     ]
     field, true = _TRUE_WHEN[OFFERS]
-    assert len(rows) == 39 and sum(row[field] in true for row in rows) == 37
+    assert len(rows) == 38 and sum(row[field] in true for row in rows) == 37

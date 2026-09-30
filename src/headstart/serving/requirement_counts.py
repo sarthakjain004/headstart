@@ -46,6 +46,7 @@ COLUMNS = (
     "company",
     "location",
     "remote",
+    "employment_type",
     "min_years",
     "experience_source",
     "min_salary_annual",
@@ -221,6 +222,7 @@ def _work_authorization(jobs: list[Mapping[str, Any]]) -> dict[str, int]:
                 job.get("description"),
                 title=job.get("title"),
                 location=job.get("location"),
+                employment_type=job.get("employment_type"),
             )
         )
     )

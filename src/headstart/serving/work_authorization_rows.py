@@ -94,20 +94,24 @@ class WorkAuthorizationRows:
             reader = (
                 self._table.search()
                 .where(f"regexp_like(description, '{work_authorization.PREFILTER}')")
-                .select(["id", "title", "location", "description"])
+                .select(["id", "title", "location", "employment_type", "description"])
                 .to_batches(batch_size=READ_BATCH_ROWS)
             )
             for batch in reader:
-                for job_id, title, location, text in zip(
+                for job_id, title, location, employment_type, text in zip(
                     batch.column("id").to_pylist(),
                     batch.column("title").to_pylist(),
                     batch.column("location").to_pylist(),
+                    batch.column("employment_type").to_pylist(),
                     batch.column("description").to_pylist(),
                     strict=True,
                 ):
                     read += 1
                     held = work_authorization.reading(
-                        text, title=title, location=location
+                        text,
+                        title=title,
+                        location=location,
+                        employment_type=employment_type,
                     )
                     for stance in work_authorization.filtered_stances(held.stances):
                         ids[stance].append(job_id)

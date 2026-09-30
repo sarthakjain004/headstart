@@ -2443,6 +2443,22 @@ def test_a_read_by_id_judges_a_scoped_offer_against_its_own_place():
     ] == ["scope_unread"]
 
 
+def test_a_read_by_id_judges_an_offer_for_full_time_positions_against_its_type():
+    # ADR-0368: Jump Trading's internships sponsor nothing; its full-time roles do.
+    from headstart.serving.job_search import _job_row
+
+    row = {
+        "id": "greenhouse:jumptrading:1",
+        "title": "Campus Software Engineer",
+        "location": "Chicago",
+        "description": "We sponsor work visas for full-time positions.",
+    }
+    intern = _job_row({**row, "employment_type": "Jump Trading - Intern"})
+    full_time = _job_row({**row, "employment_type": "Full-time - Campus"})
+    assert intern["work_authorization"]["stances"] == []
+    assert full_time["work_authorization"]["stances"] == ["offers_sponsorship"]
+
+
 # ---- location: accents folded, a city's other spellings tried (ADR-0344) ----
 
 
