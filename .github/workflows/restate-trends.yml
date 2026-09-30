@@ -28,9 +28,10 @@ env:
 jobs:
   restate:
     runs-on: ubuntu-24.04
-    # A hang detector, not a measured bound: the ~5 GB fetch, the encode budget (30 min by
-    # default) and the Restatement itself. Tighten it once a run has measured them.
-    timeout-minutes: 120
+    # A hang detector. Measured 2026-09-30 over 23 runs of facts: 2 min fetch, 96 min Restate
+    # (English gate 33, placement and counting 62), with 2 titles to encode. The Restatement
+    # grows with the facts, so this leaves room for weeks of them plus the 30-min encode budget.
+    timeout-minutes: 240
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
