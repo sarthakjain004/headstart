@@ -478,7 +478,30 @@ def build_doc(job: dict) -> str:
 # ADR-0066: experience moves on 91 rows, all Netflix and all Tier 3 (none -> seniority 16, seniority
 # down 73, up 2); salary moves on 19, field INR -> none (Knowfinity's US "100000-130000 INR per-year",
 # monthly Gulf pay read as annual).
-DERIVATIONS_VERSION = 26
+# v27 (ADR-0350; #966 first held v25, and ADR-0357's v26 landed before it merged): `jobs/experience.py`
+# reads a third pass where the first two find nothing ("five (5) years" collapsed to its digits, a 46-80
+# character gap before "experience" screened for benefits and company prose, "expertise"/"exp" for
+# "experience" read forward only and below 15 years, none of it where the posting says preferred), reads a
+# number as a whole token (no "160,000" tail, no decimal fraction: "2.5 years" is 2; no half of "3 1/2"),
+# reads "less than"/"maximum"/"no more than" and their kin as a 0..N ceiling like "up to" only where the pass
+# states no floor, and skips an education ("4 year degree", "2 years of college education"), an age ("18
+# years of age"), a contract length, a window of time ("within the last 5 years", "lived in the UK for 3
+# years") and the years that stand in for a degree. `stated_floors` (ADR-0357) reads the third pass too.
+# The range since the v26 change at `21a1ea1d` is `git log 21a1ea1d..9e49067d --
+# src/headstart/jobs/experience.py`: nine commits, this change's code and the merge that resolved it against
+# ADR-0357 (`salary.py` is untouched). Measured old (main's `extract()`, unchanged since `21a1ea1d`, which
+# reproduces the served value on all 494,572 rows with a description) vs new on the served table at version
+# 44, 496,739 rows, read off HF on 2026-09-30 at 11:14 UTC, per ADR-0066: 10,582 rows move (2.14%), none at
+# the field tier. By tier: none -> regex 4,198, seniority -> regex 4,827 (2,054 of them by three years or
+# more), regex -> none 156, regex -> seniority 207, and regex -> regex 1,194 (597 floors fall, 575 rise, 22
+# change only the ceiling). By cause, read off the text around the old and new match: the third pass 9,025
+# gained ("five (5)" 7,880, the long gap 826, expertise 319), and of the rows that lose or change a value 353
+# degree substitution, 287 ceiling word, 252 decimal or thousands, 222 education, 57 window, 54 age, 12
+# contract, 320 with no single rule. The third pass alone (the same module with and without it) changes
+# 9,109 rows, all none or seniority -> regex and none where the first two passes still answer; ADR-0079's
+# smallest floor is untouched. Hand-read at 40 fresh rows a class, 38 to 40 right in every class (contract
+# 11 of 12), no class dropped (the table and the misses are in ADR-0350).
+DERIVATIONS_VERSION = 27
 
 
 def to_meta(job: dict) -> dict:

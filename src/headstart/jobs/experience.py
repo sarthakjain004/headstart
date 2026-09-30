@@ -13,8 +13,8 @@ adding to ``_tier2_patterns`` (the factory feeding both Tier-2 passes) or ``_SEN
 LLM tier is another ``from_*`` chained in :func:`extract`. Keeping each tier pure keeps the whole
 thing unit-testable without I/O.
 
-Five things about Tier 2 are load-bearing and easy to undo by accident (ADR-0060, ADR-0066,
-ADR-0079):
+Six things about Tier 2 are load-bearing and easy to undo by accident (ADR-0060, ADR-0066,
+ADR-0079, ADR-0350):
 
 * **The smallest stated requirement wins**, so :func:`_scan` collects every surviving match and
   selects; it must not return the first one it finds. A description stating several is read at its
@@ -31,6 +31,9 @@ ADR-0079):
   :func:`from_description` may assume it and need not carry the typographic variants.
 * **Spelled-out numbers run as a second pass**, so a description a digit pattern already answers
   keeps exactly the answer it had.
+* **Recall widenings run as a third pass**, on the same terms: "five (5) years", a filler gap of 46-80
+  characters, and "expertise"/"exp" for "experience" are read only where the first two passes found
+  nothing, so no answer Tier 2 already gave can move (ADR-0066, ADR-0350).
 """
 
 from __future__ import annotations
@@ -188,6 +191,45 @@ _GAP = (
 _YEARS = (
     r"(?:years?|yrs?)"  # "yrs" is common enough in the corpus to be worth accepting
 )
+#: What the third pass accepts for the word the Tier-2 patterns anchor on: "5+ years of expertise in Java",
+#: "5+ yrs exp". `exp\b` so "expert" and "expense" do not anchor a requirement.
+_EXPERIENCE_WIDE = r"(?:experience|expertise|exp\b)"
+# A gap of 46-80 characters, the third pass's reach to "2+ years of server hardware troubleshooting and repair
+# experience". No full stop at all, so the gap cannot run into the next sentence (and is cheaper than a lookahead per
+# character); a description whose gap holds "(M.S.)" or "e.g." is left to the first two passes.
+_GAP_LONG = r"[\w\s'\":/()&,·•+#-]{46,80}?"
+# Eighty characters also reach benefits and company prose: "5 years of paid parental leave benefits, flexible
+# schedules, and an amazing employee experience", "20 years and we take pride in our people and culture, and our
+# experience". A match whose words are first person, pay, leave, tenure or culture, or whose anchor is HR's
+# "employee experience" / "candidate experience", is not a requirement; nor are years of education, schooling or
+# training, which stand beside experience ("1-2 years of education or training in a security field, or equivalent
+# work experience", "4 years of total combined higher education and related work experience"), nor a company's
+# "For over 15 years, ArcTouch has created ...".
+_GAP_PROSE = re.compile(
+    r"\b(?:we|our|ours|benefits?|leave|paid|pay|salary|compensation|perks?|vacation|insurance|bonus|tenure|history|"
+    r"founded|since|culture|pride|proud)\b|\b(?:employee|candidate)s?\s+\w+$"
+    r"|\bhigher\s+education\b|\b(?:education|schooling|training|apprenticeship)\s+(?:and|or)\b"
+    r"|(?-i:\b(?:years?|yrs?),\s+[A-Z]\w+\s+(?:has|have|is|are|was|were|had)\b)",
+    re.IGNORECASE,
+)
+# "more than 15 years of expertise" is a company's own, never a requirement: nobody asks for 15 years of expertise
+# and not of experience. Read on the third pass's "expertise" anchor only ("Exp: 15+ Years" is a requirement).
+_MAX_EXPERTISE_YEARS = 15
+# A number the posting marks as preferred is not a requirement, and a false floor hides the job from someone who
+# qualifies. The third pass leaves it unread ("Preferred Qualifications - 2+ years of ...", "5+ years heavy industrial
+# experience preferred"); the first two passes keep reading it as they always did (ADR-0066).
+_PREFERRED_BEFORE = re.compile(
+    r"\b(?:preferred|preferable|preferably|desired|desirable|nice\s+to\s+have|bonus|ideally|even\s+better)\b"
+    r"[^.;]{0,25}$",
+    re.IGNORECASE,
+)
+_PREFERRED_WITHIN = re.compile(
+    r"\b(?:preferred|preferable|preferably|desired|desirable)\b", re.IGNORECASE
+)
+_PREFERRED_AFTER = re.compile(
+    r"^\W{0,3}(?:(?:is|are)\s+)?(?:preferred|desired|desirable|a\s+plus|an?\s+asset|nice\s+to\s+have)\b",
+    re.IGNORECASE,
+)
 
 # Number words, because a requirement is as often written out as digitised: "A minimum of four
 # years of relevant experience", "Minimum five years of experience designing software", "Two years
@@ -220,12 +262,26 @@ _WORD_NUM = {
     "eleven": 11,
     "twelve": 12,
 }
-_DIGITS = r"(\d{1,3})"
+# A number is a whole token. It is not the tail of a longer one (the "000" of "$160,000 yearly depending on
+# experience" and of "7.000 year training budget" read as 0 years) and not the fraction of a decimal (the 5 of
+# "0.5 years"): `_scan` skips a match with a digit, or a digit and a point or comma, right before it. The fraction is
+# consumed, so group 1 is the whole years and the floor rounds down the way `from_field` does for months: "2.5 years"
+# is 2, "1.5 - 3.5 years" is 1-4 (`_scan` rounds a ceiling up). The boundary is checked after the match rather than by a
+# lookbehind in front of the number, which defeats the literal-prefix scan `re` uses on `\d` (+1.0 s per 3,000
+# descriptions, measured; the check after the match costs nothing).
+_DIGITS = r"(\d{1,3})(?:[.,]\d{1,2}(?!\d))?"
 # Hand-factored rather than `"|".join(_WORD_NUM)`: `re` does not build a trie out of an alternation,
 # so sharing each first letter across its branches is what keeps the second pass affordable
 # (measured 0.75s -> 0.47s per 3,000 descriptions on the pattern this appears in, when the
 # digit branch was `\d{1,2}`; re-measured at `\d{1,3}` the pass is 1.193s -> 1.201s, unchanged).
-_DIGITS_OR_WORDS = r"(\d{1,3}|t(?:hree|welve|wo|en)|f(?:our|ive)|s(?:ix|even)|e(?:ight|leven)|nine|one)"
+_DIGITS_OR_WORDS = r"(\d{1,3}|t(?:hree|welve|wo|en)|f(?:our|ive)|s(?:ix|even)|e(?:ight|leven)|nine|one)(?:[.,]\d{1,2}(?!\d))?"
+
+
+# `_scan` reads a range's ceiling off the digits the pattern captured, so it needs the fraction the pattern consumed.
+_FRACTION = re.compile(r"[.,](\d{1,2})(?!\d)")
+# A mixed fraction is another tail: the 2 of "additional 3 1/2 years (42 mos.) exp" is half a year, not two. Only with
+# the space ("3 1/2"): "5/7 years" is a range, read as main reads it.
+_NOT_A_WHOLE_NUMBER = re.compile(r"\d$|\d[.,]$|\d\s\d/$")
 
 
 def _years_from_token(token: str) -> int:
@@ -268,7 +324,7 @@ class _Tier2Pattern(NamedTuple):
     guarded: bool
 
 
-def _tier2_patterns(num: str) -> list[_Tier2Pattern]:
+def _tier2_patterns(num: str, third: bool = False) -> list[_Tier2Pattern]:
     """The Tier-2 pattern set, over whichever number group is passed in.
 
     Built by a factory so the digits-only pass and the digits-or-words pass cannot drift apart:
@@ -281,7 +337,14 @@ def _tier2_patterns(num: str) -> list[_Tier2Pattern]:
     than recovered afterwards by looking for `_WORK` inside `pattern.pattern` — that sniff was
     true only while the work-word patterns were the sole unguarded-context ones, and silently
     reported False for any new pattern built from something other than `_WORK`.
+
+    `third` builds the recall widenings of the third pass (`_THIRD_PATTERNS`): "expertise" and "exp" for the
+    anchor word, reversed only for "experience" and "exp" ("expertise of 20 years" is how a company describes
+    itself), the forward pattern with a 46-80 character gap, and every pattern guarded, since the wider anchor
+    can reach prose the literal word "experience" could not.
     """
+    experience = _EXPERIENCE_WIDE if third else "experience"
+    reversed_experience = r"(?:experience|exp\b)" if third else "experience"
     return [
         # number-first range then "experience": "7 to 12 years of experience", "3-5 years' experience"
         _Tier2Pattern(
@@ -292,15 +355,15 @@ def _tier2_patterns(num: str) -> list[_Tier2Pattern]:
                 + r"\s*\+?\s*"
                 + _YEARS
                 + _GAP
-                + "experience",
+                + experience,
                 re.IGNORECASE,
             ),
-            guarded=False,
+            guarded=third,
         ),
         # "experience" then a range (reversed): "Experience: 8 – 12 Years"
         _Tier2Pattern(
             re.compile(
-                "experience"
+                reversed_experience
                 + _GAP
                 + num
                 + r"\s*(?:to|-)\s*"
@@ -309,23 +372,39 @@ def _tier2_patterns(num: str) -> list[_Tier2Pattern]:
                 + _YEARS,
                 re.IGNORECASE,
             ),
-            guarded=False,
+            guarded=third,
         ),
         # "7+ years of proven experience", "5 plus years … experience", "minimum 3 years of experience"
         _Tier2Pattern(
             re.compile(
-                num + r"\s*(?:\+|plus)?\s*" + _YEARS + _GAP + "experience",
+                num + r"\s*(?:\+|plus)?\s*" + _YEARS + _GAP + experience,
                 re.IGNORECASE,
             ),
-            guarded=False,
+            guarded=third,
         ),
         # reversed single: "experience of 5+ years", "Experience: 5 years"
         _Tier2Pattern(
             re.compile(
-                "experience" + _GAP + num + r"\s*(?:\+|plus)?\s*" + _YEARS,
+                reversed_experience + _GAP + num + r"\s*(?:\+|plus)?\s*" + _YEARS,
                 re.IGNORECASE,
             ),
-            guarded=False,
+            guarded=third,
+        ),
+        *(
+            [
+                # "2+ years of hardware troubleshooting and repair experience" with a gap of 46-80 characters.
+                # Forward only (the reversed pattern reads "experience … we've spent 10 years"), guarded, and
+                # screened for benefits and company prose, since eighty characters can span it.
+                _Tier2Pattern(
+                    re.compile(
+                        num + r"\s*(?:\+|plus)?\s*" + _YEARS + _GAP_LONG + experience,
+                        re.IGNORECASE,
+                    ),
+                    guarded=True,
+                )
+            ]
+            if third
+            else []
         ),
         # "5+ years in software testing", "7 years of professional engineering", "4+ years building …"
         _Tier2Pattern(
@@ -384,13 +463,17 @@ def _tier2_patterns(num: str) -> list[_Tier2Pattern]:
 _DESC_PATTERNS = _tier2_patterns(_DIGITS)
 #: Second pass, tried only when :data:`_DESC_PATTERNS` finds nothing (see `_WORD_NUM`).
 _NUM_WORD_PATTERNS = _tier2_patterns(_DIGITS_OR_WORDS)
+#: Third pass, tried only when both passes above find nothing (see `from_description`). Digits only: the spelled
+#: numbers with their digits are collapsed to digits first, and the alternation of number words costs +1.1 s per
+#: 3,000 descriptions where the digit patterns cost +0.3.
+_THIRD_PATTERNS = _tier2_patterns(_DIGITS, third=True)
 
 # Company age, founder tenure, benefits: "N years" that is never a requirement. These read as
 # requirements to a work-word pattern ("spent the last 15 years building …") and were previously
 # excluded only as a side effect of demanding an of/in/as connector.
 _NARRATIVE_BEFORE = re.compile(
     r"\b(?:spent|combined|celebrat\w*|founded|established|history|anniversar\w*|"
-    r"vest\w*|sabbatical|tenure|runway)\b[\w\s,'-]{0,25}$",
+    r"vest\w*|sabbatical|tenure|runway|(?:re)?paid\s+over|spread\s+over)\b[\w\s,'-]{0,25}$",
     re.IGNORECASE,
 )
 # Case-sensitive **on purpose**: "at Palantir" is tenure, but "at a startup" / "at the company" are
@@ -442,7 +525,67 @@ _NARRATIVE_SPAN = re.compile(
     r"[\s\w'()-]{0,18}?\b(?:in\s+a\s+row(?![\w-])|vest\w*|of\s+graduat\w*)\b"
     r"|(?-i:,\s+(?:we|our)\b)"
     r"|\s+of\s+(?:history|heritage)\b"
-    r"|\s+of\s+(?:\w+\s+)?growth\b(?=\s*[,.;&]|\s+and\b))",
+    r"|\s+of\s+(?:\w+\s+)?growth\b(?=\s*[,.;&]|\s+and\b)"
+    # An education, an age, a contract length: "4 year degree", "2 years of post-secondary study", "18 years of age",
+    # "(1 year contract)". Singular "year" before degree/diploma ("3 Years Diploma" and "5+ years Degree in X" are a
+    # requirement followed by the next list item); "or above" is not here ("3 years or above" is a floor).
+    r"|(?<![sS])\s+(?:(?:technical|engineering|bachelor'?s?|associate'?s?|master'?s?|accredited|college|university)[\s/-]+){0,2}"
+    r"(?:degree|diploma)\b"
+    # Only an education noun that ends the phrase: "2 years of college education in a technical discipline", not
+    # "2 years of college-level Java programming" or "3+ years of study design and data analysis experience".
+    r"|(?:(?<![sS])\s+|\s+of\s+(?:[a-z-]+\s+){0,2}?)(?:college|university|undergraduate|post-?secondary)(?:[\s-]+level)?\b"
+    r"(?=\s*(?:education|coursework|course\s*work|study|studies|programs?|degrees?|credits?|classes|courses?|training"
+    r"|schooling)\b|\s*(?:or|and|in)\b|\s*[,.;:)]|(?:\s+[a-z]+){1,2}\s+(?:program|degree|coursework)\b)"
+    r"|\s+of\s+(?:schooling|studies|study)\s*(?:[,.;:)]|(?:in|at|or|and|beyond|after|program)\b)"
+    r"|\s+(?:of\s+age\b|old\b|(?:or|and)\s+older\b)"
+    r"|(?<![sS])\s+(?:fixed[\s-]term\s+)?(?:contract|term)\b"
+    r"(?:\s*[),.;:(]|\s+-\s|\s*$|\s+(?:basis|position|role|renewable|extension|appointment|duration|hybrid|with|"
+    r"starting|beginning|from|opportunity|only|and|maternity|cover))"
+    r"|\s+(?:fixed[\s-]term\s+)?(?:contract|term)\s*\))",
+    re.IGNORECASE,
+)
+
+# The number is the years that stand in for a degree, not what the job asks: "4 years of additional experience may be
+# substituted for a bachelor's degree", "(Additional 4 years of experience may substitute degree)". Read from the number
+# to the verb with no comma, bracket, bullet, "or" or "and" between them, so a clause about another number ("5+ years,
+# additional years may be considered in lieu of a degree") does not reach this one. A description flattened to one line
+# has no full stops, so the stretch must also hold no degree word and at most one "experience" (`_substitutes`):
+# "Master's Degree with 3 years of related experience Equivalent experience can be substituted for the degree" states
+# the 3 as an alternative path, and the clause belongs to the second "experience".
+_SUBST_AFTER = re.compile(
+    r"(?:(?!\b(?:or|and)\b)[^.;,•·(]){0,100}?\b(?P<verb>may|can|could|will)\s+(?:also\s+)?(?:"
+    r"be\s+(?:substituted|used|accepted|considered)\s+(?:for|in\s+lieu\s+of|instead\s+of)|substitute(?:\s+for)?)\s+"
+    r"(?:a|an|the|your)?\s*(?:bachelor|master|degree|associate|high\s+school|college|university|education|B\.?S\b|M\.?S\b)",
+    re.IGNORECASE,
+)
+_SUBST_LEAD_OTHER = re.compile(
+    r"\b(?:degree|master'?s?|bachelor'?s?|ph\.?\s?d|doctorate|advanced)\b",
+    re.IGNORECASE,
+)
+_EXPERIENCE_WORD = re.compile(r"\bexperience", re.IGNORECASE)
+
+
+def _substitutes(text: str, pos: int) -> bool:
+    """Whether the number ending at ``pos`` is the years that may stand in for a degree."""
+    found = _SUBST_AFTER.match(text, pos)
+    if found is None:
+        return False
+    lead = text[pos : found.start("verb")]
+    return (
+        not _SUBST_LEAD_OTHER.search(lead) and len(_EXPERIENCE_WORD.findall(lead)) <= 1
+    )
+
+
+# What a degree stands for, read by the third pass only: "a master's degree can be substituted for two years of
+# experience", "an associate degree is equivalent to two (2) years", "in lieu of a degree, an additional four years".
+# Its numbers are a degree's worth of years, and the third pass has no other answer to protect (the guard is not
+# run in the first two passes, where an ambiguous "N years" beside a substitution is at least as often the requirement).
+_SUBST_BEFORE = re.compile(
+    r"(?:\b(?:degree|master'?s?|ph\.?\s?d|doctorate|bachelor'?s?|education|diploma|certification|training|coursework)\b"
+    r"[^.;]{0,60}?\b(?:substitut\w*|credit\w*|counts?|equals?|equivalent\s+to|in\s+lieu\s+of)\s+(?:for|as|to)?\s*"
+    r"(?:(?:up\s+to|an?\s+additional|additional)\s+|~\s*)*"
+    r"|\bin\s+lieu\s+of\s+(?:a|an|the|your)?\s*(?:[\w'.-]+\s+){0,3}?(?:degree|bachelor'?s?|master'?s?|diploma|education)\b"
+    r"[^.;]{0,20}?(?:an?\s+)?(?:additional\s+)?)$",
     re.IGNORECASE,
 )
 
@@ -451,8 +594,21 @@ _NARRATIVE_SPAN = re.compile(
 # Checked immediately before the number, for every pattern, like `_CEILING_BEFORE`. The
 # preposition is what separates it from requirement prose that uses the same words: "Minimum of
 # the past 2 years working with M365" states a requirement, and keeps it.
+#
+# Also "3 out of the past 5 years", "within last 3 years" without the "the", and a window that is a range ("in the
+# last 1-2 years": the match is the range's ceiling). "for the past 5 years" is a window only after a residency or
+# record cue ("resident in the UK for the past 5 years"); elsewhere it is a requirement ("Experience with Python for
+# the last 3 years is required", "Proven track record for the past 4 years in backend development"); the same
+# cue makes "lived in the UK for 10 years" a window.
 _WINDOW_BEFORE = re.compile(
-    r"\b(?:in|over|during|within|throughout)\s+the\s+(?:last|past)\s*$", re.IGNORECASE
+    r"\b(?:\d+\s+(?:out\s+)?of|in|over|during|within|throughout)\s+(?:the\s+)?(?:last|past|previous|preceding)\s*"
+    r"(?:\d{1,3}\s*(?:-|to)\s*)?$",
+    re.IGNORECASE,
+)
+_RESIDENCY_WINDOW_BEFORE = re.compile(
+    r"\b(?:resident|resided|resides?|residing|lived|living|citizen\w*|domicile\w*|violations?|convictions?)\b"
+    r"[^.;]{0,60}\bfor\s+(?:the\s+)?(?:(?:last|past|previous|preceding)\s*)?(?:\d{1,3}\s*(?:-|to)\s*)?$",
+    re.IGNORECASE,
 )
 
 
@@ -470,6 +626,30 @@ _WINDOW_BEFORE = re.compile(
 # building services" into rejections of a real requirement.
 _CEILING_BEFORE = re.compile(r"\bup\s+to\s*$", re.IGNORECASE)
 
+# The other spellings of a ceiling: "less than 2 years", "fewer than", "under", "below", "maximum (of)", "no more than",
+# "at most", "upto", "not exceeding". Never "no less than" / "not less than", which are floors. Only a single value
+# ("Maximum 8-12 years" labels a range and keeps it).
+_CEILING_WORDS_BEFORE = re.compile(
+    r"(?<!\bno\s)(?<!\bnot\s)\b(?:upto|(?:less|fewer|lesser)\s+than|under|below|"
+    r"(?:a\s+)?max(?:imum)?\.?(?:\s+of)?|(?:no|not)\s+more\s+than|at\s+most|not\s+exceeding)\s*$",
+    re.IGNORECASE,
+)
+# "Candidates with less than 5 years of experience are not eligible": what is turned away is the ceiling, so the number
+# is the floor. Read from the number to the end of its sentence.
+_CEILING_NEGATED = re.compile(
+    r"[^.;]{0,120}?\b(?:not\s+(?:be\s+)?(?:eligible|considered|accepted|qualified|suitable)|do\s+not\s+apply|"
+    r"don'?t\s+apply|should\s+not\s+apply|ineligible|cannot\s+apply|can'?t\s+apply)\b",
+    re.IGNORECASE,
+)
+# A ceiling that closes a range the sentence already opened is not a requirement of its own: "minimum of 6 years ...
+# with a maximum of 10 years", "three to five years (no more than 10 years)", "minimum 5+ years and up to 20 years".
+# A comma starts another clause, so it ends the reach ("BA/BS with 2+ years, MS with up to 2 years" is two cohorts).
+_FLOOR_BEFORE = re.compile(
+    r"(?:\d\s*\+?\s*(?:years?|yrs?)|\bminimum\b|\bmin\b|\bat\s+least\b|"
+    r"\b(?:three|four|five|six|seven|eight|nine|ten)\s+(?:to\s+\w+\s+)?years?)[^.;,]{0,50}$",
+    re.IGNORECASE,
+)
+
 
 def _is_narrative(text: str, match: re.Match) -> bool:
     """Whether this match sits in corporate history rather than in a requirement."""
@@ -479,12 +659,61 @@ def _is_narrative(text: str, match: re.Match) -> bool:
     )
 
 
+# "Twenty (20) years", "five (5) years", "5 (five) years", "Six (6)+ years": a requirement written as a word and its
+# digits, which neither number pattern can read. Replaced by the digits alone, padded with spaces to the original
+# length so every offset (and so every guard window) is unchanged. "ten (5)" is left as written.
+_NUMBER_NAMES = {
+    "zero": 0,
+    **_WORD_NUM,
+    "thirteen": 13,
+    "fourteen": 14,
+    "fifteen": 15,
+    "sixteen": 16,
+    "seventeen": 17,
+    "eighteen": 18,
+    "nineteen": 19,
+    "twenty": 20,
+    "twenty-five": 25,
+    "thirty": 30,
+}
+_PAREN_NUMBER = re.compile(
+    r"\b(?:(?P<w1>" + "|".join(_NUMBER_NAMES) + r")\s*\(\s*(?P<d1>\d{1,2})\s*\)"
+    r"|(?P<d2>\d{1,2})\s*\(\s*(?P<w2>" + "|".join(_NUMBER_NAMES) + r")\s*\))",
+    re.IGNORECASE,
+)
+
+
+def _collapse_paren_number(match: re.Match) -> str:
+    word, digits = (
+        (match.group("w1"), match.group("d1"))
+        if match.group("w1")
+        else (match.group("w2"), match.group("d2"))
+    )
+    if _NUMBER_NAMES[word.lower()] != int(digits):
+        return match.group(0)
+    return digits.ljust(len(match.group(0)))
+
+
+def _passes(text: str):
+    """The three Tier-2 passes in the order they are tried, each as (text, patterns, third). Lazy, so the third
+    pass's collapse of "five (5)" is paid only by a description the first two leave without an answer."""
+    folded = text.translate(_FOLD)
+    yield folded, _DESC_PATTERNS, False
+    yield folded, _NUM_WORD_PATTERNS, False
+    yield _PAREN_NUMBER.sub(_collapse_paren_number, folded), _THIRD_PATTERNS, True
+
+
 def from_description(text: str | None) -> ExperienceSpan | None:
-    """Tier 2 — mine the description with experience-anchored regex (for sources without a field)."""
+    """Tier 2 — mine the description with experience-anchored regex (for sources without a field).
+
+    Two passes answer as before; only a description they leave without an answer gets the third, so the
+    recall widenings in it can add a reading and cannot change one (ADR-0066)."""
     if not text:
         return None
-    text = text.translate(_FOLD)
-    return _scan(text, _DESC_PATTERNS) or _scan(text, _NUM_WORD_PATTERNS)
+    for found in (_scan(*one_pass) for one_pass in _passes(text)):
+        if found:
+            return found
+    return None
 
 
 def stated_floors(text: str | None) -> list[int]:
@@ -493,12 +722,15 @@ def stated_floors(text: str | None) -> list[int]:
     says so when there are several (ADR-0357)."""
     if not text:
         return []
-    text = text.translate(_FOLD)
-    stated = _stated(text, _DESC_PATTERNS) or _stated(text, _NUM_WORD_PATTERNS)
-    return sorted({span.min_years for span, ceiling in stated if not ceiling})
+    for stated in (_stated(*one_pass) for one_pass in _passes(text)):
+        if stated:
+            return sorted({span.min_years for span, ceiling in stated if not ceiling})
+    return []
 
 
-def _scan(text: str, patterns: list[_Tier2Pattern]) -> ExperienceSpan | None:
+def _scan(
+    text: str, patterns: list[_Tier2Pattern], third: bool = False
+) -> ExperienceSpan | None:
     """One pass of the Tier-2 patterns over already-folded text, answered by its smallest floor.
 
     Every match that survives the guards is collected and the **smallest** `min_years` among them
@@ -508,19 +740,32 @@ def _scan(text: str, patterns: list[_Tier2Pattern]) -> ExperienceSpan | None:
     wants, since position no longer decides the answer.
     """
     return min(
-        (span for span, _ in _stated(text, patterns)),
+        (span for span, _ in _stated(text, patterns, third)),
         key=lambda span: span.min_years,
         default=None,
     )
 
 
 def _stated(
-    text: str, patterns: list[_Tier2Pattern]
+    text: str, patterns: list[_Tier2Pattern], third: bool = False
 ) -> list[tuple[ExperienceSpan, bool]]:
-    """Every match of one pass that survives the guards, each with whether it is an "up to N"
-    ceiling rather than a stated floor."""
+    """Every match of one pass that survives the guards, each with whether it is a ceiling ("up to N",
+    "less than N") rather than a stated floor.
+
+    A ceiling word ("less than", "maximum", ...) reads as a 0..N span only when the pass states no floor at
+    all. Where it does, the clause keeps the reading main gave its number, a plain floor N, so the answer
+    never rises above main's and ADR-0079's smallest floor is what chooses among them."""
     spans: list[tuple[ExperienceSpan, bool]] = []
+    soft_ceilings: list[
+        tuple[ExperienceSpan, bool]
+    ] = []  # "less than N": a 0..N span if no floor is stated
+    soft_floors: list[
+        tuple[ExperienceSpan, bool]
+    ] = []  # the same numbers, read as main read them
     for pattern, guarded in patterns:
+        screened = (
+            third and _GAP_LONG in pattern.pattern
+        )  # the long gap reaches benefits and company prose
         # Every occurrence, so a rejected match falls through to the next one — "Founded 12 years
         # ago. Requires 5+ years building …" still yields 5 rather than nothing. Resumed from just
         # past the matched *number* rather than from the match's end, because `finditer`'s
@@ -532,33 +777,89 @@ def _stated(
         pos = 0
         while (match := pattern.search(text, pos)) is not None:
             pos = match.start(1) + len(match.group(1))
+            if _NOT_A_WHOLE_NUMBER.search(
+                text[max(0, match.start(1) - 4) : match.start(1)]
+            ):
+                continue  # the tail of a longer number ("160,000") or a decimal's fraction ("0.5")
             lo = _years_from_token(match.group(1))
             hi = (
                 _years_from_token(match.group(2))
                 if match.lastindex and match.lastindex >= 2 and match.group(2)
                 else None
             )
+            if hi is not None:
+                fraction = _FRACTION.match(text, match.end(2))
+                if fraction and int(fraction.group(1)):
+                    hi += 1  # "3.6 years" is up to 4, the way from_field rounds a ceiling up
+            if screened and _GAP_PROSE.search(match.group(0)):
+                continue
+            if third and (
+                _PREFERRED_WITHIN.search(match.group(0))
+                or _PREFERRED_BEFORE.search(
+                    text[max(0, match.start(1) - 40) : match.start(1)]
+                )
+                or _PREFERRED_AFTER.match(text[match.end() : match.end() + 30])
+            ):
+                continue  # marked preferred
+            if (
+                third
+                and lo >= _MAX_EXPERTISE_YEARS
+                and text[max(0, match.end() - 9) : match.end()].lower() == "expertise"
+            ):
+                continue  # a company's own years of expertise
             if _NARRATIVE_SPAN.match(text[match.start(1) : match.end() + 20]):
                 continue
-            if _WINDOW_BEFORE.search(
-                text[max(0, match.start(1) - 30) : match.start(1)]
+            if _substitutes(text, match.end(1)):
+                continue
+            if third and _SUBST_BEFORE.search(
+                text[max(0, match.start(1) - 90) : match.start(1)]
+            ):
+                continue
+            before = text[max(0, match.start(1) - 90) : match.start(1)]
+            if _WINDOW_BEFORE.search(before[-30:]) or _RESIDENCY_WINDOW_BEFORE.search(
+                before
             ):
                 continue
             if lo > _MAX_PLAUSIBLE_REQUIREMENT:
                 continue
             if guarded and _is_narrative(text, match):
                 continue
-            if _CEILING_BEFORE.search(
-                text[max(0, match.start(1) - 10) : match.start(1)]
+            # Where the wording of a ceiling starts, if the number sits right after one.
+            ceiling_at = None
+            ceiling_word = False
+            closes_range = False
+            if hi is None:
+                window_from = max(0, match.start(1) - 24)
+                word = _CEILING_WORDS_BEFORE.search(text[window_from : match.start(1)])
+                if word and not _CEILING_NEGATED.match(text, match.end()):
+                    ceiling_at = window_from + word.start()
+                    ceiling_word = True
+            if ceiling_at is None:
+                up_to_from = max(0, match.start(1) - 10)
+                up_to = _CEILING_BEFORE.search(text[up_to_from : match.start(1)])
+                if up_to:
+                    ceiling_at = up_to_from + up_to.start()
+            if ceiling_at is not None and _FLOOR_BEFORE.search(
+                text[max(0, ceiling_at - 70) : ceiling_at]
             ):
+                if not ceiling_word:
+                    continue
+                # The clause closes a range a floor opened ("minimum of 6 years ... a maximum of 10"): it is no
+                # 0..N span, and its number keeps main's reading, a plain floor, which a smaller cohort's
+                # ("BS and 3 to 5 years or MS and less than 2 years") never lifts the answer past.
+                closes_range = True
+            if ceiling_at is not None:
                 # "up to N years": the number is the top of the range, and the posting states no
                 # floor at all. The top faces the requirement ceiling the floor just faced — this
                 # branch skips the span rules below, so without it "up to 8 to 150 years" would
                 # write a 150 no other path can produce (ADR-0072).
                 top = hi if hi is not None else lo
-                if top <= _MAX_PLAUSIBLE_REQUIREMENT:
-                    spans.append((ExperienceSpan(0, top, "regex"), True))
-                continue
+                if not ceiling_word:
+                    if top <= _MAX_PLAUSIBLE_REQUIREMENT:
+                        spans.append((ExperienceSpan(0, top, "regex"), True))
+                    continue
+                if top <= _MAX_PLAUSIBLE_REQUIREMENT and not closes_range:
+                    soft_ceilings.append((ExperienceSpan(0, top, "regex"), True))
             if hi is None:
                 # Recover the floor when this match is a range's ceiling ("2-4 years" -> 2, not 4).
                 tail = _RANGE_TAIL.search(
@@ -576,8 +877,12 @@ def _stated(
                 continue
             if hi is not None and (hi < lo or hi > _MAX_PLAUSIBLE_YEARS):
                 hi = None
-            spans.append((ExperienceSpan(lo, hi, "regex"), False))
-    return spans
+            (soft_floors if ceiling_word else spans).append(
+                (ExperienceSpan(lo, hi, "regex"), False)
+            )
+    if any(not ceiling for _, ceiling in spans):
+        return spans + soft_floors
+    return spans + soft_ceilings
 
 
 # --- Tier 3 (fallback): map a seniority label to a floor-years estimate --------------------------

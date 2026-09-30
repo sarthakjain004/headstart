@@ -317,6 +317,7 @@ supersedes it and note the supersession in both.
 | [0347](0347-the-india-country-tag-reads-whole-words-and-the-shapes-only-india-writes.md) | The India country tag reads whole words and the shapes only India writes | 2026-09-29 |
 | [0348](0348-a-workday-listing-item-with-no-title-and-no-link-is-not-a-job.md) | A Workday listing item with no title and no link is not a Job | 2026-09-29 |
 | [0349](0349-search-leaves-out-jobs-the-head-confidently-calls-non-tech-by-a-column-each-tick-stamps.md) | Search leaves out the Jobs the role-family head confidently calls non-tech, by a column each Trends tick stamps (amends 0057) | 2026-09-29 |
+| [0350](0350-experience-widenings-run-last-and-a-ceiling-an-education-an-age-or-a-window-is-not-a-floor.md) | Experience widenings run last, and a ceiling, an education, an age or a window is not a floor (amends 0066) | 2026-09-29 |
 | [0351](0351-hiring-now-flags-a-row-whose-opened-was-mostly-found-late.md) | Hiring now flags a row whose opened was mostly found late | 2026-09-29 |
 | [0352](0352-a-relevance-page-and-a-requirements-sample-take-a-few-postings-of-each-company.md) | A relevance page and a requirements sample take a few postings of each company | 2026-09-29 |
 | [0353](0353-a-sponsorship-offer-is-read-against-the-jobs-place-and-title-and-a-hedged-one-may-offer.md) | A sponsorship offer is read against the job's place and title, and a hedged one only may offer | 2026-09-29 |
