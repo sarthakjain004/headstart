@@ -17,8 +17,15 @@ _BOARDS = (
 )
 
 
-def test_only_sub_domain_ats_tenants_become_rows_by_ats():
+def test_only_sub_domain_ats_boards_become_rows_by_ats():
     assert miner.rows_by_ats(_BOARDS) == {
         "pinpoint": [("100ms", "https://100ms.pinpointhq.com")],
         "recruitee": [("11bitstudios", "https://11bitstudios.recruitee.com")],
     }
+
+
+def test_board_rows_carry_the_ats_and_skip_what_no_family_names():
+    assert miner.board_rows(_BOARDS) == [
+        ("pinpoint", "100ms", "https://100ms.pinpointhq.com"),
+        ("recruitee", "11bitstudios", "https://11bitstudios.recruitee.com"),
+    ]

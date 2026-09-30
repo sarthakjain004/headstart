@@ -1,4 +1,4 @@
-"""Which Boards the liveness ledgers already hold, read the way the scrapers read them, and how a
+"""The candidate pool the discovery miners fill: which Boards the ledgers already hold, and how a
 miner stages the ones they do not.
 
 CLAUDE.md's landing rule: decide "new" by `board_key`, never by parsing a URL, because
@@ -8,14 +8,15 @@ same funnel `scrapable_boards.load` uses (`registry.company_from_row`, which run
 `slug_from`) and identified by `board_identity`, then matched, case-folded, against **every** ledger
 row of the ATS -- live, dead or unknown, because a Board a probe already read dead is not new.
 
-`stage_unheld` is the one write a miner makes: it appends the unheld candidates, `ats,tenant,url`,
-to `data/wayback-ats/{ats}.csv`, the gitignored pool `check_liveness.py --dir data/wayback-ats {ats}`
-reads. It never touches a ledger.
+`stage_unheld` is the one write a miner makes: it appends the candidates no ledger row holds,
+`ats,tenant,url`, to `data/wayback-ats/{ats}.csv`, the gitignored pool
+`check_liveness.py --dir data/wayback-ats {ats}` reads. It never touches a ledger.
 
 Two more files record what each source found, so a landing can be credited to its source after the
 pool has merged them (several sources find the same Board, and only the first stages it):
 `.baseline_held/{ats}.txt`, the Board keys the ledger held the first time this checkout looked, and
-`.sources/{source}-{ats}.tsv`, every candidate of that source the baseline did not hold.
+`.sources/{source}-{ats}.tsv`, every candidate of that source the baseline did not hold. A rerun
+adds to the credit file and never drops a credit an earlier run wrote.
 """
 
 from __future__ import annotations
@@ -37,6 +38,18 @@ POOL = ROOT / "data" / "wayback-ats"
 BASELINE = POOL / ".baseline_held"
 SOURCES = POOL / ".sources"
 
+#: What CLAUDE.md says to run after landing rows of these ATSes, printed when a miner stages any.
+FOLLOW_UPS = {
+    "recruitee": (
+        "after landing recruitee rows: python scripts/validate/dedupe_boards.py --ats recruitee "
+        "--workers 4 (add --apply only when the summary shows no `unreachable`, ADR-0301)"
+    ),
+    "clearcompany": (
+        "after landing clearcompany rows: python scripts/validate/clearcompany_shared_accounts.py "
+        "(ADR-0182)"
+    ),
+}
+
 _HELD: dict[str, dict[str, str]] = {}
 
 
@@ -48,14 +61,19 @@ def key_of(ats: str, tenant: str, url: str) -> str | None:
         return None
 
 
+def _keys_of_csv(path: Path, ats: str) -> Iterable[tuple[str | None, dict[str, str]]]:
+    """`(board key, row)` for each row of a `tenant,url,...` CSV; the file is closed when done."""
+    with path.open(encoding="utf-8") as handle:
+        for row in csv.DictReader(handle):
+            yield key_of(ats, row["tenant"], row["url"]), row
+
+
 def held_keys(ats: str) -> dict[str, str]:
     """`{board_key: status}` over every ledger row of `ats` now, live over unknown over dead."""
     if ats not in _HELD:
         rank = {"live": 3, "unknown": 2, "dead": 1}
         held: dict[str, str] = {}
-        path = LEDGERS / f"{ats}.csv"
-        for row in csv.DictReader(path.open(encoding="utf-8")):
-            key = key_of(ats, row["tenant"], row["url"])
+        for key, row in _keys_of_csv(LEDGERS / f"{ats}.csv", ats):
             if key and rank[row["status"]] > rank.get(held.get(key), 0):
                 held[key] = row["status"]
         _HELD[ats] = held
@@ -73,6 +91,18 @@ def baseline_keys(ats: str) -> set[str]:
     return set(path.read_text(encoding="utf-8").split("\n")) - {""}
 
 
+def _credited_keys(path: Path, ats: str) -> set[str]:
+    """The Board keys an earlier run already credited to this source."""
+    if not path.exists():
+        return set()
+    keys = set()
+    for line in path.read_text(encoding="utf-8").split("\n"):
+        if line:
+            _, tenant, url = line.split("\t")
+            keys.add(key_of(ats, tenant, url) or "")
+    return keys - {""}
+
+
 def stage_unheld(
     ats: str, candidates: Iterable[tuple[str, str]], source: str
 ) -> Counter:
@@ -82,25 +112,23 @@ def stage_unheld(
     surface (`common_crawl_host_graph`). Counted: `candidates`, `unreadable` (no Board key), `held`
     (a ledger row shares the key), `duplicate` (already staged, this run or an earlier one),
     `staged`, and `unheld_at_baseline` (what the source found that the ledger lacked before any
-    landing here, staged or not). Safe to re-run: staged rows are skipped.
+    landing here, staged or not). Safe to re-run: staged rows are skipped and credits only grow.
     """
     POOL.mkdir(parents=True, exist_ok=True)
     SOURCES.mkdir(parents=True, exist_ok=True)
     path = POOL / f"{ats}.csv"
     seen: set[str] = set()
     if path.exists():
-        for row in csv.DictReader(path.open(encoding="utf-8")):
-            key = key_of(ats, row["tenant"], row["url"])
-            if key:
-                seen.add(key)
+        seen = {key for key, _ in _keys_of_csv(path, ats) if key}
     held = held_keys(ats)
     baseline = baseline_keys(ats)
-    credited: set[str] = set()
     source_path = SOURCES / f"{source}-{ats}.tsv"
+    credited = _credited_keys(source_path, ats)
+    counted: set[str] = set()
     counts: Counter = Counter()
     fresh = not path.exists()
     out = path.open("a", newline="", encoding="utf-8")
-    credit = source_path.open("w", encoding="utf-8")
+    credit = source_path.open("a", encoding="utf-8")
     try:
         writer = csv.writer(out)
         if fresh:
@@ -112,11 +140,13 @@ def stage_unheld(
             if key is None:
                 counts["unreadable"] += 1
                 continue
-            if key not in baseline and key not in credited:
-                credited.add(key)
-                credit.write(f"{ats}\t{tenant}\t{url}\n")
-                credit.flush()  # every hit row reaches disk as found, so a crash loses none
+            if key not in baseline and key not in counted:
+                counted.add(key)
                 counts["unheld_at_baseline"] += 1
+                if key not in credited:
+                    credited.add(key)
+                    credit.write(f"{ats}\t{tenant}\t{url}\n")
+                    credit.flush()  # every hit row reaches disk as found, so a crash loses none
             if key in held:
                 counts["held"] += 1
             elif key in seen:
@@ -130,3 +160,23 @@ def stage_unheld(
         out.close()
         credit.close()
     return counts
+
+
+def group_by_ats(
+    rows: Iterable[tuple[str, str, str]],
+) -> dict[str, list[tuple[str, str]]]:
+    """`{ats: [(tenant, url)]}` from `(ats, tenant, url)` rows, in first-seen order."""
+    by_ats: dict[str, list[tuple[str, str]]] = {}
+    for ats, tenant, url in rows:
+        by_ats.setdefault(ats, []).append((tenant, url))
+    return by_ats
+
+
+def stage_by_ats(rows: Iterable[tuple[str, str, str]], source: str) -> None:
+    """Stage `(ats, tenant, url)` rows ATS by ATS, printing each ATS's counts as it finishes, and
+    the CLAUDE.md follow-up for any family that has one."""
+    by_ats = group_by_ats(rows)
+    for ats, pairs in sorted(by_ats.items()):
+        print(ats, dict(stage_unheld(ats, pairs, source)), flush=True)
+    for ats in sorted(by_ats.keys() & FOLLOW_UPS.keys()):
+        print(f"note: {FOLLOW_UPS[ats]}", flush=True)

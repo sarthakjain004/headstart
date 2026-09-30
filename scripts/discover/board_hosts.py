@@ -1,14 +1,16 @@
-"""The ledger row a tenant hostname names, for the ATSes that give every customer its own subdomain.
+"""The ledger row a Board's hostname names, for the ATSes that give every Board its own subdomain.
 
-`mine_common_crawl_host_graph.py` and `mine_crux_origin_list.py` both read lists of *hostnames*
-(a web graph's vertices, a browser-telemetry origin list) and need the same answer for each:
-is this `{label}.{vendor}.com` a tenant, and if so what is its `(ats, tenant, url)` in the ledger's
-own spelling. `wayback_feeder.ATS_HOSTS` cannot answer it for these lists: it lacks JazzHR
-(`applytojob.com`), and its `extract` drops a dotted label, which is how Teamtailor's regional pod
+`mine_common_crawl_host_graph.py`, `mine_crux_origin_list.py`, the two sitemap miners and
+`mine_jobseek_boards.py` all read *hostnames* (a web graph's vertices, a browser-telemetry origin
+list, a vendor's sitemap) and need the same answer for each: is this `{label}.{vendor}.com` a
+Board, and if so what is its `(ats, tenant, url)` in the ledger's own spelling (the ledger's
+`tenant` column holds one Board's slug spelling, not a CONTEXT.md **Tenant**).
+`wayback_feeder.ATS_HOSTS` cannot answer it for these lists: it lacks JazzHR (`applytojob.com`), and
+its `extract` drops a dotted label, which is how Teamtailor's regional pod
 `{slug}.na.teamtailor.com` (a Board of its own, `teamtailor:{slug}.na`) was never mined.
 
-Spelling, as `data/validate/liveness/{ats}.csv` holds each family (2026-09-29): the tenant is the
-bare lowercase label and the url `https://{host}`; Teamtailor's `.na` pod is tenant `{slug}.na`
+Spelling, as `data/validate/liveness/{ats}.csv` holds each family (2026-09-29): the tenant column
+is the bare lowercase label and the url `https://{host}`; Teamtailor's `.na` pod is `{slug}.na`
 (6 rows landed 2026-09-28); Personio keeps the TLD it was seen on (`.jobs.personio.de` or `.com`,
 one Board either way, `PersonioScraper.board_key`).
 """
@@ -16,9 +18,12 @@ one Board either way, `PersonioScraper.board_key`).
 from __future__ import annotations
 
 import re
+from urllib.parse import urlsplit
 
-#: `(ats, apex, prefix labels between the tenant and the apex)`. The tenant is the one label in
-#: front of `prefix.apex`; a host with any more labels is vendor infrastructure or a vanity name.
+_LOC = re.compile(r"<loc>\s*([^<\s]+)\s*</loc>")
+
+#: `(ats, apex, prefix labels between the Board's label and the apex)`. The Board is the one label
+#: in front of `prefix.apex`; a host with any more labels is vendor infrastructure or a vanity name.
 FAMILIES = (
     ("bamboohr", "bamboohr.com", ""),
     ("teamtailor", "teamtailor.com", ""),
@@ -58,8 +63,13 @@ def reversed_prefixes() -> dict[str, tuple[str, str, str]]:
     return out
 
 
+def sitemap_hosts(sitemap: str) -> set[str]:
+    """The distinct hosts of a sitemap's (or sitemap index's) `<loc>` links."""
+    return {urlsplit(loc).hostname or "" for loc in _LOC.findall(sitemap)}
+
+
 def row_for_host(host: str) -> tuple[str, str, str] | None:
-    """`(ats, tenant, url)` for a tenant host of one of the FAMILIES, else None."""
+    """`(ats, tenant, url)` for a Board host of one of the FAMILIES, else None."""
     host = host.strip().lower().rstrip(".")
     for ats, apex, middle in FAMILIES:
         suffix = f".{middle}.{apex}" if middle else f".{apex}"
