@@ -386,6 +386,55 @@ def test_round_4_entries_leave_their_parts_to_employers(
 
 
 @pytest.mark.parametrize(
+    ("board", "company", "operator"),
+    [
+        ("successfactors:careers.irissoftware.com", "Iris Software", "services"),
+        ("smartrecruiters:irissoftware", "IRIS Software", "services"),
+        ("lever:brillio-2", "Brillio", "services"),
+        ("phenom:careers.xoriant.com", "Xoriant", "services"),
+        ("greenhouse:encora10", "Encora", "services"),
+        ("successfactors:careers.mastek.com", "Mastek Limited", "services"),
+        ("phenom:careers.quest-global.com", "Quest Global", "services"),
+        (
+            "taleo_be:https://phf.tbe.taleo.net/phf01/ats/careers/v2/searchResults?org=COVESTIC2&cws=37",
+            "Milestone Technologies, Inc.",
+            "services",
+        ),
+        ("smartrecruiters:softwaremind", "Software Mind", "services"),
+        ("greenhouse:robotsandpencils", "Robots and Pencils", "services"),
+        ("oracle:fa-ewjt-saasfaprod1.fa.ocs.oraclecloud.com", "EXL", "services"),
+        ("zoho:elfonze.zohorecruit.in", "Elfonze Technologies Pvt Ltd", "services"),
+        ("ashby:truelogic", "Truelogic", "staffing"),
+        ("ashby:breakmark", "Breakmark", "staffing"),
+        ("zoho:bizfirst.zohorecruit.com", "BizFirst", "staffing"),
+        ("zoho:algoleap.zohorecruit.com", "Algoleap Technologies Pvt Ltd", "staffing"),
+    ],
+)
+def test_hiring_nows_top_30s_of_2026_09_30_are_labelled(
+    board: str, company: str, operator: str
+) -> None:
+    """IT services firms and agencies labelled employer in hiring_now's top 30 on each Lens,
+    each adjudicated from its live postings (MCP critique round 5, R5-P2-7)."""
+    assert classify(board, company) == operator
+
+
+@pytest.mark.parametrize(
+    ("board", "company"),
+    [
+        # The joined forms leave the ordinary word, or the other company, alone.
+        ("greenhouse:iris", "Iris"),
+        ("greenhouse:quest", "Quest"),
+        ("lever:milestone", "Milestone"),
+        ("greenhouse:mindsoftware", "Software"),
+    ],
+)
+def test_round_5_entries_leave_their_parts_to_employers(
+    board: str, company: str
+) -> None:
+    assert classify(board, company) == "employer"
+
+
+@pytest.mark.parametrize(
     ("board", "company"),
     [
         (
