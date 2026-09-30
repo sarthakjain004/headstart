@@ -2269,6 +2269,46 @@ def test_employer_unflagged_fails_a_tool_or_an_answer_calling_the_employer_an_ag
         "Lockheed Martin carries no staffing flag.",
         "There is no sign that Lockheed Martin... no sign that it is a recruiter.",
         "Lockheed Martin: HeadStart does not suggest it might be a staffing agency.",
+        # The hosted t40 answers of 2026-09-30, both right: a restated question, a list of
+        # operators denied, and what the flag means.
+        (
+            "**Does HeadStart suggest it might be a staffing agency or recruiter?** No. "
+            "HeadStart labels its operator as **employer** — the company itself posting its "
+            'own jobs. There\'s no "services," "staffing," or "aggregator" tag, and no '
+            '"operator unverified" flag (which is what HeadStart raises when a company\'s '
+            "name reads like an agency's). So HeadStart treats Lockheed Martin "
+            "straightforwardly as the employer, not a recruiter or staffing firm."
+        ),
+        (
+            "**Does HeadStart suggest it might be a staffing agency or recruiter?** No. "
+            "Lockheed Martin's operator label is **employer**. There's no \"operator "
+            "unverified\" flag and it's not tagged services, staffing, or aggregator. So "
+            "HeadStart treats it straightforwardly as the employer, not as a staffing firm or "
+            "recruiter posting on someone else's behalf."
+        ),
+        (
+            "**Does HeadStart suggest it might be a staffing agency or recruiter?** No. Its "
+            "operator label is **employer** — HeadStart reads Lockheed Martin as the company "
+            "posting its own jobs, not a services firm, staffing agency, or job-board "
+            'aggregator. There\'s no "operator unverified" flag on the row either.'
+        ),
+        (
+            "**Staffing agency or recruiter?** No. HeadStart labels Lockheed Martin's operator "
+            'as **employer**. There\'s no "staffing," "services," "aggregator," or "operator '
+            'unverified" flag on the row, so the tool is not suggesting it might be an agency '
+            "or recruiter front."
+        ),
+        (
+            "- Lockheed Martin's operator label is **employer** — the company posting its own "
+            "roles. HeadStart flags a row as `services`, `staffing`, or `aggregator` when it "
+            'thinks someone other than the employer is posting, and it flags "operator '
+            "unverified\" when a name reads like an agency's. **None of those apply here.**"
+        ),
+        (
+            "**Operator:** Lockheed Martin's row is labeled **employer** — not `services` (an "
+            "IT-services firm), `staffing` (an agency), or `aggregator` (a job board). There's "
+            'also **no "operator unverified" flag**.'
+        ),
     ):
         assert _lockheed(ev, _LOCKHEED_ROW, denied).passed, denied
     for called in (
@@ -2277,6 +2317,8 @@ def test_employer_unflagged_fails_a_tool_or_an_answer_calling_the_employer_an_ag
         # Round-5 review SP8: a "not" that denies something else is no denial of agency.
         "Lockheed Martin: HeadStart does not verify it, so it may be a staffing agency.",
         "Lockheed Martin is not on any curated list and may be a recruiter.",
+        "Lockheed Martin is flagged operator unverified.",
+        "HeadStart treats Lockheed Martin as a staffing firm.",
     ):
         assert not _lockheed(ev, _LOCKHEED_ROW, called).passed, called
 

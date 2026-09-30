@@ -1532,42 +1532,52 @@ def _states(answer: str, value: str) -> bool:
 
 # --- employer_unflagged --------------------------------------------------------------------
 
-#: What an answer line says of a company it calls a possible agency, not its own employer.
+#: An agency, a staffing firm, a recruiter, or unverified. An agency's possessive is about
+#: agencies ("when a company's name reads like an agency's").
+_AGENCY_KIND = (
+    r"(?:staffing(?: (?:agency|agencies|firm|firms|company))?|agenc(?:y|ies)(?!['’]s)|"
+    r"recruit(?:ers?|ing firms?|ment firms?|ment agenc(?:y|ies))|"
+    r"(?:operator )?unverified(?: operator)?)"
+)
+#: An answer calling a company one (round-5 review SP8): it may be one ("may be a staffing
+#: agency", "possibly a recruiter"), it is one ("is an unverified operator"), or HeadStart
+#: flags or treats it as one. Explaining what a tag means ("HeadStart flags a row as `staffing`
+#: when …") and listing tags it does not carry call it nothing.
 _CALLED_AGENCY = re.compile(
-    r"unverified|staffing|agenc(?:y|ies)|recruit(?:er|ing firm|ment firm)",
+    r"\b(?:(?:may|might|could|would)(?: well)? be|possibly|perhaps|probably|likely|"
+    r"apparently|(?:seems?|appears?) to be|looks like|is|(?:flagged|treated|listed|"
+    r"label(?:l)?ed|tagged|marked|read) as|(?:treats?|lists?|labels?|tags?|marks?|reads?|"
+    r"flags?) (?:it|them|lockheed martin) as)\s+(?:(?:an?|the)\s+)?"
+    r"(?:(?:possible|potential|likely|probable)\s+)?[`\"'“‘*]*"
+    + _AGENCY_KIND
+    + r"|\bflagged\s+(?:an?\s+)?[`\"'“‘*]*(?:operator\s+)?unverified",
     re.IGNORECASE,
 )
 _NOT_ITS_EMPLOYER = re.compile(r"\bnot (?:the|its own|an?) employer", re.IGNORECASE)
-#: What a denial denies it is: an agency, a staffing firm, a recruiter, or unverified.
-_AGENCY_KIND = (
-    r"(?:staffing (?:agency|agencies|firm|firms|company)|staffing|agenc(?:y|ies)|"
-    r"recruit(?:ers?|ing firms?|ment firms?|ment agenc(?:y|ies))|['\"‘“]?(?:operator )?"
-    r"unverified(?: operator)?['\"’”]?)"
-)
-#: A denial of agency status, and only that (round-5 review SP8): "is not a staffing agency",
-#: "does not flag it as a staffing agency", "not an agency or recruiter", "no staffing flag",
-#: "no sign that it is a recruiter". Between the negation and the kind stand only words that
-#: say how HeadStart tags a company; a "not" elsewhere ("HeadStart does not verify it, so it
-#: may be a staffing agency") denies nothing about what follows it.
-_DENIED = re.compile(
-    r"\b(?:not|never|no|nor|isn't|aren't|wasn't)\s+"
-    r"(?:(?:flag(?:ged|s)?|mark(?:ed|s)?|label(?:l?ed|s)?|list(?:ed|s)?|tag(?:ged|s)?|"
-    r"show(?:n|s)?|treat(?:ed|s)?|describ(?:e|ed|es)|call(?:ed|s)?|consider(?:ed|s)?|"
-    r"suggest(?:ed|s)?|indicat(?:e|ed|es|ion)|sign|evidence|carr(?:y|ies|ying)|given|has|"
-    r"have|with|that|it|them|is|be|might|may|as|the|an?|any)\s+)*"
-    r"(?:(?:possible|potential|likely)\s+)?"
-    + _AGENCY_KIND
-    + r"(?:\s*(?:,|/|\bor\b|\bnor\b)\s*(?:an?\s+)?"
-    + _AGENCY_KIND
-    + r")*",
+#: A negation, which denies a call after it in its own clause: "does not suggest it might be a
+#: staffing agency", "no sign that it is a recruiter".
+_NEGATION = re.compile(r"\b(?:not|never|no|nor|none|neither)\b|n['’]t\b", re.IGNORECASE)
+#: What ends a clause, so a "not" of another clause denies nothing: "HeadStart does not verify
+#: it, so it may be a staffing agency", "is not on any curated list and may be a recruiter".
+_CLAUSE_END = re.compile(
+    r"[,;:.!?()—–]|\b(?:and|but|so|yet|while|though|although|whereas|however)\b",
     re.IGNORECASE,
 )
+#: A question, as an answer restates the one it answers ("Does HeadStart suggest it might be
+#: a staffing agency?"): it calls the company nothing.
+_QUESTION = re.compile(r"[^.!?\n]*\?")
 
 
 def _calls_an_agency(line: str) -> bool:
-    return bool(
-        _NOT_ITS_EMPLOYER.search(line) or _CALLED_AGENCY.search(_DENIED.sub(" ", line))
-    )
+    """Whether ``line`` calls its company not the employer, or a possible agency in a clause no
+    negation denies."""
+    if _NOT_ITS_EMPLOYER.search(line):
+        return True
+    for clause in _CLAUSE_END.split(_QUESTION.sub(" ", line)):
+        for call in _CALLED_AGENCY.finditer(clause):
+            if not _NEGATION.search(clause[: call.start()]):
+                return True
+    return False
 
 
 def verify_employer_unflagged(
