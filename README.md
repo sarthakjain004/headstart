@@ -294,17 +294,17 @@ table in lockstep with the committed ledger:
 | --- | ---: | --- |
 | live rows in the ledger | 211,855 | a row, not a board — 6,628 of them are duplicate spellings |
 | − `registry.DISABLED_ATS` | −25,488 | all of it `join` |
-| − `excluded_and_parked.EXCLUDED_BOARDS` | −429 | vendor and customer test/sandbox/demo/dev boards and one historical feed, confirmed by reading their postings |
+| − `excluded_and_parked.EXCLUDED_BOARDS` | −430 | vendor and customer test/sandbox/demo/dev boards and one historical feed, confirmed by reading their postings |
 | − alias ledger | −1,984 | one board under a second hostname or label, a career section or career site another of the same tenant already covers, an Eightfold career site its backing ATS board already serves, or a Radancy front another front already lists (ADR-0111, ADR-0182, ADR-0186, ADR-0202, ADR-0205, ADR-0222, ADR-0254, ADR-0265, ADR-0301) |
 | − case-variant dedupe | −6,625 | `company/External` and `company/external` are one board (ADR-0023) |
 | − newer `dead` row | −4 | a board is read only if no `dead` row is newer than its newest `live` one; all 4 re-probed dead (ADR-0219) |
-| − `excluded_and_parked.PARKED_BOARDS` | −355 | real boards withheld for now — six for scrape cost, two for near-duplicate spam, six Jibe clients whose every posting is on a Workday or Oracle board already held, 288 whose every posting is on an iCIMS board we scrape (ADR-0240), five employee-only Radancy fronts (ADR-0246), 31 Happydance fronts whose Backing Board is held (ADR-0264), four Phenom skins over a board already held (CLAUDE.md's Phenom landing rule), one Taleo section whose postings a held Phenom front already serves, two Cornerstone tenants whose only postings are the employer's own test copies, one Radancy front whose robots.txt disallows everything, one WP Job Openings content site whose "postings" are mostly articles (ADR-0266), three login-walled iCIMS internal portals (#810), three second hosts of a Spire2Grow workspace already read under its company's own host (ADR-0362), two TurboHire pages that mirror a SuccessFactors board already held (ADR-0363) |
-| = **Scrapable Board** | **176,970** | |
+| − `excluded_and_parked.PARKED_BOARDS` | −356 | real boards withheld for now — six for scrape cost, two for near-duplicate spam, six Jibe clients whose every posting is on a Workday or Oracle board already held, 288 whose every posting is on an iCIMS board we scrape (ADR-0240), five employee-only Radancy fronts (ADR-0246), 31 Happydance fronts whose Backing Board is held (ADR-0264), four Phenom skins over a board already held (CLAUDE.md's Phenom landing rule), one Taleo section whose postings a held Phenom front already serves, two Cornerstone tenants whose only postings are the employer's own test copies, one Radancy front whose robots.txt disallows everything, one WP Job Openings content site whose "postings" are mostly articles (ADR-0266), three login-walled iCIMS internal portals (#810), three second hosts of a Spire2Grow workspace already read under its company's own host (ADR-0362), two TurboHire pages that mirror a SuccessFactors board already held (ADR-0363), one Greenhouse referral-only board whose postings copy its employer's public board |
+| = **Scrapable Board** | **176,968** | |
 
-That order matters: excluding before deduping reads −429 and −6,625, deduping first reads −426,
-because three excluded boards were themselves duplicates. Both land on 176,970.
+That order matters: excluding before deduping reads −430 and −6,625, deduping first reads −427,
+because three excluded boards were themselves duplicates. Both land on 176,968.
 
-Of those, **121,958 are currently hiring** — the 55,012 live-but-empty boards are skipped as having
+Of those, **121,956 are currently hiring** — the 55,012 live-but-empty boards are skipped as having
 nothing to read. A run takes a bounded slice and splits it between a scored head (top boards by a
 sticky measure of tech-job yield, large enough to hold every board that yields tech) and a tail
 that rotates through everything else, the boards looked at longest ago first, so

@@ -122,6 +122,13 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         # (1), are left for the same reason.
         "zwayam:testcompany.cluster3.openings.co",
         "zwayam:zhirematetest.openings.co",
+        # Zwayam's sales demo, read 2026-09-30 (MCP critique round 5, R5-P2-7): its career page
+        # titles itself "TechCorp Careers… Powered by Zwayam", and among its 593 postings are
+        # 10595 "Quia omnis in laboris nulla cum ea fugit non" at "Officia unde est es",
+        # Zwayam's own 10487 "SaaS Solutioning Sales Specialist — Zwayam + DoSelect
+        # Assessments", a "Senior" asking 1-3 years and five identical "Senior SAP Abap
+        # Consultant" postings. It led role samples and similar_to results as "HireFast".
+        "zwayam:hirefast.openings.co",
         # Oracle's own load-test instance, and by far the largest "board" the oracle ledger
         # holds: 78,431 claimed postings, 20% of that ledger's entire volume. Confirmed by
         # content on 2026-09-08, not by the slug (which is an opaque four-letter pod label and
@@ -1151,6 +1158,17 @@ PARKED_BOARDS: frozenset[str] = frozenset(
         # `EndeavorItSolution9` at 158, four at 0-10); they are separate Boards, left alone here
         # because only this one is large enough to have been measured.
         "smartrecruiters:endeavoritsolution",
+        # Monzo's referral-only board, served as a company named "Referrals Only". Greenhouse's
+        # own text for such a board: "If you want to accept referrals for a role, but you don't
+        # want it to be live on the website you need to create a copy of the job post and
+        # publish it to this job board only". Read 2026-09-30 (MCP critique round 5, R5-P2-7):
+        # of its 13 served postings, 7 are the same title, place and pay as a served posting on
+        # `greenhouse:monzo` (8188575 = 7194922, 7861424 = 6180814, 7861417 = 6369658,
+        # 8035000 = 7115379, 8059751 = 6635595, 8059754 = 6635837, 8059757 = 6636147), 1 is
+        # a near copy (5636930 "Data Scientist" against 8242603 "Data Scientist, L30"), and 5
+        # are roles nobody can apply to without a referral. Un-park if Monzo starts posting
+        # public roles only here.
+        "greenhouse:monzoreferrals",
         # Jibe clients whose every posting is on a Board another ledger already holds (ADR-0189),
         # so each posting would serve twice under two ATS labels — the Phenom rule. Measured
         # 2026-09-24 by walking each client's whole listing and joining every `apply_url` host to
