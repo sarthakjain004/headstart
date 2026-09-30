@@ -3,7 +3,7 @@
 **Status:** accepted · **Date:** 2026-09-30 · **Amends:**
 [ADR-0359](0359-sponsorship-precision-is-quoted-from-a-fresh-strict-draw-and-a-hedge-holds-back-a-firm-offer.md)
 (its deferred list, its quoted figure and its rule that nothing is fixed after its second draw) ·
-no agent-contract change, no served-table schema change, no stored-data change
+no agent-contract change (23), no served-table schema change, no stored-data change
 
 ## Context
 
@@ -33,7 +33,8 @@ sentence naming a visa, immigration or work permit or authorisation that holds a
 `_HEDGE` list) marks the description hedged, even when the sentence offers nothing itself. A
 "future" in the same reach still exempts it, as it does in the offer window. The reach is what
 Thinking Machines' 110-character gap needs. It is short enough that "Relocation is not always
-needed" in a sentence with no visa word stays out.
+needed" in a sentence with no visa word stays out. A firm offer held back this way gives
+ADR-0367's may-offer reason `hedged`.
 
 **2. More hedges.** "where it makes the difference" is added to `_HEDGE`. "if possible", "where
 possible", "when possible", "where we can", "shall be considered" and "already based, located,
@@ -178,7 +179,7 @@ to quote.
 ## Consequences
 
 - `offers_sponsorship` loses 72 served rows. `may_offer_sponsorship` still keeps the 62 that are
-  hedged. No stance value, parameter or route shape changes, so the agent contract stays at 21.
+  hedged. No stance value, parameter or route shape changes, so the agent contract stays at 23.
   The Space computes stances at boot, so the change reaches every served row on its next
   restart, and nothing stored is re-derived.
 - `/requirements` reads one more column, `employment_type`, for its sample.

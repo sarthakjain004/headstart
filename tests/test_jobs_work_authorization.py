@@ -468,6 +468,16 @@ def test_a_hedge_needs_a_visa_near_it_to_hold_back_an_offer():
     assert wa.stances(firm + far, title="Engineer", location="Austin, TX") == {OFFERS}
 
 
+def test_a_firm_offer_held_back_by_a_hedge_of_its_own_says_it_is_hedged():
+    # ADR-0367's reason for a may-offer, where the hedge's sentence offers nothing (ADR-0368).
+    text = (
+        "We sponsor visas. While we can't guarantee success for every candidate or role, we "
+        "are committed to working through the visa process together."
+    )
+    read = wa.reading(text, title="Engineer", location="Austin, TX")
+    assert read.stances == {MAY} and read.may_offer_because == (wa.HEDGED,)
+
+
 @pytest.mark.parametrize(
     ("title", "employment_type", "want"),
     [
