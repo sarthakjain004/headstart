@@ -1311,3 +1311,15 @@ def test_the_third_pass_reads_no_preferred_number_and_no_years_of_education(text
 def test_the_first_pass_still_reads_a_preferred_number_as_it_always_did():
     # ADR-0066: what the first two passes answered is not moved by the widenings' guards.
     assert from_description("2+ years of experience preferred") == _regex(2)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "You will come with 5-8 years preferred Multi-cloud Kubernetes exp (AKS/GKE) CI/CD",
+        "Even better, you may have 3-4 years as a Ford Master Technician or equivalent Ford technical experience with strong diagnostic capability",
+        "Good communication skills; Preferable 5 year of Water treatment expertise (eg, RO, UF MBR) and related work",
+    ],
+)
+def test_the_third_pass_reads_no_number_the_posting_says_it_would_like(text):
+    assert from_description(text) is None

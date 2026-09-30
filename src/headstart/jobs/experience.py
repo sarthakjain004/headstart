@@ -219,8 +219,12 @@ _MAX_EXPERTISE_YEARS = 15
 # qualifies. The third pass leaves it unread ("Preferred Qualifications - 2+ years of ...", "5+ years heavy industrial
 # experience preferred"); the first two passes keep reading it as they always did (ADR-0066).
 _PREFERRED_BEFORE = re.compile(
-    r"\b(?:preferred|preferably|desired|desirable|nice\s+to\s+have|bonus)\b[^.;]{0,25}$",
+    r"\b(?:preferred|preferable|preferably|desired|desirable|nice\s+to\s+have|bonus|ideally|even\s+better)\b"
+    r"[^.;]{0,25}$",
     re.IGNORECASE,
+)
+_PREFERRED_WITHIN = re.compile(
+    r"\b(?:preferred|preferable|preferably|desired|desirable)\b", re.IGNORECASE
 )
 _PREFERRED_AFTER = re.compile(
     r"^\W{0,3}(?:(?:is|are)\s+)?(?:preferred|desired|desirable|a\s+plus|an?\s+asset|nice\s+to\s+have)\b",
@@ -788,7 +792,8 @@ def _stated(
             if screened and _GAP_PROSE.search(match.group(0)):
                 continue
             if third and (
-                _PREFERRED_BEFORE.search(
+                _PREFERRED_WITHIN.search(match.group(0))
+                or _PREFERRED_BEFORE.search(
                     text[max(0, match.start(1) - 40) : match.start(1)]
                 )
                 or _PREFERRED_AFTER.match(text[match.end() : match.end() + 30])
