@@ -201,19 +201,31 @@ _GAP_LONG = r"[\w\s'\":/()&,·•+#-]{46,80}?"
 # Eighty characters also reach benefits and company prose: "5 years of paid parental leave benefits, flexible
 # schedules, and an amazing employee experience", "20 years and we take pride in our people and culture, and our
 # experience". A match whose words are first person, pay, leave, tenure or culture, or whose anchor is HR's
-# "employee experience" / "candidate experience", is not a requirement; nor are years of "higher education", which
-# is combined with experience ("4 years of total combined higher education and related work experience"), nor a
-# company's "For over 15 years, ArcTouch has created ...".
+# "employee experience" / "candidate experience", is not a requirement; nor are years of education, schooling or
+# training, which stand beside experience ("1-2 years of education or training in a security field, or equivalent
+# work experience", "4 years of total combined higher education and related work experience"), nor a company's
+# "For over 15 years, ArcTouch has created ...".
 _GAP_PROSE = re.compile(
     r"\b(?:we|our|ours|benefits?|leave|paid|pay|salary|compensation|perks?|vacation|insurance|bonus|tenure|history|"
     r"founded|since|culture|pride|proud)\b|\b(?:employee|candidate)s?\s+\w+$"
-    r"|\bhigher\s+education\b|\beducation\s+and\b"
+    r"|\bhigher\s+education\b|\b(?:education|schooling|training|apprenticeship)\s+(?:and|or)\b"
     r"|(?-i:\b(?:years?|yrs?),\s+[A-Z]\w+\s+(?:has|have|is|are|was|were|had)\b)",
     re.IGNORECASE,
 )
 # "more than 15 years of expertise" is a company's own, never a requirement: nobody asks for 15 years of expertise
 # and not of experience. Read on the third pass's "expertise" anchor only ("Exp: 15+ Years" is a requirement).
 _MAX_EXPERTISE_YEARS = 15
+# A number the posting marks as preferred is not a requirement, and a false floor hides the job from someone who
+# qualifies. The third pass leaves it unread ("Preferred Qualifications - 2+ years of ...", "5+ years heavy industrial
+# experience preferred"); the first two passes keep reading it as they always did (ADR-0066).
+_PREFERRED_BEFORE = re.compile(
+    r"\b(?:preferred|preferably|desired|desirable|nice\s+to\s+have|bonus)\b[^.;]{0,25}$",
+    re.IGNORECASE,
+)
+_PREFERRED_AFTER = re.compile(
+    r"^\W{0,3}(?:(?:is|are)\s+)?(?:preferred|desired|desirable|a\s+plus|an?\s+asset|nice\s+to\s+have)\b",
+    re.IGNORECASE,
+)
 
 # Number words, because a requirement is as often written out as digitised: "A minimum of four
 # years of relevant experience", "Minimum five years of experience designing software", "Two years
@@ -775,6 +787,13 @@ def _stated(
                     hi += 1  # "3.6 years" is up to 4, the way from_field rounds a ceiling up
             if screened and _GAP_PROSE.search(match.group(0)):
                 continue
+            if third and (
+                _PREFERRED_BEFORE.search(
+                    text[max(0, match.start(1) - 40) : match.start(1)]
+                )
+                or _PREFERRED_AFTER.match(text[match.end() : match.end() + 30])
+            ):
+                continue  # marked preferred
             if (
                 third
                 and lo >= _MAX_EXPERTISE_YEARS

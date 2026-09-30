@@ -1294,3 +1294,20 @@ def test_a_residency_for_n_years_is_a_window_without_the_word_past():
 )
 def test_education_company_history_and_a_payment_term_are_not_a_requirement(text):
     assert from_description(text) is None
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "High school diploma. 5+ years heavy industrial or manufacturing steel making experience preferred. Reliability skills",
+        "Preferred Qualifications: 2+ years of server hardware troubleshooting and repair experience",
+        "Qualifications: 1-2 years of education or training in a security-related field, or equivalent work experience in IT roles",
+    ],
+)
+def test_the_third_pass_reads_no_preferred_number_and_no_years_of_education(text):
+    assert from_description(text) is None
+
+
+def test_the_first_pass_still_reads_a_preferred_number_as_it_always_did():
+    # ADR-0066: what the first two passes answered is not moved by the widenings' guards.
+    assert from_description("2+ years of experience preferred") == _regex(2)
