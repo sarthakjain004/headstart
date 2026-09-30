@@ -61,16 +61,20 @@ is small in absolute terms, not per Job.
 - **Land disabled on thin yield.** The absolute yield (77 tech Jobs, 11 of them 16 months old on
   Spire) is small, but the storage bar is per tech Job, and at 0.43 MB it is well inside it. A
   disabled scraper would also leave Myntra, the benchmark company that prompted this, unserved.
-- **Bury the second Tata hosts in an alias ledger.** The alias ledger is written by
-  `dedupe_boards.py` from a redirect, and these hosts do not redirect: each serves the app and
-  resolves to the same workspace. Parking states the reason in the code, and a first alias ledger
-  for an ATS also bumps `DEDUP_VERSION` (ADR-0222) for rows that were never served.
+- **Bury the second Tata hosts in an alias ledger.** CONTEXT.md names the alias ledger as the
+  home of a Board published under a second hostname, which these are. But no writer fits them:
+  `dedupe_boards.py` groups on redirects, and these hosts do not redirect, so the ledger would need
+  a new signal (workspace identity) and a per-ATS script to rewrite it, as ClearCompany's
+  `shared-reqs` has. A new signal bumps `DEDUP_VERSION` (ADR-0188), an epoch paid across the served
+  table for three hosts whose rows were never served. Parking the three hand-found hosts, with the
+  measurement beside them, costs neither. If more second hosts turn up, the alias ledger with its
+  own script becomes the better home.
 
 ## Consequences
 
 - Myntra (53 postings, 6 tech), Tata Communications (210, 60 tech) and Spire (43, 11 tech) reach
   the index on the next pipeline run; Go Digit's workspace is live and empty.
-- A run spends about a minute and a half on this ATS, almost all of it pacing; the four Boards
+- A run spends about a minute and a half on this ATS (94 s measured), almost all of it pacing; the four Boards
   are read one after another whatever `harvest`'s concurrency.
 - A new host that resolves to a workspace already held is a second host, not a Board: park it, as
   CLAUDE.md's landing rule now says. Hosts that resolve only on `io-uat.spire2grow.com` are the

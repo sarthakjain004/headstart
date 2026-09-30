@@ -134,7 +134,8 @@ holds a `:` (0 of 307), so `board_identity.board_of` splits the Job id correctly
 `X-Rate-Limit-Remaining` alternated between two counters (1, 3, 0, 2, 1, 0 …), which reads as two
 servers allowing about two calls a minute each. The meter is per client, not per workspace. The scraper spaces every `_search` in the process 31 s apart through one `Pacer`, rests
 it for the stated window on a 429, and fails the Board after three refusals rather than serving a
-short list as whole. One Board is one `_search`, so the four known Boards take about two minutes.
+short list as whole; past the first page, a refusal that never clears truncates the Board instead.
+One Board is one `_search`: the four known Boards took 94 s in all through the real scraper.
 The prober never calls `_search`.
 
 ## 7. Fields
@@ -202,6 +203,12 @@ The vendor publishes no roster. The sources, and what each found:
   `i-exchange-row.web.app`; `jobs.tatacommunications.com` to the latter directly. That Firebase
   site is the third second host of §1.
 - **Web search** ("spire2grow" careers): `genpact-jobs.spire2grow.com`, a UAT host.
+- **Common Crawl** (index API, the 18 newest crawls, `*.spire2grow.com` and `*.iexchange.ai`): only
+  partly measured. The index answered 7 of 18 `spire2grow.com` queries, each naming the vendor's
+  marketing host alone (`www.spire2grow.com`, `spire2grow.com`), and none of 18 `iexchange.ai`
+  queries (502, 504 and 400). A tenant's pages are a Flutter shell with no crawlable job links, and
+  its host is the customer's own, so a crawl can only name one by its vendor-zone alias; the
+  unanswered queries are not a zero.
 
 The pool is 23 hosts; the ledger reads **7 live** (4 workspaces) and **16 dead**. The careers-page
 fingerprinter now knows the Flutter shell's app title (`apple-mobile-web-app-title` =

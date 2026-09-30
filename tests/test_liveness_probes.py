@@ -1018,6 +1018,11 @@ def test_spire2grow_inconclusive_answers_stay_unknown(monkeypatch):
     # The API host failing to resolve is the local resolver, never the tenant.
     monkeypatch.setattr(cl, "_get", _spire2grow_get("dns", b""))
     assert cl.p_spire2grow("jobs.acme.com", "") == (cl.UNKNOWN, None)
+    # A lookup that answers 410, or 200 with no workspace in it, was never measured.
+    monkeypatch.setattr(cl, "_get", _spire2grow_get(410, b""))
+    assert cl.p_spire2grow("jobs.acme.com", "") == (cl.UNKNOWN, None)
+    monkeypatch.setattr(cl, "_get", _spire2grow_get(200, b"  "))
+    assert cl.p_spire2grow("jobs.acme.com", "") == (cl.UNKNOWN, None)
     # The count unreadable or refused after a real lookup.
     monkeypatch.setattr(cl, "_get", _spire2grow_get(200, b"ACME-1", 503, b""))
     assert cl.p_spire2grow("jobs.acme.com", "") == (cl.UNKNOWN, None)

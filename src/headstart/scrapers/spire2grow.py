@@ -34,10 +34,11 @@ row's keys and description (1 of 1 compared), so there is no detail pass.
 
 **The search endpoint is metered per client address, across every tenant.** ``_search`` answers
 429 ``Too many requests`` with ``X-Rate-Limit-Retry-After-Seconds`` after about three calls in a
-burst (8 of 14 got through at 10 s spacing), and a drained budget refused the other two tenants too (6 of 6); ``_count``,
-``workspaceId`` and the detail are unmetered (600 ``_count`` calls at 167 req/s, zero 429s). So
-every ``_search`` in the process goes through one :class:`Pacer`, and a 429 rests it for the
-window the header states. One Board costs one ``_search``.
+burst (8 of 14 got through at 10 s spacing), and a drained budget refused the other two tenants
+too (6 of 6); ``_count``, ``workspaceId`` and the detail are unmetered (600 ``_count`` calls at
+167 req/s, zero 429s). So every ``_search`` in the process goes through one :class:`Pacer`, and a
+429 rests it for the window the header states. One Board costs one ``_search``. A refusal that
+never clears fails a Board with nothing read, and truncates one past its first page.
 
 **Fields.** ``jobPosting.startDate`` is the date the page shows as "Posted" (epoch ms; unchanged
 across two fetches 20 s apart on 53 of 53, and equal to ``createdOn`` on 303 of 307).
@@ -73,10 +74,11 @@ _WINDOW = 10_000
 #: Spacing of `_search` starts across the process. At 10 s spacing 8 of 14 calls got through and
 #: `X-Rate-Limit-Remaining` alternated between two counters, which reads as two servers allowing
 #: about two calls a minute each. 31 s keeps even every call landing on one server under that.
-#: One Board is one call, so the four known Boards take about two minutes.
+#: One Board is one call: the four known Boards took 94 s in all, one after another.
 _SPACING_S = 31.0
 #: What a 429 without the header rests for: the longest `X-Rate-Limit-Retry-After-Seconds` seen.
 _DEFAULT_REST_S = 60.0
+#: Not measured: ADP's count. Every refusal seen cleared within its stated window.
 _TRIES = 3
 #: The fetch seam's own retry ladder, minus 429: its seconds of backoff cannot outlast the window.
 _RETRY_ON = http.TRANSIENT - {429}
@@ -107,10 +109,8 @@ def _location(row: dict) -> str | None:
 
 def _remote(row: dict, location: str | None) -> bool | None:
     """The stated workplace, else the location guess. HYBRID is not remote (ashby's rule), and
-    ``NA`` states nothing."""
+    ``NA`` states nothing. No REMOTE value was observed, so an unobserved one falls to the guess."""
     workplace = (row.get("jobType") or "").upper()
-    if workplace == "REMOTE":  # not observed; the one value that could say remote
-        return True
     if workplace == "ONSITE":
         return False
     if workplace == "HYBRID":
@@ -204,7 +204,16 @@ class Spire2GrowScraper(BaseScraper):
         total = 0
         page = 1
         while True:
-            data = self._search(workspace, page)
+            try:
+                data = self._search(workspace, page)
+            except _RateLimited:
+                if page == 1:
+                    raise
+                self.mark_truncated(
+                    f"_search refused past page {page - 1} at {len(rows)} of {total} "
+                    "postings — the rest unread"
+                )
+                break
             if page == 1 and "entities" not in data:
                 self.note_unreadable_board(
                     "an `entities` list", f"keys {sorted(data)[:5]}"
@@ -239,7 +248,7 @@ class Spire2GrowScraper(BaseScraper):
             if not display_id or not title:
                 continue
             location = _location(row)
-            kind = row.get("employmentType")
+            employment = row.get("employmentType")
             jobs.append(
                 Job(
                     id=self.job_id(str(display_id)),
@@ -254,7 +263,9 @@ class Spire2GrowScraper(BaseScraper):
                     scraped_at=scraped_at,
                     description=html_to_text(row.get("jobDescription")),
                     experience=_experience(row),
-                    employment_type=_TYPE_LABELS.get(kind, kind) if kind else None,
+                    employment_type=(
+                        _TYPE_LABELS.get(employment, employment) if employment else None
+                    ),
                     salary=self._salary_field(row),
                 )
             )

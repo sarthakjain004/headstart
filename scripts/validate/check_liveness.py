@@ -2005,7 +2005,10 @@ def p_spire2grow(t, u):
             return DEAD, None
         _note("body-unparseable")
         return UNKNOWN, None
-    if status != 200 or not body.strip():
+    if status == 410 or (status == 200 and not body.strip()):
+        _note(f"lookup-{status}" if status == 410 else "body-unparseable")
+        return UNKNOWN, None
+    if status != 200:
         return UNKNOWN, None
     workspace = body.decode("utf-8", "replace").strip()
     status, body = _get(

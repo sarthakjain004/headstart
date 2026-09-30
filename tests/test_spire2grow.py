@@ -126,9 +126,10 @@ def test_remote_reads_the_stated_workplace_and_hybrid_is_neither():
     assert jobs["6878339879"].remote is False
 
 
-def test_a_remote_workplace_is_remote():
+def test_an_unobserved_workplace_falls_to_the_location():
     envelope = _envelope()
     envelope["entities"][0]["jobType"] = "REMOTE"
+    envelope["entities"][0]["jobLocation"][0]["fqLocationName"] = "Remote, India"
     job = get_scraper("spire2grow", HOST).parse(envelope, SCRAPED_AT)[0]
     assert job.remote is True
 
@@ -234,6 +235,25 @@ def test_a_429_rests_and_asks_again():
     scraper = Spire2GrowScraper(HOST, fetcher=fetcher)
     assert len(scraper.fetch()) == len(envelope["entities"])
     assert len(fetcher.requests) == 3
+
+
+def test_a_429_that_never_clears_past_the_first_page_truncates():
+    rows = _envelope()["entities"]
+    first = {"entities": rows[:3], "total": 40}
+    queued = [first]
+
+    def route(method, url, kwargs):
+        if "/workspaceId?" in url:
+            return FakeResponse(text=WORKSPACE)
+        if queued:
+            return FakeResponse(text=json.dumps(queued.pop(0)))
+        return FakeResponse(
+            429, "Too many requests", headers={"X-Rate-Limit-Retry-After-Seconds": "0"}
+        )
+
+    scraper = _scraper(route)
+    assert len(scraper.fetch()) == 3
+    assert scraper.truncated and "refused past page 1" in scraper.truncated
 
 
 def test_a_429_that_never_clears_fails_the_board():
