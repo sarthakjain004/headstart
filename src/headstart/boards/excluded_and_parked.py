@@ -997,6 +997,14 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         "recruitee:mobile",
         "recruitee:s",
         "recruitee:data-warehouse-docs",
+        # TurboHire's own demo organizations, both named "TurboHire - Demo Account", read
+        # 2026-09-30: `thdemo` lists 27 postings such as "Hotel Operations Trainee - Copy Test"
+        # and "Junior UI/UX Product Designer/ Long Temporary Title For Testing/Remove later",
+        # with salaries like 12123213-432432433 INR; `democareers` lists 6, among them
+        # "Sales - Enterprise - 18-11". The vendor's own hiring page, `careers` ("TurboHire
+        # Technologies Private Limited (Official)"), is a real employer and is not here.
+        "turbohire:democareers",
+        "turbohire:thdemo",
     }
 )
 
@@ -1573,5 +1581,12 @@ PARKED_BOARDS: frozenset[str] = frozenset(
         # ("NY SPORTS SCHEDULE TODAY", "ALL NEW YORK SPORTS TEAMS"). Un-park if it ever lists
         # openings of its own.
         "wp_job_openings:ndangira.net",
+        # Cipla's TurboHire pages mirror its SuccessFactors Board, which the successfactors
+        # ledger holds (`careers.cipla.com`, 80 postings): read 2026-09-30, 17 of `cipla`'s 18
+        # distinct titles (35 postings) and 2 of `ciplasouthafrica`'s 3 are on that Board, so
+        # their postings would be served twice under two ATS labels. Un-park if the held Board
+        # goes dead, or once cross-ATS deduplication exists.
+        "turbohire:cipla",
+        "turbohire:ciplasouthafrica",
     }
 )

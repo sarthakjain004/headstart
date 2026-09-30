@@ -54,6 +54,7 @@ from headstart.scrapers.teamtailor import TeamtailorScraper
 from headstart.scrapers.tesla import TeslaScraper
 from headstart.scrapers.tiktok import TikTokScraper
 from headstart.scrapers.trakstar import TrakstarScraper
+from headstart.scrapers.turbohire import TurboHireScraper
 from headstart.scrapers.uber import UberScraper
 from headstart.scrapers.workable import WorkableScraper
 from headstart.scrapers.workday import WorkdayScraper
@@ -80,6 +81,7 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
         SenseHQScraper,
         KekaScraper,
         TrakstarScraper,
+        TurboHireScraper,
         RippleHireScraper,
         DarwinboxScraper,
         TeamtailorScraper,

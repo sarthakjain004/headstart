@@ -2974,6 +2974,68 @@ def p_trakstar(t, u):
     return LIVE, n
 
 
+_TURBOHIRE_API = "https://api.turbohire.co"
+
+
+def p_turbohire(t, u):
+    # The scraper's own three calls, cheapest settling first. Every `*.turbohire.co` label serves
+    # the career-page SPA with a 200, so the page cannot tell dead from empty; the organization
+    # lookup can: `publicorganizations?accountName={label}` answers 404 with an empty body for a
+    # label no organization holds (39 of 104 pool labels, 2026-09-30, and an invented one) and
+    # 200 with the org for all 65 others, whose career pages all name the org in `<title>` where
+    # the dead ones render the vendor's generic "TurboHire". A live org's listing states `Total`,
+    # which equalled the rows served on 65 of 65. No rate limit: 480 listing POSTs at up to 64 in
+    # flight across Boards ran at 45.7 req/s with zero non-200s, so no gate is seeded.
+    board = _scraper_for_row("turbohire", t, u)
+    headers = {
+        "User-Agent": UA,
+        "Accept": "application/json",
+        "Referer": board.career_page(),
+    }
+    status, body = _get(f"{_TURBOHIRE_API}/api/token/noauth", headers)
+    if status == "dns":
+        return _unknown_dns_on_a_shared_host()
+    if status in (404, 410):  # `_get` leaves these un-noted: they settle other probes
+        _note(f"http-{status}")
+    if status != 200:
+        return UNKNOWN, None
+    try:
+        headers["Authorization"] = f"Bearer {json.loads(body)['access_token']}"
+    except (ValueError, KeyError, TypeError):
+        _note("body-unparseable")
+        return UNKNOWN, None
+    status, body = _get(board.url(), headers)
+    if status == 404:
+        return DEAD, None
+    if status == "dns":
+        return _unknown_dns_on_a_shared_host()
+    if status == 410:
+        _note("http-410")
+    if status != 200:
+        return UNKNOWN, None
+    try:
+        org_id = json.loads(body)["OrgID"]
+    except (ValueError, KeyError, TypeError):
+        _note("body-unparseable")
+        return UNKNOWN, None
+    status, listing = _post(
+        f"{_TURBOHIRE_API}/api/careerpagev2/filteredjobs?orgId={org_id}&pageType=0",
+        {},
+        headers,
+    )
+    if status == "dns":
+        return _unknown_dns_on_a_shared_host()
+    # `_post` leaves these un-noted, because they settle `p_workday`.
+    if status in (404, 410, 422):
+        _note(f"http-{status}")
+    if status != 200:
+        return UNKNOWN, None
+    if not isinstance(listing, dict) or "Result" not in listing:
+        _note("body-unparseable")
+        return UNKNOWN, None
+    return LIVE, len(listing["Result"] or [])
+
+
 def p_personio(t, u):
     # The scraper's own feed, on the host its `slug_from` reads. 634 rows in this ledger carry a
     # job deep link with tracking params in `url` (cc_miner stored the raw capture), and
@@ -3410,6 +3472,7 @@ PROBES = {
     "teamtailor": p_teamtailor,
     "rippling": p_rippling,
     "trakstar": p_trakstar,
+    "turbohire": p_turbohire,
     "peoplestrong": p_peoplestrong,
     "personio": p_personio,
     "join": p_join,

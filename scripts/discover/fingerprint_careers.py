@@ -1321,6 +1321,10 @@ def normalise_tenant(ats: str, tenant: str, evidence: str) -> str:
         return tenant if tenant.startswith("http") else ""
     if ats == "pyjamahr":
         return tenant if "." not in tenant and not tenant.startswith("http") else ""
+    if ats == "turbohire":
+        # The Board is the lower-case career-page label (ADR-0363): hostnames are
+        # case-insensitive, and the ledger holds every label lower-cased.
+        return tenant.lower()
     if ats == "teamtailor" and tenant in TEAMTAILOR_INFRA:
         return ""
     return tenant

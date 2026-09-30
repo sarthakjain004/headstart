@@ -1221,6 +1221,24 @@ def test_a_pyjamahr_link_is_lower_cased_to_the_slug_the_api_answers():
     }
 
 
+def test_a_turbohire_career_page_link_names_its_lower_case_label():
+    """A TurboHire Board is its career-page label (ADR-0363); the ledger holds every label
+    lower-case, and the organization lookup reads it case-insensitively (`FLIPKART` answered as
+    `flipkart`, 2026-09-30), so a capital in a link must not mint a second spelling. Cleartrip's
+    careers page links Flipkart's Board this way, under the org GUID path."""
+    page = (
+        '<a href="https://Flipkart.turbohire.co/careerpage/'
+        '4d757ba0-3d57-448a-b82c-238ed87ac90f">Jobs</a>'
+    )
+    assert {
+        (ats, tenant) for ats, _kind, tenant, _n in fp.scan(page, "cleartrip.com")
+    } == {("turbohire", "flipkart")}
+    assert (
+        fp.normalise_tenant("turbohire", "Flipkart", "https://Flipkart.turbohire.co/")
+        == "flipkart"
+    )
+
+
 def test_script_urls_resolve_relative_srcs_against_the_pages_base_href():
     page_url = "https://careers.acme.com/jobs/view/123"
     with_base = '<head><base href="/app/"><script src="main.js"></script></head>'
