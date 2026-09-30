@@ -208,7 +208,7 @@ def test_listing_rows_skip_pages_that_are_not_postings():
         _FIXTURE["sitemap"]["https://bloomberg.avature.net/careers/sitemap.xml"]
     )
     assert {row["id"] for row in rows} == {"22342", "21806", "12444"}
-    assert rows[0]["slug_title"] == "Senior Software Engineer VAULT"
+    assert rows[0]["listed_title"] == "Senior Software Engineer VAULT"
 
 
 #: ea's `es_ES` sitemap entry for one posting (2026-09-29), trimmed to three of its 12 alternates.
@@ -293,7 +293,7 @@ def test_a_job_url_with_no_title_slug_is_listed():
         {
             "id": "389",
             "url": "https://careers.tsmc.com/en_US/careers/JobDetail/389",
-            "slug_title": "",
+            "listed_title": "",
         }
     ]
     scraper = _scraper(_route())
@@ -1137,6 +1137,90 @@ def test_search_pages_are_not_read_where_robots_txt_disallows_them():
     scraper = _portal(_two_pages("1 - 2 of 3 results"), robots=robots)
     assert scraper.fetch_raw() == []
     assert not _asked(scraper, "SearchJobs")
+    # a Board that may not be read is not a Board with nothing open
+    assert "disallowed by robots.txt" in scraper.truncated
+
+
+def test_a_later_search_page_that_robots_txt_disallows_truncates_the_board():
+    robots = (
+        "User-agent: *\n"
+        "Sitemap: https://acme.avature.net/careers/sitemap_index.xml\n"
+        "Disallow: /*folderOffset=2\n"
+    )
+    scraper = _portal(_two_pages("1 - 2 of 3 results"), robots=robots)
+    scraper.fetch_raw()
+    assert _asked(scraper, "SearchJobs") == [_SEARCH]
+    assert "disallowed by robots.txt" in scraper.truncated
+
+
+_VANITY_ROBOTS = (
+    "User-agent: *\nSitemap: https://careers.acme.com/careers/sitemap_index.xml\n"
+)
+
+
+def _vanity(vanity_robots: FakeResponse):
+    """A tenant whose portal is served from a vanity host (mt's `careers.mt.com`, Siemens's
+    `jobs.siemens.com`), which states its own robots.txt."""
+    on_vanity = lambda text: text.replace("acme.avature.net", "careers.acme.com")
+    pages = _two_pages("1 - 2 of 3 results")
+    routes = {
+        url.replace("acme.avature.net", "careers.acme.com"): FakeResponse(
+            response.status_code, on_vanity(response.text), url=on_vanity(response.url)
+        )
+        for url, response in pages.items()
+    }
+
+    def route(method, url, kwargs):
+        if url == "https://acme.avature.net/robots.txt":
+            return FakeResponse(200, _VANITY_ROBOTS)
+        if url == "https://careers.acme.com/robots.txt":
+            return vanity_robots
+        if url.endswith("/careers/sitemap_index.xml"):
+            return FakeResponse(
+                200,
+                "<sitemapindex><sitemap><loc>https://careers.acme.com/en_US/careers/"
+                "sitemap.xml</loc></sitemap></sitemapindex>",
+            )
+        if url.endswith("/careers/sitemap.xml"):
+            return FakeResponse(200, on_vanity(_JOB_PORTAL_SITEMAP))
+        return routes.get(url, FakeResponse(404, ""))
+
+    fetcher = FakeFetcher(route)
+    scraper = get_scraper("avature", "acme", fetcher=fetcher, have_details=set())
+    scraper.pacer = Pacer(0)
+    scraper.fake = fetcher
+    return scraper
+
+
+def test_search_pages_on_a_vanity_host_answer_to_that_hosts_robots_txt():
+    """The tenant's robots.txt allows the portal; the vanity host's, which is the host asked, does
+    not."""
+    scraper = _vanity(
+        FakeResponse(200, "User-agent: *\nDisallow: /careers/SearchJobs\n")
+    )
+    assert scraper.fetch_raw() == []
+    assert not _asked(scraper, "SearchJobs")
+    assert "disallowed by robots.txt" in scraper.truncated
+    assert _asked(scraper, "robots.txt") == [
+        "https://acme.avature.net/robots.txt",
+        "https://careers.acme.com/robots.txt",
+    ]
+
+
+def test_a_vanity_host_with_no_robots_txt_states_no_rule():
+    scraper = _vanity(FakeResponse(404, ""))
+    scraper.fetch_raw()
+    assert len(_asked(scraper, "SearchJobs")) == 2
+    assert scraper.truncated is None
+
+
+@pytest.mark.parametrize("answer", [FakeResponse(503, ""), FakeResponse(202, "")])
+def test_a_vanity_host_whose_robots_txt_did_not_answer_is_not_read(answer):
+    """A 5xx or a challenge says nothing about what may be read: nothing is."""
+    scraper = _vanity(answer)
+    assert scraper.fetch_raw() == []
+    assert not _asked(scraper, "SearchJobs")
+    assert "disallowed by robots.txt" in scraper.truncated
 
 
 @pytest.mark.parametrize(
@@ -1164,7 +1248,7 @@ def test_search_rows_read_the_id_url_and_title_of_each_result():
         _SEARCH_PAGES["siemens_externaljobs_page_1"],
         "https://jobs.siemens.com/en_US/externaljobs/SearchJobs",
     )
-    assert [(row["id"], row["slug_title"]) for row in siemens[:2]] == [
+    assert [(row["id"], row["listed_title"]) for row in siemens[:2]] == [
         ("524237", "Técnico Procesos de Moldeo"),
         ("524234", "Director of Sales Operations and Strategic Programs"),
     ]
@@ -1177,17 +1261,17 @@ def test_search_rows_read_the_id_url_and_title_of_each_result():
         "https://a2milkkf.avature.net/careers/SearchJobs/",
     )
     assert [row["id"] for row in small] == ["422", "420", "415", "385"]
-    assert small[0]["slug_title"] == "Health, Safety & Environment Manager"
+    assert small[0]["listed_title"] == "Health, Safety & Environment Manager"
     assert re.fullmatch(AvatureScraper.url_shape, small[0]["url"])
     # mt's results are a list, not articles: `<div class="list__item__text__title"><a …>`
     mt = search_rows(
         _SEARCH_PAGES["mt_careers_page_1"],
         "https://careers.mt.com/en_US/careers/SearchJobs/",
     )
-    assert [(row["id"], row["slug_title"]) for row in mt] == [
+    assert [(row["id"], row["listed_title"]) for row in mt] == [
         ("23230", "Telesales Representative"),
         ("23304", "Field Service Technician"),
-        (mt[2]["id"], mt[2]["slug_title"]),
+        (mt[2]["id"], mt[2]["listed_title"]),
     ]
     assert re.fullmatch(AvatureScraper.url_shape, mt[0]["url"])
 

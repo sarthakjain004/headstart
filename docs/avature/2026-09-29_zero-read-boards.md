@@ -80,8 +80,14 @@ a plain client), on 2026-09-29:
 | `pomerleau` | slug is a number | 332 | 12 (3.6%) | 56 search + 9, over its job portals | 119 s total | no |
 | `ucsf` | slug is a location | none | none | 1 search + 15 | 38 s total | no: its sitemap rows stand |
 
-So 530 postings pass the pre-detail gate where 0 did, for 445 search requests a run over the four
-Boards, and 0 for every Board whose slugs state titles. Two things set the cost:
+So 530 postings pass the pre-detail gate where 0 did, for 445 search requests a run over the three
+Boards that read, and 0 for every Board whose slugs state titles. But 446 of the 530 are Siemens,
+which is not one of the 30 zero-read Boards (its ledger row says `live`, 0 postings). Within the 30,
+only mt (72) and pomerleau (12) recover: 84 tech-gated postings against the 12,913 the ledger holds
+there. ucsf reads nothing. The 50% title-slug threshold that picks these Boards out was validated
+on 27 Boards only (the ones probed with 10 postings or more). These runs predate the per-host
+robots.txt check (one extra request per vanity host: Siemens 1, mt 1, pomerleau 2). Two things set
+the cost:
 
 - **A search page takes 2.5 to 3.5 s here**, so a listing at the Board's 1 request a second pace is
   latency-bound: 6 rows a page on Siemens (whatever page size is asked) is 334 pages. Avature serves

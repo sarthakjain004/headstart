@@ -302,6 +302,8 @@ class AvatureScraper(BaseScraper):
     pacer = _PACER
     #: The employer the fetched job pages agree on (`og:site_name`, else JSON-LD).
     _pages_company: str | None = None
+    #: robots.txt by host: the tenant's, read first (:meth:`fetch_raw`), then a vanity host's on demand.
+    _robots_txt: dict[str, str]
 
     @staticmethod
     def slug_from(tenant: str, url: str) -> str:
@@ -366,9 +368,34 @@ class AvatureScraper(BaseScraper):
             return f"{search} answered at {landed}, which is no login"
         return None
 
-    def _search_listing(
-        self, robots: str, index_urls: list[str]
-    ) -> list[dict[str, str]]:
+    def _may_fetch(self, url: str) -> bool:
+        """Whether the robots.txt of the host `url` is on lets a `*` crawler fetch it.
+
+        Each host is asked its own: a vanity host (mt's `careers.mt.com`, Siemens's
+        `jobs.siemens.com`) states a robots.txt of its own, and the tenant host's says nothing of
+        it. One with no robots.txt (a 4xx) states no rule; one that did not answer (a 5xx, a
+        challenge, a transport error) is read as Google reads a 5xx, disallowing everything."""
+        host = urlsplit(url).netloc
+        if host not in self._robots_txt:
+            try:
+                response = self._fetch(
+                    "GET",
+                    f"https://{host}/robots.txt",
+                    headers={"User-Agent": USER_AGENT},
+                    timeout=60,
+                )
+                status, text = response.status_code, response.text or ""
+            except http.RequestsError:
+                status, text = 0, ""
+            if status == 200:
+                self._robots_txt[host] = text
+            elif 400 <= status < 500:
+                self._robots_txt[host] = ""
+            else:
+                self._robots_txt[host] = "User-agent: *\nDisallow: /"
+        return _robots_allows(self._robots_txt[host], url)
+
+    def _search_listing(self, index_urls: list[str]) -> list[dict[str, str]]:
         """Every posting the job portals' `SearchJobs` pages list.
 
         Only for a Board whose sitemaps answered and state no posting's title (:meth:`fetch_raw`):
@@ -379,7 +406,7 @@ class AvatureScraper(BaseScraper):
         unread = None
         for index_url in index_urls:
             search = index_url.rsplit("/", 1)[0] + "/SearchJobs"
-            portal, unanswered = self._page_search_results(robots, search)
+            portal, unanswered = self._page_search_results(search)
             unread = unread or unanswered
             for row_id, row in portal.items():
                 listed.setdefault(row_id, row)
@@ -393,7 +420,7 @@ class AvatureScraper(BaseScraper):
         return list(listed.values())
 
     def _page_search_results(
-        self, robots: str, search: str
+        self, search: str
     ) -> tuple[dict[str, dict[str, str]], str | None]:
         """One portal's search results, paged through their next links, and why its first page
         did not answer, else None.
@@ -409,7 +436,11 @@ class AvatureScraper(BaseScraper):
         stated = None
         url: str | None = search
         for page_number in range(1, _SEARCH_PAGES_MAX + 1):
-            if not url or not _robots_allows(robots, url):
+            if not url:
+                break
+            if not self._may_fetch(url):
+                # A Board that may not be read is not a Board with nothing open.
+                self.mark_truncated(f"{url} is disallowed by robots.txt")
                 break
             response = self._fetch(
                 "GET", url, headers={"User-Agent": USER_AGENT}, timeout=60
@@ -448,6 +479,7 @@ class AvatureScraper(BaseScraper):
 
     def fetch_raw(self) -> Any:
         robots = self._get_text(self.url())
+        self._robots_txt = {urlsplit(self.url()).netloc: robots}
         portals = sorted(
             _SITEMAP_LINE.findall(robots),
             key=lambda sitemap: bool(_PRIVATE_PORTAL.search(sitemap)),
@@ -519,7 +551,7 @@ class AvatureScraper(BaseScraper):
             # "999+ results"; mt's lists 531 postings, every one `…/JobDetail/1/{id}`, and ucsf's
             # 949 are slugged by location. Either way the sitemap states no title for the tech
             # gate to read, and the search pages state them.
-            rows = self._search_listing(robots, job_portals) or rows
+            rows = self._search_listing(job_portals) or rows
         if not rows:
             self._log.info(
                 f"{self.board_key()}: no job pages in {len(portals)} portal sitemaps"
@@ -529,7 +561,7 @@ class AvatureScraper(BaseScraper):
             rows,
             key_of=lambda row: row["id"],
             what="job pages",
-            title_of=lambda row: row["slug_title"],
+            title_of=lambda row: row["listed_title"],
         )
         # A posting whose page is not public is closed or login-walled, not lost: counting it
         # would truncate bupaanz, whose sitemap keeps ~41% closed ids, on every run (ADR-0053).
@@ -655,7 +687,7 @@ def _slugs_state_titles(rows: list[dict[str, str]]) -> bool:
     81%); the other 24 had a letter on 91% or more and a commonest slug naming 11% or less."""
     if not rows:
         return False
-    slugs = [row["slug_title"] for row in rows]
+    slugs = [row["listed_title"] for row in rows]
     if sum(1 for slug in slugs if _LETTER.search(slug)) * 2 < len(rows):
         return False
     return len(rows) < 20 or Counter(slugs).most_common(1)[0][1] * 2 <= len(rows)
@@ -697,10 +729,11 @@ def _robots_allows(robots: str, url: str) -> bool:
 
 
 def search_rows(page: str, page_url: str) -> list[dict[str, str]]:
-    """``{id, url, slug_title}`` per result on one `SearchJobs` page, deduped by id.
+    """``{id, url, listed_title}`` per result on one `SearchJobs` page, deduped by id.
 
-    The title is the one the result's header states, under the key the sitemap rows use for the
-    title the tech gate reads: Siemens's URLs are `…/JobDetail/{id}` with no slug."""
+    `listed_title` is the title the listing states, which the tech gate reads: a sitemap URL's slug
+    in :func:`listing_rows`, here the result header's, since Siemens's URLs are `…/JobDetail/{id}`
+    with no slug."""
     rows: dict[str, dict[str, str]] = {}
     for href, title in _RESULT_TITLE.findall(page):
         url = urljoin(page_url, html.unescape(href))
@@ -709,7 +742,7 @@ def search_rows(page: str, page_url: str) -> list[dict[str, str]]:
             rows[match.group(2)] = {
                 "id": match.group(2),
                 "url": url,
-                "slug_title": _plain_text(title).strip(),
+                "listed_title": _plain_text(title).strip(),
             }
     return list(rows.values())
 
@@ -731,7 +764,7 @@ def _moved_job_page(url: str, response: Any) -> str | None:
 
 
 def listing_rows(sitemap_xml: str) -> list[dict[str, str]]:
-    """``{id, url, slug_title}`` per JobDetail URL in one sitemap, deduped by id.
+    """``{id, url, listed_title}`` per JobDetail URL in one sitemap, deduped by id.
 
     A posting under another language's locale is read at its English alternate where the
     sitemap states one (:func:`_english_alternates`)."""
@@ -750,7 +783,7 @@ def listing_rows(sitemap_xml: str) -> list[dict[str, str]]:
             "url": url,
             # No slug means a title with no Latin letter, which the tech gate and the tech
             # filter's English vocabulary both reject; the posting is still listed.
-            "slug_title": (_JOB_URL.search(url).group(1) or "").replace("-", " "),
+            "listed_title": (_JOB_URL.search(url).group(1) or "").replace("-", " "),
         }
     return list(rows.values())
 
