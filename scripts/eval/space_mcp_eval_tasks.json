@@ -468,19 +468,19 @@
     },
     {
       "id": "t32",
-      "prompt": "Find IT Associate Software Engineer jobs in the United States. Does any one job appear twice?",
+      "prompt": "Find Principal Manufacturing Systems Engineer jobs in the United States. Does any one job appear twice?",
       "verifier": "mentions",
       "expect": {
-        "all": [["Eversource"]],
-        "tool_results_all": ["another spelling of the company"]
+        "all": [["Schwan"]],
+        "tool_results_all": ["another spelling of it"]
       },
       "requires": {
         "jobs": [
-          "radancy:jobs.eversource.com:101283120016",
-          "workday:eversource/externalsite:R-031045"
+          "radancy:www.schwansjobs.com:99233842560",
+          "adp_recruiting:schwans:5001217970706"
         ]
       },
-      "why": "Round-2 critique st05b (ADR-0323): one Eversource requisition is served from its Radancy front ('EVERSOURCE') and its Workday Board ('Eversource Energy'). search_jobs lists the second under the first as 'also #N' and says why. Data-dependent: the pair was posted 2026-09-28 and had closed by 2026-09-30 (round 5), so `requires` retires the task while either posting is no longer served (ADR-0366)."
+      "why": "Round-2 critique st05b (ADR-0323): one requisition served from two Boards under two spellings of its company is listed once, the second under the first as 'also #N', and search_jobs says why. The Eversource pair it first used closed (round-5 critique, 2026-09-30), so it now reads Schwan's: its ADP Recruiting site ('Schwan's Company') and its Radancy front ('Schwan’s Company', a curly apostrophe) carry one posting in Hopkins, Minnesota (ADR-0365). Data-dependent: `requires` retires the task while either posting is no longer served (ADR-0366); repoint it then."
     },
     {
       "id": "t33",
@@ -579,6 +579,35 @@
         "roles_joined_partway": {"category": "software-engineering", "since": "2026-09-25"}
       },
       "why": "Round-5 critique R5-P1-4 (ADR-0366): read_trends added the watched roles up as +12,044 while Java and Python, counted only from 0.7 days into the window, joined the end figure alone; like for like the roles counted from the start moved +593 and every role's own change summed to -3,427. The verifier reads the Space's role lines itself and passes an answer that states either like-for-like total and not the mixed one. Retired once no watched role joins the window partway."
+    },
+    {
+      "id": "t42",
+      "prompt": "I need a US employer that sponsors work visas. Find machine learning engineer jobs in the United States whose postings offer visa sponsorship, and list the first page of results with each job's company.",
+      "verifier": "page_companies",
+      "expect": {
+        "tool": "search_jobs",
+        "must": {
+          "country": "US",
+          "work_authorization": "offers_sponsorship",
+          "page": 1
+        },
+        "must_any": [
+          {"query": {"op": "contains", "value": "machine learning"}},
+          {"query": {"op": "contains", "value": "ml"}}
+        ],
+        "min_companies": 4
+      },
+      "requires": {
+        "piled_ranking": {
+          "arguments": {
+            "query": "machine learning engineer",
+            "country": "US",
+            "work_authorization": "offers_sponsorship"
+          },
+          "companies_below": 4
+        }
+      },
+      "why": "Round-5 critique R5-P1-2 (ADR-0365): the per-company cap counted a group of 'also' rows as one posting, and the copy rule folded distinct Capital One requisitions into one group, so s04's first page was ten Capital One rows. The verifier needs at least 4 companies on the first page of the call and named in the answer. Data-dependent: `requires` retires it while the Space's uncapped ranking of that query already names 4 companies on its first page, since the cap then has nothing to spread (ADR-0366's mechanism)."
     }
   ],
   "heldout_sha256": "801e7149bc71c42e7b346dcf089ea20f87d1e0035d989b3dba8ffb50fe055e4d"

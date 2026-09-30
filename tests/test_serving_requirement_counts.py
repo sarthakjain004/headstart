@@ -1,7 +1,7 @@
 """What a sample of served Jobs asks for — `headstart.serving.requirement_counts` (ADR-0324,
 ADR-0332).
 
-Contracts: each requisition counted once (only the first Job that copies it), a Job whose company
+Contracts: each posting counted once (only the first Job on any of its Boards), a Job whose company
 names only its Board shown under the directory's name; skills as a share of the counted Jobs that
 carry a description, with distinct employers; minimum years in bands kept apart by source; salary
 quartiles per currency over each range's midpoint; remote, companies, countries and categories
@@ -60,8 +60,9 @@ def test_skills_are_shares_of_the_described_jobs_with_distinct_employers():
     assert counted["vocabulary_size"] == len(tech_skills.vocabulary().skills)
 
 
-def test_the_jobs_that_copy_one_requisition_count_once_the_first_read():
-    """Per country, and on two Boards of its employer (`jobs.requisition_copies`)."""
+def test_one_posting_on_two_boards_counts_once_the_first_read():
+    """On two Boards of its employer (`jobs.requisition_copies`); a requisition per country on
+    one Board counts once each (ADR-0365)."""
     jobs = [
         _job(1, title="Data Engineer (Peru)", company="Anyone AI", remote=True),
         _job(3, title="Data Engineer (Chile)", company="Anyone AI"),
@@ -71,7 +72,7 @@ def test_the_jobs_that_copy_one_requisition_count_once_the_first_read():
         ),
     ]
     counted = _summary(jobs)
-    assert (counted["read"], counted["distinct"]) == (4, 2)
+    assert (counted["read"], counted["distinct"]) == (4, 3)
     assert counted["remote"] == 1
     assert {c["company"] for c in counted["companies"]} == {"Anyone AI", "EVERSOURCE"}
 
@@ -261,6 +262,27 @@ def test_per_company_counts_at_most_that_many_of_one_companys_postings():
     uncapped = _summary(jobs)
     assert uncapped["over_company_cap"] == 0 and uncapped["per_company"] is None
     assert "counted" not in uncapped["companies"][0]
+
+
+def test_per_company_counts_each_counted_posting_even_when_two_are_one_anothers_copies():
+    """ADR-0365: grouping pairs each Radancy row with a Workday row, so a Workday-led group and
+    a Radancy-led one can be copies of each other; the cap still counts each group once."""
+    front, workday = (
+        "radancy:www.capitalonecareers.com",
+        "workday:capitalone/Capital_One",
+    )
+    jobs = [
+        _job(n, id=f"{board}:{n}", title="Full-stack Engineer 4", company="Capital One")
+        for n, board in enumerate([front, workday, front, workday, workday, front])
+    ]
+    counted = requirement_counts.summarize(
+        jobs, tech_skills.vocabulary(), per_company=2
+    )
+    assert (counted["read"], counted["distinct"], counted["over_company_cap"]) == (
+        6,
+        2,
+        1,
+    )
 
 
 def test_an_empty_sample_is_an_empty_answer_not_an_error():

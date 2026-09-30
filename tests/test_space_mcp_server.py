@@ -570,8 +570,8 @@ def test_a_spread_page_says_what_it_held_back_and_marks_the_rows_past_it():
         {"query": "staff platform engineer"},
     )
     assert (
-        "with at most 3 jobs of one company before every other company's (per_company; 0 "
-        "lists the ranking as it is)."
+        "with at most 3 rows of one company, besides a listed posting's copy on another of its "
+        "Boards, before every other company's (per_company; 0 lists the ranking as it is)."
     ) in text
     assert (
         'Listed after every other company\'s jobs, past per_company: 23 more from "Reflection": '
@@ -942,25 +942,64 @@ def test_a_description_keyword_says_how_many_jobs_have_a_description():
     assert "Descriptions are stored" not in title_only
 
 
-def test_copies_of_one_posting_on_a_page_are_listed_under_the_first_keeping_every_id():
+_CAPITAL_ONE_IDS = (
+    "workday:capitalone/Capital_One:R1001855",
+    "lever:razorpay:0002",
+    "radancy:www.capitalonecareers.com:101274361760",
+    "workday:capitalone/Capital_One:R1001268",
+    "radancy:www.capitalonecareers.com:101007325552",
+)
+
+
+def test_one_posting_on_two_boards_is_listed_under_the_first_keeping_every_id():
+    """The round-5 critique's s04 (ADR-0365): a same-titled requisition on the same Board, and a
+    bracketed title, are postings of their own, not copies."""
+    title = "Machine Learning Engineer 5"
+    workday, front = (
+        "McLean, VA; United States of America",
+        "McLean, Virginia, United States",
+    )
     rows = [
-        _job(1, title="Backend Developer (Peru)", company="Anyone AI", location="Lima"),
+        _job(
+            1,
+            id=_CAPITAL_ONE_IDS[0],
+            title=title,
+            company="Capital One",
+            location=workday,
+        ),
         _job(2, title="Python Developer", company="GoML"),
         _job(
-            3, title="Backend Developer (Chile)", company="Anyone AI", location="Chile"
+            3,
+            id=_CAPITAL_ONE_IDS[2],
+            title=title,
+            company="Capital One",
+            location=front,
         ),
-        _job(4, title="backend developer", company="anyone ai", location="Lima"),
+        _job(
+            4,
+            id=_CAPITAL_ONE_IDS[3],
+            title=title,
+            company="Capital One",
+            location=workday,
+        ),
+        _job(
+            5,
+            id=_CAPITAL_ONE_IDS[4],
+            title=f"{title} (Senior Manager, IC)",
+            company="Capital One",
+            location=front,
+        ),
     ]
     text = server.call(_search_space(rows, total=40), "search_jobs", {"keyword": "x"})
-    assert text.startswith("40 jobs match these filters. Showing 1–4.")
+    assert text.startswith("40 jobs match these filters. Showing 1–5.")
     assert "listed under it as 'also #N', with only what differs" in text
     body = text[text.index(" 1. ") :]
-    assert body.index(" 1. ") < body.index("also #3") < body.index("also #4")
-    assert body.index("also #4") < body.index(" 2. ")
-    assert 'also #3: 0.87 "Backend Developer (Chile)" · "Chile"\n' in text
-    for n in range(1, 5):
-        assert f'id "lever:razorpay:{n:04d}"' in text
-        assert f"https://jobs.lever.co/razorpay/{n:04d}" in text
+    assert body.index(" 1. ") < body.index("also #3") < body.index(" 2. ")
+    assert 'also #3: 0.87 "McLean, Virginia, United States"\n' in text
+    assert ' 4. 0.86 "Machine Learning Engineer 5" · "Capital One"' in text
+    assert ' 5. 0.85 "Machine Learning Engineer 5 (Senior Manager, IC)"' in text
+    for job_id in _CAPITAL_ONE_IDS:
+        assert f'id "{job_id}"' in text
     assert "More: page=2." in text
 
 
@@ -997,7 +1036,9 @@ def test_one_posting_on_two_boards_under_two_spellings_is_listed_once():
         ),
     ]
     text = server.call(_search_space(rows), "search_jobs", {"query": "x"})
-    assert "first city and countries under another spelling of the company;" in text
+    assert (
+        "first city and countries under the company's name or another spelling" in text
+    )
     assert "countries and stated pay under a shorter or longer name of it" in text
     assert 'also #2: 0.88 "Eversource Energy" · "Berlin, CT; Westwood, MA;' in text
     # Another place under the other spelling is not the same posting.

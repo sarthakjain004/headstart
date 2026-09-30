@@ -5,8 +5,9 @@ A career switcher asks "what does a data engineer need", and the honest answer i
 Jobs, not a paraphrase of one. :func:`summarize` takes the sampled Jobs (:meth:`JobSearch.
 requirements` picks them) and first makes each requisition count once (ADR-0332): a Job whose
 company names nothing but its Board is shown under the Company directory's name
-(`company_name.with_directory_name`, ADR-0323's rule), and of the Jobs that copy one requisition
-(`jobs.requisition_copies`, the rule a search page lists them by) only the first read is counted.
+(`company_name.with_directory_name`, ADR-0323's rule), and of the Jobs that are one posting on
+two Boards (`jobs.requisition_copies`, the rule a search page lists them by, ADR-0365) only the
+first read is counted.
 Given ``per_company``, at most that many of one company's are counted (ADR-0352). Then, per
 counted Job:
 
@@ -152,13 +153,21 @@ def _companies(
 def _capped(
     jobs: list[Mapping[str, Any]], per_company: int | None
 ) -> list[Mapping[str, Any]]:
-    """``jobs`` with the rows a search page's cap would hold past its first ``per_company`` of
-    one company left out (`per_company_cap.spread`, ADR-0352): one company's boilerplate would
-    otherwise set the skills and years of the whole sample."""
+    """``jobs``, one per posting, with each company's past its first ``per_company`` left out
+    (ADR-0352): one company's boilerplate would otherwise set the skills and years of the whole
+    sample. Every Job counts, as every row does on a search page (ADR-0365); a page's
+    `per_company_cap.spread` would also keep a posting's copies, which the sample's grouping has
+    already folded, and two group heads can be one another's copies, so it is not used here."""
     if not per_company:
         return jobs
-    spread = per_company_cap.spread([dict(job) for job in jobs], per_company)
-    return [job for job in spread if not job.get(per_company_cap.PAST_COMPANY_CAP)]
+    seen: Counter[str] = Counter()
+    kept = []
+    for job in jobs:
+        key = per_company_cap.company(job)
+        seen[key] += 1
+        if seen[key] <= per_company:
+            kept.append(job)
+    return kept
 
 
 def _countries(jobs: list[Mapping[str, Any]]) -> tuple[list[dict[str, Any]], int]:
