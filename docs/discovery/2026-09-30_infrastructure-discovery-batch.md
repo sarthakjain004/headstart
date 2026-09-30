@@ -78,8 +78,11 @@ JazzHR Boards (3.1% of postings) to 51% of the Hugging Face set.
 - **`check_liveness.py` reads curl error 6 (could not resolve host) as DEAD.** On a flaky resolver that
   writes real tenants dead for the 90-day dead TTL. It hit four separate agents (Cornerstone,
   Avature, Darwinbox, PeopleStrong); each landed through a DNS-over-HTTPS wrapper. For Darwinbox it is a real bug in
-  `p_darwinbox`: both domains have a wildcard record, so DNS can never prove a tenant absent. Not fixed
-  here.
+  `p_darwinbox`: both domains have a wildcard record, so DNS can never prove a tenant absent. Fixed
+  afterwards by [ADR-0372](../adr/0372-a-liveness-probe-reads-code-6-as-dead-only-when-a-public-resolver-agrees.md):
+  a code 6 is DEAD only when 1.1.1.1 or 8.8.8.8 also says the host has no address (24 of 45 probes
+  wrote a live Board dead under a simulated local failure, none now), and `p_darwinbox` no longer
+  counts a failed lookup.
 - **Recruitee rate-limits per address.** The dedupe scan over 4,388 Boards takes about two hours at
   4 workers, and any other probe of `*.recruitee.com` from the same address turns labels into
   `unreachable` (five did). ADR-0301 says to apply only a run with none; the union scan in #999 was
@@ -105,8 +108,8 @@ JazzHR Boards (3.1% of postings) to 51% of the Hugging Face set.
 - Recruitee's offers-API sieve beyond `.nl/.be` and the top of `.de/.at/.ch` (yield falls fast with rank);
   the four redirect targets held only as dead rows (`klekt`, `madeingroup`, `redhouse`, `scallent`) flip
   on their own re-probe; 15 real companies answer `403 Public API disabled` and cannot be read.
-- Reading the held Pinpoint rows for the seeded sample postings; the fix for `p_darwinbox`'s code-6
-  branch and the general dead-on-DNS-failure rule; `wayback_feeder.ATS_HOSTS` lacks JazzHR, Jobvite and
+- Reading the held Pinpoint rows for the seeded sample postings; `eightfold_dns_sweep.py`, which still
+  counts four timeouts as an absent label; `wayback_feeder.ATS_HOSTS` lacks JazzHR, Jobvite and
   Join and its `extract` drops a dotted Teamtailor label (`{slug}.na`, 274 live rows landed here that the
   CDX sweeps could never see).
 - Westpac (a Workday Board beside old Taleo sections) and Vontier (a Taleo section 38 of whose 46 reqs a held

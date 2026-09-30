@@ -336,6 +336,7 @@ supersedes it and note the supersession in both.
 | [0369](0369-every-company-line-says-when-its-opened-was-mostly-found-late.md) | Every company line says when its opened was mostly found late (amends 0351) | 2026-09-30 |
 | [0370](0370-a-sample-counts-a-requisition-once-and-a-place-a-leading-word-names-is-another-place.md) | A sample counts a requisition once, and a place a leading word names is another place (amends 0365, 0325) | 2026-09-30 |
 | [0371](0371-the-eval-reads-an-agency-call-as-a-claim-a-negation-in-its-clause-does-not-deny.md) | The eval reads an agency call as a claim a negation in its clause does not deny (amends 0370) | 2026-09-30 |
+| [0372](0372-a-liveness-probe-reads-code-6-as-dead-only-when-a-public-resolver-agrees.md) | A liveness probe reads curl's code 6 as dead only when a public resolver agrees (relates to 0181, 0189) | 2026-09-30 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*
