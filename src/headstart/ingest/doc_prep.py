@@ -480,25 +480,27 @@ def build_doc(job: dict) -> str:
 # monthly Gulf pay read as annual).
 # v27 (ADR-0350; #966 first held v25, and ADR-0357's v26 landed before it merged): `jobs/experience.py`
 # reads a third pass where the first two find nothing ("five (5) years" collapsed to its digits, a 46-80
-# character gap before "experience", "expertise"/"exp" for "experience"), reads a number as a whole token
-# (no "160,000" tail, no decimal fraction: "2.5 years" is 2), reads "less than"/"maximum"/"no more than"
-# and their kin as a 0..N ceiling like "up to", and skips an education ("4 year degree"), an age ("18
-# years of age"), a contract length, a widened window ("for the past 5 years") and years that stand in
-# for a degree. `stated_floors` (ADR-0357) reads the third pass too. The range since the v26 change at
-# `21a1ea1d` is `git log 21a1ea1d..0977989e -- src/headstart/jobs/experience.py`: this change's one
-# commit, before the merge that resolved it against ADR-0357 (`salary.py` is untouched). Measured old
-# (main at `a64cda9d`, which reproduces the served experience value on 497,643 of the 497,734 rows with
-# a description; the other 91 are ADR-0357's Netflix rows the v26 sweep has not reached) vs new on the
-# served table at version 348, 499,839 rows, read off HF on 2026-09-29 at 18:44 UTC, per ADR-0066:
-# 11,242 rows move (2.26%), none at the field tier. By tier: none -> regex 4,444, seniority -> regex
-# 5,018 (2,124 of them by three years or more), regex -> none 168, regex -> seniority 230, and regex ->
-# regex 1,382 (752 floors fall, 606 rise, 24 change only the ceiling). By cause, read off the text around
-# the old and new match: the third pass 9,462 gained ("five (5)" 8,113, the long gap 953, expertise 396),
-# and of the rows that lose or change a value 388 degree substitution, 328 ceiling word, 253 decimal or
-# thousands, 240 education, 72 window, 55 age, 16 contract, 428 with no single rule. The third pass
-# alone (the same module with and without it) changes 9,549 rows, all none or seniority -> regex and none
-# where the first two passes still answer; ADR-0079's smallest floor is untouched. Hand-read at 20 fresh
-# rows a class: 16, 17 and 18 right for the three widenings (ADR-0350 lists the misses).
+# character gap before "experience" screened for benefits and company prose, "expertise"/"exp" for
+# "experience" read forward only and below 15 years, none of it where the posting says preferred), reads a
+# number as a whole token (no "160,000" tail, no decimal fraction: "2.5 years" is 2; no half of "3 1/2"),
+# reads "less than"/"maximum"/"no more than" and their kin as a 0..N ceiling like "up to" only where the pass
+# states no floor, and skips an education ("4 year degree", "2 years of college education"), an age ("18
+# years of age"), a contract length, a window of time ("within the last 5 years", "lived in the UK for 3
+# years") and the years that stand in for a degree. `stated_floors` (ADR-0357) reads the third pass too.
+# The range since the v26 change at `21a1ea1d` is `git log 21a1ea1d..9e49067d --
+# src/headstart/jobs/experience.py`: nine commits, this change's code and the merge that resolved it against
+# ADR-0357 (`salary.py` is untouched). Measured old (main's `extract()`, unchanged since `21a1ea1d`, which
+# reproduces the served value on all 494,572 rows with a description) vs new on the served table at version
+# 44, 496,739 rows, read off HF on 2026-09-30 at 11:14 UTC, per ADR-0066: 10,582 rows move (2.14%), none at
+# the field tier. By tier: none -> regex 4,198, seniority -> regex 4,827 (2,054 of them by three years or
+# more), regex -> none 156, regex -> seniority 207, and regex -> regex 1,194 (597 floors fall, 575 rise, 22
+# change only the ceiling). By cause, read off the text around the old and new match: the third pass 9,025
+# gained ("five (5)" 7,880, the long gap 826, expertise 319), and of the rows that lose or change a value 353
+# degree substitution, 287 ceiling word, 252 decimal or thousands, 222 education, 57 window, 54 age, 12
+# contract, 320 with no single rule. The third pass alone (the same module with and without it) changes
+# 9,109 rows, all none or seniority -> regex and none where the first two passes still answer; ADR-0079's
+# smallest floor is untouched. Hand-read at 40 fresh rows a class, 38 to 40 right in every class (contract
+# 11 of 12), no class dropped (the table and the misses are in ADR-0350).
 DERIVATIONS_VERSION = 27
 
 
