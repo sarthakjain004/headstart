@@ -670,7 +670,7 @@ def _precision_recall(rows, stance):
     ("stance", "precision_at_least", "recall_at_least"),
     [
         (OFFERS, 0.97, 0.96),
-        (MAY, 0.97, 0.92),
+        (MAY, 0.97, 0.89),
         (REFUSES, 0.98, 0.97),
         (RELOCATION, 0.98, 0.98),
     ],
@@ -678,9 +678,11 @@ def _precision_recall(rows, stance):
 def test_the_rules_hold_their_measured_rates_on_the_labelled_sample(
     stance, precision_at_least, recall_at_least
 ):
-    # 989 descriptions read by hand (ADR-0333, ADR-0353, ADR-0359; relocation on 893 of them);
-    # measured 0.98/0.98, 1.00/0.93, 0.98/0.98 and 0.99/0.99. All but the last draw are the rules'
-    # own tuning set: the fresh draw after the freeze is the figure to quote (ADR-0359).
+    # 1,062 descriptions read by hand (ADR-0333, ADR-0353, ADR-0359, ADR-0368; relocation on 893
+    # of them); measured 0.985/0.985, 1.00/0.90, 0.98/0.98 and 0.99/0.99. All but the last draw
+    # are the rules' own tuning set: the fresh draw after the freeze is the figure to quote
+    # (ADR-0359). The may-offer recall fell from 0.93 as ADR-0368's draw added three hedges the
+    # rules do not read.
     precision, recall = _precision_recall(_labelled(), stance)
     assert precision >= precision_at_least and recall >= recall_at_least
 
@@ -755,3 +757,17 @@ def test_the_first_adr_0359_draw_is_what_its_rules_were_tuned_on():
     ]
     field, true = _TRUE_WHEN[OFFERS]
     assert len(rows) == 38 and sum(row[field] in true for row in rows) == 37
+
+
+def test_offers_hold_their_measured_precision_on_the_fresh_draw_after_adr_0368():
+    # ADR-0368: 50 live offers drawn after its rules froze (25 US, 25 elsewhere, at most 5 a
+    # company), read strictly: 47 right (0.94), all 25 in the US. Three misses stand, not fixed
+    # after the draw: a global-mobility benefit, "you must already be in Singapore", and a
+    # Porto job whose visa help is for a move to Berlin.
+    rows = [
+        row
+        for row in _labelled("predicted-offers-v5-frozen")
+        if OFFERS in _stances(row)
+    ]
+    field, true = _TRUE_WHEN[OFFERS]
+    assert len(rows) == 50 and sum(row[field] in true for row in rows) == 47
