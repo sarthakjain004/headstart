@@ -1248,3 +1248,49 @@ def test_the_before_number_substitution_guard_runs_in_the_third_pass_only():
         )
         is None
     )
+
+
+def test_a_substitution_clause_belongs_to_the_number_it_follows():
+    # A flattened description has no full stops: the alternative path's 3 sits before a second "experience" that
+    # carries the substitution clause, so the clause is not about the 3 and the answer stays main's.
+    assert from_description(
+        "Bachelor's Degree with 5 years of related experience Req or Master's Degree with 3 years of related "
+        "experience Equivalent experience can be substituted for the degree"
+    ) == _regex(3)
+    assert from_description(
+        "Requires a Bachelors degree and 8+ years of prior relevant experience or a Masters degree with 6+ years of "
+        "prior relevant experience additional years of experience may be considered in lieu of a degree"
+    ) == _regex(6)
+    # Its own clause still withdraws the number.
+    assert (
+        from_description(
+            "An additional 4 years of software engineering experience may be substituted for a bachelor's degree"
+        )
+        is None
+    )
+
+
+def test_a_ceiling_does_not_close_a_range_across_a_comma():
+    # Two cohorts: BA/BS holders need 2+, master's holders are read 0..2 ("up to"), as on main.
+    assert from_description(
+        "BA/BS degree with 2+ years of experience, MS with up to 2 years' experience, OR equivalent combination"
+    ) == _regex(0, 2)
+
+
+def test_a_residency_for_n_years_is_a_window_without_the_word_past():
+    assert from_description(
+        "You must have lived in the UK for 3 years in order to apply for clearance. 8+ years of experience as an engineer"
+    ) == _regex(8)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Candidate must have completed 2 years of related college coursework MS Office and 3D modeling experience required",
+        "At least 4 years of total combined higher education and related work experience, including: Bachelor's degree",
+        "For over 15 years, ArcTouch has created lovable apps, websites, and connected experiences for world-class companies",
+        "Interest-free loans paid over 2.5 years Technical development courses Employment referral program",
+    ],
+)
+def test_education_company_history_and_a_payment_term_are_not_a_requirement(text):
+    assert from_description(text) is None

@@ -201,10 +201,14 @@ _GAP_LONG = r"[\w\s'\":/()&,·•+#-]{46,80}?"
 # Eighty characters also reach benefits and company prose: "5 years of paid parental leave benefits, flexible
 # schedules, and an amazing employee experience", "20 years and we take pride in our people and culture, and our
 # experience". A match whose words are first person, pay, leave, tenure or culture, or whose anchor is HR's
-# "employee experience" / "candidate experience", is not a requirement.
+# "employee experience" / "candidate experience", is not a requirement; nor are years of "higher education", which
+# is combined with experience ("4 years of total combined higher education and related work experience"), nor a
+# company's "For over 15 years, ArcTouch has created ...".
 _GAP_PROSE = re.compile(
     r"\b(?:we|our|ours|benefits?|leave|paid|pay|salary|compensation|perks?|vacation|insurance|bonus|tenure|history|"
-    r"founded|since|culture|pride|proud)\b|\b(?:employee|candidate)s?\s+\w+$",
+    r"founded|since|culture|pride|proud)\b|\b(?:employee|candidate)s?\s+\w+$"
+    r"|\bhigher\s+education\b|\beducation\s+and\b"
+    r"|(?-i:\b(?:years?|yrs?),\s+[A-Z]\w+\s+(?:has|have|is|are|was|were|had)\b)",
     re.IGNORECASE,
 )
 # "more than 15 years of expertise" is a company's own, never a requirement: nobody asks for 15 years of expertise
@@ -451,7 +455,7 @@ _THIRD_PATTERNS = _tier2_patterns(_DIGITS, third=True)
 # excluded only as a side effect of demanding an of/in/as connector.
 _NARRATIVE_BEFORE = re.compile(
     r"\b(?:spent|combined|celebrat\w*|founded|established|history|anniversar\w*|"
-    r"vest\w*|sabbatical|tenure|runway)\b[\w\s,'-]{0,25}$",
+    r"vest\w*|sabbatical|tenure|runway|(?:re)?paid\s+over|spread\s+over)\b[\w\s,'-]{0,25}$",
     re.IGNORECASE,
 )
 # Case-sensitive **on purpose**: "at Palantir" is tenure, but "at a startup" / "at the company" are
@@ -511,7 +515,7 @@ _NARRATIVE_SPAN = re.compile(
     r"(?:degree|diploma)\b"
     # Only an education noun that ends the phrase: "2 years of college education in a technical discipline", not
     # "2 years of college-level Java programming" or "3+ years of study design and data analysis experience".
-    r"|(?:(?<![sS])\s+|\s+of\s+)(?:college|university|undergraduate|post-?secondary)(?:[\s-]+level)?\b"
+    r"|(?:(?<![sS])\s+|\s+of\s+(?:[a-z-]+\s+){0,2}?)(?:college|university|undergraduate|post-?secondary)(?:[\s-]+level)?\b"
     r"(?=\s*(?:education|coursework|course\s*work|study|studies|programs?|degrees?|credits?|classes|courses?|training"
     r"|schooling)\b|\s*(?:or|and|in)\b|\s*[,.;:)]|(?:\s+[a-z]+){1,2}\s+(?:program|degree|coursework)\b)"
     r"|\s+of\s+(?:schooling|studies|study)\s*(?:[,.;:)]|(?:in|at|or|and|beyond|after|program)\b)"
@@ -526,20 +530,41 @@ _NARRATIVE_SPAN = re.compile(
 # The number is the years that stand in for a degree, not what the job asks: "4 years of additional experience may be
 # substituted for a bachelor's degree", "(Additional 4 years of experience may substitute degree)". Read from the number
 # to the verb with no comma, bracket, bullet, "or" or "and" between them, so a clause about another number ("5+ years,
-# additional years may be considered in lieu of a degree") does not reach this one.
+# additional years may be considered in lieu of a degree") does not reach this one. A description flattened to one line
+# has no full stops, so the stretch must also hold no degree word and at most one "experience" (`_substitutes`):
+# "Master's Degree with 3 years of related experience Equivalent experience can be substituted for the degree" states
+# the 3 as an alternative path, and the clause belongs to the second "experience".
 _SUBST_AFTER = re.compile(
-    r"(?:(?!\b(?:or|and)\b)[^.;,•·(]){0,100}?\b(?:may|can|could|will)\s+(?:also\s+)?(?:"
+    r"(?:(?!\b(?:or|and)\b)[^.;,•·(]){0,100}?\b(?P<verb>may|can|could|will)\s+(?:also\s+)?(?:"
     r"be\s+(?:substituted|used|accepted|considered)\s+(?:for|in\s+lieu\s+of|instead\s+of)|substitute(?:\s+for)?)\s+"
     r"(?:a|an|the|your)?\s*(?:bachelor|master|degree|associate|high\s+school|college|university|education|B\.?S\b|M\.?S\b)",
     re.IGNORECASE,
 )
+_SUBST_LEAD_OTHER = re.compile(
+    r"\b(?:degree|master'?s?|bachelor'?s?|ph\.?\s?d|doctorate|advanced)\b",
+    re.IGNORECASE,
+)
+_EXPERIENCE_WORD = re.compile(r"\bexperience", re.IGNORECASE)
+
+
+def _substitutes(text: str, pos: int) -> bool:
+    """Whether the number ending at ``pos`` is the years that may stand in for a degree."""
+    found = _SUBST_AFTER.match(text, pos)
+    if found is None:
+        return False
+    lead = text[pos : found.start("verb")]
+    return (
+        not _SUBST_LEAD_OTHER.search(lead) and len(_EXPERIENCE_WORD.findall(lead)) <= 1
+    )
+
+
 # What a degree stands for, read by the third pass only: "a master's degree can be substituted for two years of
 # experience", "an associate degree is equivalent to two (2) years", "in lieu of a degree, an additional four years".
 # Its numbers are a degree's worth of years, and the third pass has no other answer to protect (the guard is not
 # run in the first two passes, where an ambiguous "N years" beside a substitution is at least as often the requirement).
 _SUBST_BEFORE = re.compile(
     r"(?:\b(?:degree|master'?s?|ph\.?\s?d|doctorate|bachelor'?s?|education|diploma|certification|training|coursework)\b"
-    r"[^.;]{0,30}?\b(?:substitut\w*|credit\w*|counts?|equals?|equivalent\s+to|in\s+lieu\s+of)\s+(?:for|as|to)?\s*"
+    r"[^.;]{0,60}?\b(?:substitut\w*|credit\w*|counts?|equals?|equivalent\s+to|in\s+lieu\s+of)\s+(?:for|as|to)?\s*"
     r"(?:(?:up\s+to|an?\s+additional|additional)\s+|~\s*)*"
     r"|\bin\s+lieu\s+of\s+(?:a|an|the|your)?\s*(?:[\w'.-]+\s+){0,3}?(?:degree|bachelor'?s?|master'?s?|diploma|education)\b"
     r"[^.;]{0,20}?(?:an?\s+)?(?:additional\s+)?)$",
@@ -555,7 +580,8 @@ _SUBST_BEFORE = re.compile(
 # Also "3 out of the past 5 years", "within last 3 years" without the "the", and a window that is a range ("in the
 # last 1-2 years": the match is the range's ceiling). "for the past 5 years" is a window only after a residency or
 # record cue ("resident in the UK for the past 5 years"); elsewhere it is a requirement ("Experience with Python for
-# the last 3 years is required", "Proven track record for the past 4 years in backend development").
+# the last 3 years is required", "Proven track record for the past 4 years in backend development"); the same
+# cue makes "lived in the UK for 10 years" a window.
 _WINDOW_BEFORE = re.compile(
     r"\b(?:\d+\s+(?:out\s+)?of|in|over|during|within|throughout)\s+(?:the\s+)?(?:last|past|previous|preceding)\s*"
     r"(?:\d{1,3}\s*(?:-|to)\s*)?$",
@@ -563,7 +589,7 @@ _WINDOW_BEFORE = re.compile(
 )
 _RESIDENCY_WINDOW_BEFORE = re.compile(
     r"\b(?:resident|resided|resides?|residing|lived|living|citizen\w*|domicile\w*|violations?|convictions?)\b"
-    r"[^.;]{0,60}\bfor\s+(?:the\s+)?(?:last|past|previous|preceding)\s*(?:\d{1,3}\s*(?:-|to)\s*)?$",
+    r"[^.;]{0,60}\bfor\s+(?:the\s+)?(?:(?:last|past|previous|preceding)\s*)?(?:\d{1,3}\s*(?:-|to)\s*)?$",
     re.IGNORECASE,
 )
 
@@ -599,9 +625,10 @@ _CEILING_NEGATED = re.compile(
 )
 # A ceiling that closes a range the sentence already opened is not a requirement of its own: "minimum of 6 years ...
 # with a maximum of 10 years", "three to five years (no more than 10 years)", "minimum 5+ years and up to 20 years".
+# A comma starts another clause, so it ends the reach ("BA/BS with 2+ years, MS with up to 2 years" is two cohorts).
 _FLOOR_BEFORE = re.compile(
     r"(?:\d\s*\+?\s*(?:years?|yrs?)|\bminimum\b|\bmin\b|\bat\s+least\b|"
-    r"\b(?:three|four|five|six|seven|eight|nine|ten)\s+(?:to\s+\w+\s+)?years?)[^.;]{0,50}$",
+    r"\b(?:three|four|five|six|seven|eight|nine|ten)\s+(?:to\s+\w+\s+)?years?)[^.;,]{0,50}$",
     re.IGNORECASE,
 )
 
@@ -756,7 +783,7 @@ def _stated(
                 continue  # a company's own years of expertise
             if _NARRATIVE_SPAN.match(text[match.start(1) : match.end() + 20]):
                 continue
-            if _SUBST_AFTER.match(text, match.end(1)):
+            if _substitutes(text, match.end(1)):
                 continue
             if third and _SUBST_BEFORE.search(
                 text[max(0, match.start(1) - 90) : match.start(1)]
