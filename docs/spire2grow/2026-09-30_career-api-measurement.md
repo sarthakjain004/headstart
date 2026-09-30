@@ -208,7 +208,8 @@ The vendor publishes no roster. The sources, and what each found:
   marketing host alone (`www.spire2grow.com`, `spire2grow.com`), and none of 18 `iexchange.ai`
   queries (502, 504 and 400). A tenant's pages are a Flutter shell with no crawlable job links, and
   its host is the customer's own, so a crawl can only name one by its vendor-zone alias; the
-  unanswered queries are not a zero.
+  unanswered queries are not a zero. No `cc_miner.py` pattern is added: its patterns read a Board key out of a
+  captured URL, and a Spire2Grow Board's key is the customer's own host, which no URL shape marks.
 
 The pool is 23 hosts; the ledger reads **7 live** (4 workspaces) and **16 dead**. The careers-page
 fingerprinter now knows the Flutter shell's app title (`apple-mobile-web-app-title` =

@@ -78,7 +78,8 @@ _WINDOW = 10_000
 _SPACING_S = 31.0
 #: What a 429 without the header rests for: the longest `X-Rate-Limit-Retry-After-Seconds` seen.
 _DEFAULT_REST_S = 60.0
-#: Not measured: ADP's count. Every refusal seen cleared within its stated window.
+#: 3, borrowed from adp.py's `_TRIES` and not measured here: every refusal seen cleared within
+#: its stated window.
 _TRIES = 3
 #: The fetch seam's own retry ladder, minus 429: its seconds of backoff cannot outlast the window.
 _RETRY_ON = http.TRANSIENT - {429}
@@ -213,7 +214,7 @@ class Spire2GrowScraper(BaseScraper):
                     f"_search refused past page {page - 1} at {len(rows)} of {total} "
                     "postings — the rest unread"
                 )
-                break
+                return {"entities": list(rows.values()), "total": total}
             if page == 1 and "entities" not in data:
                 self.note_unreadable_board(
                     "an `entities` list", f"keys {sorted(data)[:5]}"

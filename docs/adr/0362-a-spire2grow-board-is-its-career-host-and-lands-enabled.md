@@ -62,13 +62,15 @@ is small in absolute terms, not per Job.
   Spire) is small, but the storage bar is per tech Job, and at 0.43 MB it is well inside it. A
   disabled scraper would also leave Myntra, the benchmark company that prompted this, unserved.
 - **Bury the second Tata hosts in an alias ledger.** CONTEXT.md names the alias ledger as the
-  home of a Board published under a second hostname, which these are. But no writer fits them:
-  `dedupe_boards.py` groups on redirects, and these hosts do not redirect, so the ledger would need
-  a new signal (workspace identity) and a per-ATS script to rewrite it, as ClearCompany's
-  `shared-reqs` has. A new signal bumps `DEDUP_VERSION` (ADR-0188), an epoch paid across the served
-  table for three hosts whose rows were never served. Parking the three hand-found hosts, with the
-  measurement beside them, costs neither. If more second hosts turn up, the alias ledger with its
-  own script becomes the better home.
+  home of a Board published under a second hostname, which these are, and the existing
+  `subset-reqs` signal would fit them (each lists exactly the postings of the one workspace, as
+  Radancy's language twins do, ADR-0265). But a signal's first ledger for an ATS bumps
+  `DEDUP_VERSION` (ADR-0222's amendment to ADR-0188), an epoch paid across the served table for
+  three hosts whose rows were never served, and the ledger would want a per-ATS script to rewrite
+  it (`dedupe_boards.py` groups on each scraper's `alias_key`, which here is the vendor API host,
+  not the workspace). Parking the three hand-found hosts, with the measurement beside them, costs
+  neither. If more second hosts turn up, a `subset-reqs` ledger with its own script becomes the
+  better home.
 
 ## Consequences
 

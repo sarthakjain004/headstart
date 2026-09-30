@@ -2005,10 +2005,13 @@ def p_spire2grow(t, u):
             return DEAD, None
         _note("body-unparseable")
         return UNKNOWN, None
-    if status == 410 or (status == 200 and not body.strip()):
-        _note(f"lookup-{status}" if status == 410 else "body-unparseable")
-        return UNKNOWN, None
     if status != 200:
+        # `_get` already notes every status but 404 and 410; a 410 was never measured here.
+        if status == 410:
+            _note("http-410")
+        return UNKNOWN, None
+    if not body.strip():
+        _note("body-unparseable")
         return UNKNOWN, None
     workspace = body.decode("utf-8", "replace").strip()
     status, body = _get(
@@ -2016,6 +2019,8 @@ def p_spire2grow(t, u):
         headers={"workspaceid": workspace, "language": "en"},
     )
     if status != 200:
+        if status in (404, 410):  # `_get` notes every other status
+            _note(f"http-{status}")
         return UNKNOWN, None
     try:
         n = json.loads(body).get("totalCount")

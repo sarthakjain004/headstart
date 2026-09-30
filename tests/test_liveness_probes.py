@@ -1026,6 +1026,8 @@ def test_spire2grow_inconclusive_answers_stay_unknown(monkeypatch):
     # The count unreadable or refused after a real lookup.
     monkeypatch.setattr(cl, "_get", _spire2grow_get(200, b"ACME-1", 503, b""))
     assert cl.p_spire2grow("jobs.acme.com", "") == (cl.UNKNOWN, None)
+    monkeypatch.setattr(cl, "_get", _spire2grow_get(200, b"ACME-1", 404, b""))
+    assert cl.p_spire2grow("jobs.acme.com", "") == (cl.UNKNOWN, None)
     monkeypatch.setattr(cl, "_get", _spire2grow_get(200, b"ACME-1", 200, b"<html>"))
     assert cl.p_spire2grow("jobs.acme.com", "") == (cl.UNKNOWN, None)
 
