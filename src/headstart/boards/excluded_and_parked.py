@@ -947,6 +947,37 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         # tenant and the liveness probe left `unknown`, read 2026-09-30: it answers S3's
         # AccessDenied XML. It has no openings board.
         "freshteam:assets",
+        # Recruitee tenants landed by the 2026-09-30 passive-DNS and wordlist discovery, each
+        # confirmed by reading every offer the offers API served that day, not from the label:
+        # `amstelring` (a real Dutch care organisation) serves 11 offers and all 11 are titled
+        # "TEST ..." ("TEST Helpende plus - op basis van vacaturetemplate", "TEST Psycholoog", "TEST
+        # Interne auditor"), created 2026-09-10 to 09-21: its acceptance account. `zuyderland` (a
+        # real hospital group) serves 7 offers, all test: "Communicatie test 2.0" ("test 2.0"),
+        # "Test Template evaluatieformulieren" ("x x"), "AMC testvacature" ("nvsnsvd bsbvxmnnm"),
+        # "Automatiseringen Test" ("testt"), "Verpleegkundige test". `auau` serves one offer, "Madz",
+        # whose text is a filled-in stock template ("We are seeking a talented individual to join
+        # our team as a Madz at Madz"). `rooster` serves one, "Sales", described "This is a role for
+        # testing  these are the requirements". Their real Boards, if any, are other labels.
+        "recruitee:amstelring",  # 11 offers, all "TEST ..."
+        "recruitee:auau",  # 1 offer, "Madz"
+        "recruitee:rooster",  # 1 offer, "This is a role for testing"
+        "recruitee:zuyderland",  # 7 offers, all test
+        # Recruitee (offers API), read 2026-09-30: `bamboohr` is "Cycle HR - Sandbox", two offers
+        # whose descriptions are the same construction-worker text under "Construction Laborer" and
+        # "Human Resources Recruiter". `happyhorizon` is "Sandbox HappyHorizon": 34 offers created
+        # 3-4 seconds apart on 2026-07-22 whose departments do not fit their titles ("Motion
+        # Designer" in Human Resources, "Frontend Developer" in Marketing) beside "Open Application
+        # Text". `alliedglobaljobs` ("Allied Global Sandbox") is NOT here: its 31 offers are dated
+        # over months, at real sites in Guatemala and Honduras, with real descriptions.
+        "recruitee:bamboohr",
+        "recruitee:happyhorizon",
+        # Recruitee vendor infrastructure hosts that a host-graph sweep read as tenants and the
+        # liveness probe left `unknown`, read 2026-09-30: `mobile.recruitee.com` is the vendor's app
+        # page, `s.recruitee.com` answers 502 Bad Gateway and `data-warehouse-docs.recruitee.com` is
+        # a documentation site. None has an openings board.
+        "recruitee:mobile",
+        "recruitee:s",
+        "recruitee:data-warehouse-docs",
     }
 )
 
