@@ -197,7 +197,9 @@ _ALREADY_AUTHORIZED = re.compile(
 _HEDGE = re.compile(
     r"(?i)\b(?:is not|isn't|not) guaranteed|\bcase[- ]by[- ]case\b|"
     r"\b(?:should|must) not be assumed|\bnot (?:all|every) (?:positions?|roles?|jobs?)\b|"
-    r"\bnot (?:always|typically)\b|\bfor every (?:role|position|candidate)\b"
+    r"\bnot (?:always|typically)\b|\bfor every (?:role|position|candidate)\b|"
+    # "we can't always guarantee success" (ADR-0359).
+    r"\b(?:can't|can’t|cannot|can not) (?:always )?guarantee\b"
 )
 # An offer said with a hedge: it may be made, not that it is ("Visa sponsorship may be available
 # for select positions", "we may sponsor").
@@ -210,7 +212,10 @@ _MAY = re.compile(
     # An offer for a move the job does not need, or one made later ("If you wish to relocate, we
     # are happy to help you obtain a visa", "for a move to NYC (after 2 years' tenure)").
     r"\bif you (?:later )?(?:wish|choose|decide|want|opt) to relocate\b|"
-    r"\bafter (?:\d+|one|two|three) (?:years?|months?)\b"
+    r"\bafter (?:\d+|one|two|three) (?:years?|months?)\b|"
+    # "open to considering candidates who require visa sponsorship (subject to eligibility and
+    # company approval)" (ADR-0359).
+    r"\bopen to consider(?:ing)?\b|\bsubject to (?:\w+\s+){0,4}?approval\b"
 )
 
 # -- an offer's scope (ADR-0353) --
@@ -399,6 +404,12 @@ _FIELD_YES = re.compile(r"(?i)sponsor\w*:\s*(?:yes|available|offered|provided)\b
 # "Sponsorship for this role is not guaranteed" offers it to some; one "for future roles" does not
 # speak of this job at all.
 _FOR_LATER = re.compile(r"(?i)\bfuture\b")
+# An offer of a transfer only ("H-1B transfer sponsorship available", "Open to visa transfers"):
+# a candidate who needs a new visa is not offered one (ADR-0359).
+_TRANSFER = re.compile(
+    r"(?i)\b(?:visa|h-?1-?b|opt)\s+transfers?\b|\btransfer\s+(?:of\s+)?(?:visa\s+)?sponsorship\b"
+)
+_NEW_VISA = re.compile(r"(?i)\bnew\b")
 
 # Sponsorship stated as available: a word of offering near a sponsor word no negation reaches.
 _OFFER = re.compile(
@@ -561,10 +572,11 @@ def _window(sentence: str, start: int, end: int) -> tuple[str, str]:
 
 def _sponsorship(
     sentence: str, *, title: str | None, location: str | None
-) -> tuple[bool, bool, bool]:
+) -> tuple[bool, bool, bool, bool]:
     """Whether ``sentence`` offers, may offer, and refuses visa sponsorship to the job at
-    ``location`` titled ``title``."""
-    offers = may_offer = refuses = False
+    ``location`` titled ``title``, and whether it hedges an offer this job may get: a hedge
+    anywhere in the description holds back a firm offer beside it (:func:`stances`)."""
+    offers = may_offer = refuses = hedged = False
     for match in _CITIZENSHIP.finditer(sentence):
         window, _ = _window(sentence, match.start(), match.end())
         if (
@@ -590,6 +602,7 @@ def _sponsorship(
             continue
         if _HEDGE.search(window):
             tier = _Tier.MAY if not _FOR_LATER.search(window) else None
+            hedge = tier is not None
         elif _NEGATION.search(window) or _REFUSAL.search(window):
             refuses = True
             continue
@@ -598,7 +611,13 @@ def _sponsorship(
             and (_OFFER_NAMES_A_VISA.search(window) or _FIELD_YES.search(offer_window))
             and not _AUTHORIZATION_REQUIRED.search(window)
         ):
-            tier = _Tier.MAY if _MAY.search(window) else _Tier.OFFERS
+            # A hedge anywhere in the offer's sentence reaches past its window ("We provide
+            # visa sponsorship support and assess each circumstance on a case-by-case basis"),
+            # and a transfer alone is no new visa (ADR-0359).
+            hedge = bool(_HEDGE.search(sentence))
+            transfer_only = _TRANSFER.search(window) and not _NEW_VISA.search(window)
+            weak = hedge or _MAY.search(window) or transfer_only
+            tier = _Tier.MAY if weak else _Tier.OFFERS
         else:
             continue
         if tier is None:
@@ -608,9 +627,10 @@ def _sponsorship(
             refuses = True
         elif scope is _Scope.UNKNOWN or (scope is _Scope.IN and tier is _Tier.MAY):
             may_offer = True
+            hedged |= hedge
         elif scope is _Scope.IN:
             offers = True
-    return offers, may_offer, refuses
+    return offers, may_offer, refuses, hedged
 
 
 def _relocation(sentence: str) -> tuple[bool, bool]:
@@ -640,27 +660,29 @@ def stances(
     ``location``, among :data:`STANCES`.
 
     Sponsorship is refused when any mention refuses it; otherwise offered when a mention offers it
-    to this job; otherwise possibly offered when one does with a hedge, or names a country or level
-    the job's own cannot be matched to (ADR-0353). Relocation is offered only when some mention
+    to this job and none hedges it ("We do sponsor visas! However, we aren't able to … for every
+    role", ADR-0359); otherwise possibly offered when one does with a hedge, or names a country or
+    level the job's own cannot be matched to (ADR-0353). Relocation is offered only when some mention
     offers it and none refuses it: a text that says both is not said to offer it."""
     found: set[str] = set()
-    sponsor_offer = sponsor_may = sponsor_refusal = False
+    sponsor_offer = sponsor_may = sponsor_refusal = sponsor_hedged = False
     relocation_offer = relocation_refusal = False
     for sentence in _sentences(description or ""):
-        offers, may_offer, refuses = _sponsorship(
+        offers, may_offer, refuses, hedged = _sponsorship(
             sentence, title=title, location=location
         )
         sponsor_offer |= offers
         sponsor_may |= may_offer
         sponsor_refusal |= refuses
+        sponsor_hedged |= hedged
         offers, refuses = _relocation(sentence)
         relocation_offer |= offers
         relocation_refusal |= refuses
     if sponsor_refusal:
         found.add(REFUSES_SPONSORSHIP)
-    elif sponsor_offer:
+    elif sponsor_offer and not sponsor_hedged:
         found.add(OFFERS_SPONSORSHIP)
-    elif sponsor_may:
+    elif sponsor_offer or sponsor_may:
         found.add(MAY_OFFER_SPONSORSHIP)
     if relocation_offer and not relocation_refusal:
         found.add(OFFERS_RELOCATION)
