@@ -1040,7 +1040,7 @@ def _job_row(row: Mapping[str, Any]) -> dict[str, Any]:
     result["description_cut"] = len(description) > JOB_DESCRIPTION_LIMIT
     # Read from the whole description, not the cut one: a visa sentence often closes it.
     held = work_authorization.stances(
-        description, row.get("title"), row.get("location")
+        description, title=row.get("title"), location=row.get("location")
     )
     result["work_authorization"] = {
         "stances": [s for s in work_authorization.STANCES if s in held],
@@ -1831,6 +1831,8 @@ class JobSearch:
             ordering.append({"column_name": "id", "ascending": True})
             search = search.order_by(ordering)
 
+        # The page as served, when a branch builds it itself; else each of `rows` is built.
+        served: list[dict[str, Any]] | None = None
         if sort and ranked:
             # Sorting a *ranked* result set, issue #275. The comment above is the constraint:
             # an `order_by` on the vector branch does not tie-break similarity, it replaces
@@ -1878,7 +1880,7 @@ class JobSearch:
             spread = per_company_cap.spread(
                 [_result_row(r, ranked) for r in window], per_company
             )
-            rows = spread[offset : offset + k]
+            served = spread[offset : offset + k]
             path = "ranked-spread"
         elif sort_currency:
             rows = self._salary_browse(table, where, sort_currency, k, offset)
@@ -1897,7 +1899,7 @@ class JobSearch:
             path = "ranked" if ranked else "browse"
 
         result = (
-            rows if path == "ranked-spread" else [_result_row(r, ranked) for r in rows]
+            served if served is not None else [_result_row(r, ranked) for r in rows]
         )
         elapsed_ms = (time.monotonic() - started) * 1000
         if elapsed_ms > SLOW_SEARCH_MS:

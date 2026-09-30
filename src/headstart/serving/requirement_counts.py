@@ -36,6 +36,7 @@ from headstart.boards.board_identity import board_of
 from headstart.boards.company_name import FROM_DIRECTORY, with_directory_name
 from headstart.jobs import requisition_copies, work_authorization
 from headstart.search_filters import country_filter, country_gazetteer
+from headstart.serving import per_company_cap
 from headstart.serving.count_ranking import most_first
 from headstart.serving.tech_skills import Vocabulary
 
@@ -125,13 +126,6 @@ def _salary(jobs: list[Mapping[str, Any]]) -> dict[str, Any]:
     return {"stating": stating.total(), "currencies": currencies}
 
 
-def _employer(job: Mapping[str, Any]) -> str:
-    """Who a Job is at, for counting employers: its company case-folded, or its Board key when
-    it names none, so Jobs naming no company are not all one employer."""
-    name = " ".join(str(job.get("company") or "").split()).casefold()
-    return name or job["board"]
-
-
 def _companies(
     jobs: list[Mapping[str, Any]], per_company: int | None
 ) -> list[dict[str, Any]]:
@@ -140,7 +134,7 @@ def _companies(
     counted: Counter[str] = Counter()
     first: dict[str, Mapping[str, Any]] = {}
     for job in jobs:
-        key = _employer(job)
+        key = per_company_cap.company(job)
         counted[key] += 1
         first.setdefault(key, job)
     return [
@@ -158,18 +152,13 @@ def _companies(
 def _capped(
     jobs: list[Mapping[str, Any]], per_company: int | None
 ) -> list[Mapping[str, Any]]:
-    """``jobs`` with each employer's past its first ``per_company`` left out (ADR-0352): one
-    company's boilerplate would otherwise set the skills and years of the whole sample."""
+    """``jobs`` with the rows a search page's cap would hold past its first ``per_company`` of
+    one company left out (`per_company_cap.spread`, ADR-0352): one company's boilerplate would
+    otherwise set the skills and years of the whole sample."""
     if not per_company:
         return jobs
-    taken: Counter[str] = Counter()
-    kept = []
-    for job in jobs:
-        key = _employer(job)
-        if taken[key] < per_company:
-            taken[key] += 1
-            kept.append(job)
-    return kept
+    spread = per_company_cap.spread([dict(job) for job in jobs], per_company)
+    return [job for job in spread if not job.get(per_company_cap.PAST_COMPANY_CAP)]
 
 
 def _countries(jobs: list[Mapping[str, Any]]) -> tuple[list[dict[str, Any]], int]:
@@ -198,7 +187,7 @@ def _skills(
         described += 1
         for skill in vocabulary.mentioned(text, job.get("company")):
             counted[skill] += 1
-            employers.setdefault(skill, set()).add(_employer(job))
+            employers.setdefault(skill, set()).add(per_company_cap.company(job))
     return [
         {
             "skill": skill,
@@ -227,13 +216,14 @@ def _work_authorization(jobs: list[Mapping[str, Any]]) -> dict[str, int]:
     held = Counter(
         stance
         for job in jobs
-        for stance in work_authorization.stances(
-            job.get("description"), job.get("title"), job.get("location")
+        for stance in work_authorization.filtered_stances(
+            work_authorization.stances(
+                job.get("description"),
+                title=job.get("title"),
+                location=job.get("location"),
+            )
         )
     )
-    held[work_authorization.MAY_OFFER_SPONSORSHIP] += held[
-        work_authorization.OFFERS_SPONSORSHIP
-    ]
     return {stance: held[stance] for stance in work_authorization.STANCES}
 
 

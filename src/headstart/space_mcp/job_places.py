@@ -14,13 +14,10 @@ from typing import Any
 from headstart.search_filters import country_filter
 from headstart.space_mcp import scraped_text
 
-#: A place past this is cut, as search cuts a location.
-SHORT_FIELD = 60
-
 
 def _places(places: list[dict[str, Any]]) -> str:
     return " · ".join(
-        f"{scraped_text.quoted(place['location'], SHORT_FIELD)} {place['count']:,}"
+        f"{scraped_text.quoted(place['location'], scraped_text.SHORT_FIELD)} {place['count']:,}"
         for place in places
     )
 

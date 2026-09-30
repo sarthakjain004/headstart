@@ -466,13 +466,13 @@ def build_doc(job: dict) -> str:
 # veto it. Lost: 17 Hajdú-Bihar, 17 on "india" inside a longer word (Xindian 14, Indian Harbour
 # Beach 3), 8 Delhi (New York, Louisiana), 5 Inashiki, 2 Little India (Singapore) and 4 more one
 # each (Maladzyechna, Kagithane, Madras OR, "Cananda").
-# v26 (ADR-0357; #966 holds v25): `jobs/experience.py` reads Netflix's titles on
+# v26 (ADR-0357): `jobs/experience.py` reads Netflix's titles on
 # its own ladder (L4 3, L5 5, L6 9 years) when neither the field nor the description states a number,
 # and `jobs/salary.py`'s `placed`, applied in `derived_meta` and `update_meta`, drops an INR figure
 # below 500,000 a year on a job every place of which is outside India. ADR-0079's smallest floor is
-# unchanged. The range since the v24 bump at `9650226d` is `git log 9650226d..9a388239 --
+# unchanged. The range since the v24 bump at `9650226d` is `git log 9650226d..21a1ea1d --
 # src/headstart/jobs/experience.py src/headstart/jobs/salary.py src/headstart/ingest/derived_meta.py
-# src/headstart/ingest/update_meta.py`: this change alone, one commit. Measured old (main's code, which
+# src/headstart/ingest/update_meta.py`: this change alone, one squash commit (#985). Measured old (main's code, which
 # reproduces the served experience value on 499,675 rows) vs new on the served table at version 326,
 # 499,841 rows, read off HF on 2026-09-29 with the description store pulled the same day, per
 # ADR-0066: experience moves on 91 rows, all Netflix and all Tier 3 (none -> seniority 16, seniority

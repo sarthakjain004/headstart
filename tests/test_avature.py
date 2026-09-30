@@ -15,7 +15,15 @@ import pytest
 from fake_fetcher import FakeFetcher, FakeResponse
 
 from headstart.ingest import board_failures
-from headstart.scrapers.avature import _page_title, listing_rows, page_fields
+from headstart.scrapers.avature import (
+    AvatureScraper,
+    _page_title,
+    _robots_allows,
+    listing_rows,
+    next_search_page,
+    page_fields,
+    search_rows,
+)
 from headstart.scrapers.base import BoardUnreadable
 from headstart.scrapers.pacer import Pacer
 from headstart.scrapers.registry import get_scraper
@@ -200,7 +208,7 @@ def test_listing_rows_skip_pages_that_are_not_postings():
         _FIXTURE["sitemap"]["https://bloomberg.avature.net/careers/sitemap.xml"]
     )
     assert {row["id"] for row in rows} == {"22342", "21806", "12444"}
-    assert rows[0]["slug_title"] == "Senior Software Engineer VAULT"
+    assert rows[0]["listed_title"] == "Senior Software Engineer VAULT"
 
 
 #: ea's `es_ES` sitemap entry for one posting (2026-09-29), trimmed to three of its 12 alternates.
@@ -285,7 +293,7 @@ def test_a_job_url_with_no_title_slug_is_listed():
         {
             "id": "389",
             "url": "https://careers.tsmc.com/en_US/careers/JobDetail/389",
-            "slug_title": "",
+            "listed_title": "",
         }
     ]
     scraper = _scraper(_route())
@@ -797,3 +805,497 @@ def test_a_label_row_still_beats_every_other_surface():
     )
     page = _page_titled("Engineer - Berlin, Germany - 12", "Engineer", body)
     assert page_fields(page)["location"] == "Pune, India"
+
+
+# --- a portal whose sitemap lists no posting is read from its search pages -------------------
+
+_SEARCH_PAGES = json.loads(
+    (
+        pathlib.Path(__file__).parent / "fixtures" / "avature_search_pages.json"
+    ).read_text()
+)
+#: An Avature tenant's robots.txt: every portal it lists is whitelisted, then everything else
+#: is disallowed. Siemens's `/en_US/externaljobs/SearchJobs` is reached under the locale rule.
+_WHITELIST_ROBOTS = (
+    "User-agent: *\n"
+    "Allow: /$\n"
+    "Allow: /careers\n"
+    "Disallow: /careers/*qtvc=\n"
+    "Allow: /*/careers\n"
+    "Disallow: /*/careers/*qtvc=\n"
+    "Sitemap: https://acme.avature.net/careers/sitemap_index.xml\n"
+    "Allow: /CheckIn\n"
+    "Sitemap: https://acme.avature.net/CheckIn/sitemap_index.xml\n"
+    "Disallow: /"
+)
+#: What Siemens's and Two Sigma's own sitemaps list: page names, among them a bare `/JobDetail`,
+#: and not one posting.
+_JOB_PORTAL_SITEMAP = (
+    "<urlset>"
+    "<url><loc>https://acme.avature.net/careers/JobDetail</loc></url>"
+    "<url><loc>https://acme.avature.net/careers/JobDetailApplied</loc></url>"
+    "<url><loc>https://acme.avature.net/careers/Login</loc></url>"
+    "</urlset>"
+)
+#: What Epic's utility portals list: no job page at all.
+_UTILITY_SITEMAP = (
+    "<urlset><url><loc>https://acme.avature.net/CheckIn/Login</loc></url></urlset>"
+)
+_SEARCH = "https://acme.avature.net/careers/SearchJobs"
+_LOCALE_SEARCH = "https://acme.avature.net/en_US/careers/SearchJobs/"
+
+
+def _result(job_id: str, title: str) -> str:
+    """One result as Siemens's and a2milkkf's search pages state it, trimmed to its header."""
+    return (
+        '<article class="article article--result"><div class="article__header">'
+        '<div class="article__header__text">'
+        '<h3 class="article__header__text__title title title--h3">'
+        f'<a class="link" href="https://acme.avature.net/en_US/careers/JobDetail/{job_id}">'
+        f"{title}</a></h3></div></div></article>"
+    )
+
+
+def _search_page(results: list[tuple[str, str]], *, total: str, next_page: str = ""):
+    paging = (
+        '<li class="list-controls__pagination__item paginationNextLink">'
+        f'<a href="{next_page}" aria-label="Go to Next Page">Next &gt;&gt;</a></li>'
+        if next_page
+        else ""
+    )
+    body = "".join(_result(job_id, title) for job_id, title in results)
+    return f'<div class="list-controls__text">{total}</div>{body}{paging}'
+
+
+def _page_two(offset: int) -> str:
+    return f"{_LOCALE_SEARCH}?folderRecordsPerPage=2&folderOffset={offset}"
+
+
+def _job_page(title: str) -> str:
+    return f'<meta property="og:title" content="{title}"><main>{title} at Acme</main>'
+
+
+def _portal(routes: dict[str, FakeResponse], robots: str = _WHITELIST_ROBOTS):
+    """A tenant whose `careers` sitemap lists page names and no posting, and whose utility
+    portal lists nothing; ``routes`` answers the search and job pages."""
+
+    def route(method, url, kwargs):
+        if url.endswith("robots.txt"):
+            return FakeResponse(200, robots)
+        if url in routes:
+            return routes[url]
+        if url.endswith("/careers/sitemap_index.xml"):
+            return FakeResponse(
+                200,
+                "<sitemapindex><sitemap><loc>https://acme.avature.net/en_US/careers/"
+                "sitemap.xml</loc></sitemap></sitemapindex>",
+            )
+        if url.endswith("/CheckIn/sitemap_index.xml"):
+            return FakeResponse(
+                200,
+                "<sitemapindex><sitemap><loc>https://acme.avature.net/en_US/CheckIn/"
+                "sitemap.xml</loc></sitemap></sitemapindex>",
+            )
+        if url.endswith("/careers/sitemap.xml"):
+            return FakeResponse(200, _JOB_PORTAL_SITEMAP)
+        if url.endswith("/CheckIn/sitemap.xml"):
+            return FakeResponse(200, _UTILITY_SITEMAP)
+        return FakeResponse(404, "")
+
+    fetcher = FakeFetcher(route)
+    scraper = get_scraper("avature", "acme", fetcher=fetcher, have_details=set())
+    scraper.pacer = Pacer(0)
+    scraper.fake = fetcher
+    return scraper
+
+
+def _asked(scraper, marker: str) -> list[str]:
+    return [url for url in scraper.fake.urls() if marker in url]
+
+
+_ENGINEER, _SALES, _DATA = (
+    ("524237", "Software Engineer"),
+    ("524234", "Sales Director"),
+    ("524200", "Data Engineer"),
+)
+
+
+def _two_pages(total: str) -> dict[str, FakeResponse]:
+    """Three results over two pages, then the tech ones' job pages."""
+    return {
+        _SEARCH: FakeResponse(
+            200,
+            _search_page([_ENGINEER, _SALES], total=total, next_page=_page_two(2)),
+            url=_LOCALE_SEARCH,
+        ),
+        _page_two(2): FakeResponse(200, _search_page([_DATA], total=total)),
+        "https://acme.avature.net/en_US/careers/JobDetail/524237": FakeResponse(
+            200, _job_page("Software Engineer")
+        ),
+        "https://acme.avature.net/en_US/careers/JobDetail/524200": FakeResponse(
+            200, _job_page("Data Engineer")
+        ),
+    }
+
+
+def test_a_board_whose_sitemaps_list_no_posting_is_read_from_its_search_pages():
+    """Siemens's sitemap lists 58 page URLs and no posting, while its search page states 999+
+    results; every one of its URLs is `…/JobDetail/{id}`, with no slug to gate on."""
+    scraper = _portal(_two_pages("1 - 2 of 3 results"))
+    raw = scraper.fetch_raw()
+    assert [item["id"] for item in raw] == ["524237", "524200"]
+    # The gate ran on the title the search page states: no URL here carries a slug.
+    assert sorted(_asked(scraper, "/JobDetail/")) == [
+        "https://acme.avature.net/en_US/careers/JobDetail/524200",
+        "https://acme.avature.net/en_US/careers/JobDetail/524237",
+    ]
+    assert scraper.truncated is None
+    job = scraper.parse(raw, _SCRAPED_AT)[0]
+    assert (job.id, job.title) == ("avature:acme:524237", "Software Engineer")
+
+
+def _slugged(scraper, slugs: list[str]) -> None:
+    """Answer the `careers` sitemap with one posting per slug, `…/JobDetail/{slug}/{n}`."""
+    route = scraper.fake.route
+    urls = "".join(
+        f"<url><loc>https://acme.avature.net/en_US/careers/JobDetail/{slug}/{n}</loc></url>"
+        for n, slug in enumerate(slugs, 1)
+    )
+
+    def slugged(method, url, kwargs):
+        if url.endswith("/careers/sitemap.xml"):
+            return FakeResponse(200, f"<urlset>{urls}</urlset>")
+        return route(method, url, kwargs)
+
+    scraper.fake.route = slugged
+
+
+@pytest.mark.parametrize(
+    "slugs",
+    [
+        # mt: 521 of 531 postings are `…/JobDetail/1/{id}`, the rest name a title
+        ["1"] * 22 + ["Sales-Manager", "Field-Technician"],
+        # ucsf: 81% of 949 are slugged by the posting's location
+        ["San-Francisco-CA-United-States"] * 20 + [f"Oakland-{n}" for n in range(4)],
+        # pomerleau: the slug is a number
+        [str(1000 + n) for n in range(24)],
+    ],
+)
+def test_a_sitemap_whose_slugs_state_no_title_is_read_from_its_search_pages(slugs):
+    """The tech gate reads the slug, so these Boards' postings all read as non-tech and the Board
+    as zero Jobs; their search pages state each title."""
+    scraper = _portal(_two_pages("1 - 2 of 3 results"))
+    _slugged(scraper, slugs)
+    raw = scraper.fetch_raw()
+    assert [item["id"] for item in raw] == ["524237", "524200"]
+    assert scraper.truncated is None
+
+
+def test_a_sitemap_whose_slugs_state_titles_never_asks_the_search_page():
+    slugs = [f"Engineer-{n}" for n in range(24)]
+    scraper = _portal(_two_pages("1 - 2 of 3 results"))
+    _slugged(scraper, slugs)
+    scraper.fetch_raw()
+    assert not _asked(scraper, "SearchJobs")
+    assert len(_asked(scraper, "/JobDetail/")) == 24  # the sitemap's own tech slugs
+
+
+def test_a_small_board_repeating_one_title_is_still_read_from_its_sitemap():
+    """Three postings all titled "Data Engineer" say nothing about their slugs: under 20 rows the
+    share of the commonest one is not read."""
+    scraper = _portal(_two_pages("1 - 2 of 3 results"))
+    _slugged(scraper, ["Data-Engineer"] * 3)
+    scraper.fetch_raw()
+    assert not _asked(scraper, "SearchJobs")
+    assert len(_asked(scraper, "/JobDetail/")) == 3
+
+
+def test_a_sitemap_whose_slugs_state_no_title_keeps_its_rows_where_the_search_is_gone():
+    scraper = _portal({_SEARCH: FakeResponse(404, "")})
+    _slugged(scraper, ["1"] * 24)
+    scraper.fetch_raw()
+    assert not _asked(scraper, "/JobDetail/")  # the gate reads no title, as before
+    assert scraper.truncated is None
+
+
+def test_the_search_pages_are_read_one_request_each():
+    scraper = _portal(_two_pages("1 - 2 of 3 results"))
+    scraper.fetch_raw()
+    assert _asked(scraper, "SearchJobs") == [_SEARCH, _page_two(2)]
+
+
+def test_a_search_listing_that_states_a_capped_total_truncates_the_board():
+    """Siemens's page says "999+ results" and stops serving pages past its 2,000th: the total
+    is not stated, so a posting missing from the list is not known to be closed."""
+    scraper = _portal(_two_pages("1 - 2 of 999+ results"))
+    assert [item["id"] for item in scraper.fetch_raw()] == ["524237", "524200"]
+    assert "999+" in scraper.truncated
+
+
+def test_a_search_listing_read_short_of_its_stated_total_truncates_the_board():
+    scraper = _portal(_two_pages("1 - 2 of 30 results"))
+    scraper.fetch_raw()
+    assert "30" in scraper.truncated
+
+
+def test_a_search_listing_with_no_stated_total_is_read_to_its_last_page():
+    scraper = _portal(_two_pages(""))
+    assert [item["id"] for item in scraper.fetch_raw()] == ["524237", "524200"]
+    assert scraper.truncated is None
+
+
+def test_search_paging_stops_at_the_cap_and_truncates_the_board(monkeypatch):
+    monkeypatch.setattr("headstart.scrapers.avature._SEARCH_PAGES_MAX", 2)
+    routes = _two_pages("1 - 2 of 99 results")
+    routes[_page_two(2)] = FakeResponse(
+        200, _search_page([_DATA], total="", next_page=_page_two(3))
+    )
+    scraper = _portal(routes)
+    scraper.fetch_raw()
+    assert len(_asked(scraper, "SearchJobs")) == 2
+    assert "cap" in scraper.truncated
+
+
+def test_a_search_page_that_fails_after_the_first_truncates_the_board():
+    routes = _two_pages("1 - 2 of 3 results")
+    routes[_page_two(2)] = FakeResponse(503, "")
+    scraper = _portal(routes)
+    assert [item["id"] for item in scraper.fetch_raw()] == ["524237"]
+    assert "503" in scraper.truncated
+
+
+@pytest.mark.parametrize("status", [406, 429, 503, 202])
+def test_a_first_search_page_that_did_not_answer_leaves_the_board_unread(status):
+    scraper = _portal({_SEARCH: FakeResponse(status, "")})
+    with pytest.raises(BoardUnreadable, match=f"HTTP {status}"):
+        scraper.fetch_raw()
+
+
+@pytest.mark.parametrize(
+    "search",
+    [
+        # two sigma's `careers` has no SearchJobs page: its listing is a custom `OpenRoles` page
+        FakeResponse(404, ""),
+        FakeResponse(
+            200, "<form>Sign in</form>", url="https://acme.avature.net/careers/Login/"
+        ),
+        # a search page stating no result
+        FakeResponse(200, _search_page([], total="0 results"), url=_LOCALE_SEARCH),
+    ],
+)
+def test_a_search_page_that_lists_nothing_leaves_the_board_empty(search):
+    scraper = _portal({_SEARCH: search})
+    assert scraper.fetch_raw() == []
+    assert scraper.truncated is None
+
+
+def test_a_portal_whose_sitemap_names_no_job_page_never_asks_its_search_page():
+    """Epic's fifteen portals are onboarding and event pages: reading their search pages would
+    cost fifteen requests a run to find nothing."""
+    scraper = _portal({})
+    route = scraper.fake.route
+
+    def utility_only(method, url, kwargs):
+        if url.endswith("/careers/sitemap.xml"):
+            return FakeResponse(200, _UTILITY_SITEMAP)
+        return route(method, url, kwargs)
+
+    scraper.fake.route = utility_only
+    assert scraper.fetch_raw() == []
+    assert not _asked(scraper, "SearchJobs")
+
+
+def test_a_portal_read_empty_is_settled_by_its_sitemap_path_not_the_search_listing():
+    """An empty body over a portal whose search page links postings stays unread (#880): the
+    listing is paged only for a sitemap that answered and listed no posting."""
+    scraper = _portal({_SEARCH: FakeResponse(200, _LINKS_A_POSTING)})
+    route = scraper.fake.route
+
+    def empty_bodies(method, url, kwargs):
+        if url.endswith("/careers/sitemap.xml"):
+            return FakeResponse(200, "")
+        return route(method, url, kwargs)
+
+    scraper.fake.route = empty_bodies
+    with pytest.raises(BoardUnreadable, match="unread, not empty"):
+        scraper.fetch_raw()
+    assert len(_asked(scraper, "SearchJobs")) == 1
+
+
+def test_search_pages_are_not_asked_when_the_sitemaps_list_a_posting():
+    scraper = _scraper(_route(), gated=False)
+    scraper.fetch_raw()
+    assert not [url for url in scraper.fake.urls() if "SearchJobs" in url]
+
+
+def test_search_pages_are_not_read_where_robots_txt_disallows_them():
+    robots = (
+        "User-agent: *\n"
+        "Sitemap: https://acme.avature.net/careers/sitemap_index.xml\n"
+        "Disallow: /careers/SearchJobs\n"
+    )
+    scraper = _portal(_two_pages("1 - 2 of 3 results"), robots=robots)
+    assert scraper.fetch_raw() == []
+    assert not _asked(scraper, "SearchJobs")
+    # a Board that may not be read is not a Board with nothing open
+    assert "disallowed by robots.txt" in scraper.truncated
+
+
+def test_a_later_search_page_that_robots_txt_disallows_truncates_the_board():
+    robots = (
+        "User-agent: *\n"
+        "Sitemap: https://acme.avature.net/careers/sitemap_index.xml\n"
+        "Disallow: /*folderOffset=2\n"
+    )
+    scraper = _portal(_two_pages("1 - 2 of 3 results"), robots=robots)
+    scraper.fetch_raw()
+    assert _asked(scraper, "SearchJobs") == [_SEARCH]
+    assert "disallowed by robots.txt" in scraper.truncated
+
+
+_VANITY_ROBOTS = (
+    "User-agent: *\nSitemap: https://careers.acme.com/careers/sitemap_index.xml\n"
+)
+
+
+def _vanity(vanity_robots: FakeResponse):
+    """A tenant whose portal is served from a vanity host (mt's `careers.mt.com`, Siemens's
+    `jobs.siemens.com`), which states its own robots.txt."""
+    on_vanity = lambda text: text.replace("acme.avature.net", "careers.acme.com")
+    pages = _two_pages("1 - 2 of 3 results")
+    routes = {
+        url.replace("acme.avature.net", "careers.acme.com"): FakeResponse(
+            response.status_code, on_vanity(response.text), url=on_vanity(response.url)
+        )
+        for url, response in pages.items()
+    }
+
+    def route(method, url, kwargs):
+        if url == "https://acme.avature.net/robots.txt":
+            return FakeResponse(200, _VANITY_ROBOTS)
+        if url == "https://careers.acme.com/robots.txt":
+            return vanity_robots
+        if url.endswith("/careers/sitemap_index.xml"):
+            return FakeResponse(
+                200,
+                "<sitemapindex><sitemap><loc>https://careers.acme.com/en_US/careers/"
+                "sitemap.xml</loc></sitemap></sitemapindex>",
+            )
+        if url.endswith("/careers/sitemap.xml"):
+            return FakeResponse(200, on_vanity(_JOB_PORTAL_SITEMAP))
+        return routes.get(url, FakeResponse(404, ""))
+
+    fetcher = FakeFetcher(route)
+    scraper = get_scraper("avature", "acme", fetcher=fetcher, have_details=set())
+    scraper.pacer = Pacer(0)
+    scraper.fake = fetcher
+    return scraper
+
+
+def test_search_pages_on_a_vanity_host_answer_to_that_hosts_robots_txt():
+    """The tenant's robots.txt allows the portal; the vanity host's, which is the host asked, does
+    not."""
+    scraper = _vanity(
+        FakeResponse(200, "User-agent: *\nDisallow: /careers/SearchJobs\n")
+    )
+    assert scraper.fetch_raw() == []
+    assert not _asked(scraper, "SearchJobs")
+    assert "disallowed by robots.txt" in scraper.truncated
+    assert _asked(scraper, "robots.txt") == [
+        "https://acme.avature.net/robots.txt",
+        "https://careers.acme.com/robots.txt",
+    ]
+
+
+def test_a_vanity_host_with_no_robots_txt_states_no_rule():
+    scraper = _vanity(FakeResponse(404, ""))
+    scraper.fetch_raw()
+    assert len(_asked(scraper, "SearchJobs")) == 2
+    assert scraper.truncated is None
+
+
+@pytest.mark.parametrize("answer", [FakeResponse(503, ""), FakeResponse(202, "")])
+def test_a_vanity_host_whose_robots_txt_did_not_answer_is_not_read(answer):
+    """A 5xx or a challenge says nothing about what may be read: nothing is."""
+    scraper = _vanity(answer)
+    assert scraper.fetch_raw() == []
+    assert not _asked(scraper, "SearchJobs")
+    assert "disallowed by robots.txt" in scraper.truncated
+
+
+@pytest.mark.parametrize(
+    ("url", "allowed"),
+    [
+        # the portal's own path, and the locale path it redirects to
+        ("https://acme.avature.net/careers/SearchJobs", True),
+        ("https://acme.avature.net/en_US/careers/SearchJobs/?folderOffset=6", True),
+        # the tracking parameter every portal disallows
+        ("https://acme.avature.net/careers/SearchJobs/?qtvc=1", False),
+        # a portal robots.txt does not whitelist falls to the catch-all
+        ("https://acme.avature.net/hiddenportal/SearchJobs", False),
+    ],
+)
+def test_robots_txt_is_read_as_avature_writes_it(url, allowed):
+    assert _robots_allows(_WHITELIST_ROBOTS, url) is allowed
+
+
+def test_a_robots_txt_with_no_rule_for_the_path_allows_it():
+    assert _robots_allows("User-agent: *\nDisallow: /admin\n", _SEARCH)
+
+
+def test_search_rows_read_the_id_url_and_title_of_each_result():
+    siemens = search_rows(
+        _SEARCH_PAGES["siemens_externaljobs_page_1"],
+        "https://jobs.siemens.com/en_US/externaljobs/SearchJobs",
+    )
+    assert [(row["id"], row["listed_title"]) for row in siemens[:2]] == [
+        ("524237", "Técnico Procesos de Moldeo"),
+        ("524234", "Director of Sales Operations and Strategic Programs"),
+    ]
+    assert len(siemens) == 3
+    assert siemens[0]["url"] == (
+        "https://jobs.siemens.com/en_US/externaljobs/JobDetail/524237"
+    )
+    small = search_rows(
+        _SEARCH_PAGES["a2milkkf_careers_only_page"],
+        "https://a2milkkf.avature.net/careers/SearchJobs/",
+    )
+    assert [row["id"] for row in small] == ["422", "420", "415", "385"]
+    assert small[0]["listed_title"] == "Health, Safety & Environment Manager"
+    assert re.fullmatch(AvatureScraper.url_shape, small[0]["url"])
+    # mt's results are a list, not articles: `<div class="list__item__text__title"><a …>`
+    mt = search_rows(
+        _SEARCH_PAGES["mt_careers_page_1"],
+        "https://careers.mt.com/en_US/careers/SearchJobs/",
+    )
+    assert [(row["id"], row["listed_title"]) for row in mt] == [
+        ("23230", "Telesales Representative"),
+        ("23304", "Field Service Technician"),
+        (mt[2]["id"], mt[2]["listed_title"]),
+    ]
+    assert re.fullmatch(AvatureScraper.url_shape, mt[0]["url"])
+
+
+def test_the_next_search_page_is_the_paging_item_whichever_tag_carries_the_class():
+    siemens = next_search_page(
+        _SEARCH_PAGES["siemens_externaljobs_page_1"],
+        "https://jobs.siemens.com/en_US/externaljobs/SearchJobs",
+    )
+    assert siemens == (
+        "https://jobs.siemens.com/en_US/externaljobs/SearchJobs/"
+        "?folderRecordsPerPage=6&folderOffset=6"
+    )
+    # the class sits on the anchor itself on Two Sigma's own listing pages
+    twosigma = next_search_page(
+        _SEARCH_PAGES["twosigma_openroles_page_1"],
+        "https://careers.twosigma.com/careers/OpenRoles",
+    )
+    assert twosigma.endswith("OpenRoles/?jobRecordsPerPage=10&jobOffset=10")
+    # and after its href on mt's
+    assert next_search_page(
+        _SEARCH_PAGES["mt_careers_page_1"],
+        "https://careers.mt.com/en_US/careers/SearchJobs/",
+    ) == ("https://careers.mt.com/en_US/careers/SearchJobs/?jobOffset=10")
+    assert (
+        next_search_page(_SEARCH_PAGES["a2milkkf_careers_only_page"], _SEARCH) is None
+    )

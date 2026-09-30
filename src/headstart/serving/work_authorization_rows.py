@@ -92,7 +92,10 @@ class WorkAuthorizationRows:
                     strict=True,
                 ):
                     read += 1
-                    for stance in work_authorization.stances(text, title, location):
+                    held = work_authorization.stances(
+                        text, title=title, location=location
+                    )
+                    for stance in work_authorization.filtered_stances(held):
                         ids[stance].append(job_id)
         except Exception:  # noqa: BLE001 — a failed read is said, and refused per request
             _log.exception(
@@ -100,11 +103,6 @@ class WorkAuthorizationRows:
             )
             ids = {s: [] for s in work_authorization.STANCES}
             self._failed = True
-        # The filter's may_offer_sponsorship keeps every job that at least may offer it: the
-        # hedged and unmatched-scope offers, and the firm ones (ADR-0353).
-        ids[work_authorization.MAY_OFFER_SPONSORSHIP] += ids[
-            work_authorization.OFFERS_SPONSORSHIP
-        ]
         self._clauses = {stance: ids_in_clause(found) for stance, found in ids.items()}
         _log.info(
             "work authorization stances read from %d descriptions: %s",

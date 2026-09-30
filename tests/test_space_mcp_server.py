@@ -741,7 +741,7 @@ def test_nothing_matching_a_company_name_offers_the_companies_it_may_mean():
     assert 'no company name contains "Razorpy"' in text
     assert space.params_of(R.COMPANIES_SUGGEST) == [[("q", "Razorpy"), ("limit", "5")]]
     assert (
-        'pass one\'s key as `company`: "Razorpay" — key lever:razorpay, lever, 1 Board(s), '
+        'pass one\'s key as `company`: "Razorpay" — key lever:razorpay, lever, 1 Board, '
         "217 openings, typo match." in text
     )
 
@@ -894,6 +894,24 @@ def test_max_years_says_it_keeps_jobs_that_state_no_experience_and_marks_them():
     assert text.count("experience not stated") == 1
     unfiltered = server.call(_search_space(rows), "search_jobs", {})
     assert "experience not stated" not in unfiltered
+
+
+def test_a_new_users_search_tags_a_senior_title_but_still_lists_it():
+    """Round-4 review SP3 (ADR-0359, under ADR-0079): a senior role served at 1 year may owe it
+    to a side clause. Disclosure only: every row stays."""
+    rows = [
+        _job(1, title="Senior Backend Engineer", min_years=1),
+        _job(2, title="Associate Engineering Manager", min_years=0),
+        _job(3, title="Backend Engineer", min_years=0),
+        _job(4, title="Staff Engineer", min_years=1),
+    ]
+    text = server.call(_search_space(rows), "search_jobs", {"max_years": 1})
+    assert text.count(search_jobs.SENIOR_TITLE_TAG) == 2
+    assert all(f'"{row["title"]}"' in text for row in rows)
+    for years in (3, None):
+        arguments = {} if years is None else {"max_years": years}
+        wider = server.call(_search_space(rows), "search_jobs", arguments)
+        assert search_jobs.SENIOR_TITLE_TAG not in wider
 
 
 def test_the_salary_bounds_say_they_are_an_overlap_across_converted_currencies():
@@ -3654,7 +3672,7 @@ def test_a_requirements_sample_caps_one_company_unless_one_is_named_and_says_so(
     assert "(300 postings read; 37 copies of one counted once)." in text
     assert (
         "At most 8 postings of one company are counted, so one company's wording cannot "
-        "speak for the role: 8 more were left out."
+        "speak for the role, which left out 8 more postings."
     ) in text
     assert (
         '"DigitalXNode" (key "wp_job_openings:digitalxnode.com") 16 sampled, 8 counted · '

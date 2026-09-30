@@ -2,6 +2,11 @@
 
 **Status:** accepted · **Date:** 2026-09-26 · **Relates to:** [ADR-0001](0001-per-ats-slug-derivation.md) (a scraper's slug is its own to define), [ADR-0048](0048-skip-details-we-already-hold.md) (skipping a held detail — deliberately not applied here), [ADR-0053](0053-scope-eviction-on-scrape-outcome.md) (truncation leaves a Board out of eviction scope), [ADR-0063](0063-spare-egress-for-a-spent-origin-budget.md) (the spare egress), [ADR-0158](0158-jazzhr-and-jobvite-are-worth-their-storage.md) (the enable bar), [ADR-0166](0166-gate-the-detail-pass-on-the-tech-filter.md) (the pre-detail tech gate), [ADR-0180](0180-an-adp-board-is-a-career-center-read-in-every-language-at-one-paced-budget.md) (a platform-wide paced budget), [ADR-0201](0201-a-scraper-states-its-detail-request-once-and-the-base-runs-the-pass.md) (the Detail pass seam)
 
+**Amended by:** [ADR-0358](0358-a-sitemap-that-states-no-title-is-read-from-its-portals-search-pages.md)
+(2026-09-29): the `SearchJobs` walk rejected below as the listing is read, for a Board whose
+sitemap states no posting's title (Siemens, mt, pomerleau); a Board whose slugs state titles is
+still read through its sitemaps alone.
+
 ## Context
 
 Avature sat on CLAUDE.md's build list as one of the three ATSes the Indeed sweep resolved most

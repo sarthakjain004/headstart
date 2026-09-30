@@ -324,6 +324,8 @@ supersedes it and note the supersession in both.
 | [0354](0354-an-eval-task-may-accept-but-never-require-the-path-its-tool-steers-away-from.md) | An eval task may accept, but never require, the path its tool steers away from (amends 0334) | 2026-09-29 |
 | [0355](0355-a-search-says-where-every-matching-job-is-and-a-requirements-sample-takes-type-stance-and-pay.md) | A search says where every matching job is, and a requirements sample takes type, stance and pay | 2026-09-29 |
 | [0357](0357-the-owner-keeps-the-smallest-stated-experience-and-get-job-names-the-others.md) | The owner keeps the smallest stated experience, and get_job names the others (re-affirms 0079) | 2026-09-29 |
+| [0358](0358-a-sitemap-that-states-no-title-is-read-from-its-portals-search-pages.md) | A sitemap that states no posting's title is read from its portals' search pages (amends 0245) | 2026-09-29 |
+| [0359](0359-sponsorship-precision-is-quoted-from-a-fresh-strict-draw-and-a-hedge-holds-back-a-firm-offer.md) | Sponsorship precision is quoted from a fresh strict draw, and a hedge holds back a firm offer (amends 0353) | 2026-09-30 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*

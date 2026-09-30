@@ -37,6 +37,7 @@ from headstart.space_mcp import scraped_text
 from headstart.space_mcp.space_client import SpaceClient, SpaceRoute
 from headstart.space_mcp.space_tool import SpaceTool
 from headstart.space_mcp.turnover_span import span_sentence
+from headstart.trends import hot_ranking
 
 #: A company name past this is cut, as search cuts one.
 COMPANY_FIELD = 60
@@ -231,7 +232,7 @@ def _net_not_backed(row: dict[str, Any], pace: float) -> bool:
     return net * turnover_net < 0 and abs(net) > abs(turnover_net) * pace
 
 
-def _found_late(row: dict[str, Any]) -> bool:
+def _opened_mostly_found_late(row: dict[str, Any]) -> bool:
     """Whether most of the row's postings opened were found late (ADR-0351): postings posted more
     than `hot_ranking.FOUND_LATE_DAYS` before first sight number at least half its opened, and
     those posted since fewer than half. Both are needed, as the counts are of postings still
@@ -262,16 +263,16 @@ def _flags(
         Flag.CLOSURES_PARTLY_UNCOUNTED: row.get("closed") is not None
         and bool(row.get("closures_uncounted_boards")),
         Flag.OPERATOR_UNVERIFIED: bool(row.get("operator_unverified")),
-        Flag.FOUND_LATE: _found_late(row),
+        Flag.FOUND_LATE: _opened_mostly_found_late(row),
     }
     return tuple(flag for flag in lens.checks if carried[flag])
 
 
-def _said(flag: Flag, row: dict[str, Any], found_late_days: int) -> str:
+def _said(flag: Flag, row: dict[str, Any]) -> str:
     if flag is Flag.FOUND_LATE:
         return (
             f"{flag.value}: of its postings first seen since turnover began, "
-            f"{row['opened_found_late']:,} were posted more than {found_late_days} days before "
+            f"{row['opened_found_late']:,} were posted more than {hot_ranking.FOUND_LATE_DAYS} days before "
             f"HeadStart saw them and {row['opened_fresh']:,} since"
         )
     if flag is Flag.SMALL_BASE:
@@ -302,7 +303,7 @@ def _listing(hot: dict[str, Any], lens: str, limit: int, show_hidden: bool) -> _
     return _Listing(shown, len(ranked) - len(rows), moved)
 
 
-def _row(rank: int, listed: ListedRow, moved: bool, found_late_days: int) -> str:
+def _row(rank: int, listed: ListedRow, moved: bool) -> str:
     row = listed.row
     rate = "not counted" if row.get("rate") is None else f"{row['rate']}%"
     opened, closed = row.get("opened"), row.get("closed")
@@ -323,9 +324,7 @@ def _row(rank: int, listed: ListedRow, moved: bool, found_late_days: int) -> str
             else ""
         )
         + f" · rate {rate}"
-        + "".join(
-            f"{FLAG_MARK}{_said(flag, row, found_late_days)}" for flag in listed.flags
-        )
+        + "".join(f"{FLAG_MARK}{_said(flag, row)}" for flag in listed.flags)
     )
 
 
@@ -400,9 +399,8 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
                 else "hidden, as the tab hides them by default."
             )
         )
-    found_late_days = (hot.get("counts") or {}).get("found_late_days", 14)
     lines += [
-        _row(rank, listed, listing.moved, found_late_days)
+        _row(rank, listed, listing.moved)
         for rank, listed in enumerate(listing.rows, start=1)
     ]
     if not listing.rows:
