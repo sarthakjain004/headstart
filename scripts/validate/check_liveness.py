@@ -5,7 +5,7 @@ Reads the candidate pool (a dir of {ats}.csv) and classifies each board into one
 so a transient blip never gets mistaken for a dead board:
 
   LIVE     -> 200 with a parseable job list
-  DEAD     -> definitive: 404/410, or DNS doesn't resolve (curl code 6)
+  DEAD     -> definitive: 404/410, or DNS doesn't resolve (curl code 6 *and* a public resolver agrees)
   UNKNOWN  -> couldn't tell: timeout, reset, 5xx, 429, parse-fail  -> re-probed next pass
 
 Verdicts land in the liveness ledger (ADR-0012), one CSV per ATS at
@@ -180,7 +180,7 @@ except ImportError:
 
 UA = "HeadStart-liveness/0.1 (careers-board liveness check)"
 TIMEOUT = 12  # reassigned per pass by the runner
-_DNS_ERR = 6  # curl CURLE_COULDNT_RESOLVE_HOST -> host doesn't exist -> DEAD
+_DNS_ERR = 6  # curl CURLE_COULDNT_RESOLVE_HOST -> DEAD only once a public resolver agrees (_is_dns)
 # One attempt per probe: the multi-pass retry below IS the retry mechanism, so http.fetch's own
 # 3-attempt backoff would just tie a worker up in sleep() instead of probing the next board. A
 # transient failure becomes UNKNOWN here and gets a more patient re-probe on the next pass.
@@ -1154,8 +1154,28 @@ _TALEO_JOB = re.compile(r"viewRequisition[^\"\s>]*\brid=(\d+)", re.IGNORECASE)
 _TALEO_GONE = "attempted to reach a url that no longer exists"
 
 
+#: The host curl names in its code-6 message: "…curl: (6) Could not resolve host: danaher.taleo.net. See …".
+_UNRESOLVED_HOST = re.compile(r"Could not resolve host: (\S+)")
+
+
 def _is_dns(exc):
-    return getattr(exc, "code", None) == _DNS_ERR
+    """True when `exc` is curl's code 6 **and** a public resolver agrees the host has no address.
+
+    Code 6 alone is the machine's own resolver failing to answer, which is not the same as the host
+    not existing: a router's resolver that stalls under the prober's workers reads every probe as
+    "could not resolve", and a verdict of DEAD is not re-probed for 90 days, so real tenants would
+    leave the scrape list silently (four agents hit this on 2026-09-29/30). Only a public resolver's
+    "no such host" settles it; a public resolver that resolves the host, or that does not answer,
+    leaves the probe unsettled, which is UNKNOWN and re-probed on the next pass. A message that
+    names no host cannot be confirmed either.
+    """
+    if getattr(exc, "code", None) != _DNS_ERR:
+        return False
+    named = _UNRESOLVED_HOST.search(str(exc))
+    if named is None:
+        _note("dns-unconfirmed")
+        return False
+    return _public_resolver_has_no_a_record(named.group(1).rstrip("."))
 
 
 def _get(url, headers=None):
@@ -1956,8 +1976,10 @@ def p_darwinbox(t, u):
                 attempts=_ATTEMPTS,
             )
         except http.RequestsError as e:
-            if _is_dns(e):
-                no_tenant += 1
+            # `*.darwinbox.in` and `*.darwinbox.com` both answer every label (1.1.1.1 and 8.8.8.8
+            # resolved an invented one on each, 2026-09-30), so a failed lookup is the local
+            # resolver, never an absent tenant: only the body's own "no tenant" text proves that.
+            _note(_net_reason(e))
             continue
         if r.status_code == 200:
             try:
@@ -2444,7 +2466,8 @@ def _public_resolver_has_no_a_record(hostname):
     """True when a public resolver — the first of 1.1.1.1 and 8.8.8.8 that answers at all — says
     `hostname` has no A record: an unknown Jibe or Avature label answers NOERROR with an empty
     answer, not NXDOMAIN, on both alike. Neither answering is not an answer: False, so the Board stays
-    UNKNOWN."""
+    UNKNOWN. `_is_dns` asks it of every host curl could not resolve, so it is also what keeps a
+    failing local resolver from writing a live tenant dead."""
     import dns.exception
     import dns.resolver
 
