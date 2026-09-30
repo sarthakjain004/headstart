@@ -34,7 +34,9 @@ the top 100 as not an employer's, and the staffing firms and job boards the tab 
 shipped flagged 86/72/61, and before that day's ten additions 59/49/42 (79/62/48 on
 2026-09-21's). On 2026-09-29's window it flags 28/23/20 (the hidden Operators 18/14/12), against 26/20/17 (16/11/8)
 before that day's entries; the MCP critique's round-4 entries of the same day name no company
-in the lens's top 100, so they leave these figures as they were. Those figures move with the list and must be
+in the lens's top 100, so they leave these figures as they were. On 2026-09-30's window (Sep 23 →
+Sep 30) it flags 31/33/29 (hidden 26/23/20), against 28/26/23 (22/20/17) before the MCP
+critique's round-5 entries, eight of which sit in the lens's top 100. Those figures move with the list and must be
 re-measured when names are added: the 45-entry draft in the research doc measured 73/52/40, and
 quoting a number that describes a list nobody shipped is exactly the kind of borrowed fact this
 repo has been caught by before. Method:
@@ -156,6 +158,29 @@ SERVICES: Final[frozenset[str]] = frozenset(
         # ABeam's Singapore consultants.
         "fusionconsulting",
         "abeamconsultingsingapore",
+        # Round 5 of the MCP critique (2026-09-30): the IT services and engineering-services
+        # firms labelled employer in hiring_now's top 30 on each Lens, each by five live
+        # postings. "Our client's most trusted technology partner" (Iris Software); "a digital
+        # technology service provider… partner of choice for… Fortune 1000 companies" (Brillio);
+        # "join our client Samsung…" (Xoriant); AWS work "tailored to client requirements"
+        # (Encora); "a global provider of… digital, and cloud services", on client sites
+        # (Mastek); "an engineering services provider" (Quest Global); "a global IT managed
+        # services firm" (Milestone Technologies); client-coded titles and "projects with leading
+        # global clients" (Software Mind); "an applied AI engineering firm… for our clients"
+        # (Robots and Pencils); client proofs of concept, an analytics BPO like Genpact and WNS
+        # (EXL); client SAP support at "All PWC Locations" (Elfonze). Joined forms where a part
+        # is a word: "irissoftware", "questglobal", "softwaremind", "milestonetechnologiesinc".
+        "irissoftware",
+        "brillio",
+        "xoriant",
+        "encora",
+        "mastek",
+        "questglobal",
+        "milestonetechnologiesinc",
+        "softwaremind",
+        "robotsandpencils",
+        "exl",
+        "elfonze",
     }
 )
 
@@ -355,6 +380,17 @@ STAFFING: Final[frozenset[str]] = frozenset(
         "hrbaires",
         "globaldevgroup",
         "talproindia",
+        # Round 5 of the MCP critique (2026-09-30), from the same top 30s, each by its live
+        # postings: "a leading provider of nearshore staff augmentation services… Our client
+        # is…" (Truelogic); "We're partnering with a company that…" for an unnamed client's CTO
+        # (Breakmark); "BizFirst is assisting our client with recruiting" (BizFirst); and
+        # Deloitte's own job description posted word for word, beside a bank reconciliation
+        # clerk (Algoleap). Zorba Consulting India stays off the list, as ADR-0335 left it: its
+        # postings ("we are looking for a Lead-level resource") still do not settle it.
+        "truelogic",
+        "breakmark",
+        "bizfirst",
+        "algoleap",
     }
 )
 
