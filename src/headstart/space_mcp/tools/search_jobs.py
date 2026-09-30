@@ -32,9 +32,11 @@ from headstart.mcp_protocol.messages import ToolFailure
 from headstart.search_filters import (
     employment_type_filter,
 )
+from headstart.serving import per_company_cap
 from headstart.space_mcp import (
     company_scope,
     job_places,
+    noun_counts,
     role_families,
     scraped_text,
     search_arguments,
@@ -89,8 +91,10 @@ _FACET_OPTIONS_SHOWN = 12
 #: comparison of two large markets finds both; send `country` for any other one.
 COUNTRIES_SHOWN = 15
 
-#: A company or location past this is cut; a title keeps `scraped_text.FIELD_LIMIT`.
-SHORT_FIELD = 60
+#: `/facets`' value asking where every matching job is (`job_search.FACET_PLACES`, ADR-0355),
+#: restated as `get_job` restates its bounds: `job_search` loads the index runtime, which the MCP
+#: server's own install leaves out. A test holds them equal.
+FACET_PLACES = "1"
 
 #: Longer than any id: a clipped id could not be sent back as a key.
 ID_FIELD = 300
@@ -100,6 +104,19 @@ TYPE_FIELD = 30
 
 #: A posting older than this many days is flagged in its row: it may well have closed.
 STALE_DAYS = 365
+
+#: At or under this `max_years`, a senior-titled row is tagged (ADR-0359): the user is new, and
+#: the job's served floor is the smallest its description states (ADR-0079), which may be a side
+#: clause ("1+ years of Kubernetes") under a senior role's real requirement.
+SENIOR_TAG_MAX_YEARS = 2
+_SENIOR_TITLE = re.compile(
+    r"(?i)\b(?:senior|sr\.?|staff|principal|lead|manager|director)\b"
+)
+_JUNIOR_TITLE = re.compile(r"(?i)\b(?:associate|junior|jr\.?)\b")
+SENIOR_TITLE_TAG = (
+    "senior title: its stated minimum may be a side clause, not the role's requirement; "
+    "read get_job's line on the floors it states before calling it a fit"
+)
 
 #: Said in place of the client's deadline sentence when a description keyword ran past it. The
 #: description read is the slow part, not the other filters, and the Space keeps what it read
@@ -242,7 +259,7 @@ def _age(day: str, today: date) -> str:
     if days < 1:
         return " (today)"
     if days <= STALE_DAYS:
-        return f" ({days} day{'' if days == 1 else 's'} ago)"
+        return f" ({noun_counts.counted(days, 'day')} ago)"
     return f" ({days / 365.25:.1f} years ago: over a year old)"
 
 
@@ -265,9 +282,23 @@ def _employment_type(raw: Any, title: Any) -> str | None:
     return f"type {scraped_text.quoted(raw, TYPE_FIELD)} ({'; '.join(said)})"
 
 
-def _facts(row: dict[str, Any], today: date, experience_filtered: bool) -> list[str]:
+def _senior_for_new(row: dict[str, Any], max_years: int | None) -> bool:
+    """Whether a row is tagged for a user of at most `SENIOR_TAG_MAX_YEARS` years: its title
+    reads Senior, Staff, Principal, Lead, Manager or Director, and not Associate or Junior. A
+    disclosure only: the row is still listed (ADR-0079, ADR-0359)."""
+    title = str(row.get("title") or "")
+    return (
+        max_years is not None
+        and max_years <= SENIOR_TAG_MAX_YEARS
+        and bool(_SENIOR_TITLE.search(title))
+        and not _JUNIOR_TITLE.search(title)
+    )
+
+
+def _facts(row: dict[str, Any], today: date, max_years: int | None) -> list[str]:
     """Everything a row says after its title and company."""
-    facts = [scraped_text.quoted(row.get("location"), SHORT_FIELD)]
+    experience_filtered = max_years is not None
+    facts = [scraped_text.quoted(row.get("location"), scraped_text.SHORT_FIELD)]
     if row.get("remote"):
         facts.append("remote")
     if kind := _employment_type(row.get("employment_type"), row.get("title")):
@@ -276,6 +307,8 @@ def _facts(row: dict[str, Any], today: date, experience_filtered: bool) -> list[
         facts.append(f"{row['min_years']}+ yrs")
     elif experience_filtered:
         facts.append("experience not stated")
+    if _senior_for_new(row, max_years):
+        facts.append(SENIOR_TITLE_TAG)
     if money := _money(row):
         facts.append(money)
     posted, seen = row.get("posted_at"), row.get("first_seen")
@@ -284,7 +317,7 @@ def _facts(row: dict[str, Any], today: date, experience_filtered: bool) -> list[
     if seen:
         age = "" if posted else _age(str(seen), today)
         facts.append(f"first seen {str(seen)[:10]}{age}")
-    if row.get("past_company_cap"):
+    if row.get(per_company_cap.PAST_COMPANY_CAP):
         facts.append("past per_company: its company's closer jobs are listed earlier")
     return facts
 
@@ -302,7 +335,9 @@ def _where(row: dict[str, Any]) -> str:
 
 def _company(row: dict[str, Any]) -> str:
     """The row's company as shown, tagged when its operator is unverified (ADR-0352)."""
-    return shown_company.tagged(row, board_of(str(row.get("id") or "")), SHORT_FIELD)
+    return shown_company.tagged(
+        row, board_of(str(row.get("id") or "")), scraped_text.SHORT_FIELD
+    )
 
 
 def _row(number: int, row: dict[str, Any], facts: list[str]) -> str:
@@ -335,13 +370,13 @@ def _also(
 
 
 def _page_lines(
-    first: int, rows: list[dict[str, Any]], experience_filtered: bool
+    first: int, rows: list[dict[str, Any]], max_years: int | None
 ) -> tuple[list[str], bool]:
     """One page's rows numbered from ``first``, and whether any went under another: a row copying
     an earlier row's posting (`requisition_copies`) is listed under it as "also #N". Only within the
     page, so paging and the header's row numbers are the Space's."""
     today = _today()
-    facts = [_facts(row, today, experience_filtered) for row in rows]
+    facts = [_facts(row, today, max_years) for row in rows]
     groups = requisition_copies.groups(rows)
     lines = []
     for head, *others in groups:
@@ -357,15 +392,15 @@ def _held_line(rows: list[dict[str, Any]]) -> str | None:
     (`more_from_company`, ADR-0352), and how to list them."""
     held: dict[str, tuple[int, str]] = {}
     for row in rows:
-        if more := row.get("more_from_company"):
+        if more := row.get(per_company_cap.MORE_FROM_COMPANY):
             name = str(row.get("company") or "").strip()
-            key = name or board_of(str(row.get("id") or ""))
-            held.setdefault(key.casefold(), (int(more), key))
+            said = name or board_of(str(row.get("id") or ""))
+            held.setdefault(per_company_cap.company(row), (int(more), said))
     if not held:
         return None
     said = "; ".join(
-        f"{more:,} more from {scraped_text.quoted(name, SHORT_FIELD)}: send company "
-        f"{scraped_text.quoted(name, SHORT_FIELD)}"
+        f"{more:,} more from {scraped_text.quoted(name, scraped_text.SHORT_FIELD)}: send company "
+        f"{scraped_text.quoted(name, scraped_text.SHORT_FIELD)}"
         for more, name in held.values()
     )
     return (
@@ -522,7 +557,9 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
     full = arguments.get("detail") == "full"
     # Concise prints only the total, so it asks for nothing else (ADR-0274): under a description
     # keyword every option's count re-scans the matches, 98.7 s against 10.6 s for the page.
-    counted = [*params, ("places", "1")] if full else [*params, ("counts", "total")]
+    counted = (
+        [*params, ("places", FACET_PLACES)] if full else [*params, ("counts", "total")]
+    )
     try:
         with ThreadPoolExecutor(max_workers=2) as pool:
             rows_asked = pool.submit(client.read, SpaceRoute.SEARCH, params)
@@ -577,9 +614,7 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
         )
         lines.append(_order_line(arguments, rows))
         lines.append(scraped_text.SCRAPED_NOTE)
-        page_lines, grouped = _page_lines(
-            first, rows, experience_filtered=arguments.get("max_years") is not None
-        )
+        page_lines, grouped = _page_lines(first, rows, arguments.get("max_years"))
         if grouped:
             lines.append(
                 "A row repeating one above it is listed under it as 'also #N', with only what "

@@ -32,7 +32,12 @@ from headstart.jobs import salary as salary_extraction
 from headstart.jobs import work_authorization
 from headstart.mcp_protocol.messages import ToolFailure
 from headstart.serving.job_absence import WHY_NOT_SERVED
-from headstart.space_mcp import company_scope, scraped_text, shown_company
+from headstart.space_mcp import (
+    company_scope,
+    noun_counts,
+    scraped_text,
+    shown_company,
+)
 from headstart.space_mcp.space_client import (
     InvalidRequest,
     SpaceClient,
@@ -50,10 +55,6 @@ SPACE_DESCRIPTION_LIMIT = 12_000
 #: What every description of one answer may run, together: five share it evenly, so a full answer
 #: stays inside `max_chars` with every other field at its clip.
 DESCRIPTIONS_BUDGET = 18_000
-
-#: A company, location, department or employment type past this is cut; a title keeps
-#: `scraped_text.FIELD_LIMIT`.
-SHORT_FIELD = 60
 
 _ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
 
@@ -130,7 +131,9 @@ def _salary(job: dict[str, Any]) -> str | None:
     low, high = job.get("min_salary_annual"), job.get("max_salary_annual")
     said = []
     if job.get("salary"):
-        said.append(f"stated {scraped_text.quoted(job['salary'], SHORT_FIELD)}")
+        said.append(
+            f"stated {scraped_text.quoted(job['salary'], scraped_text.SHORT_FIELD)}"
+        )
     if low is not None or high is not None:
         currency = job.get("salary_currency") or ""
         if low is not None and high is not None and high != low:
@@ -249,14 +252,16 @@ def _work_authorization(job: dict[str, Any]) -> list[str]:
 
 
 def _job(number: int, job: dict[str, Any], share: _DescriptionShare) -> list[str]:
-    place = [scraped_text.quoted(job.get("location"), SHORT_FIELD)]
+    place = [scraped_text.quoted(job.get("location"), scraped_text.SHORT_FIELD)]
     if job.get("remote"):
         place.append("remote")
     if job.get("employment_type"):
-        place.append(scraped_text.quoted(job["employment_type"], SHORT_FIELD))
+        place.append(
+            scraped_text.quoted(job["employment_type"], scraped_text.SHORT_FIELD)
+        )
     if job.get("department"):
         place.append(
-            f"department {scraped_text.quoted(job['department'], SHORT_FIELD)}"
+            f"department {scraped_text.quoted(job['department'], scraped_text.SHORT_FIELD)}"
         )
     stated = (
         f"stated {scraped_text.quoted(job['experience'])}"
@@ -269,7 +274,7 @@ def _job(number: int, job: dict[str, Any], share: _DescriptionShare) -> list[str
     if job.get("first_seen"):
         dates.append(f"First seen by HeadStart {_date(job['first_seen'])}")
     title = scraped_text.quoted(job.get("title"))
-    company = shown_company.said(job, SHORT_FIELD)
+    company = shown_company.said(job, scraped_text.SHORT_FIELD)
     job_id = scraped_text.quoted(job.get("id"), ID_MAX_CHARS)
     lines = [
         f"{number}. {title} at {company}",
@@ -388,7 +393,7 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
     jobs, missing = read.get("jobs") or [], read.get("missing") or []
     jobs = shown_company.named(client, jobs)
     share = _share(int(arguments["max_chars_per_job"]), jobs)
-    lines = [f"Read {len(jobs)} of {len(ids)} job{'' if len(ids) == 1 else 's'}."]
+    lines = [f"Read {len(jobs)} of {noun_counts.counted(len(ids), 'job')}."]
     if jobs:
         lines.append(scraped_text.SCRAPED_NOTE)
     for number, job in enumerate(jobs, 1):

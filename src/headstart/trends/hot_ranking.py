@@ -277,11 +277,13 @@ def _posted_ages(
         end = board_end(job_id, company_of)
         if end is None:
             continue
-        counts[company_of[lower_key(job_id[:end])]][_found_late(seen, posted)] += 1
+        counts[company_of[lower_key(job_id[:end])]][
+            _posting_found_late(seen, posted)
+        ] += 1
     return {key: (fresh, late) for key, (fresh, late) in counts.items()}
 
 
-def _found_late(seen: str, posted: str | None) -> bool:
+def _posting_found_late(seen: str, posted: str | None) -> bool:
     """Whether a posting first seen at ``seen`` was posted more than ``FOUND_LATE_DAYS`` before;
     False where its posted date cannot be read, so an undated posting counts as fresh."""
     if not posted_date_guard.is_comparable(posted):

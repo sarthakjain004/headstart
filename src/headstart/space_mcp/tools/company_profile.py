@@ -36,6 +36,7 @@ from headstart.mcp_protocol.messages import ToolFailure
 from headstart.space_mcp import (
     company_scope,
     job_places,
+    noun_counts,
     scraped_text,
     search_arguments,
 )
@@ -170,7 +171,7 @@ def _trend(payload: dict[str, Any], keys: list[str], old: dict[str, int]) -> lis
     lines = [
         f"Tech openings now: {reading.get('openings', move['latest']):,}, as Trends counts them"
         + (
-            f"; search also serves {non_tech:,} job{'' if non_tech == 1 else 's'} on its "
+            f"; search also serves {noun_counts.counted(non_tech, 'job')} on its "
             "Boards that the tech filter sets "
             "aside."
             if non_tech

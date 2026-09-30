@@ -142,3 +142,24 @@ def test_a_stated_lowercase_name_survives_unless_it_repeats_the_key() -> None:
 
 def test_a_code_only_tenant_has_no_display_name() -> None:
     assert board_naming.display_name("", "oracle:eeho.fa.us2.oraclecloud.com") is None
+
+
+def test_a_board_is_named_by_the_name_most_of_its_rows_carry(tmp_path) -> None:
+    """Round-4 review SP5: O'Reilly's Board read "o-reilly-auto-parts" off its one slug row."""
+    import lancedb
+
+    rows = [
+        {"id": "workday:oreillyauto/oreilly:1", "company": "o-reilly-auto-parts"},
+        *(
+            {"id": f"workday:oreillyauto/oreilly:{n}", "company": "O'Reilly Auto"}
+            for n in range(2, 5)
+        ),
+        {"id": "lever:acme:1", "company": "Acme"},
+        {"id": "lever:acme:2", "company": "Acme Inc"},
+        {"id": "lever:blank:1", "company": ""},
+    ]
+    lancedb.connect(str(tmp_path)).create_table("jobs", data=rows)
+    assert board_naming.board_names(tmp_path, "jobs") == {
+        "workday:oreillyauto/oreilly": "O'Reilly Auto",
+        "lever:acme": "Acme",  # a tie keeps the name read first
+    }
