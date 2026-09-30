@@ -12796,6 +12796,9 @@ _NO_BOARD_PAGE = {
     "darwinbox",
     "zwayam",
     "zoho",
+    # mynexthire reads `clientName` off the tenant's client record in `fetch_raw`, only for a
+    # Board with postings, covered by `tests/test_mynexthire.py`.
+    "mynexthire",
 }
 
 

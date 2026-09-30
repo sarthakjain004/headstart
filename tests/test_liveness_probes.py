@@ -2994,3 +2994,76 @@ def test_p_wp_job_openings_a_refusal_is_unknown(monkeypatch, answer):
     monkeypatch.setattr(cl, "_fetch", _wpjo_fetch(answer))
     monkeypatch.setattr(cl, "_note", lambda reason: None)
     assert cl.p_wp_job_openings("woxacorp.com", "") == (cl.UNKNOWN, None)
+
+
+# --- mynexthire: one listing POST; a refusal's errorMessage settles dead --------------------------
+
+
+def _mnh_fetch(status, content=b"", calls=None, raises=None):
+    def _fetch(method, url, **kw):
+        if calls is not None:
+            calls.append((method, url, kw))
+        if raises is not None:
+            raise raises
+        return _Resp(status, content=content)
+
+    return _fetch
+
+
+def test_mynexthire_a_listing_is_live_with_its_length(monkeypatch):
+    calls: list = []
+    body = b'{"requesterTitle":"","reqDetailsBOList":[{"reqId":1},{"reqId":2}]}'
+    monkeypatch.setattr(cl, "_fetch", _mnh_fetch(200, body, calls))
+    assert cl.p_mynexthire("sharechat", "") == (cl.LIVE, 2)
+    [(method, url, kw)] = calls
+    assert method == "POST"
+    assert url == "https://sharechat.mynexthire.com/employer/careers/reqlist/get"
+    assert kw["json"] == {"source": "careers"}
+
+
+def test_mynexthire_a_null_list_is_a_live_board_hiring_nobody(monkeypatch):
+    """meesho's careers page renders "Current Openings [0]" off exactly this body."""
+    body = b'{"requesterTitle":"","reqDetailsBOList":null,"hrXmlModel":null}'
+    monkeypatch.setattr(cl, "_fetch", _mnh_fetch(200, body))
+    assert cl.p_mynexthire("meesho", "") == (cl.LIVE, 0)
+
+
+@pytest.mark.parametrize(
+    ("status", "content"),
+    [
+        (417, b'{"errorMessage":"41703001:Invalid company short name: acme"}'),
+        (
+            402,
+            (
+                b'{"errorMessage":"MyNextHire account subscription for client '
+                b'JUPITERMONEY has expired."}'
+            ),
+        ),
+    ],
+)
+def test_mynexthire_an_unknown_or_lapsed_tenant_is_dead(monkeypatch, status, content):
+    monkeypatch.setattr(cl, "_fetch", _mnh_fetch(status, content))
+    assert cl.p_mynexthire("jupitermoney", "") == (cl.DEAD, None)
+
+
+def test_mynexthire_anything_unmeasured_stays_unknown(monkeypatch):
+    monkeypatch.setattr(cl, "_note", lambda reason: None)
+    # 417 without the tenant marker is a request the endpoint refused, not a verdict.
+    monkeypatch.setattr(
+        cl, "_fetch", _mnh_fetch(417, b'{"errorMessage":"Invalid source"}')
+    )
+    assert cl.p_mynexthire("acme", "") == (cl.UNKNOWN, None)
+    monkeypatch.setattr(cl, "_fetch", _mnh_fetch(200, b"<html>maintenance</html>"))
+    assert cl.p_mynexthire("acme", "") == (cl.UNKNOWN, None)
+    monkeypatch.setattr(cl, "_fetch", _mnh_fetch(503))
+    assert cl.p_mynexthire("acme", "") == (cl.UNKNOWN, None)
+    monkeypatch.setattr(cl, "_fetch", lambda *a, **k: None)  # breaker open
+    assert cl.p_mynexthire("acme", "") == (cl.UNKNOWN, None)
+
+
+def test_mynexthire_a_dns_failure_is_unknown_because_every_label_resolves(monkeypatch):
+    """`*.mynexthire.com` is a wildcard record: an invented label resolves and answers 417."""
+    monkeypatch.setattr(cl, "_note", lambda reason: None)
+    dns = cl.http.RequestsError("Could not resolve host", code=cl._DNS_ERR)
+    monkeypatch.setattr(cl, "_fetch", _mnh_fetch(0, raises=dns))
+    assert cl.p_mynexthire("swiggy", "") == (cl.UNKNOWN, None)

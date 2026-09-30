@@ -76,8 +76,29 @@ QUERIES = (
 URL_SHAPES: dict[str, str] = {ats: cls.url_shape for ats, cls in SCRAPERS.items()}
 
 
+#: How many times one call waits out the Space's read limit before its 429 stands as the answer.
+_RATE_LIMIT_WAITS = 6
+
+
+def _open(url: str):
+    """``urlopen``, waiting out a 429 for as long as its ``Retry-After`` says.
+
+    The Space limits reads per address (`_limit_each_caller`), and this harness sends well over
+    that limit in a run: on 2026-09-30, with other sessions probing from the same address, 71 of
+    its checks came back 429 and counted as check errors. A 429 is the Space pacing its caller,
+    not a filter's answer, so it is waited out; any other status still raises at once."""
+    for _ in range(_RATE_LIMIT_WAITS):
+        try:
+            return urllib.request.urlopen(url, timeout=120)
+        except urllib.error.HTTPError as err:
+            if err.code != 429:
+                raise
+            time.sleep(min(int(err.headers.get("Retry-After") or 10), 90))
+    return urllib.request.urlopen(url, timeout=120)
+
+
 def _read(url: str) -> list[dict]:
-    with urllib.request.urlopen(url, timeout=120) as resp:
+    with _open(url) as resp:
         return json.load(resp)
 
 
@@ -105,7 +126,7 @@ def _probe(base: str, path: str, params: dict) -> tuple[int, object]:
     """
     url = f"{base}{path}?" + urllib.parse.urlencode(params)
     try:
-        with urllib.request.urlopen(url, timeout=120) as resp:
+        with _open(url) as resp:
             return resp.status, json.load(resp)
     except urllib.error.HTTPError as err:
         try:

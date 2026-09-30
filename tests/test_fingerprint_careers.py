@@ -35,6 +35,22 @@ def test_host_keyed_provider_patterns_keep_the_full_host_and_count_hits():
     assert found[("phenom", "careers.acme.phenompeople.com")] == 1
 
 
+def test_a_mynexthire_embed_names_its_tenant_label_on_either_front():
+    """careers.swiggy.com iframes `swiggy.mynexthire.com`; azentio's newer front is
+    `azentio.careers.mynexthire.io`. The per-tenant API host on `prod.us1` is not a Board."""
+    found = {
+        (ats, tenant)
+        for ats, _kind, tenant, _count in fp.scan(
+            '<iframe src="https://swiggy.mynexthire.com/employer/jobs/careers"></iframe>'
+            " https://azentio.careers.mynexthire.io/jd"
+            " https://swiggy.prod.us1.mynexthire.io/d17/careers/requisition/object",
+            "swiggy.com",
+        )
+    }
+
+    assert found == {("mynexthire", "swiggy"), ("mynexthire", "azentio")}
+
+
 def test_per_ats_shape_rules_refuse_unusable_provider_evidence():
     assert (
         fp.normalise_tenant(

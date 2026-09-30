@@ -112,6 +112,12 @@ from headstart.scrapers.lever import (
 from headstart.scrapers.lever import (
     GLOBAL_API_HOST as _LEVER_GLOBAL_API_HOST,
 )
+from headstart.scrapers.mynexthire import (  # the request and the dead rule, single source
+    LISTING_BODY as _MYNEXTHIRE_LISTING_BODY,
+)
+from headstart.scrapers.mynexthire import (
+    departed as _mynexthire_departed,
+)
 from headstart.scrapers.oracle import (  # the pod-host spelling, single source
     is_pod_host,
 )
@@ -1722,6 +1728,50 @@ def p_breezy(t, u):
         _note("body-unparseable")
         return UNKNOWN, None
     return LIVE, len(rows)
+
+
+def p_mynexthire(t, u):
+    """One POST of the Board's listing, the scraper's own request, whose status and body settle
+    it (``docs/mynexthire/2026-09-30_reqlist-measurement.md``).
+
+    A ``reqDetailsBOList`` is a live Board, its length the count. A tenant with no Board is told
+    by the refusal's ``errorMessage`` (`mynexthire.departed`, which the scraper reads too): an
+    unknown label answers 417 "Invalid company short name" (3 of 3) and a lapsed customer 402
+    "… subscription … has expired." (2 of 2). A 417 that says anything else is a refused request,
+    not a verdict. ``*.mynexthire.com`` is a wildcard record, so a DNS failure is the resolver:
+    UNKNOWN. No rate limit was found (up to 134 req/s across 7 tenants, zero refusals), so no
+    gate is seeded.
+    """
+    scraper = _scraper_for_row("mynexthire", t, u)
+    try:
+        r = _fetch(
+            "POST",
+            scraper.url(),
+            json=_MYNEXTHIRE_LISTING_BODY,
+            headers={"User-Agent": UA, "Accept": "application/json"},
+        )
+    except http.RequestsError as e:
+        _note("dns" if _is_dns(e) else _net_reason(e))
+        return UNKNOWN, None
+    if r is None:  # breaker open -> transient
+        _note("breaker-open")
+        return UNKNOWN, None
+    try:
+        body = json.loads(r.content)
+    except ValueError:
+        body = None
+    if _mynexthire_departed(r.status_code, body):
+        return DEAD, None
+    if r.status_code != 200:
+        _note(f"http-{r.status_code}")
+        return UNKNOWN, None
+    # A Board with nothing open states the list as null (meesho, whose careers page renders
+    # "Current Openings [0]"); only a body without the key is unreadable.
+    rows = body.get("reqDetailsBOList", False) if isinstance(body, dict) else False
+    if not isinstance(rows, list | None):
+        _note("body-unparseable")
+        return UNKNOWN, None
+    return LIVE, len(rows or [])
 
 
 def p_clearcompany(t, u):
@@ -3352,6 +3402,7 @@ PROBES = {
     "workday": p_workday,
     "wp_job_openings": p_wp_job_openings,
     "keka": p_keka,
+    "mynexthire": p_mynexthire,
     "ripplehire": p_ripplehire,
     "darwinbox": p_darwinbox,
     "smartrecruiters": p_smartrecruiters,

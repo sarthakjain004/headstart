@@ -47,6 +47,17 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         # `jobvite._MAX_PAGES` (10,000 at 50 a page = 200), whose comment calls the cap "not
         # a cap anyone is expected to reach".
         "jobvite:jvauto",
+        # MyNextHire's own test tenant: its client record names it "Consultant test1" with the
+        # vendor's site, and its 27 postings (2026-09-30) are "Test Req 90", "2146 test" and
+        # "Java Developer" whose description is "this is test jd", at places "aassrr11" and
+        # "abb10".
+        "mynexthire:consultant",
+        # Two more non-customer tenants, read 2026-09-30. `mars` names itself "Mars" but is a
+        # trial: 7 of its 8 postings are "test mars2", "mdl test" or a "Software Tester" whose
+        # description is "Test JD", "ok" or nothing, with ids 3-47 over two years. `prodindefault`
+        # is the vendor's default tenant (client name "prodindefault", site "prodindefault.com").
+        "mynexthire:mars",
+        "mynexthire:prodindefault",
         # Jibe clients that are not a board of openings (ADR-0189), each read 2026-09-24.
         # `fedex` lists 136,186 rows from `ats_code: fedex-prod-historical-jobs-feed` — page 1 is
         # 98 postings dated 2024 and 2 dated 2025 — and its board page redirects to an Okta SSO

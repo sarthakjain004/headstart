@@ -70,6 +70,10 @@ _CANONICAL_HOST = {
     # and recruiterbox itself. The scraper never learned the new name either — `trakstar.py:104`
     # still carries `_FEED_NS = {"job": "https://recruiterbox.com/rss/job/"}`.
     "recruiterbox.com": "hire.trakstar.com",
+    # MyNextHire's newer career front `{slug}.careers.mynexthire.io` fronts the same tenant as
+    # `{slug}.mynexthire.com`, whose `/employer/careers/reqlist/get` the scraper reads: azentio
+    # and conseroglobal, both seen on the front, list there (2026-09-30).
+    "careers.mynexthire.io": "mynexthire.com",
 }
 # `en`, `en-US`, `pt-BR` — a Workday board archived under a locale prefix.
 _LOCALE = re.compile(r"[a-z]{2}(-[A-Za-z]{2})?")
@@ -363,6 +367,7 @@ ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
     "lever": _with_style(
         "path", "jobs.lever.co", "jobs.eu.lever.co"
     ),  # EU: 154 rows, 92 live
+    "mynexthire": _with_style("sub", "mynexthire.com", "careers.mynexthire.io"),
     # `host` style: `oracle.py` builds `https://{slug}/hcmRestApi/...`, so the slug IS the whole
     # board host (`airborneo-iacatj.fa.ocs.oraclecloud.com`), as for iCIMS and Eightfold.
     #

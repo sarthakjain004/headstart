@@ -90,7 +90,7 @@ unparseable input with a 400 rather than silently ignoring it.
 
 **52 scrapers**, selected from a registry by the `ats` key: `adp`, `adp_recruiting`, `amazon`, `apple`, `ashby`,
 `avature`, `bamboohr`, `breezy`, `bytedance`, `clearcompany`, `cornerstone`, `darwinbox`, `eightfold`, `freshteam`, `gem`, `google`, `greenhouse`,
-`happydance`, `icims`, `jazzhr`, `jibe`, `jobvite`, `join`, `keka`, `lever`, `meta`, `oracle`, `peoplestrong`, `personio`, `phenom`,
+`happydance`, `icims`, `jazzhr`, `jibe`, `jobvite`, `join`, `keka`, `lever`, `meta`, `mynexthire`, `oracle`, `peoplestrong`, `personio`, `phenom`,
 `pinpoint`, `pyjamahr`, `radancy`, `recruitee`, `ripplehire`, `rippling`, `sensehq`, `smartrecruiters`, `spire2grow`, `successfactors`,
 `taleo_be`, `taleo_enterprise`, `teamtailor`, `tesla`, `tiktok`, `trakstar`, `uber`, `workable`,
 `workday`, `wp_job_openings`, `zoho`, `zwayam`. All but `join` are active: `join`'s boards run ~1 tech job in ~10k (German-SMB
