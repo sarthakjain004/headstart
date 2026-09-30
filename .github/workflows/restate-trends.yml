@@ -1,0 +1,60 @@
+# Recompute the whole Trends history from the Job facts under today's rules, and compare it with
+# the live history (ADR-0330 step 3). Read-only on the HF dataset: the Restatement is kept as an
+# Actions artifact, and nothing it writes reaches the dataset or the Space until step 4 decides
+# how the Space reads it.
+name: restate-trends
+
+on:
+  workflow_dispatch:
+    inputs:
+      encode_budget_seconds:
+        description: "Time to spend encoding titles the classifier cache lacks."
+        required: false
+        default: "1800"
+
+permissions:
+  contents: read
+
+env:
+  HF_DATASET: imPoseidon/headstart-index
+  # The plain resolve path, not Xet, for the reasons pipeline.yml gives.
+  HF_HUB_DISABLE_XET: "1"
+  # Kept in step with pipeline.yml's pin.
+  UV_VERSION: "0.12.11"
+
+jobs:
+  restate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - run: |
+          pip install "uv==$UV_VERSION"
+          uv pip install --system --torch-backend cpu -e ".[embed]" "huggingface_hub<2"
+      - name: Cache the title-classifier model (ADR-0220)
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/huggingface/hub
+          key: hf-model-jobbert-v2-a480476925ab
+      - name: Fetch the facts, the live history and the stores the rules read
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          python -m headstart.ingest.state_fetch 'data/facts/*' 'data/state/*' \
+            'data/descriptions/*' 'data/lancedb/*'
+      - name: Restate
+        run: >-
+          python -m headstart.ingest.restate_run
+          --encode-budget-seconds "${{ github.event.inputs.encode_budget_seconds || '1800' }}"
+      - name: Compare with the live history
+        run: python scripts/eval/compare_restated_trends.py --live data/state --restated data/restated
+      - name: Keep the Restatement
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: restated-trends
+          path: data/restated
+          retention-days: 7
