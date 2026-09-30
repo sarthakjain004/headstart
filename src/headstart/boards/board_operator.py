@@ -383,9 +383,13 @@ STAFFING: Final[frozenset[str]] = frozenset(
         # Round 5 of the MCP critique (2026-09-30), from the same top 30s, each by its live
         # postings: "a leading provider of nearshore staff augmentation services… Our client
         # is…" (Truelogic); "We're partnering with a company that…" for an unnamed client's CTO
-        # (Breakmark); "BizFirst is assisting our client with recruiting" (BizFirst); and
-        # Deloitte's own job description posted word for word, beside a bank reconciliation
-        # clerk (Algoleap). Zorba Consulting India stays off the list, as ADR-0335 left it: its
+        # (Breakmark); "BizFirst is assisting our client with recruiting" (BizFirst); and end
+        # clients' requisitions passed through (Algoleap): Deloitte's own text in 3 of its 196
+        # postings, DHL's "Specific Remarks/Requirement by customer", demand codes in titles
+        # ("(D239)") with "only Immediate joiners", and client-voiced posts ("map it to our
+        # ecosystem"), each label re-read on 5 or more postings on 2026-09-30 (ADR-0370); its
+        # own site calls it a product engineering firm, so it is the least settled of the four.
+        # Zorba Consulting India stays off the list, as ADR-0335 left it: its
         # postings ("we are looking for a Lead-level resource") still do not settle it.
         "truelogic",
         "breakmark",

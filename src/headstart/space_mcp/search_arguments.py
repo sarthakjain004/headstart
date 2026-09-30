@@ -239,21 +239,6 @@ STANCE_WORDS = {
     work_authorization.OFFERS_RELOCATION: "offers relocation help",
 }
 
-#: Why a job may offer sponsorship rather than offers it (ADR-0367), as a search row and a read
-#: by id say it, in `work_authorization.MAY_OFFER_REASONS`' order.
-MAY_OFFER_WORDS = {
-    work_authorization.HEDGED: "hedged",
-    work_authorization.TRANSFER_ONLY: "a visa transfer only",
-    work_authorization.SCOPE_UNREAD: (
-        "limited to a country or level this job's place or title does not show"
-    ),
-}
-
-
-def may_offer_said(because: list[str]) -> str:
-    """Why a job may offer sponsorship, as words: "hedged; a visa transfer only"."""
-    return "; ".join(MAY_OFFER_WORDS.get(reason, reason) for reason in because)
-
 
 def refuse_unreadable_salary(arguments: dict[str, Any]) -> None:
     """A :class:`ToolFailure` for salary bounds no range could meet, or sent with no currency,

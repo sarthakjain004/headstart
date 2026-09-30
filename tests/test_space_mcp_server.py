@@ -28,7 +28,7 @@ from headstart.mcp_protocol import messages, tool_arguments
 from headstart.mcp_protocol.messages import ToolFailure
 from headstart.search_filters import country_filter
 from headstart.serving.job_absence import WHY_NOT_SERVED
-from headstart.space_mcp import scraped_text, server, shown_company
+from headstart.space_mcp import answer_date, scraped_text, server, shown_company
 from headstart.space_mcp import space_client as sc
 from headstart.space_mcp.tools import (
     REGISTRY,
@@ -840,7 +840,7 @@ def test_a_concise_search_asks_for_no_places_and_says_none():
 @pytest.fixture
 def today(monkeypatch):
     """Pins the day a posting's age is counted to."""
-    monkeypatch.setattr(search_jobs, "_today", lambda: datetime.date(2026, 9, 29))
+    monkeypatch.setattr(answer_date, "today", lambda: datetime.date(2026, 9, 29))
 
 
 def test_the_employment_type_and_the_id_are_quoted_beside_what_the_filter_reads():
@@ -2988,10 +2988,12 @@ def test_a_row_whose_opened_was_mostly_found_late_is_flagged_and_listed_last_on_
         text = server.call(FakeSpace(hot=_hot(rows)), "hiring_now", {"lens": lens})
         listed = _listed(text)
         assert listed[-1].split('"')[1] == "Starbucks", lens
+        # In `found_late.clause`'s words, as read_trends says it (round-5 review S4).
         assert listed[-1].endswith(
-            "FLAG opened mostly found late, not newly posted: of its postings first seen "
-            "since turnover began, 28 were posted more than 14 days before HeadStart saw "
-            "them and 22 since"
+            "FLAG most of the 50 postings opened were found, not newly posted: of the "
+            "postings HeadStart first saw in these runs and still lists, 28 were posted "
+            "over 14 days before HeadStart first saw them and 22 within 14 days or with no "
+            "date"
         )
         assert "FLAG" not in "".join(listed[:-1])
         assert (
@@ -3013,7 +3015,7 @@ def test_a_row_whose_opened_was_mostly_found_late_is_flagged_and_listed_last_on_
 def test_found_late_needs_both_halves(opened, fresh, late, flagged):
     row = _hot_row(1, opened=opened, opened_fresh=fresh, opened_found_late=late)
     text = server.call(FakeSpace(hot=_hot([row])), "hiring_now", {})
-    assert ("FLAG opened mostly found late" in text) is flagged
+    assert ("FLAG most of the" in text) is flagged
 
 
 def test_the_sites_order_is_kept_and_unnumbered_when_no_flagged_row_leads():
@@ -4437,9 +4439,8 @@ def test_a_mistyped_id_is_offered_the_closest_id_on_its_board():
 
 def test_a_posting_whose_text_states_a_passed_end_date_says_so(monkeypatch):
     """R5-P2-8: PwC's "Job Posting End Date December 17, 2025" was served on 2026-09-30."""
-    from headstart.space_mcp.tools import get_job
 
-    monkeypatch.setattr(get_job, "_today", lambda: datetime.date(2026, 9, 30))
+    monkeypatch.setattr(answer_date, "today", lambda: datetime.date(2026, 9, 30))
     ended = _posting(
         1,
         stated_end_date={
@@ -4497,11 +4498,33 @@ def test_each_may_offer_row_says_which_kind_it_is():
         {"query": "backend", "work_authorization": "may_offer_sponsorship"},
     )
     assert "· sponsorship: offers" in text
-    assert "· sponsorship: may offer (hedged)" in text
+    assert "· sponsorship: may offer (not a firm offer: hedged)" in text
     assert (
-        "· sponsorship: may offer (limited to a country or level this job's place or title "
-        "does not show)"
+        "· sponsorship: may offer (not a firm offer: limited to a country or level this job's "
+        "place or title does not show)"
     ) in text
+
+
+def test_a_search_row_and_a_read_by_id_say_a_may_offer_alike():
+    """Round-5 review S9: one phrasing (`may_offer_words.not_firm`) on both tools."""
+    because = ["hedged", "transfer_only"]
+    row = _job(1, sponsorship={"stance": "may_offer_sponsorship", "because": because})
+    searched = server.call(
+        _search_space([row]),
+        "search_jobs",
+        {"query": "backend", "work_authorization": "may_offer_sponsorship"},
+    )
+    posting = _posting(
+        1,
+        work_authorization={
+            "stances": ["may_offer_sponsorship"],
+            "may_offer_because": because,
+            "mentions": ["H-1B transfer sponsorship may be available."],
+        },
+    )
+    read = server.call(_job_space([posting]), "get_job", {"ids": [posting["id"]]})
+    said = "(not a firm offer: hedged; a visa transfer only)"
+    assert said in searched and said in read
 
 
 def test_a_ranking_whose_closest_row_scores_low_says_nothing_matches_closely():

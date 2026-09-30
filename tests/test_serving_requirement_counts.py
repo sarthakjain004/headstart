@@ -60,9 +60,9 @@ def test_skills_are_shares_of_the_described_jobs_with_distinct_employers():
     assert counted["vocabulary_size"] == len(tech_skills.vocabulary().skills)
 
 
-def test_one_posting_on_two_boards_counts_once_the_first_read():
-    """On two Boards of its employer (`jobs.requisition_copies`); a requisition per country on
-    one Board counts once each (ADR-0365)."""
+def test_one_requisition_counts_once_the_first_read():
+    """On two Boards of its employer, or posted per country (`jobs.requisition_copies`,
+    ADR-0332, kept by ADR-0370 after ADR-0365 had counted each country's posting)."""
     jobs = [
         _job(1, title="Data Engineer (Peru)", company="Anyone AI", remote=True),
         _job(3, title="Data Engineer (Chile)", company="Anyone AI"),
@@ -72,7 +72,7 @@ def test_one_posting_on_two_boards_counts_once_the_first_read():
         ),
     ]
     counted = _summary(jobs)
-    assert (counted["read"], counted["distinct"]) == (4, 3)
+    assert (counted["read"], counted["distinct"]) == (4, 2)
     assert counted["remote"] == 1
     assert {c["company"] for c in counted["companies"]} == {"Anyone AI", "EVERSOURCE"}
 
@@ -276,9 +276,10 @@ def test_per_company_counts_at_most_that_many_of_one_companys_postings():
     assert "counted" not in uncapped["companies"][0]
 
 
-def test_per_company_counts_each_counted_posting_even_when_two_are_one_anothers_copies():
-    """ADR-0365: grouping pairs each Radancy row with a Workday row, so a Workday-led group and
-    a Radancy-led one can be copies of each other; the cap still counts each group once."""
+def test_one_companys_same_titled_postings_on_its_boards_count_once():
+    """ADR-0370: Capital One's same-titled requisitions on its Workday Board and its Radancy
+    front are one requisition's text, counted once; a search page lists them as postings in
+    pairs (ADR-0365)."""
     front, workday = (
         "radancy:www.capitalonecareers.com",
         "workday:capitalone/Capital_One",
@@ -292,8 +293,8 @@ def test_per_company_counts_each_counted_posting_even_when_two_are_one_anothers_
     )
     assert (counted["read"], counted["distinct"], counted["over_company_cap"]) == (
         6,
-        2,
         1,
+        0,
     )
 
 

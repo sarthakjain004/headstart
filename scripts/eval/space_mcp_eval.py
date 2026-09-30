@@ -51,8 +51,8 @@ Run (a live run needs only the network and a signed-in ``claude``):
   python scripts/eval/space_mcp_eval.py --repeat 3
 ``HEADSTART_SPACE_URL``, when set, points both the server and the verifiers at another Space.
 ``--http`` registers the hosted Streamable HTTP endpoint (ADR-0267) in place of the stdio server,
-and runs ``claude`` with ``MCP_CONNECTION_NONBLOCKING=false`` so it waits for that server to
-connect; the verifiers still read ``HEADSTART_SPACE_URL`` or the deployed Space. ``--repeat N``
+and runs ``claude`` with ``MCP_CONNECTION_NONBLOCKING=false`` and ``MCP_CONNECT_TIMEOUT_MS``
+so it waits for that server to connect; the verifiers still read ``HEADSTART_SPACE_URL`` or the deployed Space. ``--repeat N``
 runs the set N times and tallies each task.
 """
 
@@ -85,7 +85,7 @@ from headstart.mcp_protocol import tool_arguments
 from headstart.mcp_protocol.messages import ToolFailure
 from headstart.search_filters import country_filter
 from headstart.serving import per_company_cap
-from headstart.space_mcp import company_scope, search_arguments
+from headstart.space_mcp import answer_date, company_scope, search_arguments
 from headstart.space_mcp.server import BY_NAME, NAME, URL_VAR
 from headstart.space_mcp.server import call as call_tool
 from headstart.space_mcp.space_client import (
@@ -870,7 +870,7 @@ def _found_late_turnover(
     /trends by the verifier itself, so a bug in a tool cannot hide here (ADR-0369)."""
     picks = [company_scope.for_trends(space, c) for c in fact.get("companies") or []]
     days = int(fact.get("days") or 7)
-    since = (datetime.now(UTC) - timedelta(days=days)).isoformat(timespec="seconds")
+    since = (_now() - timedelta(days=days)).isoformat(timespec="seconds")
     payload = space.read(
         SpaceRoute.TRENDS, [("since", since), *(("company", p.key) for p in picks)]
     )
@@ -1028,23 +1028,47 @@ _HEDGED = re.compile(
 #: A hedge stands further from its word than a negation: "Sponsorship for this role is not
 #: guaranteed", "Sponsorship decisions are made on a case-by-case basis".
 _HEDGE_NEAR_WORDS = 8
-#: The hedges ADR-0359 and ADR-0368 read, sought anywhere in a quoted sentence about
-#: sponsorship, as ADR-0359 reads a hedge anywhere in an offer's sentence: "we aren't able to
-#: sponsor visas for every role", "can't guarantee success for every candidate", "open to
-#: considering", "subject to company approval", "where it makes the difference", "if possible",
-#: "where we can", "shall be considered", "only if already based in".
-_HEDGED_IN_SENTENCE = re.compile(
-    r"(?i)\bfor every (?:role|position|candidate)\b|\bnot (?:all|every) (?:positions?|roles?)\b|"
-    r"\b(?:can't|can’t|cannot|can not) (?:always )?guarantee\b|\bopen to consider|"
-    r"\bsubject to\b[^.]{0,40}\bapproval\b|\bwhere it makes (?:the|a) difference\b|"
-    r"\b(?:if|where|when) possible\b|\bwhere we can\b|\bshall be considered\b|"
-    r"\balready (?:based|located|living|residing) in\b"
+#: The eval's own hedges, sought anywhere in a quoted sentence about sponsorship: plain phrases
+#: written from the offers a person labelled may_offer (:data:`LABELLED_DESCRIPTIONS`), each
+#: beside the labelled wording it came from, and not from the Space's rules, which this module
+#: does not import, so the two do not share their errors (round-5 review SP7). The Space reads
+#: "We sponsor visas, pending company approval" as a firm offer; this list reads it as hedged.
+_HEDGE_PHRASES = (
+    # "we aren't able to successfully sponsor visas for every role and every candidate"
+    "every role",
+    "every candidate",
+    # "Sponsorship for this role is not guaranteed", "we can't always guarantee success"
+    "guarantee",
+    # "open to considering candidates who require visa sponsorship", "shall be considered",
+    # "may be considered on a case-by-case basis"; never a bare "consider", which 119 labelled
+    # firm offers carry ("Capital One will consider sponsoring a new qualified applicant")
+    "open to consider",
+    "shall be considered",
+    "may be considered",
+    # "(subject to eligibility and company approval)"
+    "approval",
+    # "to bring you to SF, if possible", "where possible will offer visa sponsorship"
+    "if possible",
+    "where possible",
+    # "open to sponsoring international visas where we can"
+    "where we can",
+    # "where it makes the difference between hiring the right person and not"
+    "makes the difference",
+    # "only for candidates that are already based in the UK", "you must already be in Singapore"
+    "already based",
+    "already located",
+    "already be in",
+    # "Open to visa transfers", "support transfer of visa sponsorship", "H-1B transfer
+    # sponsorship available"; never a bare "visa transfer", which a firm offer names beside a
+    # new visa ("visa transfers and new visa sponsorship are listed as available")
+    "open to visa transfer",
+    "transfer of visa",
+    "transfer sponsorship",
+    # "may be limited to certain roles", "Certain positions may be eligible"
+    "certain roles",
+    "certain positions",
+    "select positions",
 )
-#: A visa transfer offered without a new visa (ADR-0359): "H-1B transfer sponsorship available".
-_TRANSFER = re.compile(
-    r"(?i)\b(?:visa|h-?1-?b|opt)\s+transfers?\b|\btransfer\s+(?:of\s+)?(?:visa\s+)?sponsorship\b"
-)
-_NEW_VISA = re.compile(r"(?i)\bnew\b")
 #: What an answer line says of a hedged job to report it truly.
 _SAID_HEDGED = re.compile(
     r"(?i)not guaranteed|case[- ]by[- ]case|\bmay\b|\bmight\b|hedg|possib|not a firm|"
@@ -1080,9 +1104,8 @@ def _not_offering(job: dict[str, Any], labels: dict[str, str]) -> str | None:
             return "hedged: labelled may_offer by hand"
         return None if label in _OFFERING_LABELS else f"labelled {label} by hand"
     for mention in (job.get("work_authorization") or {}).get("mentions") or []:
-        if _SPONSORSHIP_TOPIC.search(mention) and (
-            _HEDGED_IN_SENTENCE.search(mention)
-            or (_TRANSFER.search(mention) and not _NEW_VISA.search(mention))
+        if _SPONSORSHIP_TOPIC.search(mention) and any(
+            phrase in mention.casefold() for phrase in _HEDGE_PHRASES
         ):
             return f"hedged: says {mention[:80]!r}"
         for topic in _SPONSORSHIP_TOPIC.finditer(mention):
@@ -1143,11 +1166,15 @@ def verify_sponsorship_polarity(
     guaranteed", "case by case", a person's ``may_offer`` label) is fine on a line that says it
     is hedged (ADR-0353). At least ``expect["at_least"]`` must be named.
 
-    It catches a named job a person labelled refusing or silent, and one whose quoted sentence
-    about sponsorship negates ("not available", "without sponsorship", "citizenship required").
-    It cannot catch an unlabelled job whose refusal no quoted sentence states, and it fails a
-    right answer whose job offers sponsorship in a sentence that also negates ("no matter your
-    visa status, we sponsor")."""
+    It catches a named job a person labelled refusing, silent or hedged, one whose quoted
+    sentence about sponsorship negates ("not available", "without sponsorship", "citizenship
+    required"), and one whose sentence carries a hedge of its own list (:data:`_HEDGE_PHRASES`)
+    reported as a firm offer, including hedges the Space's rules miss. It cannot catch an
+    unlabelled job whose refusal no quoted sentence states, nor a hedge in words its list lacks
+    ("where feasible") or a scope it cannot read (sponsorship only for a move to another city).
+    It fails a right answer whose job offers sponsorship in a sentence that also negates ("no
+    matter your visa status, we sponsor") or that uses a listed phrase firmly ("we guarantee
+    sponsorship")."""
     ids: list[str] = []
     for call in transcript.calls:
         if call.name in ("search_jobs", "get_job") and call.succeeded:
@@ -1344,7 +1371,7 @@ def _country_total(space: Space, arguments: dict[str, Any], code: str) -> int:
     }
     params = [
         (name, value)
-        for name, value in search_jobs._params(placeless, scope)
+        for name, value in search_jobs.space_params(placeless, scope)
         if name not in ("k", "page", "sort")
     ]
     facets = space.read(
@@ -1511,9 +1538,29 @@ _CALLED_AGENCY = re.compile(
     re.IGNORECASE,
 )
 _NOT_ITS_EMPLOYER = re.compile(r"\bnot (?:the|its own|an?) employer", re.IGNORECASE)
-#: A clause that denies what follows: "not flagged as a staffing agency" says it is none.
+#: What a denial denies it is: an agency, a staffing firm, a recruiter, or unverified.
+_AGENCY_KIND = (
+    r"(?:staffing (?:agency|agencies|firm|firms|company)|staffing|agenc(?:y|ies)|"
+    r"recruit(?:ers?|ing firms?|ment firms?|ment agenc(?:y|ies))|['\"‘“]?(?:operator )?"
+    r"unverified(?: operator)?['\"’”]?)"
+)
+#: A denial of agency status, and only that (round-5 review SP8): "is not a staffing agency",
+#: "does not flag it as a staffing agency", "not an agency or recruiter", "no staffing flag",
+#: "no sign that it is a recruiter". Between the negation and the kind stand only words that
+#: say how HeadStart tags a company; a "not" elsewhere ("HeadStart does not verify it, so it
+#: may be a staffing agency") denies nothing about what follows it.
 _DENIED = re.compile(
-    r"\b(?:not|no|never|nor|without|isn't|aren't|wasn't)\b[^.;:!?\n]*", re.IGNORECASE
+    r"\b(?:not|never|no|nor|isn't|aren't|wasn't)\s+"
+    r"(?:(?:flag(?:ged|s)?|mark(?:ed|s)?|label(?:l?ed|s)?|list(?:ed|s)?|tag(?:ged|s)?|"
+    r"show(?:n|s)?|treat(?:ed|s)?|describ(?:e|ed|es)|call(?:ed|s)?|consider(?:ed|s)?|"
+    r"suggest(?:ed|s)?|indicat(?:e|ed|es|ion)|sign|evidence|carr(?:y|ies|ying)|given|has|"
+    r"have|with|that|it|them|is|be|might|may|as|the|an?|any)\s+)*"
+    r"(?:(?:possible|potential|likely)\s+)?"
+    + _AGENCY_KIND
+    + r"(?:\s*(?:,|/|\bor\b|\bnor\b)\s*(?:an?\s+)?"
+    + _AGENCY_KIND
+    + r")*",
+    re.IGNORECASE,
 )
 
 
@@ -1662,7 +1709,7 @@ def _ranking_spread_out(fact: dict[str, Any], space: Space) -> str | None:
     uncapped = tool_arguments.with_defaults(
         schema, {**fact["arguments"], "per_company": 0}
     )
-    rows = space.read(SpaceRoute.SEARCH, search_jobs._params(uncapped, None))
+    rows = space.read(SpaceRoute.SEARCH, search_jobs.space_params(uncapped, None))
     companies = {per_company_cap.company(row) for row in rows}
     if len(companies) < fact["companies_below"]:
         return None
@@ -1762,14 +1809,21 @@ VERIFIERS: dict[str, Verifier] = {
 RECORDED_CALLS = _ROOT / "tests" / "fixtures" / "space_mcp_eval_recorded_calls.json"
 
 
+def _now() -> datetime:
+    """The verifiers' "now", which :func:`tools_clock_at` holds with the tools'."""
+    return datetime.now(UTC)
+
+
 @contextmanager
 def tools_clock_at(when: datetime) -> Iterator[None]:
-    """Every tool's "now" held at ``when`` while inside: a window or an age is counted back
-    from it into the URLs a tool reads, which a replay must build exactly as recorded."""
+    """Every tool's "now", and the verifiers', held at ``when`` while inside: a window or an age
+    is counted back from it into the URLs a tool or a verifier reads, which a replay must build
+    exactly as recorded."""
     patched = [
+        (sys.modules[__name__], "_now", lambda: when),
         (company_profile, "_now", lambda: when),
         (read_trends, "_now", lambda: when),
-        (search_jobs, "_today", lambda: when.date()),
+        (answer_date, "today", lambda: when.date()),
     ]
     saved = [(module, name, getattr(module, name)) for module, name, _ in patched]
     for module, name, value in patched:
@@ -1897,7 +1951,7 @@ def judge(
 
 #: How long, in milliseconds, ``claude`` waits for the server to connect before a run starts.
 #: Waiting was not enough on a slow client network: 44 of 123 round-4 runs still started with
-#: the server "pending", and 0 of 15 did with this set (round-4 critique P1-4).
+#: the server "pending" (round-4 critique P1-4).
 MCP_CONNECT_TIMEOUT_MS = "60000"
 
 
@@ -1905,11 +1959,17 @@ def run_env(env: dict[str, str], http_url: str | None) -> dict[str, str]:
     """The environment ``claude`` runs in. Claude Code 2.1.212's ``-p`` does not wait for an
     HTTP server to connect: the run starts with it "pending" and no tools, and every task fails
     with 0 calls (round-2 critique, 2026-09-29). ``MCP_CONNECTION_NONBLOCKING=false`` makes it
-    wait (ADR-0325), and ``MCP_TIMEOUT`` for up to :data:`MCP_CONNECT_TIMEOUT_MS`, unless the
-    caller's environment sets its own."""
+    wait (ADR-0325), but only for ``MCP_CONNECT_TIMEOUT_MS``, 5,000 ms by default, and the
+    hosted server connects and lists its tools in about 3 to 10 s, so the start waits up to
+    :data:`MCP_CONNECT_TIMEOUT_MS` too. ``MCP_TIMEOUT`` bounds each connection attempt, not the
+    start. The caller's environment may set its own of either."""
     env = {"MCP_TIMEOUT": MCP_CONNECT_TIMEOUT_MS, **env}
     if http_url:
-        return {**env, "MCP_CONNECTION_NONBLOCKING": "false"}
+        return {
+            "MCP_CONNECT_TIMEOUT_MS": MCP_CONNECT_TIMEOUT_MS,
+            **env,
+            "MCP_CONNECTION_NONBLOCKING": "false",
+        }
     return env
 
 

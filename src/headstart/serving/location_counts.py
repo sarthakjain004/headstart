@@ -132,12 +132,6 @@ def _head(place: str) -> str:
 _NO_CITY = re.compile(r"[A-Z]{2,3}|.*\d.*")
 
 
-def _names_no_city(city: str) -> bool:
-    """Whether ``city`` names no city to list (:data:`_NO_CITY`): its jobs still count in the
-    country, but it is not one of the country's places."""
-    return bool(_NO_CITY.fullmatch(city))
-
-
 def _spelled(cities: dict[str, Counter[str]]) -> Counter[str]:
     """Each city's jobs under the spelling most of them carry, ties by the first in order."""
     return Counter(
@@ -197,7 +191,8 @@ def _by_country(
         for code in codes:
             jobs[code] += count
             city = head if head_codes is not None and head_codes <= {code} else shown
-            if _names_no_city(city):
+            # It names no city to list: its jobs still count in the country.
+            if _NO_CITY.fullmatch(city):
                 continue
             key = location_spelling.place_key(city)
             cities.setdefault(code, {}).setdefault(key, Counter())[city] += count

@@ -822,7 +822,9 @@ def _keep_static_for_the_boot(response):
 # and a copy is one posting on two Boards, so /requirements counts per-country rows apart (ADR-0365).
 # 25: /trends' company lines' turnover carries `opened_fresh` and `opened_found_late`, counted as
 # /hot's are, where companies are picked (ADR-0369).
-_AGENT_API_VERSION = 25
+# 26: /requirements counts one requisition posted per country once again, and a first place a
+# word that begins a place's name leads ("New York") is not the place it holds ("York") (ADR-0370).
+_AGENT_API_VERSION = 26
 
 
 @app.after_request
