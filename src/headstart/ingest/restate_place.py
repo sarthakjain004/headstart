@@ -50,10 +50,10 @@ def placements(
         if rows
         else np.zeros((0, width), dtype=np.float32)
     )
-    decided = role_family_classifier.decide_rows(
+    scored = role_family_classifier.decide_rows_scored(
         cache, head, [row["title"] for row in rows], head.row_logits(matrix)
     )
-    families = [None if f == role_taxonomy.NON_TECH else f for f in decided]
+    families = [None if f == role_taxonomy.NON_TECH else f for f, _ in scored]
     bands = []
     for row in rows:
         derived = derived_meta.derive(
