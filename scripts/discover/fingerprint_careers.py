@@ -239,6 +239,9 @@ PATTERNS: dict[str, tuple[str, list[str]]] = {
     ),
     "sensehq": ("ats", [SUB + r"sensehq\.com"]),
     "keka": ("ats", [SUB + r"keka\.com"]),
+    # A careers page embeds `{label}.mynexthire.com/employer/jobs/careers` in an iframe
+    # (careers.swiggy.com); `{label}.careers.mynexthire.io` is the same tenant's newer front.
+    "mynexthire": ("ats", [SUB + r"mynexthire\.com", SUB + r"careers\.mynexthire\.io"]),
     "trakstar": ("ats", [SUB + r"hire\.trakstar\.com", SUB + r"recruiterbox\.com"]),
     "ripplehire": ("ats", [SUB + r"ripplehire\.com"]),
     "darwinbox": ("ats", [SUB + r"darwinbox\.(?:in|com|co|us|eu|sa|id)"]),
@@ -618,6 +621,7 @@ PROVIDER_DOMAINS = {
     "workable": {"workable.com"},
     "darwinbox": {"darwinbox.in", "darwinbox.com"},
     "keka": {"keka.com"},
+    "mynexthire": {"mynexthire.com", "mynexthire.io", "smaclify.com"},
     "qandle": {"qandle.com"},
     "ripplehire": {"ripplehire.com"},
     "turbohire": {"turbohire.co"},

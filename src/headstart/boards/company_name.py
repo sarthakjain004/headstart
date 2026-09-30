@@ -462,6 +462,9 @@ _VENDOR_ALIASES: dict[str, frozenset[str]] = {
     "jibe": frozenset({"jibe", "jibeapply", "icims"}),
     "jobvite": frozenset({"jobvite"}),
     "keka": frozenset({"keka"}),
+    # The client record's `clientName` (`MyNextHireScraper._client_name`); Smaclify Technologies
+    # is the vendor behind the MyNextHire brand, and runs a tenant of its own (`smaclify`).
+    "mynexthire": frozenset({"mynexthire", "smaclify", "smaclifytechnologies"}),
     # Empty on purpose: Oracle hires on its own Recruiting Cloud (`eeho.fa.us2`, title "Oracle").
     "oracle": frozenset(),
     "lever": frozenset({"lever"}),

@@ -286,6 +286,15 @@ ATS_PATTERNS = {
         "kind": "label",
         "patterns": [r"([a-z0-9][a-z0-9-]*)\.keka\.com"],
     },
+    "mynexthire": {
+        # `{slug}.careers.mynexthire.io` is the same tenant's newer front (wayback_feeder's
+        # `_CANONICAL_HOST`); the negative lookahead refuses `{slug}.prod.us1.mynexthire.io`.
+        "targets": ["mynexthire.com", "careers.mynexthire.io"],
+        "kind": "label",
+        "patterns": [
+            r"(?://|%2f)([a-z0-9][a-z0-9-]*)\.(?:careers\.mynexthire\.io|mynexthire\.com)(?![a-z0-9.-])"
+        ],
+    },
     "recruitee": {
         "targets": ["recruitee.com"],
         "kind": "label",

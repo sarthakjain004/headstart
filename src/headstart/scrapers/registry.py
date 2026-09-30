@@ -33,6 +33,7 @@ from headstart.scrapers.join import JoinScraper
 from headstart.scrapers.keka import KekaScraper
 from headstart.scrapers.lever import LeverScraper
 from headstart.scrapers.meta import MetaScraper
+from headstart.scrapers.mynexthire import MyNextHireScraper
 from headstart.scrapers.oracle import OracleScraper
 from headstart.scrapers.peoplestrong import PeopleStrongScraper
 from headstart.scrapers.personio import PersonioScraper
@@ -113,6 +114,7 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
         AppleScraper,
         UberScraper,
         MetaScraper,
+        MyNextHireScraper,
         TikTokScraper,
         GemScraper,
     )
