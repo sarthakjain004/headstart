@@ -776,7 +776,9 @@ def unflagged_found_late(answer: str, rows: list[dict[str, Any]]) -> list[str]:
         for row in rows
         if _opened_mostly_found_late(row)
         and _named(answer, row)
-        and not any(_named(line, row) and _FOUND_LATE_SAID.search(line) for line in lines)
+        and not any(
+            _named(line, row) and _FOUND_LATE_SAID.search(line) for line in lines
+        )
     ]
 
 
@@ -1084,10 +1086,14 @@ def verify_sponsorship_polarity(
 # --- senior_caveat -------------------------------------------------------------------------
 
 #: A search_jobs row's title as the tool prints it: rank, an optional score, then the title.
-_SEARCH_ROW_TITLE = re.compile(r'^\s*\d+\. (?:\d\.\d+ )?("(?:[^"\\]|\\.)*")', re.MULTILINE)
+_SEARCH_ROW_TITLE = re.compile(
+    r'^\s*\d+\. (?:\d\.\d+ )?("(?:[^"\\]|\\.)*")', re.MULTILINE
+)
 
 #: A title above a new graduate's level, read here apart from the tool's own tag (ADR-0359).
-_SENIOR_WORD = re.compile(r"(?i)\b(?:senior|sr\.?|staff|principal|lead|manager|director)\b")
+_SENIOR_WORD = re.compile(
+    r"(?i)\b(?:senior|sr\.?|staff|principal|lead|manager|director)\b"
+)
 _JUNIOR_WORD = re.compile(r"(?i)\b(?:associate|junior|jr\.?)\b")
 
 #: Words by which an answer says a senior-titled job may not fit a new graduate, or drops it.
@@ -1129,7 +1135,9 @@ def verify_senior_caveat(
         title
         for title in senior_rows(transcript)
         if _found(transcript.final_answer, title)
-        and not any(_found(line, title) and _SENIOR_CAVEAT.search(line) for line in lines)
+        and not any(
+            _found(line, title) and _SENIOR_CAVEAT.search(line) for line in lines
+        )
     ]
     return Verdict(
         not bare,
