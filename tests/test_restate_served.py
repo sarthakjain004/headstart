@@ -231,3 +231,47 @@ def test_a_dormant_board_that_posts_again_revives_its_old_jobs(tmp_path):
 
     assert served[A1] == [(DAYS[2], None, None, "revived")]
     assert served[A2] == [(DAYS[2], None, None, None)]
+
+
+def _english(tmp_path: Path, steps, descriptions) -> dict[str, list[tuple]]:
+    facts = tmp_path / "facts"
+    for stamp, (jobs, read) in zip(RUNS, steps, strict=False):
+        _record(facts, stamp, jobs, read)
+    served = rs.english_only(
+        rs.served_intervals(
+            rr.job_versions(facts),
+            rr.board_reads(facts),
+            is_tech=lambda title, department: True,
+            live={},
+            keep_set=None,
+        ),
+        descriptions,
+        is_english=lambda title, description: "Nous" not in f"{title} {description}",
+    )
+    out: dict[str, list[tuple]] = {}
+    for row in served.to_pylist():
+        out.setdefault(row["id"], []).append((row["served_from"], row["served_to"]))
+    return out
+
+
+def test_a_job_the_english_gate_holds_out_never_counts(tmp_path):
+    served = _english(
+        tmp_path,
+        [([(BOARD_A, _job(A1)), (BOARD_A, _job(A2))], {BOARD_A})],
+        {A1: "You will build APIs.", A2: "Nous recrutons un ingénieur."},
+    )
+
+    assert served == {A1: [(RUNS[0], None)]}
+
+
+def test_the_english_gate_judges_each_version_on_its_own_title(tmp_path):
+    served = _english(
+        tmp_path,
+        [
+            ([(BOARD_A, _job(A1))], {BOARD_A}),
+            ([(BOARD_A, _job(A1, "Nous recrutons"))], {BOARD_A}),
+        ],
+        {A1: "You will build APIs."},
+    )
+
+    assert served == {A1: [(RUNS[0], RUNS[1])]}

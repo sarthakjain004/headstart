@@ -7,6 +7,9 @@ applies to the whole past alike:
 * **the keep-set**: a version on a Board outside today's keep-set (parked, excluded, aliased,
   disabled, dead) never counts, so removing a Board removes it from the past too;
 * **the tech filter**: a version whose raw fields today's filter rejects never counts;
+* **the English gate**: a version whose title and description today's gate reads as not English
+  never counts, since ``embed_plan`` embeds only English Jobs and the index serves only those.
+  The facts keep no text, so it is judged on the description the store holds now;
 * **the grace period** (ADR-0083): a Job the scrape stopped returning still counts until its
   Board's next authoritative read, or until it is listed again if that comes first, as ``index
   sync`` serves it. A version that ended ``changed`` or ``off_board`` stops counting when it ended;
@@ -36,6 +39,9 @@ from headstart.ingest.index_plan import resolve_board
 
 #: How a version's raw fields read as tech: ``tech_filter.is_tech`` in production.
 TechTest = Callable[[str | None, str | None], bool]
+
+#: Whether a title and description read as English: ``doc_prep.is_english`` in production.
+EnglishTest = Callable[[str, str], bool]
 
 
 def _in_scope_reads(reads) -> dict[str, list[str]]:
@@ -204,6 +210,23 @@ def clip_dormant(served, periods: Mapping[str, list[tuple[str, str | None]]]):
     return pa.Table.from_pylist(
         out, schema=served.schema.append(pa.field("starts_as", pa.string()))
     )
+
+
+def english_only(served, descriptions: Mapping[str, str], is_english: EnglishTest):
+    """``served`` less the versions today's English gate holds out of the index, each judged on
+    its title and its Job's stored description, as ``embed_plan`` judges a Job."""
+    import pyarrow as pa
+
+    judged: dict[tuple[str, str], bool] = {}
+    keep = []
+    for job_id, title in zip(
+        served["id"].to_pylist(), served["title"].to_pylist(), strict=True
+    ):
+        key = (job_id, title or "")
+        if key not in judged:
+            judged[key] = is_english(title or "", descriptions.get(job_id) or "")
+        keep.append(judged[key])
+    return served.filter(pa.array(keep, pa.bool_()))
 
 
 def fold_duplicates(served, ranks: Mapping[str, tuple[tuple[str, str], tuple]]):

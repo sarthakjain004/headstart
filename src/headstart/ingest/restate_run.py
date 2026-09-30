@@ -7,8 +7,8 @@ Writes one tick file per run that recorded facts, in the Board-delta shape ``rol
 Methodology. The steps, each its own module:
 
 1. :mod:`~headstart.ingest.restate_replay`: the facts become Job versions;
-2. :mod:`~headstart.ingest.restate_served`: today's keep-set, tech filter, grace period, Dormant
-   Boards and duplicate groups decide when each version counted;
+2. :mod:`~headstart.ingest.restate_served`: today's keep-set, tech filter, English gate, grace
+   period, Dormant Boards and duplicate groups decide when each version counted;
 3. :mod:`~headstart.ingest.restate_place`: today's classifier and derivations give each its
    family and band;
 4. :mod:`~headstart.ingest.restate_count`: every tick's levels and turnover.
@@ -39,7 +39,7 @@ from headstart.ingest import (
     restate_served,
     role_family_classifier,
 )
-from headstart.ingest.doc_prep import DERIVATIONS_VERSION
+from headstart.ingest.doc_prep import DERIVATIONS_VERSION, is_english
 from headstart.ingest.index_plan import (
     DEDUP_VERSION,
     boards_by_canon,
@@ -153,6 +153,8 @@ def main() -> int:
     served = restate_served.clip_dormant(
         served, restate_served.dormant_periods(versions, runs, live)
     )
+    descriptions = _descriptions(args.descriptions, set(served["id"].to_pylist()))
+    served = restate_served.english_only(served, descriptions, is_english)
     ids = served["id"].to_pylist()
     requisitions = {
         job_id: req
@@ -191,7 +193,7 @@ def main() -> int:
         head,
         cache,
         _vectors(args.db, args.facts, wanted),
-        _descriptions(args.descriptions, wanted),
+        descriptions,
     )
 
     first_reads: dict[str, str] = {}

@@ -3,6 +3,7 @@ tick file per run out, in the Board-delta shape the Trends history reads."""
 
 from __future__ import annotations
 
+import gzip
 import json
 import sys
 from pathlib import Path
@@ -84,10 +85,27 @@ def _record(facts: Path, stamp: str, jobs: list[tuple[str, str]]) -> None:
     (facts / jf.SCRAPED_LINES).unlink(missing_ok=True)
 
 
+def _describe(store: Path, texts: dict[str, str]) -> None:
+    """A description store (ADR-0050) holding ``texts`` for the one ATS these tests scrape."""
+    (store / "greenhouse").mkdir(parents=True)
+    with gzip.open(
+        store / "greenhouse" / "base.jsonl.gz", "wt", encoding="utf-8"
+    ) as fh:
+        for job_id, text in texts.items():
+            fh.write(json.dumps({"id": job_id, "description": text}) + "\n")
+
+
 def test_a_restatement_writes_one_tick_per_run_that_replays_to_todays_counts(
     tmp_path, monkeypatch
 ):
     facts, out = tmp_path / "facts", tmp_path / "restated"
+    english = (
+        "You will design, build and run the services our customers rely on every day."
+    )
+    _describe(
+        tmp_path / "descriptions",
+        {f"{BOARD}:{n}": english for n in (1, 2, 3)},
+    )
     _record(
         facts, RUNS[0], [(f"{BOARD}:1", "Backend Engineer"), (f"{BOARD}:2", "QA Lead")]
     )
@@ -116,7 +134,7 @@ def test_a_restatement_writes_one_tick_per_run_that_replays_to_todays_counts(
             "--db",
             str(tmp_path / "no-db"),
             "--descriptions",
-            str(tmp_path / "no-descriptions"),
+            str(tmp_path / "descriptions"),
             "--out",
             str(out),
         ],

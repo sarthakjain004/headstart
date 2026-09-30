@@ -83,7 +83,9 @@ whenever a rule changes, so a rule change moves the whole history and draws no s
    - **Job versions** (`restate_replay`): one row per stretch of a Job's listing with fixed raw
      fields. The versions open at a run are exactly that run's Listed set, tested at every run.
    - **Served intervals** (`restate_served`): today's rules apply to the whole past alike. A
-     Board outside today's keep-set, and a version today's tech filter rejects, never count.
+     Board outside today's keep-set, a version today's tech filter rejects, and one today's
+     English gate reads as not English (judged on the description the store holds now, since
+     the facts keep no text), never count.
      Dormant Boards are judged at every run over every listed Job, so a Board can turn Dormant
      with nothing scraped. Duplicate groups fold into one Job over time, counting the member
      `index prune` keeps at each moment (`index_plan.duplicate_ranks`, tested against
