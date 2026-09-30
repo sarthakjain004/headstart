@@ -1748,12 +1748,21 @@ def test_an_http_run_waits_for_the_server_and_one_left_pending_is_not_judged(
     assert claude.envs[-1] == {
         "HOME": "/x",
         "MCP_TIMEOUT": "60000",
+        "MCP_CONNECT_TIMEOUT_MS": "60000",
         "MCP_CONNECTION_NONBLOCKING": "false",
     }
     # Round-4 critique P1-4: a slow network left 44 of 123 runs pending; every run waits up to
     # 60 s for its server, unless the caller set its own wait.
     assert ev.run_env({"HOME": "/x"}, None) == {"HOME": "/x", "MCP_TIMEOUT": "60000"}
     assert ev.run_env({"MCP_TIMEOUT": "5000"}, None) == {"MCP_TIMEOUT": "5000"}
+    # A blocking start waits only MCP_CONNECT_TIMEOUT_MS (5,000 ms by default), not
+    # MCP_TIMEOUT: 3 of 3 hosted starts were pending with only MCP_TIMEOUT set, 0 of 4 with
+    # both (2026-09-30). The caller's own value wins.
+    assert ev.run_env({"MCP_CONNECT_TIMEOUT_MS": "9000"}, url) == {
+        "MCP_TIMEOUT": "60000",
+        "MCP_CONNECT_TIMEOUT_MS": "9000",
+        "MCP_CONNECTION_NONBLOCKING": "false",
+    }
 
 
 def _record(task_id, verdict):
