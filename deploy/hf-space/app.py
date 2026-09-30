@@ -794,7 +794,9 @@ def _keep_static_for_the_boot(response):
 # /hot's `operator_unverified` reads a Board's own label, not its vendor's host (ADR-0366).
 # 23: /search under `may_offer_sponsorship` tags each row's `sponsorship` stance and why a possible
 # offer is not firm; /job carries `may_offer_because`, `stated_end_date` and `closest` (ADR-0367).
-_AGENT_API_VERSION = 23
+# 24: /search's `per_company` counts every row, a posting's copy on another Board kept beside it,
+# and a copy is one posting on two Boards, so /requirements counts per-country rows apart (ADR-0365).
+_AGENT_API_VERSION = 24
 
 
 @app.after_request

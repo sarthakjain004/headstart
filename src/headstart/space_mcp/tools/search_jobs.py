@@ -11,12 +11,12 @@ would total them, with each country's top cities, over the whole match rather th
 
 A row carries its posting's age, flagged past a year, and its employment type as scraped beside
 the `employment_type` values it counts as, and its company as the Company directory names it when
-the served name is only its Board's host (`shown_company`). Rows on one page that copy one
-posting — per country, or on two Boards of its employer (`requisition_copies`) — are listed under
-the first of them, with only what differs; every id and link stays. A relevance page lists at most
-`per_company` jobs of one company before every other company's and says how many more each has,
-and a company named like an agency and on no curated list is tagged "operator unverified"
-(ADR-0352).
+the served name is only its Board's host (`shown_company`). Rows on one page that are one posting
+on two Boards of its employer (`requisition_copies`) are listed under the first of them, with only
+what differs; every id and link stays. A relevance page lists at most `per_company` rows of one
+company before every other company's, besides a listed posting's copies on its other Boards, and
+says how many more each has (ADR-0365), and a company named like an agency and on no curated list
+is tagged "operator unverified" (ADR-0352).
 """
 
 from __future__ import annotations
@@ -481,8 +481,9 @@ def _order_line(arguments: dict[str, Any], rows: list[dict[str, Any]]) -> str:
     if (per_company := _per_company(arguments)) is not None:
         return (
             f"Ordered by similarity to {ranked_by}, which orders the matches but does not "
-            f"narrow them, with at most {per_company} jobs of one company before every other "
-            "company's (per_company; 0 lists the ranking as it is)."
+            f"narrow them, with at most {per_company} rows of one company, besides a listed "
+            "posting's copy on another of its Boards, before every other company's "
+            "(per_company; 0 lists the ranking as it is)."
         )
     if query or similar_to:
         return f"Ordered by similarity to {ranked_by}, which orders the matches but does not narrow them."
@@ -655,11 +656,12 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
         page_lines, grouped = _page_lines(first, rows, arguments.get("max_years"))
         if grouped:
             lines.append(
-                "A row repeating one above it is listed under it as 'also #N', with only what "
-                "differs: the same company and title (brackets aside); the same title, first "
-                "city and countries under another spelling of the company; or the same title, "
-                "countries and stated pay under a shorter or longer name of it (ADR-0338), as "
-                "one posting on two of its Boards is."
+                "A row that is one posting on another of its company's Boards is listed under "
+                "it as 'also #N', with only what differs: the same title, brackets included, "
+                "with the same first city and countries under the company's name or another "
+                "spelling of it, or with the same countries and stated pay under a shorter or "
+                "longer name of it (ADR-0338). A different title or city, or a row on the same "
+                "Board, is another posting and its own row (ADR-0365)."
             )
         lines += page_lines
         if held := _held_line(rows):
@@ -819,10 +821,10 @@ TOOL = SpaceTool(
                 "maximum": 40,
                 "default": 3,
                 "description": (
-                    "With `query` or `similar_to` and sort relevance: at most this many jobs "
-                    "of one company before every other company's; its others follow them, "
-                    "and the answer says how many. 0 lists the ranking as it is. Not applied "
-                    "with `company`."
+                    "With `query` or `similar_to` and sort relevance: at most this many rows "
+                    "of one company, besides a listed posting's copy on another of its Boards, "
+                    "before every other company's; its others follow them, and the answer says "
+                    "how many. 0 lists the ranking as it is. Not applied with `company`."
                 ),
             },
             "limit": {

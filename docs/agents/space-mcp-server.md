@@ -235,20 +235,24 @@ the filter costing the most.
   flags one over a year old; its employment type as the employer wrote it, beside the
   `employment_type` values it counts as (`type "FULL_TIME" (full-time)`); and every scraped field,
   the id included, quoted.
-- **Copies of one posting are listed once** (ADR-0323, ADR-0331). A row repeating one above it on the page
-  is listed under it as `also #N`, giving only what differs; every id and link stays, and paging is
-  the Space's. A copy is the same company and title, brackets aside (one posting copied per
-  country; rows naming no company only on one Board), or the same title, first city and countries
-  under another spelling of the company, as one posting on two of its Boards: Eversource's Radancy
-  front says "EVERSOURCE" and its Workday Board "Eversource Energy". Two spellings are one company
-  only when they are the same words once legal forms ("Inc", "LLC") and three generic words
-  ("Group", "Technologies", "Energy") drop, so "GE" and "GE HealthCare" stay apart; "Siemens" and
-  "Siemens Energy" do not, if they post one title in one city. On 16 live pages of 40
-  rows (2026-09-29) that second rule grouped two pairs, both true copies.
+- **One posting on two Boards is listed once** (ADR-0323, ADR-0331, ADR-0365). A row that is a
+  posting above it on another of its company's Boards is listed under it as `also #N`, giving only
+  what differs; every id and link stays, and paging is the Space's. A copy is the same title,
+  brackets included, on another Board, with the same first city (one spelling's words all among
+  the other's: "Hyderabad" and "India - Hyderabad") and countries under the company's name or
+  another spelling of it: Eversource's Radancy front says "EVERSOURCE" and its Workday Board
+  "Eversource Energy". Two spellings are one company only when they are the same words once legal
+  forms ("Inc", "LLC") and three generic words ("Group", "Technologies", "Energy") drop, so "GE" and
+  "GE HealthCare" stay apart; "Siemens" and "Siemens Energy" do not, if they post one title in one
+  city. Two rows of one Board, a title that differs only in brackets, and one requisition per
+  country are each their own row (ADR-0365): Capital One's four "Machine Learning Engineer 5"
+  requisitions in McLean, each on Workday and on its Radancy front, are four rows with one copy
+  each, not one row with eight.
 - **A few jobs of each company first** (ADR-0352). On a relevance-ranked search (`query` or
-  `similar_to`, sort relevance, no `company`) the Space lists at most `per_company` (3) jobs of
-  one company before every other company's, over the 2,000 closest, so paging walks one list; a
-  copy of a listed posting takes no place. The answer says "23 more from "Reflection": send
+  `similar_to`, sort relevance, no `company`) the Space lists at most `per_company` (3) rows of
+  one company before every other company's, over the 2,000 closest, so paging walks one list;
+  every row counts, and a listed posting's copy on another of its Boards stays beside it even past
+  the cap (ADR-0365). The answer says "23 more from "Reflection": send
   company "Reflection"", and marks a row paging reaches past the cap. `per_company: 0` lists the
   ranking as it is. Reflection held 9 of 10 rows of a London staff-platform search; at 3 the page
   named 8 companies. 11 of 13 live searches measured were unchanged.
@@ -555,9 +559,9 @@ since a public route can never carry one person's data.
 `src/headstart/space_mcp/` — `tools/` (one module per tool, and `REGISTRY`), `space_tool.py` (what a
 tool is), `server.py` (serves the registry), `space_client.py` (the one way it reaches the Space),
 `company_scope.py`, `shown_company.py`, `role_families.py`, `search_arguments.py` (the filter
-arguments `search_jobs` and `role_requirements` share) and `scraped_text.py` (the rule for copies of
-one requisition is `headstart/jobs/requisition_copies.py`, which the Space's `/requirements` reads
-too) — on the shared protocol module in `src/headstart/mcp_protocol/` (`messages.py`,
+arguments `search_jobs` and `role_requirements` share) and `scraped_text.py` (the rule for one
+posting on two Boards is `headstart/jobs/requisition_copies.py`, which the Space's `/requirements`
+reads too) — on the shared protocol module in `src/headstart/mcp_protocol/` (`messages.py`,
 and the `stdio.py` and `streamable_http.py` transports). The hosted route is `/mcp` in
 `deploy/hf-space/app.py`, and the three routes only the tools read are `/companies/locations` and
 `/companies/levels`, answered by `src/headstart/serving/location_counts.py` and `level_counts.py`,

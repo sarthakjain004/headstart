@@ -21,7 +21,8 @@ Space's rules: by a person's label where the job has one, else by a negation che
 counts a curated staffing firm or job board it was not asked for, or more of one company's
 postings than the cap (ADR-0352). ``country_split`` reads `/facets` once per country the task
 names, with the filters of a search_jobs call the agent made, and needs each total stated
-beside that country's name (ADR-0355). ``all_of`` and ``any_of`` combine checks.
+beside that country's name (ADR-0355). ``page_companies`` needs a search page, and the answer, to
+name at least so many companies (ADR-0365). ``all_of`` and ``any_of`` combine checks.
 A run whose server was not connected at its start is not judged: it is an error, left out of the
 summary's scores and named on a line of its own, first.
 
@@ -80,6 +81,7 @@ from headstart.boards.board_operator import OPERATORS
 from headstart.mcp_protocol import tool_arguments
 from headstart.mcp_protocol.messages import ToolFailure
 from headstart.search_filters import country_filter
+from headstart.serving import per_company_cap
 from headstart.space_mcp import company_scope, search_arguments
 from headstart.space_mcp.server import BY_NAME, NAME, URL_VAR
 from headstart.space_mcp.server import call as call_tool
@@ -1300,6 +1302,45 @@ def verify_country_split(
     return Verdict(False, " | ".join(tried))
 
 
+# --- page_companies ------------------------------------------------------------------------
+
+#: A numbered row of a search_jobs page: its number, score, quoted title and quoted company. An
+#: "also #N" row is the same posting and names no company of its own.
+_PAGE_ROW = re.compile(
+    r'^\s*\d+\. (?:[\d.]+ )?"(?:[^"\\]|\\.)*" · ("(?:[^"\\]|\\.)*")', re.MULTILINE
+)
+
+
+def page_companies(result: str) -> list[str]:
+    """The companies a search_jobs page names on its numbered rows, first-seen order, each once
+    case-blind, without the tool's cut mark."""
+    names: dict[str, str] = {}
+    for quoted in _PAGE_ROW.findall(result):
+        name = json.loads(quoted).removesuffix("…").strip()
+        names.setdefault(name.casefold(), name)
+    return list(names.values())
+
+
+def verify_page_companies(
+    expect: dict[str, Any], transcript: Transcript, space: Space
+) -> Verdict:
+    """Round-5 critique R5-P1-2 (ADR-0365): the first successful search_jobs call meeting
+    ``must``/``must_any`` lists at least ``min_companies`` companies on its page, and the answer
+    names that many of them. The task's ``piled_ranking`` requirement retires it when the data
+    no longer piles one company up."""
+    call, verdict = _call_meeting_the_rules(expect, transcript)
+    if call is None:
+        return verdict
+    least = int(expect["min_companies"])
+    listed = page_companies(call.result or "")
+    named = [name for name in listed if _found(transcript.final_answer, name)]
+    return Verdict(
+        len(listed) >= least and len(named) >= least,
+        f"{verdict.detail}: the page lists {len(listed)} companies, the answer names "
+        f"{len(named)}",
+    )
+
+
 # --- mentions ------------------------------------------------------------------------------
 
 
@@ -1510,11 +1551,30 @@ def _no_role_joined(fact: dict[str, Any], space: Space) -> str | None:
     return f"no watched role of {fact['category']} joined partway since {fact['since']}"
 
 
+def _ranking_spread_out(fact: dict[str, Any], space: Space) -> str | None:
+    """Why a per-company cap has nothing to spread, or None: the Space's own ranking of
+    ``fact["arguments"]`` (a search_jobs call's), read with no cap, already names
+    ``fact["companies_below"]`` companies or more on its first page (ADR-0365)."""
+    schema = BY_NAME["search_jobs"].input_schema
+    uncapped = tool_arguments.with_defaults(
+        schema, {**fact["arguments"], "per_company": 0}
+    )
+    rows = space.read(SpaceRoute.SEARCH, search_jobs._params(uncapped, None))
+    companies = {per_company_cap.company(row) for row in rows}
+    if len(companies) < fact["companies_below"]:
+        return None
+    return (
+        f"the uncapped ranking's first page already names {len(companies)} companies, so no "
+        "one company piles up"
+    )
+
+
 #: A task's ``requires``: the live facts its premise rests on, each read before the run.
 _REQUIREMENTS: dict[str, Callable[[Any, Space], str | None]] = {
     "jobs": _jobs_gone,
     "hot_row": _not_on_hot,
     "roles_joined_partway": _no_role_joined,
+    "piled_ranking": _ranking_spread_out,
 }
 
 
@@ -1582,6 +1642,7 @@ VERIFIERS: dict[str, Verifier] = {
     "country_split": verify_country_split,
     "employer_unflagged": verify_employer_unflagged,
     "watched_roles_total": verify_watched_roles_total,
+    "page_companies": verify_page_companies,
     "any_of": verify_any_of,
     "all_of": verify_all_of,
 }

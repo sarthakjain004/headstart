@@ -1223,6 +1223,83 @@ def test_operator_mix_needs_a_sample_that_lists_its_companies(ev):
     assert not ev.verify_operator_mix({}, _transcript(ev, unlisted, "..."), None).passed
 
 
+# --- page_companies ------------------------------------------------------------------------
+
+_T42 = {
+    "tool": "search_jobs",
+    "must": {"country": "US", "work_authorization": "offers_sponsorship", "page": 1},
+    "must_any": [{"query": {"op": "contains", "value": "machine learning"}}],
+    "min_companies": 4,
+}
+_T42_ARGS = {
+    "query": "machine learning engineer",
+    "country": "US",
+    "work_authorization": "offers_sponsorship",
+}
+
+
+def _page(*companies):
+    """A search_jobs page with one numbered row per company, each with an 'also' row under it."""
+    lines = []
+    for n, company in enumerate(companies):
+        lines += [
+            (
+                f' {2 * n + 1}. 0.80 "Machine Learning Engineer" · {json.dumps(company)} · '
+                '"McLean, VA"'
+            ),
+            f'    id "workday:x/y:{n}"',
+            f'    also #{2 * n + 2}: 0.80 "McLean, Virginia, United States"',
+        ]
+    return "\n".join(lines) + "\n"
+
+
+def _ranked(*companies):
+    return FakeSpace(
+        {SpaceRoute.SEARCH: [{"id": "x:y:1", "company": c} for c in companies]}
+    )
+
+
+def test_page_companies_reads_each_numbered_rows_company_once(ev):
+    page = _page("Capital One", "capital one", "Preference Model", "A Very Long Compa…")
+    page += ' 9. 0.70 "ML Engineer" · "Toast" (operator unverified) · "Boston"\n'
+    assert ev.page_companies(page) == [
+        "Capital One",
+        "Preference Model",
+        "A Very Long Compa",
+        "Toast",
+    ]
+
+
+def test_page_companies_needs_them_on_the_page_and_named_in_the_answer(ev):
+    """Round-5 critique R5-P1-2 (ADR-0365): s04's first page was ten Capital One rows."""
+    four = ("Capital One", "Preference Model", "EvolutionIQ", "Poesis")
+
+    def verdict(page, answer, arguments=_T42_ARGS):
+        calls = [("search_jobs", arguments, page, False)]
+        return ev.verify_page_companies(_T42, _transcript(ev, calls, answer), None)
+
+    right = verdict(_page(*four), "Capital One, Preference Model, EvolutionIQ, Poesis.")
+    assert right.passed and "lists 4 companies, the answer names 4" in right.detail
+    assert not verdict(_page("Capital One"), "All ten are Capital One.").passed
+    assert not verdict(_page(*four), "Capital One and Preference Model.").passed
+    unsponsored = {**_T42_ARGS, "work_authorization": None}
+    assert not verdict(_page(*four), "...", unsponsored).passed
+
+
+def test_a_page_companies_task_is_retired_while_the_ranking_no_longer_piles_up(ev):
+    task = {
+        "requires": {"piled_ranking": {"arguments": _T42_ARGS, "companies_below": 4}}
+    }
+    piled = _ranked(*["Capital One"] * 9, "Toast")
+    assert ev.retired(task, piled) is None
+    # The uncapped ranking is read with no per-company cap, at the task's own filters.
+    (route, params), *_ = piled.asked
+    assert route == SpaceRoute.SEARCH and "per_company" not in dict(params)
+    assert ("work_authorization", "offers_sponsorship") in params
+    varied = _ranked("Capital One", "Toast", "Poesis", "EvolutionIQ", "Toast")
+    assert "already names 4 companies" in ev.retired(task, varied)
+
+
 # --- mentions ------------------------------------------------------------------------------
 
 
@@ -1889,7 +1966,13 @@ def test_the_recording_covers_every_task_whose_verifier_reads_tool_results(ev):
         checks = (task.get("expect") or {}).get("checks") or [task]
         return any(
             c["verifier"]
-            in ("blocking_named", "title_keyword_rows", "operator_mix", "senior_caveat")
+            in (
+                "blocking_named",
+                "title_keyword_rows",
+                "operator_mix",
+                "senior_caveat",
+                "page_companies",
+            )
             or {"tool_results_all", "answer_carries", "answer_any"}
             & set(c.get("expect") or {})
             for c in checks

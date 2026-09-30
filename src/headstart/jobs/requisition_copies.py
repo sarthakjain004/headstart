@@ -1,24 +1,29 @@
-"""Which served Jobs are copies of one requisition, so a search page lists each once (ADR-0274,
-widened by ADR-0323, ADR-0331 and ADR-0338) and a requirements sample counts each once (ADR-0332).
+"""Which served Jobs are one posting on two Boards of its employer, so a search page lists it once
+(ADR-0274, widened by ADR-0323, ADR-0331 and ADR-0338, narrowed by ADR-0365) and a requirements
+sample counts it once (ADR-0332).
 
-Three kinds of copy are grouped:
+A copy is the same title, brackets included, on another Board of the same employer, such as a
+Radancy career front and the Workday Board behind it. Two rows on one Board are two postings, and
+so are two titles that differ only in brackets: Capital One's "Machine Learning Engineer 5" and
+"Machine Learning Engineer 5 (Senior Manager, IC)" are two requisitions (the round-5 critique,
+ADR-0365). The employer is matched two ways:
 
-- **One requisition per country**: the same company and title, brackets aside — "Backend Developer
-  (Peru)", "Backend Developer (Chile)" at "Anyone AI" — placed apart. Rows naming no company are
-  copies only on one Board: two unnamed Boards are not one company.
-- **One requisition on two Boards** of its employer, such as a Radancy career front and the Workday
-  Board behind it, under two spellings of the company: "EVERSOURCE" and "Eversource Energy" (the
-  round-2 critique, 2026-09-29). Two spellings are one company when they are the same words once
-  legal forms and three generic words ("Group", "Technologies", "Energy") drop. That is looser
-  than one spelling, so it also needs the same title stem, the same first place (the city a
-  location string names first) and the same countries, as the `country` filter's gazetteer reads
-  the whole location.
-- **One requisition under a short and a long name** of its employer: "TSMC" on SuccessFactors and
-  "TSMC - Taiwan Semiconductor Manufacturing Company Limited" on Avature (the round-3 critique),
-  where one name's words begin the other's. A longer name is as often another company ("GE" and
-  "GE HealthCare"), so this needs the same title stem, the same countries and the same stated
-  annual pay range, currency included, on both rows (ADR-0338). The first place is not compared:
-  "Vancouver, WA, US" and "USA-Washington" are one place written two ways.
+- **Its name, or another spelling of it**: "EVERSOURCE" and "Eversource Energy" (the round-2
+  critique, 2026-09-29). Two spellings are one company when they are the same words once legal
+  forms and three generic words ("Group", "Technologies", "Energy") drop. The rows must also share
+  the first place (the city a location string names first, one spelling's words all among the
+  other's: "Hyderabad" and "India - Hyderabad") and the countries, as the `country` filter's
+  gazetteer reads the whole location.
+- **A short and a long name** of it: "TSMC" on SuccessFactors and "TSMC - Taiwan Semiconductor
+  Manufacturing Company Limited" on Avature (the round-3 critique), where one name's words begin
+  the other's. A longer name is as often another company ("GE" and "GE HealthCare"), so this needs
+  the same countries and the same stated annual pay range, currency included, on both rows
+  (ADR-0338). The first place is not compared: "Vancouver, WA, US" and "USA-Washington" are one
+  place written two ways.
+
+Rows naming no company are never copies: two unnamed Boards are not one company. A group holds at
+most one row of each Board, so a company's four same-titled requisitions in one city, each on its
+Workday Board and its Radancy front, are four groups of two, not one of eight.
 
 On a search page, grouping only lists a copy under the row it repeats: every row keeps its number,
 id and link, and paging is the Space's.
@@ -66,14 +71,13 @@ _GENERIC_WORDS = frozenset(
 )
 
 _WORD = re.compile(r"[^\W_]+")
-_BRACKETED = re.compile(r"\([^)]*\)|\[[^\]]*\]")
 #: What separates two places in one location string: "Berlin, CT; Westwood, MA".
 _PLACES_SEPARATOR = re.compile(r"[;|]")
 
 
-def title_stem(title: Any) -> str:
-    """A title case-blind with its bracketed parts dropped: what per-country copies share."""
-    return " ".join(_BRACKETED.sub(" ", str(title or "")).lower().split())
+def _title(title: Any) -> str:
+    """A title case- and spacing-blind, brackets kept."""
+    return " ".join(str(title or "").casefold().split())
 
 
 def _company_words(company: Any) -> tuple[str, ...]:
@@ -88,38 +92,44 @@ def _first_place(location: Any) -> tuple[str, ...]:
 
 
 def _one_place(one: Any, other: Any) -> bool:
-    """The same first city, in the same countries."""
-    place = _first_place(one)
+    """One first place, in the same countries: the same words, or one's words all among the
+    other's, as a Workday Board and its Radancy front write "India - Hyderabad" and "Hyderabad,
+    India" (ADR-0365)."""
+    place, other_place = set(_first_place(one)), set(_first_place(other))
     return (
         bool(place)
-        and place == _first_place(other)
+        and bool(other_place)
+        and (place <= other_place or other_place <= place)
         and country_gazetteer.classify(str(one or ""))
         == country_gazetteer.classify(str(other or ""))
     )
 
 
 def copies(head: dict[str, Any], row: dict[str, Any]) -> bool:
-    """Whether ``row`` copies ``head``'s requisition, by one of the three kinds above."""
-    stem = title_stem(head.get("title"))
-    if not stem or stem != title_stem(row.get("title")):
+    """Whether ``row`` is ``head``'s posting on another Board of its employer (module docstring)."""
+    title = _title(head.get("title"))
+    if not title or title != _title(row.get("title")) or _same_board(head, row):
         return False
     one = str(head.get("company") or "").casefold().strip()
     other = str(row.get("company") or "").casefold().strip()
     if not one or not other:
-        return not one and not other and _same_board(head, row)
-    if one == other:
-        return True
+        return False
     words, other_words = _company_words(one), _company_words(other)
+    if one == other or (words and words == other_words):
+        return _one_place(head.get("location"), row.get("location"))
     if not words or not other_words:
         return False
-    if words == other_words:
-        return _one_place(head.get("location"), row.get("location"))
     shorter, longer = sorted((words, other_words), key=len)
     return (
         longer[: len(shorter)] == shorter
         and _one_pay(head, row)
         and _same_countries(head.get("location"), row.get("location"))
     )
+
+
+def joins(group: list[dict[str, Any]], row: dict[str, Any]) -> bool:
+    """Whether ``row`` copies ``group``'s first row on a Board none of ``group`` is on."""
+    return copies(group[0], row) and not any(_same_board(one, row) for one in group)
 
 
 def _one_pay(head: dict[str, Any], row: dict[str, Any]) -> bool:
@@ -149,11 +159,11 @@ def _same_board(head: dict[str, Any], row: dict[str, Any]) -> bool:
 
 def groups(rows: list[dict[str, Any]]) -> list[list[int]]:
     """``rows``' indexes grouped as copies, each group led by its first row, in page order of
-    those first rows. A row joins the first earlier group whose first row it copies."""
+    those first rows. A row joins the first earlier group it `joins`."""
     found: list[list[int]] = []
     for i, row in enumerate(rows):
         for group in found:
-            if copies(rows[group[0]], row):
+            if joins([rows[j] for j in group], row):
                 group.append(i)
                 break
         else:
