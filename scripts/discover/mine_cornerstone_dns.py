@@ -21,7 +21,7 @@ They are clones of a tenant, never Boards, so ``stage`` drops any label carrying
 **Never read a timeout as "does not exist".** ``eightfold_dns_sweep.py`` counts a label whose four
 tries all timed out as absent: on a congested link it read 13 of 101 real hosts as absent
 (2026-09-29, the same 34,000 labels swept twice). This miner retries every inconclusive label
-(``classify_reply`` returns None for a timeout, SERVFAIL and NOERROR-without-answer), lists any
+(`eightfold_dns_sweep._answered` returns None for a timeout, SERVFAIL and NOERROR-without-answer), lists any
 still unsettled in ``OUT.unresolved`` (never counted absent; the 20 checked by hand were
 infrastructure names such as ``api``, ``vpn`` and ``glb`` that answer NODATA), and puts known-live
 and invented controls in every chunk: a chunk whose controls disagree is discarded, the sweep
@@ -135,7 +135,7 @@ def select_candidates(
 
 
 def write_rows(out: IO[str], rows: list[str]) -> None:
-    """Append rows, one flush each: a hit is on disk before the next lookup, so a kill loses none."""
+    """Append a finished chunk's rows, one flush each: a kill loses at most the chunk in flight."""
     for row in rows:
         out.write(row + "\n")
         out.flush()

@@ -128,33 +128,69 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         "cornerstone:maestrademo",  # 45 postings
         "cornerstone:pservsmartdreamers",  # 60 postings
         "cornerstone:pservsqeptech",  # 69 postings
-        # More Cornerstone demo, template and test tenants, found by the csod.com DNS sweep of
-        # 2026-09-29 and confirmed by READING each Board's listing the same day, not from its slug
-        # (every slug below looks like an employer). Each was landed `live` with postings by
-        # `check_liveness.py cornerstone`, and none is an employer's: `empower` (55 postings),
-        # `tsg` (55) and `medbridge` (53) are the awavedemo/demohk template, "Coordinator Call
-        # Center- Madrid", "Sales Associate" in Milan and Rome, "Training Manager, Italy", dated
-        # 2018-2020, with 49-55 of their requisitionId+title pairs equal to `demohk`'s and
-        # `pservsmartdreamers`'s; `appiphony`, `extend` and `levelaccess` (47 each) are `demojk`
-        # again — the same 47 requisitions, "Customer Service Representative" opening in AU and NZ,
-        # "Registered Nurse", "Cashier" in Miami, dated 2021-2025 — and name no employer;
-        # `explore` (6) shares two requisitions with `demojk` by id, title and date ("Customer
-        # Service Specialist" 6/21/2021, "Customer Service Associate - Full Remote" 11/22/2021)
-        # and its other four sit in Santa Monica, Cornerstone's own headquarters city. `evolus`
-        # is a real employer's tenant (Newport Beach) whose six postings are all test copies
-        # ("Talent Specialist - TEST", "Systems Administrator - TEST 2", "Talent Acquisition
-        # Coordinator - TESTING"), and `ncp` (National Car Parks Ltd.) lists one, "TEST ADMIN",
-        # dated 2022. The last two are the employer's own test data rather than a vendor's: lift
-        # them once either lists a posting that is not a test.
+        # More Cornerstone demo and template tenants, found by the csod.com DNS sweep of 2026-09-29
+        # and confirmed by READING each Board's listing the same day, not from its slug (every slug
+        # below looks like an employer). Each was landed `live` with postings by `check_liveness.py
+        # cornerstone`, and none is an employer's: `empower` (55 postings), `tsg` (55) and
+        # `medbridge` (53) are the awavedemo/demohk template, "Coordinator Call Center- Madrid",
+        # "Sales Associate" in Milan and Rome, "Training Manager, Italy", dated 2018-2020, with
+        # 49-55 of their requisitionId+title pairs equal to `demohk`'s and `pservsmartdreamers`'s;
+        # `appiphony`, `extend` and `levelaccess` (47 each) are `demojk` again: the same 47
+        # requisitions, "Customer Service Representative" opening in AU and NZ, "Registered Nurse",
+        # "Cashier" in Miami, dated 2021-2025, and name no employer. `explore` (6) is NOT here: it
+        # shares two requisitions with `demojk` by id, title and date, but its other four ("Sales
+        # Representative" in Switzerland dated 2026-06-01, two "Customer Service Director" in Santa
+        # Monica) do not match any demo tenant, so the read does not confirm it.
         "cornerstone:empower",  # 55 postings
         "cornerstone:tsg",  # 55 postings
         "cornerstone:medbridge",  # 53 postings
         "cornerstone:appiphony",  # 47 postings
         "cornerstone:extend",  # 47 postings
         "cornerstone:levelaccess",  # 47 postings
-        "cornerstone:explore",  # 6 postings
-        "cornerstone:evolus",  # 6 postings
-        "cornerstone:ncp",  # 1 posting
+        # Vendor infrastructure names and pilot copies that the same sweep read as tenants and the
+        # liveness probe left `unknown`, read 2026-09-30 by DNS and by request (8 of the 32
+        # spot-checked again the same day). `repo` and `nuget` resolve to private 10.x addresses,
+        # `status` is a Statuspage CNAME (`stspg-customer.com`), `autodiscover` is Outlook's,
+        # `cdn` is Cornerstone's own CDN host (`glb-cdn.cdn-ext`), `bitbucket`, `jira`, `ns1`,
+        # `ns2`, `www`, `help`, `sso`, `ssp`, `tracker`, `maintenance` and `legacy` are likewise
+        # infrastructure; `app`, `apps`, `application`, `qap`, `qar`, `ws-app`, `live-int` and
+        # `ws-tcg` time out or answer 404; `demos` and `testing` are Akamai's wildcard edge
+        # (`wildcard2.csod.com.edgekey.net`), not provisioned tenants. `cbapilot`, `luxairpilot`,
+        # `moneygrampilot`, `nebraskapilot`, `sodexopilot` and `unhcrpilot` CNAME to the pilot
+        # environment (`corporate5-pilot.csod.com`) and each has a held production tenant (`cba`,
+        # `luxair`, `moneygram`, `nebraska`, `sodexo`, `unhcr`). None has an openings board.
+        "cornerstone:repo",
+        "cornerstone:nuget",
+        "cornerstone:status",
+        "cornerstone:cdn",
+        "cornerstone:autodiscover",
+        "cornerstone:bitbucket",
+        "cornerstone:jira",
+        "cornerstone:ns1",
+        "cornerstone:ns2",
+        "cornerstone:www",
+        "cornerstone:help",
+        "cornerstone:sso",
+        "cornerstone:ssp",
+        "cornerstone:tracker",
+        "cornerstone:maintenance",
+        "cornerstone:legacy",
+        "cornerstone:app",
+        "cornerstone:apps",
+        "cornerstone:application",
+        "cornerstone:qap",
+        "cornerstone:qar",
+        "cornerstone:ws-app",
+        "cornerstone:live-int",
+        "cornerstone:ws-tcg",
+        "cornerstone:demos",
+        "cornerstone:testing",
+        "cornerstone:cbapilot",
+        "cornerstone:luxairpilot",
+        "cornerstone:moneygrampilot",
+        "cornerstone:nebraskapilot",
+        "cornerstone:sodexopilot",
+        "cornerstone:unhcrpilot",
         # `eczy-test.fa.us2.oraclecloud.com` was once kept despite its "-test" slug, for want of
         # content: it reported TotalJobsCount 4,947 while serving zero rows. It serves them now,
         # 23 of 24 sampled also open on `eczy` (2026-09-23), and is dead by ADR-0034's Oracle
@@ -1427,6 +1463,13 @@ PARKED_BOARDS: frozenset[str] = frozenset(
         # labels. Read 2026-09-29. Its twin host `aa246` is already buried onto `vontier`. Un-park
         # if the Phenom front goes dead, or once cross-ATS deduplication exists.
         "taleo_enterprise:https://vontier.taleo.net/careersection/4",
+        # Cornerstone tenants of real employers whose only postings are their own test copies, read
+        # 2026-09-29 by the csod.com sweep: `evolus` (Newport Beach) lists six, all titled TEST or
+        # TESTING, dated Aug-Sep 2026 ("Talent Specialist - TEST", "Systems Administrator - TEST 2"),
+        # and `ncp` (National Car Parks Ltd.) lists one, "TEST ADMIN", dated 2022. Un-park either
+        # once it lists a posting that is not a test.
+        "cornerstone:evolus",
+        "cornerstone:ncp",
         # Happydance career fronts whose Backing Board is a Scrapable Board (ADR-0264): each
         # would serve its postings a second time under the front's key. Measured 2026-09-28 by
         # the apply URLs of up to 25 sampled job pages each, by Greenhouse job id (Box, Dropbox,
