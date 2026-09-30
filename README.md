@@ -136,8 +136,8 @@ Board no source names is served under its humanised tenant (`nvidia.wd5.myworkda
 a vendor's code (Oracle's pods, ADP's GUIDs). A name is a display value, never an identity, which
 is why `CompanyPrefs` is keyed by **board_key** and never by company name.
 
-The liveness pipeline has probed **319,163 ledger rows**: 197,599 live, 115,290 dead, 6,274 unknown
-— rows, not boards; they collapse to 190,967 Unique Boards once duplicate spellings of the same
+The liveness pipeline has probed **334,372 ledger rows**: 211,411 live, 116,673 dead, 6,288 unknown
+— rows, not boards; they collapse to 204,779 Unique Boards once duplicate spellings of the same
 board are folded together and the 4 with a `dead` row newer than their newest `live` row are dropped (`CONTEXT.md` §Counting
 Boards).
 
@@ -189,7 +189,7 @@ flowchart TB
         D1["<b>discover</b><br/>Common Crawl · Wayback<br/>careers-page fingerprint"]
         D2["<b>merge</b><br/>union + dedupe per ATS"]
         D3["<b>validate</b><br/>liveness-probe each board"]
-        D4[("<b>liveness ledger</b><br/>197,599 live rows of 319,163<br/>git-tracked, authoritative")]
+        D4[("<b>liveness ledger</b><br/>211,411 live rows of 334,372<br/>git-tracked, authoritative")]
         D1 --> D2 --> D3 --> D4
     end
 
@@ -292,19 +292,19 @@ table in lockstep with the committed ledger:
 
 | | boards | |
 | --- | ---: | --- |
-| live rows in the ledger | 197,599 | a row, not a board — 6,628 of them are duplicate spellings |
+| live rows in the ledger | 211,411 | a row, not a board — 6,628 of them are duplicate spellings |
 | − `registry.DISABLED_ATS` | −25,488 | all of it `join` |
-| − `excluded_and_parked.EXCLUDED_BOARDS` | −225 | vendor and customer test/sandbox/demo/dev boards and one historical feed, confirmed by reading their postings |
-| − alias ledger | −1,849 | one board under a second hostname or label, a career section or career site another of the same tenant already covers, an Eightfold career site its backing ATS board already serves, or a Radancy front another front already lists (ADR-0111, ADR-0182, ADR-0186, ADR-0202, ADR-0205, ADR-0222, ADR-0254, ADR-0265, ADR-0301) |
+| − `excluded_and_parked.EXCLUDED_BOARDS` | −410 | vendor and customer test/sandbox/demo/dev boards and one historical feed, confirmed by reading their postings |
+| − alias ledger | −1,921 | one board under a second hostname or label, a career section or career site another of the same tenant already covers, an Eightfold career site its backing ATS board already serves, or a Radancy front another front already lists (ADR-0111, ADR-0182, ADR-0186, ADR-0202, ADR-0205, ADR-0222, ADR-0254, ADR-0265, ADR-0301) |
 | − case-variant dedupe | −6,625 | `company/External` and `company/external` are one board (ADR-0023) |
 | − newer `dead` row | −4 | a board is read only if no `dead` row is newer than its newest `live` one; all 4 re-probed dead (ADR-0219) |
 | − `excluded_and_parked.PARKED_BOARDS` | −348 | real boards withheld for now — six for scrape cost, two for near-duplicate spam, six Jibe clients whose every posting is on a Workday or Oracle board already held, 288 whose every posting is on an iCIMS board we scrape (ADR-0240), five employee-only Radancy fronts (ADR-0246), 31 Happydance fronts whose Backing Board is held (ADR-0264), four Phenom skins over a board already held (CLAUDE.md's Phenom landing rule), one Taleo section whose postings a held Phenom front already serves, one Radancy front whose robots.txt disallows everything, one WP Job Openings content site whose "postings" are mostly articles (ADR-0266), three login-walled iCIMS internal portals (#810) |
-| = **Scrapable Board** | **163,060** | |
+| = **Scrapable Board** | **176,615** | |
 
-That order matters: excluding before deduping reads −225 and −6,625, deduping first reads −222,
-because three excluded boards were themselves duplicates. Both land on 163,060.
+That order matters: excluding before deduping reads −410 and −6,625, deduping first reads −407,
+because three excluded boards were themselves duplicates. Both land on 176,615.
 
-Of those, **109,202 are currently hiring** — the 53,858 live-but-empty boards are skipped as having
+Of those, **121,795 are currently hiring** — the 54,820 live-but-empty boards are skipped as having
 nothing to read. A run takes a bounded slice and splits it between a scored head (top boards by a
 sticky measure of tech-job yield, large enough to hold every board that yields tech) and a tail
 that rotates through everything else, the boards looked at longest ago first, so
