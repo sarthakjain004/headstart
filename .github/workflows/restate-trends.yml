@@ -2,6 +2,14 @@
 # the live history (ADR-0330 step 3). Read-only on the HF dataset: the Restatement is kept as an
 # Actions artifact, and nothing it writes reaches the dataset or the Space until step 4 decides
 # how the Space reads it.
+#
+# Until #934 merges, the engine lives on its branch: dispatch with
+# `gh workflow run restate-trends --ref restate-trends-from-job-facts`. This file is on main only
+# because GitHub dispatches a workflow whose file is on the default branch; dispatched from main
+# before then, the job fails at the Restate step, after the fetch.
+#
+# Titles encoded within the budget land only in the runner's copy of the title cache, which is
+# never published, so each dispatch pays for them again.
 name: restate-trends
 
 on:
@@ -25,7 +33,9 @@ env:
 jobs:
   restate:
     runs-on: ubuntu-24.04
-    timeout-minutes: 300
+    # A hang detector, not a measured bound: the ~5 GB fetch, the encode budget (30 min by
+    # default) and the Restatement itself. Tighten it once a run has measured them.
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -48,7 +58,7 @@ jobs:
       - name: Restate
         run: >-
           python -m headstart.ingest.restate_run
-          --encode-budget-seconds "${{ github.event.inputs.encode_budget_seconds || '1800' }}"
+          --encode-budget-seconds "${{ inputs.encode_budget_seconds }}"
       - name: Compare with the live history
         run: python scripts/eval/compare_restated_trends.py --live data/state --restated data/restated
       - name: Keep the Restatement
