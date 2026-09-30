@@ -161,6 +161,31 @@ def test_no_rows_is_an_empty_answer_not_an_error():
     }
 
 
+def test_a_citys_spellings_the_location_filter_reads_alike_are_one_city():
+    """R5-P2-4 (ADR-0367): p5c listed "Bangalore" 302 and "Bengaluru" 297 as two places under
+    India, "Zurich" and "Zürich" under Switzerland; each is one city, spelled as most write it,
+    a tie by name."""
+    rows = ["Bengaluru, India", "Bangalore", "Bengaluru", "BENGALURU", "Pune"]
+    rows += ["Zürich, Switzerland", "Zurich", "Zürich", "Kraków, Poland", "Krakow"]
+    answer = location_counts.top(_Scan(rows), "x", 10, False)
+    places = {c["code"]: c["places"] for c in answer["countries"]}
+    assert places["IN"] == [
+        {"location": "Bengaluru", "count": 4},
+        {"location": "Pune", "count": 1},
+    ]
+    assert places["CH"] == [{"location": "Zürich", "count": 3}]
+    assert places["PL"] == [{"location": "Krakow", "count": 2}]
+
+
+def test_a_code_or_a_site_is_counted_in_its_country_but_not_listed_as_a_place():
+    """R5-P2-4 (ADR-0367): "SG" and "Fab 10A" were two of Singapore's top places."""
+    rows = ["Singapore", "Singapore", "SG", "Fab 10A, Singapore", "Fab 10A, Singapore"]
+    answer = location_counts.top(_Scan(rows), "x", 10, False)
+    assert answer["countries"] == [
+        {"code": "SG", "jobs": 5, "places": [{"location": "Singapore", "count": 2}]}
+    ]
+
+
 def test_a_search_reads_every_row_it_matches_with_no_bound(monkeypatch):
     """ADR-0355: a search's places read the whole match, past a company's bound."""
     monkeypatch.setattr(location_counts, "MAX_ROWS", 2)

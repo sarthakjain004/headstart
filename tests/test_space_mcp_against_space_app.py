@@ -547,7 +547,9 @@ def test_requirements_reach_the_app_as_a_role_and_its_filters(companies_app, par
         "postings, of 1 "
     )
     assert "as a share of the 1 sampled postings with a description" in text
-    assert "Remote: 2 of 2 (100%)." in text
+    assert "Remote: 2 of 2." in text
+    # Two postings are anecdotes: counts, not shares (ADR-0367).
+    assert "Only 2 distinct postings, under 30" in text
 
 
 def test_a_requirements_category_without_role_assignments_is_the_deployments_state(

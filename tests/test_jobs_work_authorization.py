@@ -270,6 +270,28 @@ def test_an_offer_to_candidates_in_the_eu_reaches_a_job_in_a_member_country():
     assert wa.stances(text, title="Backend Engineer", location="United States") == set()
 
 
+@pytest.mark.parametrize(
+    ("text", "location", "because"),
+    [
+        ("Visa sponsorship may be available for select positions.", "Austin, TX", ("hedged",)),
+        ("Sponsorship for this role is not guaranteed. Visa sponsorship is available.", None, ("hedged",)),
+        ("Visa sponsorship: H-1B transfer sponsorship available.", "Austin, TX", ("transfer_only",)),
+        ("We can sponsor visas to Germany; for any other country, you need to have existing right to work.", "Remote", ("scope_unread",)),
+        ("Visa sponsorship may be available for eligible candidates already located in a UK/EU country.", "Remote", ("hedged", "scope_unread")),
+    ],
+)  # fmt: skip
+def test_a_may_offer_says_why_it_is_not_a_firm_offer(text, location, because):
+    """R5-P2-2 (ADR-0367): a search row tags each may-offer job with its kind."""
+    read = wa.reading(text, title="Engineer", location=location)
+    assert read.stances == {MAY}
+    assert read.may_offer_because == because
+
+
+def test_only_a_may_offer_carries_a_reason():
+    assert wa.reading("Visa sponsorship is available.").may_offer_because == ()
+    assert wa.reading("We cannot sponsor visas.").may_offer_because == ()
+
+
 def test_an_offer_not_made_for_every_role_is_hedged_even_beside_a_firm_one():
     # Anthropic had read as a refusal (ADR-0353), then as a firm offer; a strict reading of
     # fresh draws takes "not for every role" as holding back the firm offer (ADR-0359).

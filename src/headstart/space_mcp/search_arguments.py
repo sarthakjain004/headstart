@@ -210,8 +210,8 @@ PROPERTIES: dict[str, dict[str, Any]] = {
             "title, does not count. may_offer_sponsorship: those jobs, plus the ones whose "
             "offer is hedged ('not guaranteed', 'not for every role', 'case by case', 'may be "
             "available', 'subject to approval'), is a visa transfer only, or names a country "
-            "or level the job's place or title does not show; say which kind each job is "
-            "(get_job prints its stance). refuses_sponsorship: it refuses sponsorship ('now "
+            "or level the job's place or title does not show; each row says which kind it "
+            "is, so say it. refuses_sponsorship: it refuses sponsorship ('now "
             "or in the future', 'Visa Sponsorship: No'), requires citizenship of this job or "
             "work authorisation already held, or offers it only to another country or level; offers_relocation: it offers "
             "relocation help. Text-derived, not a field the employer set: HeadStart's rules "
@@ -235,6 +235,21 @@ STANCE_WORDS = {
     work_authorization.REFUSES_SPONSORSHIP: "refuses visa sponsorship or requires citizenship",
     work_authorization.OFFERS_RELOCATION: "offers relocation help",
 }
+
+#: Why a job may offer sponsorship rather than offers it (ADR-0367), as a search row and a read
+#: by id say it, in `work_authorization.MAY_OFFER_REASONS`' order.
+MAY_OFFER_WORDS = {
+    work_authorization.HEDGED: "hedged",
+    work_authorization.TRANSFER_ONLY: "a visa transfer only",
+    work_authorization.SCOPE_UNREAD: (
+        "limited to a country or level this job's place or title does not show"
+    ),
+}
+
+
+def may_offer_said(because: list[str]) -> str:
+    """Why a job may offer sponsorship, as words: "hedged; a visa transfer only"."""
+    return "; ".join(MAY_OFFER_WORDS.get(reason, reason) for reason in because)
 
 
 def refuse_unreadable_salary(arguments: dict[str, Any]) -> None:

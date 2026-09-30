@@ -37,6 +37,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 from enum import Enum, StrEnum
+from typing import NamedTuple
 
 from headstart.search_filters import country_gazetteer
 
@@ -52,6 +53,15 @@ STANCES = (
     REFUSES_SPONSORSHIP,
     OFFERS_RELOCATION,
 )
+
+#: Why a job may offer sponsorship rather than offers it (ADR-0353, ADR-0359), as
+#: :func:`reading` names it: the offer is hedged ("not guaranteed", "may be available"), it is a
+#: transfer of a visa held already, or it names a country or level this job's place or title does
+#: not show (ADR-0367).
+HEDGED = "hedged"
+TRANSFER_ONLY = "transfer_only"
+SCOPE_UNREAD = "scope_unread"
+MAY_OFFER_REASONS = (HEDGED, TRANSFER_ONLY, SCOPE_UNREAD)
 
 #: What every sentence a rule or :func:`mentions` reads contains. The serving side reads only
 #: the descriptions this matches (Rust's regex engine runs it, so it keeps to syntax both
@@ -572,11 +582,13 @@ def _window(sentence: str, start: int, end: int) -> tuple[str, str]:
 
 def _sponsorship(
     sentence: str, *, title: str | None, location: str | None
-) -> tuple[bool, bool, bool, bool]:
-    """Whether ``sentence`` offers, may offer, and refuses visa sponsorship to the job at
-    ``location`` titled ``title``, and whether it hedges an offer this job may get: a hedge
-    anywhere in the description holds back a firm offer beside it (:func:`stances`)."""
-    offers = may_offer = refuses = hedged = False
+) -> tuple[bool, set[str], bool, bool]:
+    """Whether ``sentence`` offers visa sponsorship to the job at ``location`` titled
+    ``title``, why it may offer it (:data:`MAY_OFFER_REASONS`, empty when it does not), whether
+    it refuses it, and whether it hedges an offer this job may get: a hedge anywhere in the
+    description holds back a firm offer beside it (:func:`stances`)."""
+    offers = refuses = hedged = False
+    may_offer: set[str] = set()
     for match in _CITIZENSHIP.finditer(sentence):
         window, _ = _window(sentence, match.start(), match.end())
         if (
@@ -600,6 +612,7 @@ def _sponsorship(
             continue
         if _CLEARANCE.search(window) and not _VISA_NAMED.search(window):
             continue
+        weak_because = HEDGED
         if _HEDGE.search(window):
             tier = _Tier.MAY if not _FOR_LATER.search(window) else None
             hedge = tier is not None
@@ -618,6 +631,8 @@ def _sponsorship(
             transfer_only = _TRANSFER.search(window) and not _NEW_VISA.search(window)
             weak = hedge or _MAY.search(window) or transfer_only
             tier = _Tier.MAY if weak else _Tier.OFFERS
+            if transfer_only and not (hedge or _MAY.search(window)):
+                weak_because = TRANSFER_ONLY
         else:
             continue
         if tier is None:
@@ -626,7 +641,10 @@ def _sponsorship(
         if scope is _Scope.REFUSED:
             refuses = True
         elif scope is _Scope.UNKNOWN or (scope is _Scope.IN and tier is _Tier.MAY):
-            may_offer = True
+            if tier is _Tier.MAY:
+                may_offer.add(weak_because)
+            if scope is _Scope.UNKNOWN:
+                may_offer.add(SCOPE_UNREAD)
             hedged |= hedge
         elif scope is _Scope.IN:
             offers = True
@@ -653,11 +671,27 @@ def _relocation(sentence: str) -> tuple[bool, bool]:
     return offers, refuses
 
 
+class StanceReading(NamedTuple):
+    """What :func:`reading` found: the stances, and why a ``may_offer_sponsorship`` is not a firm
+    offer, among :data:`MAY_OFFER_REASONS` in their order (empty for any other stance)."""
+
+    stances: frozenset[str]
+    may_offer_because: tuple[str, ...]
+
+
 def stances(
     description: str | None, *, title: str | None = None, location: str | None = None
 ) -> frozenset[str]:
     """The text-derived stances ``description`` holds for the job titled ``title`` at
-    ``location``, among :data:`STANCES`.
+    ``location``, among :data:`STANCES` (:func:`reading`)."""
+    return reading(description, title=title, location=location).stances
+
+
+def reading(
+    description: str | None, *, title: str | None = None, location: str | None = None
+) -> StanceReading:
+    """The text-derived stances ``description`` holds for the job titled ``title`` at
+    ``location``, among :data:`STANCES`, and why a possible offer is not a firm one (ADR-0367).
 
     Sponsorship is refused when any mention refuses it; otherwise offered when a mention offers it
     to this job and none hedges it ("We do sponsor visas! However, we aren't able to … for every
@@ -665,7 +699,8 @@ def stances(
     level the job's own cannot be matched to (ADR-0353). Relocation is offered only when some mention
     offers it and none refuses it: a text that says both is not said to offer it."""
     found: set[str] = set()
-    sponsor_offer = sponsor_may = sponsor_refusal = sponsor_hedged = False
+    sponsor_offer = sponsor_refusal = sponsor_hedged = False
+    sponsor_may: set[str] = set()
     relocation_offer = relocation_refusal = False
     for sentence in _sentences(description or ""):
         offers, may_offer, refuses, hedged = _sponsorship(
@@ -686,7 +721,12 @@ def stances(
         found.add(MAY_OFFER_SPONSORSHIP)
     if relocation_offer and not relocation_refusal:
         found.add(OFFERS_RELOCATION)
-    return frozenset(found)
+    because = (
+        tuple(r for r in MAY_OFFER_REASONS if r in sponsor_may)
+        if MAY_OFFER_SPONSORSHIP in found
+        else ()
+    )
+    return StanceReading(frozenset(found), because)
 
 
 def filtered_stances(held: Iterable[str]) -> frozenset[str]:

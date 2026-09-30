@@ -40,6 +40,10 @@ SAMPLE_SIZE = 300
 #: (DigitalXNode 15, STAFIDE 21); 5 reshaped every sample's ordinary head.
 PER_COMPANY = 8
 
+#: Under this many postings a share says more than the sample can (ADR-0367): p3b's "Microservices
+#: 50% (1 employer)" was 2 of 4. Such a sample is given as counts, and called anecdotal.
+SMALL_SAMPLE = 30
+
 #: The Search filters this tool takes, each as `search_jobs` takes it; `max_age_days` too, so a
 #: sample leaves out what search leaves out by default (ADR-0338); and the employment type, the
 #: work-authorisation stance and pay, so internships or sponsoring roles can be sampled (ADR-0355).
@@ -118,6 +122,12 @@ def _lead(arguments: dict[str, Any], counted: dict[str, Any]) -> list[str]:
             )
         )
     ]
+    if 0 < distinct < SMALL_SAMPLE:
+        lines.append(
+            f"Only {distinct:,} distinct postings, under {SMALL_SAMPLE}: too few for shares to "
+            "describe the role, so counts are given in their place. Treat them as anecdotes, "
+            "and say so; broader filters or a broader query reach more."
+        )
     if over:
         lines.append(
             f"At most {counted['per_company']} postings of one company are counted, so one "
@@ -145,7 +155,16 @@ def _lead(arguments: dict[str, Any], counted: dict[str, Any]) -> list[str]:
 
 
 def _share(count: int, whole: int) -> str:
-    return f"{round(100 * count / whole)}%" if whole else "0%"
+    """``count`` of ``whole`` as a percentage, or as "2 of 4" under :data:`SMALL_SAMPLE`."""
+    if whole < SMALL_SAMPLE:
+        return f"{count:,} of {whole:,}"
+    return f"{round(100 * count / whole)}%"
+
+
+def _share_after(count: int, whole: int) -> str:
+    """`` (8%)`` after a count already said with its whole, and nothing under
+    :data:`SMALL_SAMPLE`, where the count is all there is to say."""
+    return "" if whole < SMALL_SAMPLE else f" ({_share(count, whole)})"
 
 
 def _skill_lines(counted: dict[str, Any]) -> list[str]:
@@ -181,7 +200,7 @@ def _work_authorization_line(counted: dict[str, Any]) -> str | None:
     if not held or not described:
         return None
     counted = ", ".join(
-        f"{words} in {held[stance]:,} ({_share(held[stance], described)})"
+        f"{words} in {held[stance]:,}{_share_after(held[stance], described)}"
         for stance, words in search_arguments.STANCE_WORDS.items()
         if stance in held
     )
@@ -324,8 +343,8 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
         lines.append(_experience_line(counted))
         lines.append(_salary_line(counted))
         lines.append(
-            f"Remote: {counted['remote']:,} of {counted['distinct']:,} "
-            f"({_share(counted['remote'], counted['distinct'])})."
+            f"Remote: {counted['remote']:,} of {counted['distinct']:,}"
+            f"{_share_after(counted['remote'], counted['distinct'])}."
         )
         if stances := _work_authorization_line(counted):
             lines.append(stances)

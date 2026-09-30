@@ -15,7 +15,8 @@ would count with the same other filters: each distinct location is read by
 `country_gazetteer.countries_outside_india` (the rule the filter compiles to SQL, run a column at a
 time, ADR-0355), and India by the materialized ``country`` column that ``country=IN`` reads, or,
 on a table without it, by `india_gazetteer.classify`. Within a country, a place is the city it
-names first: "Dublin" and "Dublin, Ireland" are one "Dublin" under Ireland. A job naming two
+names first: "Dublin" and "Dublin, Ireland" are one "Dublin" under Ireland, and the spellings the
+``location`` filter reads alike are one city: "Bangalore" and "Bengaluru" (ADR-0367). A job naming two
 countries counts in both; a place naming none ("N/A", "Remote") is counted apart.
 
 Reading a location's countries costs about 20 µs a distinct place in bulk and 330 µs one at a
@@ -38,6 +39,7 @@ from headstart.search_filters import (
     country_gazetteer,
     india_filter,
     india_gazetteer,
+    location_spelling,
 )
 from headstart.serving.count_ranking import most_first
 
@@ -124,6 +126,28 @@ def _head(place: str) -> str:
     return _PLACES_SEPARATOR.split(place, maxsplit=1)[0].split(",", 1)[0].strip()
 
 
+#: A city that is only a code ("SG" under Singapore, 257 jobs on 2026-09-30), or holds a digit, as
+#: a site or a building does ("Fab 10A", "HK-TKO 5/F"): every place holding a digit among the
+#: countries' top places on 2026-09-30 was one of these (4 of 384, ADR-0367).
+_NO_CITY = re.compile(r"[A-Z]{2,3}|.*\d.*")
+
+
+def _names_no_city(city: str) -> bool:
+    """Whether ``city`` names no city to list (:data:`_NO_CITY`): its jobs still count in the
+    country, but it is not one of the country's places."""
+    return bool(_NO_CITY.fullmatch(city))
+
+
+def _spelled(cities: dict[str, Counter[str]]) -> Counter[str]:
+    """Each city's jobs under the spelling most of them carry, ties by the first in order."""
+    return Counter(
+        {
+            most_first(spellings)[0][0]: sum(spellings.values())
+            for spellings in cities.values()
+        }
+    )
+
+
 def _places(ranked: list[tuple[str, int]]) -> list[dict[str, Any]]:
     return [
         {"location": place, "count": count}
@@ -135,8 +159,10 @@ def _by_country(
     located: Counter[tuple[str, bool]], india_materialized: bool
 ) -> dict[str, Any]:
     """``located`` rolled up by the countries each place names: each country's jobs and its top
-    cities, most jobs first, ties by code, a city spelled as its commonest place writes it; and
-    the jobs whose place names no country, with its top places.
+    cities, most jobs first, ties by code; and the jobs whose place names no country, with its
+    top places. A city's spellings the ``location`` filter reads alike ("Bangalore" and
+    "Bengaluru", "Zurich" and "Zürich") are one city (`location_spelling.place_key`, ADR-0367),
+    shown as most of its jobs spell it, and a code or a site (:data:`_NO_CITY`) is listed as none.
 
     A city is a place's first part ("Dublin" of "Dublin, Ireland" under IE) when that part names
     no country but the one it is counted under; one naming another ("London" of "London,
@@ -154,8 +180,8 @@ def _by_country(
     heads = {place: _head(_collapsed(place)) for place in written}
     head_outside = _outside_india(head for head in heads.values() if head)
     jobs: Counter[str] = Counter()
-    cities: dict[str, Counter[str]] = {}
-    spelled: dict[tuple[str, str], str] = {}
+    # Each country's cities by `place_key`, with how many jobs each spelling of one carries.
+    cities: dict[str, dict[str, Counter[str]]] = {}
     no_country: Counter[str] = Counter()
     for (place, in_india), count in located.items():
         if place not in written:
@@ -171,13 +197,19 @@ def _by_country(
         for code in codes:
             jobs[code] += count
             city = head if head_codes is not None and head_codes <= {code} else shown
-            key = spelled.setdefault((code, city.casefold()), city)
-            cities.setdefault(code, Counter())[key] += count
+            if _names_no_city(city):
+                continue
+            key = location_spelling.place_key(city)
+            cities.setdefault(code, {}).setdefault(key, Counter())[city] += count
         if not codes:
             no_country[shown] += count
     return {
         "countries": [
-            {"code": code, "jobs": count, "places": _places(most_first(cities[code]))}
+            {
+                "code": code,
+                "jobs": count,
+                "places": _places(most_first(_spelled(cities.get(code, {})))),
+            }
             for code, count in most_first(jobs)
         ],
         "no_country": {
