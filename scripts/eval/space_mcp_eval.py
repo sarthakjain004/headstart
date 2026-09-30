@@ -928,7 +928,7 @@ _HEDGED_LABEL = "may_offer"
 #: The eval's own reading of an unlabelled job, deliberately simpler than the Space's rules so it
 #: does not share their errors: a quoted sentence with a negating word within :data:`_NEAR_WORDS`
 #: words of one about sponsorship. Near, since "We support visa sponsorship … the right person
-#: and not" (coera, 2026-09-29) offers it.
+#: and not" (coera, 2026-09-29) refuses nothing; ADR-0368 reads it as hedged instead.
 _SPONSORSHIP_TOPIC = re.compile(r"(?i)\w*(?:sponsor|visa|h-?1-?b|citizen)\w*")
 _NEAR_WORDS = 5
 _NEGATED = re.compile(
@@ -947,6 +947,23 @@ _HEDGED = re.compile(
 #: A hedge stands further from its word than a negation: "Sponsorship for this role is not
 #: guaranteed", "Sponsorship decisions are made on a case-by-case basis".
 _HEDGE_NEAR_WORDS = 8
+#: The hedges ADR-0359 and ADR-0368 read, sought anywhere in a quoted sentence about
+#: sponsorship, as ADR-0359 reads a hedge anywhere in an offer's sentence: "we aren't able to
+#: sponsor visas for every role", "can't guarantee success for every candidate", "open to
+#: considering", "subject to company approval", "where it makes the difference", "if possible",
+#: "where we can", "shall be considered", "only if already based in".
+_HEDGED_IN_SENTENCE = re.compile(
+    r"(?i)\bfor every (?:role|position|candidate)\b|\bnot (?:all|every) (?:positions?|roles?)\b|"
+    r"\b(?:can't|can’t|cannot|can not) (?:always )?guarantee\b|\bopen to consider|"
+    r"\bsubject to\b[^.]{0,40}\bapproval\b|\bwhere it makes (?:the|a) difference\b|"
+    r"\b(?:if|where|when) possible\b|\bwhere we can\b|\bshall be considered\b|"
+    r"\balready (?:based|located|living|residing) in\b"
+)
+#: A visa transfer offered without a new visa (ADR-0359): "H-1B transfer sponsorship available".
+_TRANSFER = re.compile(
+    r"(?i)\b(?:visa|h-?1-?b|opt)\s+transfers?\b|\btransfer\s+(?:of\s+)?(?:visa\s+)?sponsorship\b"
+)
+_NEW_VISA = re.compile(r"(?i)\bnew\b")
 #: What an answer line says of a hedged job to report it truly.
 _SAID_HEDGED = re.compile(
     r"(?i)not guaranteed|case[- ]by[- ]case|\bmay\b|\bmight\b|hedg|possib|not a firm|"
@@ -982,6 +999,11 @@ def _not_offering(job: dict[str, Any], labels: dict[str, str]) -> str | None:
             return "hedged: labelled may_offer by hand"
         return None if label in _OFFERING_LABELS else f"labelled {label} by hand"
     for mention in (job.get("work_authorization") or {}).get("mentions") or []:
+        if _SPONSORSHIP_TOPIC.search(mention) and (
+            _HEDGED_IN_SENTENCE.search(mention)
+            or (_TRANSFER.search(mention) and not _NEW_VISA.search(mention))
+        ):
+            return f"hedged: says {mention[:80]!r}"
         for topic in _SPONSORSHIP_TOPIC.finditer(mention):
             near = mention[: topic.start()].split()[-_NEAR_WORDS:] + [topic.group()]
             near += mention[topic.end() :].split()[:_NEAR_WORDS]

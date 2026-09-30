@@ -331,6 +331,7 @@ supersedes it and note the supersession in both.
 | [0365](0365-a-copy-is-one-posting-on-two-boards-and-every-row-counts-toward-per-company.md) | A copy is one posting on two Boards, and every row counts toward per_company (amends 0352) | 2026-09-30 |
 | [0366](0366-an-agency-name-is-read-off-a-boards-own-label-and-a-watched-roles-total-counts-one-basis.md) | An agency name is read off a Board's own label, and a watched-roles total counts one basis (amends 0335, 0233) | 2026-09-30 |
 | [0367](0367-answers-name-a-may-offers-kind-a-loose-match-a-small-sample-a-passed-end-date-and-a-near-id.md) | Answers name a may-offer's kind, a loose match, a small sample, a passed end date and a near id | 2026-09-30 |
+| [0368](0368-a-hedge-near-a-visa-word-a-type-scope-and-a-move-to-a-city-hold-back-a-firm-sponsorship-offer.md) | A hedge near a visa word, a type scope and a move to a city hold back a firm sponsorship offer (amends 0359) | 2026-09-30 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*

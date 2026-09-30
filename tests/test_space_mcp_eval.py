@@ -932,8 +932,8 @@ def test_sponsorship_polarity_fails_an_answer_naming_a_job_that_refuses(ev):
         ("Visa sponsorship is available for this position.", True),
         (
             (
-                "We support visa sponsorship and relocation within Europe, where it makes "
-                "the difference between hiring the right person and not."
+                "We sponsor visas for engineers relocating to Berlin, and the team there does "
+                "not work weekends."
             ),
             True,
         ),
@@ -1042,11 +1042,44 @@ def test_sponsorship_polarity_passes_a_hedged_offer_only_when_the_answer_says_so
         "Sponsorship for this role is not guaranteed.",
         "Visa sponsorship may be available for select positions.",
         "Sponsorship decisions are made on a case-by-case basis.",
+        # The hedges ADR-0359 added, anywhere in the sentence (ADR-0368).
+        "However, we aren't able to successfully sponsor visas for every role and every candidate.",
+        (
+            "While we can't guarantee success for every candidate or role, we're committed to "
+            "working through the visa process together."
+        ),
+        (
+            "We are open to considering candidates who require visa sponsorship (subject to "
+            "eligibility and company approval)."
+        ),
+        "Visa sponsorship: H-1B transfer sponsorship available.",
+        # And those ADR-0368 added.
+        (
+            "We support visa sponsorship and relocation within Europe, where it makes the "
+            "difference between hiring the right person and not."
+        ),
+        "Visa sponsorship and relocation stipend to bring you to SF, if possible",
+        "Visa sponsorship shall be considered for the right skill sets",
+        "We're open to sponsoring international visas where we can.",
+        "Visa support is provided if required (only if already based in the United Kingdom).",
     ],
 )
 def test_sponsorship_polarity_reads_a_hedge_before_a_negation(ev, mention):
     job = {"id": "lever:acme:1", "work_authorization": {"mentions": [mention]}}
     assert ev._not_offering(job, {}).startswith("hedged")
+
+
+@pytest.mark.parametrize(
+    "mention",
+    [
+        "We sponsor new H-1B visas and H-1B transfers.",
+        "Visa sponsorship and transfers are supported.",
+        "We sponsor visas for every engineer we hire.",
+    ],
+)
+def test_sponsorship_polarity_reads_a_new_visa_or_a_firm_offer_as_offering(ev, mention):
+    job = {"id": "lever:acme:1", "work_authorization": {"mentions": [mention]}}
+    assert ev._not_offering(job, {}) is None
 
 
 def test_sponsorship_polarity_fails_an_answer_naming_no_job(ev):

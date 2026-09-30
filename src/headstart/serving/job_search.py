@@ -1051,7 +1051,10 @@ def _job_row(row: Mapping[str, Any]) -> dict[str, Any]:
     result["description_cut"] = len(description) > JOB_DESCRIPTION_LIMIT
     # Read from the whole description, not the cut one: a visa sentence often closes it.
     held = work_authorization.reading(
-        description, title=row.get("title"), location=row.get("location")
+        description,
+        title=row.get("title"),
+        location=row.get("location"),
+        employment_type=row.get("employment_type"),
     )
     result["work_authorization"] = {
         "stances": [s for s in work_authorization.STANCES if s in held.stances],
