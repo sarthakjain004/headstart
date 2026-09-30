@@ -622,8 +622,10 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         # Hipster Ipsum text, `obsidian` ("Test Job 3"), `mateusz-testing` ("Test Job") and
         # `tdpfund` ("Test Job 1", "Test Job 2", "Vet Tech") carry it in every posting, and
         # `crystalblockchain` is the seeded five plus "AB Test Job 1". Other Boards hold some of these
-        # sample postings beside real ones (`ada`, `gearset`, `oviva`, `sofi`, `dermavant`, `kodland`,
-        # `pmaconsultants`): they stay, and so do their real postings.
+        # sample postings beside real ones (`ada`, `gearset`, `oviva`, `dermavant`, `kodland`,
+        # `pmaconsultants`): they stay, and so do their real postings. Two more, read 2026-09-30 after
+        # the landing, serve only seeded postings: `sofi` ("Head of DEI - UK", "Customer Service Rep")
+        # and `innovaccer` ("Head of DEI - UK", "Marketing Manager").
         "pinpoint:100ms",
         "pinpoint:174powerglobal",
         "pinpoint:60decibels",
@@ -672,6 +674,7 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         "pinpoint:humane",
         "pinpoint:improbable",
         "pinpoint:includedhealth",
+        "pinpoint:innovaccer",
         "pinpoint:inspiresleep",
         "pinpoint:instrumental",
         "pinpoint:intellectt",
@@ -721,6 +724,7 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         "pinpoint:shorelight",
         "pinpoint:smallgirlspr",
         "pinpoint:smarsh",
+        "pinpoint:sofi",
         "pinpoint:solis-academy",
         "pinpoint:sonatype",
         "pinpoint:spartaglobal",
@@ -792,15 +796,6 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         "jazzhr:thedesignerysandbox",
         "jazzhr:verifiedfirstsandbox",
         "jazzhr:zenefitness1",
-        # Recruitee (offers API), read 2026-09-30: `bamboohr` is "Cycle HR - Sandbox", two offers
-        # whose descriptions are the same construction-worker text under "Construction Laborer" and
-        # "Human Resources Recruiter". `happyhorizon` is "Sandbox HappyHorizon": 34 offers created
-        # 3-4 seconds apart on 2026-07-22 whose departments do not fit their titles ("Motion
-        # Designer" in Human Resources, "Frontend Developer" in Marketing) beside "Open Application
-        # Text". `alliedglobaljobs` ("Allied Global Sandbox") is NOT here: its 31 offers are dated
-        # over months, at real sites in Guatemala and Honduras, with real descriptions.
-        "recruitee:bamboohr",
-        "recruitee:happyhorizon",
         # Personio's own demo tenant, read 2026-09-30: `demorecruiting` serves 154 postings ("adas",
         # "dsadasda", "Ana test some description", "DEMO JULY", one "Engineering Manager" title
         # repeated twelve times) at "A really long office name that is very unlikely to be so long",
@@ -885,17 +880,10 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         "smartrecruiters:vinformatix",
         "smartrecruiters:visageinc",
         "smartrecruiters:work42",
-        # Vendor infrastructure hosts that a host-graph sweep read as tenants and the liveness probe
-        # left `unknown`, read 2026-09-30: `assets.freshteam.com` answers S3's AccessDenied XML,
-        # `mobile.recruitee.com` is the vendor's app page, `s.recruitee.com` answers 502 Bad Gateway,
-        # `data-warehouse-docs.recruitee.com` is a documentation site, `apps.bamboohr.com` is
-        # BambooHR's app host (unreachable from the reading machine on 2026-09-30, named by the
-        # landing run's own read). None has an openings board.
-        "bamboohr:apps",
+        # `assets.freshteam.com`, a vendor infrastructure host that a host-graph sweep read as a
+        # tenant and the liveness probe left `unknown`, read 2026-09-30: it answers S3's
+        # AccessDenied XML. It has no openings board.
         "freshteam:assets",
-        "recruitee:mobile",
-        "recruitee:s",
-        "recruitee:data-warehouse-docs",
     }
 )
 
