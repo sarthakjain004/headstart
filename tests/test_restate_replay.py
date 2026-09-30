@@ -155,3 +155,20 @@ def test_no_facts_is_no_versions(tmp_path):
     assert rr.job_versions(tmp_path) is None
     assert rr.board_reads(tmp_path) is None
     assert rr.runs(tmp_path) == []
+
+
+def test_a_boards_first_read_is_its_first_that_did_not_fail():
+    import pyarrow as pa
+
+    reads = pa.table(
+        {
+            "board": ["greenhouse:Acme", "greenhouse:acme", "lever:beta", None],
+            "run": ["2026-09-02", "2026-09-01", "2026-09-01", "2026-09-01"],
+            "outcome": ["authoritative", "error", "truncated", "error"],
+        }
+    )
+
+    assert rr.first_reads(reads) == {
+        "greenhouse:acme": "2026-09-02",
+        "lever:beta": "2026-09-01",
+    }

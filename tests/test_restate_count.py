@@ -72,11 +72,7 @@ def _ticks(tmp_path: Path, steps):
     served = rs.served_intervals(
         rr.job_versions(facts), reads, is_tech=lambda t, d: True, live={}, keep_set=None
     )
-    first_reads: dict[str, str] = {}
-    for row in reads.to_pylist():
-        if row["board"] is not None:
-            first_reads.setdefault(lower_key(row["board"]), row["run"])
-    return list(rc.tick_counts(served, rr.runs(facts), first_reads, _place))
+    return list(rc.tick_counts(served, rr.runs(facts), rr.first_reads(reads), _place))
 
 
 STEPS = [
@@ -142,22 +138,16 @@ def test_stock_moves_exactly_by_its_turnover_at_every_tick(tmp_path):
     """ADR-0227's identity, per (board, family, band) and tick, on tech keys."""
     ticks = _ticks(tmp_path, STEPS)
     before: dict = {}
-    for _, levels, turnover in ticks:
-        keys = {k for k in levels if k[1] == "stock" and k[2] != rc.NON_TECH} | {
-            k for k in before if k[1] == "stock" and k[2] != rc.NON_TECH
-        }
-        for board, _, family, band in keys:
-            delta = levels.get((board, "stock", family, band), 0) - before.get(
-                (board, "stock", family, band), 0
-            )
-            flow = (
-                turnover[(board, rc.OPENED, family, band)]
-                - turnover[(board, rc.CLOSED, family, band)]
-                + turnover[(board, rc.RECOUNTED_IN, family, band)]
-                - turnover[(board, rc.RECOUNTED_OUT, family, band)]
-            )
-            assert delta == flow, (board, family, band)
+    for run, levels, turnover in ticks:
+        assert rc.unbalanced(before, levels, turnover) == [], run
         before = levels
+
+
+def test_a_stock_move_without_its_turnover_is_unbalanced():
+    key = (BOARD_A, "stock", *SE)
+
+    assert rc.unbalanced({}, {key: 1}, Counter()) == [(BOARD_A, *SE)]
+    assert rc.unbalanced({}, {key: 1}, Counter({(BOARD_A, rc.OPENED, *SE): 1})) == []
 
 
 def test_a_job_counts_as_new_for_seven_days_after_it_was_first_listed(tmp_path):
@@ -169,6 +159,7 @@ def test_a_job_counts_as_new_for_seven_days_after_it_was_first_listed(tmp_path):
 
 
 MAIN, SUB = "workday:acme/External", "workday:acme/Campus"
+HIDDEN = "workday:acme/Internal_Careers"
 SITE_JOBS = {"workday:acme/external": 900, "workday:acme/campus": 40}
 
 
@@ -177,7 +168,7 @@ def _folded_ticks(tmp_path: Path, steps):
     from headstart.ingest.index_plan import boards_by_canon, duplicate_ranks
 
     facts = tmp_path / "facts"
-    keep = {MAIN, SUB}
+    keep = {MAIN, SUB, HIDDEN}
     for stamp, (jobs, read) in zip(RUNS, steps, strict=False):
         _record(facts, stamp, jobs, read)
     reads = rr.board_reads(facts)
@@ -191,11 +182,7 @@ def _folded_ticks(tmp_path: Path, steps):
     )
     ranks = duplicate_ranks(served["id"].to_pylist(), keep, site_jobs=SITE_JOBS)
     folded = rs.fold_duplicates(served, ranks)
-    first_reads: dict[str, str] = {}
-    for row in reads.to_pylist():
-        if row["board"] is not None:
-            first_reads.setdefault(lower_key(row["board"]), row["run"])
-    return list(rc.tick_counts(folded, rr.runs(facts), first_reads, _place))
+    return list(rc.tick_counts(folded, rr.runs(facts), rr.first_reads(reads), _place))
 
 
 def _stock(ticks, i: int) -> dict:
@@ -212,7 +199,8 @@ def test_two_copies_of_one_requisition_count_once_on_the_site_prune_keeps(tmp_pa
     assert _stock(ticks, 0) == {(MAIN, "stock", *SE): 1}
 
 
-def test_the_kept_copy_arriving_later_takes_over_without_a_closure(tmp_path):
+def test_a_copy_arriving_on_another_site_leaves_the_incumbent_in_place(tmp_path):
+    """`index sync` refuses a copy while an incumbent of the same class stands."""
     ticks = _folded_ticks(
         tmp_path,
         [
@@ -221,11 +209,30 @@ def test_the_kept_copy_arriving_later_takes_over_without_a_closure(tmp_path):
         ],
     )
 
+    assert _stock(ticks, 1) == {(SUB, "stock", *SE): 1}
+    assert sum(_metric(ticks, 1, rc.RECOUNTED_IN).values()) == 0
+    assert sum(_metric(ticks, 1, rc.OPENED).values()) == 0
+
+
+def test_a_public_copy_takes_over_from_a_non_public_incumbent_without_a_closure(
+    tmp_path,
+):
+    ticks = _folded_ticks(
+        tmp_path,
+        [
+            ([(HIDDEN, _job(f"{HIDDEN}:R-100"))], {MAIN, HIDDEN}),
+            (
+                [(HIDDEN, _job(f"{HIDDEN}:R-100")), (MAIN, _job(f"{MAIN}:R-100"))],
+                {MAIN, HIDDEN},
+            ),
+        ],
+    )
+
     assert _stock(ticks, 1) == {(MAIN, "stock", *SE): 1}
     assert _metric(ticks, 1, rc.CLOSED) == Counter()
     assert _metric(ticks, 1, rc.OPENED) == Counter()
     assert _metric(ticks, 1, rc.RECOUNTED_OUT) == Counter(
-        {(SUB, rc.RECOUNTED_OUT, *SE): 1}
+        {(HIDDEN, rc.RECOUNTED_OUT, *SE): 1}
     )
     assert _metric(ticks, 1, rc.RECOUNTED_IN) == Counter(
         {(MAIN, rc.RECOUNTED_IN, *SE): 1}

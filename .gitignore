@@ -80,6 +80,8 @@ data/state/
 data/descriptions/
 # Job facts and the Listed set (ADR-0330) — what each scrape saw, lives in the HF dataset, not git
 data/facts/
+# a Restatement's ticks (ADR-0330) — rebuilt from the facts, kept as an Actions artifact
+data/restated/
 # enrichment outputs (extracted experience, etc.) — regenerable from scripts/enrich/
 data/enrich/
 # harvested external ATS company lists — large and regenerable from the merge scripts

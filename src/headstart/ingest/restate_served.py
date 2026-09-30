@@ -15,14 +15,16 @@ applies to the whole past alike:
   sync`` serves it. A version that ended ``changed`` or ``off_board`` stops counting when it ended;
 * **Dormant Boards** (ADR-0250): while every Job listed on a Board is dated and the newest is more
   than two years older than the run, none of its Jobs counts. Judged over every listed Job, tech
-  or not, as ``scrape_join`` judges it, and at every run, since a Board turns Dormant as time
-  passes with nothing scraped. An interval Dormancy cuts ends ``dormant``; one that resumes when
-  the Board posts again starts ``revived``.
+  or not, at each authoritative read of the Board, as ``scrape_join`` judges it. A Job first
+  listed while its Board is Dormant never counts; one already counting keeps counting until the
+  Board's next authoritative read, as ``index sync`` evicts it after its grace period. An
+  interval Dormancy cuts ends ``dormant``; one that resumes when the Board posts again starts
+  ``revived``.
 
 Each counted version becomes a **served interval**, ``[served_from, served_to)`` in runs, with
 ``served_to`` None while it still counts. Last, :func:`fold_duplicates` folds each duplicate group
 ``index prune`` would collapse into one Job over time (``dedup_group``), counting only the member
-prune keeps at each moment.
+the index serves at each moment.
 
 Runs inside a Restatement; it is not a pipeline stage.
 """
@@ -122,9 +124,9 @@ def served_intervals(
     )
 
 
-def _dormant_from(newest: str, runs: list[str], since: str) -> str | None:
-    """The first run at or after ``since`` that judges a Board whose newest posting is ``newest``
-    Dormant, as ``PostedDates.dormant`` judges it on the run's day."""
+def _dormant_from(newest: str, reads: list[str], since: str) -> str | None:
+    """The first of a Board's authoritative ``reads`` at or after ``since`` that judges it Dormant
+    when its newest posting is ``newest``, as ``PostedDates.dormant`` judges it on the run's day."""
     first_day = (
         date.fromisoformat(newest) + board_dormancy.DORMANT_AFTER + timedelta(days=1)
     )
@@ -134,15 +136,22 @@ def _dormant_from(newest: str, runs: list[str], since: str) -> str | None:
             first_day.year, first_day.month, first_day.day, tzinfo=UTC
         ).isoformat(),
     )
-    at = bisect_left(runs, threshold)
-    return runs[at] if at < len(runs) else None
+    at = bisect_left(reads, threshold)
+    return reads[at] if at < len(reads) else None
+
+
+#: A stretch a Board was Dormant: the read that judged it so, the next authoritative read (when
+#: the Jobs it already served leave the index), and the run it posted again (None while it has
+#: not).
+DormantPeriod = tuple[str, str | None, str | None]
 
 
 def dormant_periods(
-    versions, runs: list[str], live: Mapping[str, str]
-) -> dict[str, list[tuple[str, str | None]]]:
-    """``{case-folded Board: [(from run, to run or None)]}`` for every stretch today's Dormant rule
-    held, judged over every version listed on the Board at each run."""
+    versions, reads, live: Mapping[str, str]
+) -> dict[str, list[DormantPeriod]]:
+    """``{case-folded Board: [its Dormant periods]}`` under today's rule, judged at each
+    authoritative read over every version listed on the Board then."""
+    reads_of = _in_scope_reads(reads)
     by_board: dict[str, list[tuple[str, str | None, str, object]]] = {}
     for job_id, vfrom, vto, posted in zip(
         versions["id"].to_pylist(),
@@ -154,10 +163,11 @@ def dormant_periods(
         board = lower_key(resolve_board(job_id, live))
         by_board.setdefault(board, []).append((vfrom, vto, job_id, posted))
 
-    periods: dict[str, list[tuple[str, str | None]]] = {}
+    periods: dict[str, list[DormantPeriod]] = {}
     for board, listed in by_board.items():
+        board_reads = reads_of.get(board, [])
         bounds = sorted({v[0] for v in listed} | {v[1] for v in listed if v[1]})
-        found: list[tuple[str, str | None]] = []
+        found: list[DormantPeriod] = []
         for k, start in enumerate(bounds):
             end = bounds[k + 1] if k + 1 < len(bounds) else None
             dates = board_dormancy.PostedDates()
@@ -167,20 +177,21 @@ def dormant_periods(
             newest = dates.newest(board)
             if newest is None:
                 continue
-            onset = _dormant_from(newest, runs, start)
+            onset = _dormant_from(newest, board_reads, start)
             if onset is not None and (end is None or onset < end):
-                if found and found[-1][1] == onset:
-                    found[-1] = (found[-1][0], end)
+                if found and found[-1][2] == onset:
+                    found[-1] = (*found[-1][:2], end)
                 else:
-                    found.append((onset, end))
+                    found.append((onset, _next_after(board_reads, onset), end))
         if found:
             periods[board] = found
     return periods
 
 
-def clip_dormant(served, periods: Mapping[str, list[tuple[str, str | None]]]):
+def clip_dormant(served, periods: Mapping[str, list[DormantPeriod]]):
     """``served`` with each interval's Dormant stretches cut out: a cut interval ends
-    ``dormant``, and the part after a Dormant stretch starts ``revived``."""
+    ``dormant``, and the part after a Dormant stretch starts ``revived``. An interval that began
+    before its Board was judged Dormant is cut from the Board's next authoritative read."""
     import pyarrow as pa
 
     rows = served.to_pylist()
@@ -188,12 +199,16 @@ def clip_dormant(served, periods: Mapping[str, list[tuple[str, str | None]]]):
     for row in rows:
         row.setdefault("starts_as", None)
         pieces = [row]
-        for gone_from, gone_to in periods.get(lower_key(row["board"]), []):
+        for onset, evicted, gone_to in periods.get(lower_key(row["board"]), []):
             kept = []
             for piece in pieces:
                 start, end = piece["served_from"], piece["served_to"]
-                if (end is not None and end <= gone_from) or (
-                    gone_to is not None and start >= gone_to
+                gone_from = onset if start >= onset else evicted
+                if (
+                    gone_from is None
+                    or (gone_to is not None and gone_from >= gone_to)
+                    or (end is not None and end <= gone_from)
+                    or (gone_to is not None and start >= gone_to)
                 ):
                     kept.append(piece)
                     continue
@@ -232,7 +247,7 @@ def english_only(served, descriptions: Mapping[str, str], is_english: EnglishTes
 def fold_duplicates(served, ranks: Mapping[str, tuple[tuple[str, str], tuple]]):
     """``served`` with each duplicate group folded into one Job over time, and a ``dedup_group``
     naming it on every row. ``ranks`` is ``index_plan.duplicate_ranks`` over the served ids: at every
-    moment only the lowest-ranked member being served counts, the one ``index prune`` keeps. A cut
+    moment one served member counts, the one the index serves (:func:`_fold`). A cut
     piece ends ``superseded`` and the member taking over starts ``superseding``, so the group
     counts as one Job across the handover. An id on no live Board is a group of its own."""
     import pyarrow as pa
@@ -257,12 +272,17 @@ def fold_duplicates(served, ranks: Mapping[str, tuple[tuple[str, str], tuple]]):
 
 
 def _fold(members: list[dict], ranks) -> list[dict]:
-    """One group's rows cut so that only its best-ranked served member counts at each moment."""
+    """One group's rows cut so that one served member counts at each moment, the one the index
+    serves: ``index sync`` refuses a copy while an incumbent stands, unless the copy is of a
+    better class (a public site before a non-public one, a backing Board before an Eightfold
+    site), and a copy on the incumbent's own Board is its other casing, which ``index prune``
+    settles by rank. With no incumbent, the best-ranked copy (``index_plan._other_site_copies``)."""
     bounds = sorted(
         {row["served_from"] for row in members}
         | {row["served_to"] for row in members if row["served_to"] is not None}
     )
     pieces: list[list] = []  # [row, start, end]
+    holder: dict | None = None
     for k, start in enumerate(bounds):
         end = bounds[k + 1] if k + 1 < len(bounds) else None
         present = [
@@ -272,8 +292,21 @@ def _fold(members: list[dict], ranks) -> list[dict]:
             and (row["served_to"] is None or row["served_to"] > start)
         ]
         if not present:
+            holder = None
             continue
-        best = min(present, key=lambda row: (ranks[row["id"]][1], row["served_from"]))
+
+        def rank(row: dict) -> tuple:
+            return ranks[row["id"]][1], row["served_from"]
+
+        best = min(present, key=rank)
+        incumbent = [row for row in present if holder and row["id"] == holder["id"]]
+        # The rank's first two keys are the copy's class (index_plan.duplicate_ranks).
+        if incumbent and ranks[best["id"]][1][:2] >= ranks[holder["id"]][1][:2]:
+            board = lower_key(holder["board"])
+            best = min(
+                (row for row in present if lower_key(row["board"]) == board), key=rank
+            )
+        holder = best
         if pieces and pieces[-1][0] is best and pieces[-1][2] == start:
             pieces[-1][2] = end
         else:

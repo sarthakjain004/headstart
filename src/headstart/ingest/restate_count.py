@@ -131,3 +131,25 @@ def tick_counts(
                 del levels[key]
             applied += 1
         yield run, dict(levels), events.get(run, Counter())
+
+
+def unbalanced(
+    before: Mapping[Key, int], levels: Mapping[Key, int], turnover: Mapping[Key, int]
+) -> list[tuple[str, str, str]]:
+    """The tech ``(board, family, band)`` whose stock did not move by exactly its turnover
+    between two consecutive ticks' ``levels`` (ADR-0227's identity): none, when it holds."""
+    keys = {
+        (board, family, band)
+        for board, metric, family, band in (*before, *levels)
+        if metric == "stock" and family != NON_TECH
+    }
+    return sorted(
+        (board, family, band)
+        for board, family, band in keys
+        if levels.get((board, "stock", family, band), 0)
+        - before.get((board, "stock", family, band), 0)
+        != turnover.get((board, OPENED, family, band), 0)
+        - turnover.get((board, CLOSED, family, band), 0)
+        + turnover.get((board, RECOUNTED_IN, family, band), 0)
+        - turnover.get((board, RECOUNTED_OUT, family, band), 0)
+    )

@@ -86,10 +86,12 @@ whenever a rule changes, so a rule change moves the whole history and draws no s
      Board outside today's keep-set, a version today's tech filter rejects, and one today's
      English gate reads as not English (judged on the description the store holds now, since
      the facts keep no text), never count.
-     Dormant Boards are judged at every run over every listed Job, so a Board can turn Dormant
-     with nothing scraped. Duplicate groups fold into one Job over time, counting the member
-     `index prune` keeps at each moment (`index_plan.duplicate_ranks`, tested against
-     `plan_prune`). The one timing rule kept from the pipeline is the grace period (ADR-0083): a
+     Dormant Boards are judged at each authoritative read over every listed Job, as
+     `scrape_join` judges them; a Job already counting leaves at the Board's next authoritative
+     read, as `index sync` evicts it after the grace period. Duplicate groups fold into one Job
+     over time, counting the copy the index serves: the incumbent while it stands, unless a copy
+     of a better class arrives, as `index sync` admits them (`index_plan.duplicate_ranks`,
+     tested against `plan_prune`). The one timing rule kept from the pipeline is the grace period (ADR-0083): a
      Job counts until its Board's next authoritative read. Without it every closure would land
      one run early against `role_trends`.
    - **Placement** (`restate_place`): the family as `role_trends` decides it. A Job with no
@@ -153,6 +155,19 @@ The owner's other decisions (2026-09-29):
   shared shortfall check (`mark_truncated_unless_negligible`) cannot stand in for it: detail-pass
   callers pass the length of our own listing, and most call it only on a shortfall. Each scraper
   reporting its listing's total is a follow-up.
+- **A Restatement matched `role_trends` on its first real data** (2026-09-30, 23 runs of facts):
+  a median gap of 0.49% in tech stock, after the English gate was added (7.5% without it). The
+  rest is Jobs the live table served from before the facts began, on Boards no run since has
+  listed in full: unread, truncated at an API's offset cap, or failing every read. Step 6
+  splices that history in; waiting does not close it. The Restate step took 96 minutes.
+- **Where a Restatement knowingly differs from `role_trends`:**
+  - the English gate reads the description the store holds now, not the text a Job carried
+    when it was embedded, because the facts keep no text;
+  - a Job whose change moves it out of tech, and a handover between duplicate copies, are
+    Recounted when they happen. `role_trends` books a Closed after the grace period and an
+    Opened when the other copy is scraped again, because it cannot tell them from hiring;
+  - watched roles and the `unscoped` markers `role_trends` writes for Unauthoritative Boards
+    are not restated yet. Step 4 adds what the Space reads.
 - **Fragments accumulate** at two files a run per directory. HF's 10,000-files-per-directory
   limit is years away. A monthly fold, like the description store's, comes before it.
 

@@ -69,6 +69,6 @@ def placements(
     ).append_column("band", pa.array(bands, pa.string()))
 
 
-def placed(row: Mapping) -> tuple[str, str] | None:
+def place_of(row: Mapping) -> tuple[str, str] | None:
     """The ``place`` a Restatement counts with, once :func:`placements` has run."""
     return None if row["family"] is None else (row["family"], row["band"])

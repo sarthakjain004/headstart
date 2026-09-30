@@ -28,7 +28,6 @@ from pathlib import Path
 
 from headstart import log
 from headstart.boards import eightfold_backing
-from headstart.boards.board_identity import lower_key
 from headstart.ingest import (
     REPO_ROOT,
     board_failures,
@@ -142,8 +141,8 @@ def main() -> int:
     reads = restate_replay.board_reads(args.facts)
     _log.info(f"{versions.num_rows} Job versions over {len(runs)} runs")
 
-    keep = live_keep_set(args.ledger)
-    live = boards_by_canon(keep)
+    ledger_boards = live_keep_set(args.ledger)
+    live = boards_by_canon(ledger_boards)
     keep_set = job_facts.RunScope.of(
         set(), set(), live, board_failures.load(args.board_failures)
     ).keep_set
@@ -151,7 +150,7 @@ def main() -> int:
         versions, reads, is_tech=tech_filter.is_tech, live=live, keep_set=keep_set
     )
     served = restate_served.clip_dormant(
-        served, restate_served.dormant_periods(versions, runs, live)
+        served, restate_served.dormant_periods(versions, reads, live)
     )
     descriptions = _descriptions(args.descriptions, set(served["id"].to_pylist()))
     served = restate_served.english_only(served, descriptions, is_english)
@@ -165,7 +164,7 @@ def main() -> int:
         served,
         duplicate_ranks(
             ids,
-            keep,
+            ledger_boards,
             site_jobs=workday_site_jobs(args.ledger),
             requisitions=requisitions,
             backing=eightfold_backing.load(),
@@ -195,14 +194,8 @@ def main() -> int:
         _vectors(args.db, args.facts, wanted),
         descriptions,
     )
+    _log.info(f"placed {served.num_rows} served intervals in a family and band")
 
-    first_reads: dict[str, str] = {}
-    if reads is not None:
-        for board, run in zip(
-            reads["board"].to_pylist(), reads["run"].to_pylist(), strict=True
-        ):
-            if board is not None:
-                first_reads.setdefault(lower_key(board), run)
     methodology = trend_history.Methodology(
         family_list_fingerprint=role_taxonomy.family_list_fingerprint(args.families),
         family_classifier_version=role_family_classifier.classifier_version(head),
@@ -213,13 +206,20 @@ def main() -> int:
     # A Restatement is derived whole from the facts: the previous one is replaced, not extended.
     shutil.rmtree(args.out, ignore_errors=True)
     previous: tuple[str | None, dict] = (None, {})
-    for run, levels, turnover in restate_count.tick_counts(
-        served, runs, first_reads, restate_place.placed
-    ):
+    ticks = restate_count.tick_counts(
+        served, runs, restate_replay.first_reads(reads), restate_place.place_of
+    )
+    for n, (run, levels, turnover) in enumerate(ticks, 1):
+        if broken := restate_count.unbalanced(previous[1], levels, turnover):
+            raise ValueError(
+                f"tick {run}: stock did not move by its turnover for {len(broken)} "
+                f"(board, family, band), e.g. {broken[:3]}"
+            )
         trend_history.record_tick(
             args.out, run, levels, turnover, methodology, replayed=previous
         )
         previous = (run, levels)
+        _log.info(f"tick {n}/{len(runs)} {run}: {sum(turnover.values())} moves")
     _log.info(f"restated {len(runs)} ticks under today's rules -> {args.out}")
     return 0
 

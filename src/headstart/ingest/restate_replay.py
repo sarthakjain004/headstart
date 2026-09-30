@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from headstart.boards.board_identity import lower_key
 from headstart.ingest import job_facts
 
 #: The columns a version carries beyond the fact's own: when it began and ended, and how.
@@ -110,3 +111,21 @@ def open_at(versions, run: str):
         pc.is_null(versions["valid_to"]), pc.greater(versions["valid_to"], run)
     )
     return versions.filter(pc.and_(begun, not_ended))
+
+
+def first_reads(reads) -> dict[str, str]:
+    """``{case-folded Board: its first run whose read did not fail}``: when its backlog first
+    reached the index, so its Jobs then are Recounted, not Opened (ADR-0330)."""
+    first: dict[str, str] = {}
+    if reads is None:
+        return first
+    for board, run, outcome in zip(
+        reads["board"].to_pylist(),
+        reads["run"].to_pylist(),
+        reads["outcome"].to_pylist(),
+        strict=True,
+    ):
+        if board is not None and outcome != "error":
+            key = lower_key(board)
+            first[key] = min(first.get(key, run), run)
+    return first

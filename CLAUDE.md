@@ -335,7 +335,7 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   boot, ADR-0230, so no stage does). `index compact` is a subcommand of the
   same module but is **not** part of this run — it moved to the `cleanup-index` workflow, because
   rewriting the whole table once per run is what the storage budget cannot afford.
-  Five more entry points are not stages. `state_fetch` (ADR-0030) pulls each stage's slice of HF
+  Six more entry points are not stages. `state_fetch` (ADR-0030) pulls each stage's slice of HF
   state in `scrape-plan`, `join` and `merge`, or aborts. `state_witness` (ADR-0095) publishes which
   state directories exist, so an empty fetch can be told apart from a first run. `state_guard`
   (ADR-0129) refuses a write to HF state that another workflow changed since it was read — `merge`
@@ -344,7 +344,10 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   in `merge`'s upload step, so they can never disagree. And one runs at the
   end of `merge` without being a stage either: `reclaim_storage` (ADR-0168) deletes the orphaned
   LFS blobs and verifies the quota actually fell — squashing history only makes them eligible for
-  HF's collection, which is how the 100 GB quota filled on 2026-09-18.
+  HF's collection, which is how the 100 GB quota filled on 2026-09-18. `restate_run` (ADR-0330)
+  runs in its own `restate-trends` workflow: it recomputes the Trends history from the Job facts
+  under today's rules, through `restate_replay`, `restate_served`, `restate_place` and
+  `restate_count`, and writes nothing to HF.
   If you change what the pipeline runs, change it there and update `.github/workflows/pipeline.yml`
   to match. Don't add a pipeline stage to `scripts/`. Helper modules used *only* by the pipeline
   live there too (`binpack`, `board_failures`, `board_freshness`, `board_naming`,

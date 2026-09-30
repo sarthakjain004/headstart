@@ -53,11 +53,15 @@ def family_stock_by_tick(state_dir: Path) -> dict[str, Counter]:
 
 
 def pairs(restated: list[str], live: list[str], hours: float) -> list[tuple[str, str]]:
-    """Each restated tick with the first live tick at or after it, within ``hours``."""
+    """Each restated tick with the first live tick at or after it, within ``hours``. A live tick
+    pairs once: a run whose live tick is missing leaves its restated tick unpaired rather than
+    matched to the next run's."""
     paired = []
+    used: set[str] = set()
     for stamp in restated:
         at = bisect_left(live, stamp)
-        if at < len(live):
+        if at < len(live) and live[at] not in used:
+            used.add(live[at])
             gap = datetime.fromisoformat(live[at]) - datetime.fromisoformat(stamp)
             if gap <= timedelta(hours=hours):
                 paired.append((stamp, live[at]))
@@ -69,6 +73,12 @@ def main() -> int:
     ap.add_argument("--live", type=Path, default=Path("data/state"))
     ap.add_argument("--restated", type=Path, default=Path("data/restated"))
     ap.add_argument("--pair-hours", type=float, default=3.0)
+    ap.add_argument(
+        "--max-median-gap",
+        type=float,
+        default=None,
+        help="fail (exit 1) when the median |gap| exceeds this share, e.g. 0.01",
+    )
     args = ap.parse_args()
 
     live = family_stock_by_tick(args.live)
@@ -98,6 +108,12 @@ def main() -> int:
         f"max {max(gaps):.2%}",
         flush=True,
     )
+    if (
+        args.max_median_gap is not None
+        and statistics.median(gaps) > args.max_median_gap
+    ):
+        print(f"median |gap| is above {args.max_median_gap:.2%}", flush=True)
+        return 1
     return 0
 
 

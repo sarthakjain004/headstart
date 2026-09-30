@@ -154,7 +154,9 @@ def _clipped(tmp_path: Path, steps) -> dict[str, list[tuple]]:
         live={},
         keep_set=None,
     )
-    clipped = rs.clip_dormant(served, rs.dormant_periods(versions, rr.runs(facts), {}))
+    clipped = rs.clip_dormant(
+        served, rs.dormant_periods(versions, rr.board_reads(facts), {})
+    )
     out: dict[str, list[tuple]] = {}
     for row in clipped.to_pylist():
         out.setdefault(row["id"], []).append(
@@ -169,16 +171,25 @@ def test_a_board_whose_newest_posting_is_years_old_never_counts(tmp_path):
     assert served == {}
 
 
-def test_a_board_turns_dormant_on_the_first_run_two_years_after_its_newest_posting(
-    tmp_path,
-):
-    """Posted 2024-09-04: still hiring on Sep 1 and 3, Dormant from the Sep 6 run on."""
+def test_a_board_turning_dormant_loses_its_jobs_at_its_next_read(tmp_path):
+    """Posted 2024-09-04: still hiring on Sep 1 and 3, judged Dormant by the Sep 6 read, and its
+    Job leaves at the Sep 9 read, as `index sync` evicts after the grace period."""
     served = _clipped(
-        tmp_path,
-        [([(BOARD_A, _dated(A1, "2024-09-04"))], {BOARD_A})] + [([], set())] * 4,
+        tmp_path, [([(BOARD_A, _dated(A1, "2024-09-04"))], {BOARD_A})] * 5
     )
 
-    assert served == {A1: [(DAYS[0], DAYS[2], "dormant", None)]}
+    assert served == {A1: [(DAYS[0], DAYS[3], "dormant", None)]}
+
+
+def test_only_an_authoritative_read_judges_a_board_dormant(tmp_path):
+    """A read that was not authoritative (truncated, say) may miss its newer postings."""
+    served = _clipped(
+        tmp_path,
+        [([(BOARD_A, _dated(A1, "2024-09-04"))], {BOARD_A})]
+        + [([(BOARD_A, _dated(A1, "2024-09-04"))], set())] * 4,
+    )
+
+    assert served == {A1: [(DAYS[0], None, None, None)]}
 
 
 def test_an_undated_job_keeps_its_board_from_being_dormant(tmp_path):

@@ -77,7 +77,7 @@ def _place(tmp_path, served, vectors=None, descriptions=None):
     placed = rp.placements(
         served, _head(tmp_path), _cache(), vectors or {}, descriptions or {}
     )
-    return {row["id"]: rp.placed(row) for row in placed.to_pylist()}
+    return {row["id"]: rp.place_of(row) for row in placed.to_pylist()}
 
 
 def test_the_family_reads_the_title_and_the_description_vector(tmp_path):
