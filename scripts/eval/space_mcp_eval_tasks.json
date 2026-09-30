@@ -546,14 +546,13 @@
             "verifier": "search_args",
             "expect": {
               "tool": "search_jobs",
-              "must": {"max_years": {"op": "<=", "value": 2}},
-              "query_must_not_contain": ["grad", "year", "experience"]
+              "must": {"max_years": {"op": "<=", "value": 2}}
             }
           },
           {"verifier": "senior_caveat", "expect": {}}
         ]
       },
-      "why": "Round-4 review SP3 (ADR-0359, under ADR-0079): a job's served floor is the smallest its description states, so a Senior or Staff role can show 0 or 1 years off a side clause. search_jobs tags such a row when max_years is 2 or less. The verifier reads each search_jobs result at that max_years, picks the rows whose title reads Senior, Staff, Principal, Lead, Manager or Director and not Associate or Junior (its own rule, apart from the tool's tag), and fails an answer that names one without a caveat on the line naming it. It is disclosure only: a senior row presented with its caveat, or dropped, passes."
+      "why": "Round-4 review SP3 (ADR-0359, under ADR-0079): a job's served floor is the smallest its description states, so a Senior or Staff role can show 0 or 1 years off a side clause. search_jobs tags such a row when max_years is 2 or less. The verifier reads each search_jobs result at that max_years, picks the rows whose title reads Senior, Staff, Principal, Lead, Manager or Director and not Associate or Junior (its own rule, apart from the tool's tag), and fails an answer that names one without a caveat on the line naming it. It is disclosure only: a senior row presented with its caveat, or dropped, passes. Words like \"new grad\" in query are left to t11 and its kin: the first hosted runs put them there, and this task judges the caveat."
     }
   ],
   "heldout_sha256": "801e7149bc71c42e7b346dcf089ea20f87d1e0035d989b3dba8ffb50fe055e4d"
