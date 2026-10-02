@@ -42,12 +42,14 @@ HeadStart surfaces job openings read directly from company ATS boards.
 
 ## ATS coverage: what to build next
 
-Built providers are listed in README §"ATS coverage". What each one's scraper had to learn lives in
+Built providers are listed in `src/headstart/scrapers/registry.py`, linked from README §"ATS coverage".
+What each one's scraper had to learn lives in
 its module docstring, its measurement doc under `docs/{ats}/` and its ADR; its Boards live in
 `data/validate/liveness/{ats}.csv`; discovery playbooks live in `docs/discovery/`
 (`shared-cert-tenant-rosters.md` is the general one). **Don't keep a built provider's Board counts
 in this file.** Nothing checks them here, so every ledger change can move them. Board totals
-belong in README and CONTEXT.md, where `tests/test_board_counts.py` checks them.
+belong in CONTEXT.md, where `tests/test_board_counts.py` checks them. README links to the
+registry, ADR directory and glossary; its searchable-job badge reads the live service.
 
 ### Landing rules the ledgers' code does not enforce
 
@@ -397,7 +399,7 @@ These guidelines are working if: fewer unnecessary changes in diffs, fewer rewri
   plus **Slice**/**Head**/**Tail** for one run and **Scraped**/**Scored Board** for history. The
   phrase "live boards" names no single number and should not be written. Quoting the wrong one has
   already misled three separate discussions in one session; the widest pair differs by 3.3x.
-  `tests/test_board_counts.py` keeps the README funnel and the glossary honest by recomputing from
+  `tests/test_board_counts.py` keeps the glossary honest by recomputing from
   the committed ledger — it needs no heavy deps, so unlike `test_readme_schema.py` it really runs
   in CI. It deliberately cannot check **Scraped Board** or **Scored Board**: those live only on HF
   and move every run, so they carry a measured-on date instead.

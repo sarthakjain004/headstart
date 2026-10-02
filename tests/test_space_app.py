@@ -359,8 +359,8 @@ def test_wall_off_keeps_the_page_open(app):
 
 def test_wall_on_serves_the_door_and_gates_the_api(auth_app):
     client = auth_app.app.test_client()
-    page = client.get("/").data
-    assert b"Sign in to search" in page
+    page = client.get("/signin").data
+    assert b"Sign in to save jobs and searches" in page
     # Not "jobs indexed": the door itself now says "tech jobs indexed right now" (ADR-0112).
     # The tab shell is what only the signed-in page has.
     assert b'data-tab="search"' not in page
@@ -435,7 +435,7 @@ def test_privacy_policy_is_public_and_linked_from_the_door(auth_app):
     assert r.status_code == 302
     assert r.headers["Location"] == f"{auth_app._REPO}/blob/main/PRIVACY.md"
     assert (Path(__file__).resolve().parents[1] / "PRIVACY.md").is_file()
-    assert b'href="/privacy"' in client.get("/").data
+    assert b'href="/privacy"' in client.get("/signin").data
 
 
 def test_unsubscribe_stays_reachable_signed_out(auth_app):
@@ -497,7 +497,13 @@ def _through_the_wall(response) -> bool:
 def test_the_public_paths_are_the_door_the_read_routes_and_the_mcp_endpoint(auth_app):
     # Pinned as a whole set, so opening one more path is a decision a test has to be told
     # about, never an accident of editing the set.
-    assert auth_app._PUBLIC_PATHS == {*_DOOR_PATHS, *_READ_ROUTES, _MCP_PATH}
+    assert auth_app._PUBLIC_PATHS == {
+        *_DOOR_PATHS,
+        *_READ_ROUTES,
+        _MCP_PATH,
+        "/signin",
+        "/badges/jobs",
+    }
 
 
 def test_every_read_route_answers_anyone_with_the_wall_on(auth_app):
@@ -523,7 +529,7 @@ def test_every_other_route_still_refuses_the_anonymous(auth_app):
         if path == _MCP_PATH:
             # One POST per MCP message; any other verb is the framework's 405.
             assert rule.methods - {"OPTIONS"} == {"POST"}, rule.methods
-        if path in auth_app._PUBLIC_PATHS:
+        if path in auth_app._PUBLIC_PATHS or path.startswith("/static/"):
             continue
         for method in sorted(rule.methods - {"HEAD", "OPTIONS"}):
             r = client.open(path, method=method, json={})
@@ -3906,7 +3912,7 @@ def test_the_index_pull_fetches_every_state_file_the_app_reads(app, monkeypatch,
 
 def test_the_door_makes_its_case_before_asking_for_an_identity(auth_app):
     """ADR-0112: what it is, proof, what sign-in costs, and how to check — then the button."""
-    page = auth_app.app.test_client().get("/").data.decode()
+    page = auth_app.app.test_client().get("/signin").data.decode()
     # The proof numbers are counted, not written: the fake table holds two rows and two
     # ATSes, so a hardcoded marketing figure would not survive this.
     assert '<div class="v">2</div><div class="k">tech jobs indexed' in page
@@ -3936,7 +3942,9 @@ def test_the_door_makes_its_case_before_asking_for_an_identity(auth_app):
     assert "github.com/sarthakjain004/headstart" in page
     # The ask still comes last, and the embedding-frame escape hatch survives (ADR-0112
     # changed the page around it, which is exactly when this gets dropped by accident).
-    assert page.index("Why the jobs hold up") < page.index("Sign in to search")
+    assert page.index("Why the jobs hold up") < page.index(
+        "Sign in to save jobs and searches"
+    )
     assert 'id="openout"' in page
 
 
@@ -3950,7 +3958,7 @@ def test_the_door_states_no_figure_it_cannot_count(auth_app, monkeypatch):
     monkeypatch.setattr(
         searcher, "capabilities", replace(searcher.capabilities, has_first_seen=False)
     )
-    page = auth_app.app.test_client().get("/").data.decode()
+    page = auth_app.app.test_client().get("/signin").data.decode()
     assert "added in the last" not in page
     # Scoped to the tiles: the page's own prose opens "None of this has to be taken on faith".
     tiles = re.findall(r'<div class="v">([^<]*)</div>', page)
@@ -4060,10 +4068,10 @@ def test_the_logo_mark_is_served_to_the_door(auth_app):
     """The door shows the mark and uses it as its favicon, signed out — so the wall lets that
     one static file through, and nothing else under /static."""
     client = auth_app.app.test_client()
-    door = client.get("/").data.decode()
+    door = client.get("/signin").data.decode()
     assert 'rel="icon"' in door and "logo_mark.svg" in door
     assert client.get("/static/logo_mark.svg").status_code == 200
-    assert client.get("/static/app.js").status_code == 401
+    assert client.get("/static/app.js").status_code == 200
 
 
 def test_the_resume_reader_says_the_text_leaves_the_service(sets_app, monkeypatch):
@@ -5585,7 +5593,36 @@ def test_the_door_and_the_signed_in_header_count_the_jobs_a_search_lists(
     """ADR-0349: not the served rows: the ones the default leaves out as non-tech are no job
     a visitor can list, and the tile beside them (jobs new this week) already drops them."""
     monkeypatch.setattr(auth_app._searcher, "n_served", lambda: 1234)
-    door = auth_app.app.test_client().get("/").data.decode()
+    door = auth_app.app.test_client().get("/signin").data.decode()
     assert '<div class="v">1,234</div><div class="k">tech jobs indexed' in door
     monkeypatch.setattr(app._searcher, "n_served", lambda: 4321)
     assert b"<b>4,321</b> jobs indexed" in app.app.test_client().get("/").data
+
+
+def test_anonymous_browsing_keeps_account_features_protected(sets_app):
+    client = sets_app.app.test_client()
+    page = client.get("/").data.decode()
+    assert 'data-tab="search"' in page
+    assert 'id="signin"' in page
+    assert 'data-tab="saved"' not in page
+    assert 'data-tab="matches"' not in page
+    assert 'id="resume-sync"' not in page
+    assert client.get("/static/app.js").status_code == 200
+    assert client.get("/search?k=2&strict=1").status_code == 200
+    for path in ("/saved", "/sets", "/companies", "/profile", "/resumes"):
+        assert client.get(path).status_code == 401
+
+
+def test_jobs_badge_uses_the_searchable_count(auth_app, monkeypatch):
+    monkeypatch.setattr(auth_app._searcher, "n_served", lambda: 1234)
+    client = auth_app.app.test_client()
+    response = client.get("/badges/jobs")
+    assert response.status_code == 200
+    assert response.json == {
+        "schemaVersion": 1,
+        "label": "searchable tech jobs",
+        "message": "1,234",
+        "color": "blue",
+    }
+    monkeypatch.setattr(auth_app._searcher, "n_served", lambda: 2345)
+    assert client.get("/badges/jobs").json["message"] == "2,345"

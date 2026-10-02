@@ -469,7 +469,7 @@ app.session_interface = _AnswersLeaveTheSessionAlone()
 # postings ask for (ADR-0324). None writes, and none serves one Account's records to another: a
 # signed-in caller's own session still applies its follow/hide clause to /search and /facets
 # (`_company_where`), and an anonymous one gets none. Every Account route stays behind the wall,
-# and the page at `/` still shows the door until its visitor signs in. Every caller is
+# The page at `/` is public; `/signin` opens the account sign-in flow. Every caller is
 # rate-limited on them (`_limit_each_caller`).
 _READ_ROUTES = frozenset(
     {
@@ -491,6 +491,8 @@ _PUBLIC_PATHS = {
     "/me",
     "/unsubscribe",
     "/privacy",
+    "/signin",
+    "/badges/jobs",
     "/static/logo_mark.svg",
     "/mcp",  # HeadStart's MCP server, POST only, over the read routes (ADR-0267)
     *_READ_ROUTES,
@@ -616,7 +618,11 @@ def _signed_in_recently() -> bool:
 
 @app.before_request
 def _require_sign_in():
-    if not _AUTH_ON or request.path in _PUBLIC_PATHS:
+    if (
+        not _AUTH_ON
+        or request.path in _PUBLIC_PATHS
+        or request.path.startswith("/static/")
+    ):
         return None
     if not session.get("email"):
         return jsonify({"error": "sign in first"}), 401
@@ -2198,26 +2204,38 @@ def privacy():
     return redirect(f"{_REPO}/blob/main/PRIVACY.md")
 
 
+@app.route("/badges/jobs")
+def jobs_badge():
+    """Shields endpoint: the same searchable count as the product, read at request time."""
+    response = jsonify(
+        schemaVersion=1,
+        label="searchable tech jobs",
+        message=f"{_searcher.n_served():,}",
+        color="blue",
+    )
+    response.headers["Cache-Control"] = "public, max-age=300"
+    return response
+
+
+@app.route("/signin")
+def signin():
+    if not _AUTH_ON or session.get("email"):
+        return redirect("/")
+    return render_template(
+        "signin.html",
+        google_client_id=_GOOGLE_CLIENT_ID,
+        njobs=f"{_searcher.n_served():,}",
+        n_atses=len(_searcher.capabilities.atses),
+        n_new=_searcher.n_seen_within(_DOOR_NEW_HOURS),
+        new_days=_DOOR_NEW_HOURS // 24,
+        repo=_REPO,
+    )
+
+
 @app.route("/")
 def index():
     capabilities = _searcher.capabilities
-    if _AUTH_ON and not session.get("email"):
-        # The door states what this is and proves it before asking for an identity
-        # (ADR-0112). Every number is read rather than written, and every one is EXACT —
-        # a tile that can only be approximated does not go on this page. Two table
-        # queries: the row count the signed-in header already makes, and the freshness
-        # window (~5 ms each, ADR-0084's primitive), both over the Jobs a search lists, so the
-        # tiles and a search agree (ADR-0349). `n_new` is None on a table with no
-        # `first_seen` column, and the template drops the tile rather than guess.
-        return render_template(
-            "signin.html",
-            google_client_id=_GOOGLE_CLIENT_ID,
-            njobs=f"{_searcher.n_served():,}",
-            n_atses=len(capabilities.atses),
-            n_new=_searcher.n_seen_within(_DOOR_NEW_HOURS),
-            new_days=_DOOR_NEW_HOURS // 24,
-            repo=_REPO,
-        )
+    account_on = _SETS_ON and bool(session.get("email"))
     scopes = keyword_scope_options()  # the Keyword filter's one map (ADR-0104)
     return render_template(
         "base.html",
@@ -2279,14 +2297,15 @@ def index():
         seen_opts=facets.SEEN_OPTIONS,
         posted_opts=facets.POSTED_OPTIONS,
         repo=_REPO,  # links into the public repository, the privacy policy among them
-        resume_sync_on=_SETS_ON,
+        resume_sync_on=account_on,
         trends_on=bool(_HISTORY.ticks),
         hot_on=bool(_HOT),
-        alerts_on=_ALERTS_ON,
-        sets_on=_SETS_ON,
-        companies_on=_SETS_ON,  # same prerequisites — the lists are per-Account records
-        saved_on=_SETS_ON,  # same prerequisites — see the _SETS_ON comment
-        profile_on=_SETS_ON,  # likewise (the parse button 503s on its own if the router is down)
+        signin_on=_AUTH_ON and not session.get("email"),
+        alerts_on=_ALERTS_ON and bool(session.get("email")),
+        sets_on=account_on,
+        companies_on=account_on,  # same prerequisites — the lists are per-Account records
+        saved_on=account_on,  # same prerequisites — see the _SETS_ON comment
+        profile_on=account_on,  # likewise (the parse button 503s on its own if the router is down)
     )
 
 

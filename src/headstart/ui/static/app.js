@@ -190,6 +190,24 @@ async function signOut(){
   window.alert('Sign-out didn\'t go through — you are still signed in. Try again.');
 }
 el('signout').addEventListener('click', signOut);
+if (el('signin')) el('signin').addEventListener('click', () => {
+  // Keep the current search in this tab only; a plain semantic search has no URL parameters.
+  try { sessionStorage.setItem('hs.signinSearch', JSON.stringify({
+    query: el('q').value, search_filters: currentFilters(), mode: queryMode(), scope: searchScope
+  })); } catch (e) { /* storage may be blocked; sign-in still works */ }
+  el('signin').href = '/signin' + location.hash;
+});
+function restoreSigninSearch(){
+  try {
+    const saved = sessionStorage.getItem('hs.signinSearch');
+    sessionStorage.removeItem('hs.signinSearch');
+    if (!saved) return;
+    const state = JSON.parse(saved);
+    applySetToControls(state);
+    setQueryMode(state.mode);
+    searchScope = state.scope;
+  } catch (e) { /* no stored search, or browser storage is unavailable */ }
+}
 const age = d => {
   const t = Date.parse(d || ''); if (isNaN(t)) return '';
   const days = Math.floor((Date.now() - t) / 86400000);
@@ -1072,6 +1090,7 @@ const capOverflow = new Map();   // listId -> Map(board -> [card html])
 // is the controls simply not rendering, but any other failure leaves the server excluding
 // hidden companies while the page shows no "N hidden" to undo it with.
 async function loadCompanies(){
+  if (!CAN_COMPANIES) return true;
   try{
     const r = await fetch('/companies');
     if (r.ok){ myCompanies = await r.json(); return true; }
@@ -4890,6 +4909,7 @@ function drawMyCompanies(){
   });
 }
 
+restoreSigninSearch();
 readSearchHash();   // a reloaded or shared hand-off (`#search?board=…`) scopes the first search
 go();   // an empty query browses the newest jobs (ADR-0074) — the Search tab is never empty
 whoAmI();

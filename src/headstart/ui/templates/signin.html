@@ -159,7 +159,8 @@
   </div>
 
   <div class="gate">
-    <h2>Sign in to search</h2>
+    <h2>Sign in to save jobs and searches</h2>
+    <p>You can <a href="/">search without signing in</a>.</p>
     <div class="g" id="gbtn"></div>
     <a class="openout" id="openout" hidden target="_blank" rel="noopener">Open HeadStart to sign in ↗</a>
     <p class="terms">Signing in stores your email address — that is the whole of what sign-in
@@ -205,7 +206,7 @@ async function onCred(resp){
     const r = await fetch('/auth/google', { method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({ credential: resp.credential }) });
-    if (r.ok){ location.reload(); return; }
+    if (r.ok){ location.href = '/' + location.hash; return; }
     console.warn('[api]', 'POST', '/auth/google', r.status);   // app.js's logFail format
     const d = await r.json().catch(() => ({}));
     msg.textContent = d.error || ('Sign-in failed (' + r.status + ')');

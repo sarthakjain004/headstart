@@ -127,6 +127,7 @@ def index():
         # Hot is ranked from the Trends history at the Space's boot (ADR-0230), which this
         # renderer does not load, so the tab is dark here as the Trends tab is.
         hot_on=False,
+        signin_on=False,
         alerts_on=False,
         sets_on=False,
         # unlike the rest: this renderer implements /companies over one in-memory record

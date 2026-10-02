@@ -339,6 +339,7 @@ supersedes it and note the supersession in both.
 | [0372](0372-a-liveness-probe-reads-code-6-as-dead-only-when-a-public-resolver-agrees.md) | A liveness probe reads curl's code 6 as dead only when a public resolver agrees (relates to 0181, 0189) | 2026-09-30 |
 
 | [0373](0373-gr8people-follows-the-public-search-and-keys-a-board-on-its-career-host.md) | gr8people follows the public search and keys a Board on its career host | 2026-10-02 |
+| [0374](0374-search-is-public-and-sign-in-protects-account-actions.md) | Search is public and sign-in protects Account actions (amends 0042, 0112) | 2026-10-02 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*
