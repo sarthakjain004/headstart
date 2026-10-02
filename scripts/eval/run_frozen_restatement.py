@@ -15,6 +15,7 @@ import subprocess
 import sys
 import tempfile
 import textwrap
+import time
 import zipfile
 from pathlib import Path
 
@@ -87,7 +88,34 @@ def main():
             f"Frozen rule fingerprint {fingerprint}; baseline {baseline.name}",
             flush=True,
         )
-        return subprocess.run(command, cwd=frozen, env=env, check=False).returncode
+        process = subprocess.Popen(command, cwd=frozen, env=env)
+        peak_mb = 0
+        while process.poll() is None:
+            status = Path(f"/proc/{process.pid}/status")
+            if status.exists():
+                fields = dict(
+                    line.split(":", 1)
+                    for line in status.read_text().splitlines()
+                    if ":" in line
+                )
+                resident_mb = int(fields.get("VmRSS", "0 kB").split()[0]) // 1024
+                peak_mb = max(peak_mb, resident_mb)
+                print(
+                    f"Replay resources: rss={resident_mb} MB peak={peak_mb} MB",
+                    flush=True,
+                )
+                if resident_mb > 12 * 1024:
+                    process.kill()
+                    process.wait()
+                    raise MemoryError(
+                        f"replay exceeded 12 GB resident memory; peak={peak_mb} MB"
+                    )
+            time.sleep(5)
+        print(
+            f"Replay exit={process.returncode}; peak resident memory={peak_mb} MB",
+            flush=True,
+        )
+        return process.returncode
 
 
 if __name__ == "__main__":

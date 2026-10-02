@@ -141,6 +141,7 @@ def main() -> int:
     )
     args = ap.parse_args()
 
+    _log.info("loading Job versions from recorded facts")
     versions = restate_replay.job_versions(args.facts)
     runs = restate_replay.runs(args.facts)
     if versions is None or not runs:
