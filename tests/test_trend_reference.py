@@ -3,6 +3,7 @@
 from pathlib import Path
 
 import lancedb
+import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
@@ -155,3 +156,29 @@ def test_unpublished_orphan_tail_does_not_advance_replay(tmp_path):
     )
     ticks = list(tr.checkpoints(facts, ["2026-10-02T00:00:00+00:00"]))
     assert len(ticks) == 1
+
+
+def test_inherited_id_can_be_unlisted_by_a_future_complete_read(tmp_path):
+    from headstart.ingest import job_facts
+
+    facts = tmp_path / "facts"
+    facts.mkdir()
+    schema = pa.schema(
+        [("id", pa.string()), ("board", pa.string()), ("fields_hash", pa.int64())]
+    )
+    pq.write_table(
+        pa.Table.from_pylist([], schema=schema), facts / job_facts.LISTED_JOBS
+    )
+    baseline = tr.capture(
+        source(tmp_path, [job()]), {}, facts, "2026-10-02T00:00:00+00:00", {}
+    )
+    live = {"lever:acme": "lever:acme"}
+    assert tr.inherit_listed(facts, baseline, live) == 1
+    scratch = job_facts.ScrapedLines(facts / job_facts.SCRAPED_LINES)
+    scope = job_facts.RunScope(
+        authoritative=frozenset({"lever:acme"}), keep_set=None, live=live
+    )
+    result = job_facts.record_run(
+        scratch.close(), facts, "2026-10-02T01:00:00+00:00", [], scope
+    )
+    assert result.unlisted == 1

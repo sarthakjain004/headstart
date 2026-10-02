@@ -501,7 +501,14 @@ def main() -> int:
     if args.reference_facts is not None:
         from headstart.ingest import trend_reference
 
+        checkpoint_path = args.state / trend_reference.STATE
+        checkpoint_before = None
+        checkpoint_saved = False
         try:
+            checkpoint_before = (
+                checkpoint_path.read_bytes() if checkpoint_path.exists() else None
+            )
+            checkpoint_saved = True
             rules = trend_reference.freeze_rules(REPO_ROOT, args.reference_facts)
             reference = trend_reference.capture(
                 table,
@@ -514,7 +521,19 @@ def main() -> int:
                 title_cache=cache,
             )
             _log.info(f"Trends reference recorded -> {reference}")
+            inherited = trend_reference.inherit_listed(
+                args.reference_facts, reference, live
+            )
+            _log.info(
+                f"Reference baseline inherited {inherited} ids into absence tracking"
+            )
         except Exception:  # noqa: BLE001 - diagnostics must not stop index publication
+            if checkpoint_saved and checkpoint_before is None:
+                checkpoint_path.unlink(missing_ok=True)
+            elif checkpoint_saved:
+                restore = checkpoint_path.with_suffix(".restore.tmp")
+                restore.write_bytes(checkpoint_before)
+                restore.replace(checkpoint_path)
             _log.warning("Trends reference missing for this tick", exc_info=True)
     stock_top = sorted(
         ((k, c) for k, c in counts.items() if k[0] == "stock"), key=lambda kv: -kv[1]

@@ -132,6 +132,12 @@ published deltas. It does not certify raw-scrape admission replay, watched roles
 `new`, or turnover; those remain requirements of the draft restatement engine.
 Reports preserve partial results with `complete:false` until the whole window passes.
 
+Ids inherited from the baseline but absent from the scrape's Listed set are added
+to absence tracking once. Existing scraped hashes remain untouched. This permits a
+future authoritative read to record their first absence, rather than leaving them
+immortal in the replay. The baseline, not a fabricated fresh listing fact, supplies
+their starting provenance. Failed seeding must not advance the reference parent.
+
 - **A rule change stops breaking lines** once steps 3 and 4 land. Until then the facts accumulate
   and nothing reads them.
 - **The facts can only start now.** Every day not recorded is a day no later rule can restate.

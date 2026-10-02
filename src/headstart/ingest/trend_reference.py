@@ -20,7 +20,8 @@ import pyarrow.parquet as pq
 
 from headstart import log
 from headstart.embedding_conventions import MODEL, MODEL_REVISION
-from headstart.ingest.job_facts import RAW_FIELDS, file_name
+from headstart.ingest.index_plan import resolve_board
+from headstart.ingest.job_facts import LISTED_JOBS, RAW_FIELDS, fields_hash, file_name
 from headstart.ingest.role_family_classifier import normalise
 
 STATE = "reference_state.parquet"
@@ -271,3 +272,48 @@ def checkpoints(facts: Path, live_ticks, *, state_dir: Path | None = None):
                     raise ValueError(f"unknown reference kind {row['kind']}")
         previous = stamp
         yield metadata, current.copy()
+
+
+def inherit_listed(facts: Path, baseline: Path, live) -> int:
+    """Seed previously served but unseen ids so a future complete read can unlist them.
+
+    Existing scraped ids retain their fields hashes. The baseline records where these
+    inherited rows came from; it does not claim a fresh listing or a new opening.
+    """
+    path = facts / LISTED_JOBS
+    if not path.exists():
+        raise ValueError("cannot seed a missing scrape Listed set")
+    previous = pq.read_table(path)
+    if pq.read_schema(baseline).metadata.get(b"baseline") != b"true":
+        return 0
+    known = set(previous["id"].to_pylist())
+    fresh = []
+    columns = ["id", *[f for f in RAW_FIELDS if f in pq.read_schema(baseline).names]]
+    for batch in pq.ParquetFile(baseline).iter_batches(
+        columns=columns, batch_size=4096
+    ):
+        for row in batch.to_pylist():
+            if row["id"] not in known:
+                fresh.append(
+                    {
+                        "id": row["id"],
+                        "board": resolve_board(row["id"], live),
+                        "fields_hash": fields_hash(row),
+                    }
+                )
+                known.add(row["id"])
+    if not fresh:
+        return 0
+    staged = path.with_suffix(".parquet.tmp")
+    try:
+        pq.write_table(
+            pa.concat_tables(
+                [previous, pa.Table.from_pylist(fresh, schema=previous.schema)]
+            ),
+            staged,
+            compression="zstd",
+        )
+        staged.replace(path)
+    finally:
+        staged.unlink(missing_ok=True)
+    return len(fresh)
