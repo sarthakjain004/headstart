@@ -51,3 +51,15 @@ All are resolved; the repeated browser finding is retained under each axis rathe
 Main subsequently allocated 0374 for public browsing. The docs-only conflict resolution preserves
 that decision and renumbers this work to 0375–0377. Final source is rebased onto `96665e49`;
 the reviewed store/browser/network implementation is unchanged.
+
+## Final deadline-path check
+
+The parent reproduced a retained old-loop Task after a timed-out browser exit. Recovery now
+drains cancellation on the owned loop and clears only that lifetime's registry entries before
+reopen. The regression asserts completed asynchronous cleanup, empty tracked calls, no
+closed-loop/pending-task warnings, and normal later exit. The Spec reviewer independently ran
+three deadline/lifetime regressions and found no actionable issue in this final delta. A real
+Chrome check verified exited process, removed profile and empty registry.
+
+Final current-base validation: **9,904 Python tests passed**, two skipped, two expected failures;
+**558 JavaScript tests passed**; Ruff check/format and diff checks passed.

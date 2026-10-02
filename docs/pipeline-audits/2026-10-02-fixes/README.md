@@ -14,7 +14,9 @@ files already have equal sizes. [Decision](../../adr/0375-a-positional-embedding
 `atexit` is only a synchronous process/profile reap. Every worker is bound to its harvest's
 lifetime before dispatch, and every origin/Page owns its browser, loop and semaphore. Late
 workers cannot start another Chrome or dispatch old pages/release slots into a replacement
-lifetime. Closure still runs if unfinished-cost bookkeeping fails. Baseline process-exit tests
+lifetime. Closure still runs if unfinished-cost bookkeeping fails. After a timed-out exit, cancellation
+cleanup is drained on its owning loop before closure; old registry entries cannot poison a later
+shutdown. Baseline process-exit tests
 reproduced the executor error; real Chrome tests verify exited PIDs and deleted profiles for
 explicit shutdown, process exit and shutdown/reopen with an old context still held.
 [Decision](../../adr/0376-a-harvest-closes-browser-transport-before-interpreter-exit.md).
@@ -73,8 +75,8 @@ changed. A matched Actions/full-Board control is still needed before default ena
 
 ## Validation and review
 
-Final rebased-source validation: **9,902 passed, two skipped, two expected failures** in 181.45s;
-Ruff check and format check pass across all 674 Python files. Two independent review
+Final rebased-source validation: **9,904 passed, two skipped, two expected failures** in 184.57s;
+Ruff check and format check pass across all 674 Python files; all **558 JavaScript tests** pass. Two independent review
 axes checked the code. Their initial browser ownership/cleanup findings and the singular explicit
 proxy pacing loophole were reproduced and fixed with regressions; no finding was silently
 discarded. [Review outcomes](code-review.md). Captures and scripts remain local under
