@@ -112,7 +112,6 @@ supersedes it and note the supersession in both.
 | [0102](0102-a-400-walls-the-origin-too-not-just-a-429.md) | A 400 walls the origin too, not just a 429 | 2026-09-02 |
 | [0103](0103-workdays-400-is-an-invalid-session-cookie-clear-it.md) | Workday's 400 is an invalid session cookie — clear it, don't retry or reroute | 2026-09-02 |
 | [0104](0104-a-keyword-filter-with-a-scope-map-and-a-stored-description-column.md) | A Keyword filter with a scope map, backed by a stored `description` column | 2026-09-02 |
-| 0105–0109 | **Reserved — auto-apply.** Written here 2026-09-03, moved to the private `headstart-apply` repo 2026-09-15 and renumbered there as its ADR-0001–0005. Never reuse these five numbers: the same integers now mean different decisions in the two repos. | 2026-09-03 |
 | [0110](0110-record-fan-out-throughput-against-the-width-in-force.md) | Record fan-out throughput against the width in force | 2026-09-05 |
 | [0111](0111-duplicate-boards-resolve-the-board-surface.md) | A duplicate Board is found by resolving its Board surface, not by comparing its key | 2026-09-07 |
 | [0112](0112-the-door-earns-the-sign-in-before-it-asks.md) | The door earns the sign-in before it asks for it | 2026-09-07 |
@@ -339,6 +338,9 @@ supersedes it and note the supersession in both.
 | [0372](0372-a-liveness-probe-reads-code-6-as-dead-only-when-a-public-resolver-agrees.md) | A liveness probe reads curl's code 6 as dead only when a public resolver agrees (relates to 0181, 0189) | 2026-09-30 |
 | [0373](0373-gr8people-follows-the-public-search-and-keys-a-board-on-its-career-host.md) | gr8people follows the public search and keys a Board on its career host | 2026-10-02 |
 | [0374](0374-search-is-public-and-sign-in-protects-account-actions.md) | Search is public and sign-in protects Account actions (amends 0042, 0112) | 2026-10-02 |
+| [0375](0375-a-positional-embedding-rewrite-is-recovered-before-publication.md) | Recover positional embedding rewrites and validate before publication | 2026-10-02 |
+| [0376](0376-a-harvest-closes-browser-transport-before-interpreter-exit.md) | Harvest closes browser transport before executor shutdown; abandoned workers retain their original lifetime | 2026-10-02 |
+| [0377](0377-avature-dual-egress-is-opt-in-and-paced-by-the-actual-route.md) | Opt-in Avature dual egress shares actual-route caps across retries and fallback | 2026-10-02 |
 | [0378](0378-trends-separates-first-counted-coverage-from-observed-activity.md) | Separate fixed first-counted coverage, entrant backlog/activity and all-known inventory; read quality remains unknown | 2026-10-02 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not

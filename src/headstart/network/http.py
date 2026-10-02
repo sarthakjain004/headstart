@@ -45,6 +45,7 @@ __all__ = [
     "TRANSIENT",
     "HTTPFetcher",
     "RequestsError",
+    "RoutePacer",
     "fetch",
     "fetch_async",
     "session",
@@ -53,6 +54,62 @@ __all__ = [
 _log = log.get(__name__)
 
 _local = threading.local()
+
+
+class RoutePacer:
+    """One shared start budget per actual route, across sync and async callers.
+
+    A due slot is claimed now, never reserved into the future: a caller delayed by a rotation
+    resolves its route again before claiming. All spare addresses share a conservative budget,
+    so a rotation or a direct-to-spare fallback never creates an extra allowance.
+    """
+
+    def __init__(self, spacing: float) -> None:
+        self.spacing = spacing
+        self._next: dict[bool, float] = {}
+        self._lock = threading.Lock()
+
+    def claim_delay(self, proxy: str | None) -> float:
+        with self._lock:
+            now = time.monotonic()
+            route = proxy is not None
+            delay = self._next.get(route, 0.0) - now
+            if delay > 0:
+                return delay
+            self._next[route] = now + self.spacing
+            return 0.0
+
+
+def _paced_route(
+    group: str | None, preferred: bool, pacer: RoutePacer | None
+) -> str | None:
+    while True:
+        proxy = (
+            spare_egress.proxy_for(group, prefer_spare=True)
+            if preferred
+            else spare_egress.proxy_for(group)
+        )
+        delay = pacer.claim_delay(proxy) if pacer is not None else 0.0
+        if not delay:
+            return proxy
+        time.sleep(delay)
+
+
+async def _paced_route_async(
+    group: str | None, preferred: bool, pacer: RoutePacer | None
+) -> str | None:
+    while True:
+        proxy = (
+            await spare_egress.proxy_for_async(group, prefer_spare=True)
+            if preferred
+            else await spare_egress.proxy_for_async(group)
+        )
+        delay = pacer.claim_delay(proxy) if pacer is not None else 0.0
+        if not delay:
+            return proxy
+        await asyncio.sleep(delay)
+
+
 #: Statuses worth another attempt for *any* caller: a bot-wall blip (403/405, ADR-0047), an
 #: explicit rate limit, or a server-side failure. Public and overridable per caller via
 #: ``retry_on``: a host that needs a different status retried extends this set rather than
@@ -372,6 +429,7 @@ def _retry_policy(
     egress_on: frozenset[int],
     egress_board: str | None,
     retry_on: frozenset[int],
+    preferred: bool = False,
 ):
     """The retry-and-egress decisions for one request, as a generator of steps.
 
@@ -398,7 +456,12 @@ def _retry_policy(
                 if getattr(exc, "code", None) != _DNS and attempt > 0:
                     _note_exhausted(None)
                 if proxied and egress_group is not None:
-                    spare_egress.note_settled(egress_group, None, egress_on)
+                    if preferred:
+                        spare_egress.note_settled(
+                            egress_group, None, egress_on, preferred=True
+                        )
+                    else:
+                        spare_egress.note_settled(egress_group, None, egress_on)
                 raise
             yield _BackOff(
                 _note_retry(
@@ -440,7 +503,12 @@ def _retry_policy(
         if response.status_code in retry_on and attempt > 0:
             _note_exhausted(response.status_code)  # the budget ran out still refused
         if proxied and egress_group is not None:
-            spare_egress.note_settled(egress_group, response.status_code, egress_on)
+            if preferred:
+                spare_egress.note_settled(
+                    egress_group, response.status_code, egress_on, preferred=True
+                )
+            else:
+                spare_egress.note_settled(egress_group, response.status_code, egress_on)
         yield _Settled(response)
     raise AssertionError(
         "unreachable: the final attempt returns or raises"
@@ -456,6 +524,8 @@ def fetch(
     egress_on: frozenset[int] = frozenset(),
     egress_board: str | None = None,
     retry_on: frozenset[int] = TRANSIENT,
+    prefer_spare: bool = False,
+    request_pacer: RoutePacer | None = None,
     **kwargs: Any,
 ):
     """Make a request over the pooled session, retrying transient failures with backoff.
@@ -482,11 +552,21 @@ def fetch(
     marked but never retried, so this request would settle on the wall it just reported — the mark
     would still help the *next* Board, but the caller should not expect a second attempt.
 
+    ``prefer_spare`` proactively chooses the spare route for an opted-in group, retaining its
+    rotation gate and wall recovery. ``request_pacer`` caps actual starts on the resolved route,
+    including retries. Waiting callers resolve again, so unavailable WARP or a newly walled
+    direct group collapses onto the same remaining budget. Explicit ``proxies`` cannot be used
+    with this pacer. Preferred traffic is counted separately from wall rescues.
+
     Marking is deliberately **not** conditional on retry budget. A wall seen on the final attempt
     still fails *this* request, but it is exactly as informative about the origin as one seen on
     the first, and recording it is what spares every subsequent Board of that ATS the same three
     attempts.
     """
+    if prefer_spare and egress_group is None:
+        raise ValueError("prefer_spare requires an opted-in egress_group")
+    if request_pacer is not None and (kwargs.get("proxies") or kwargs.get("proxy")):
+        raise ValueError("request_pacer uses the resolved route, not explicit proxies")
     policy = _retry_policy(
         method,
         url,
@@ -496,11 +576,12 @@ def fetch(
         egress_on=egress_on,
         egress_board=egress_board,
         retry_on=retry_on,
+        preferred=prefer_spare,
     )
     step = next(policy)
     while True:
         if isinstance(step, _ResolveRoute):
-            step = policy.send(spare_egress.proxy_for(step.group))
+            step = policy.send(_paced_route(step.group, prefer_spare, request_pacer))
         elif isinstance(step, _SendRequest):
             try:
                 # Only a proxied request is on the tunnel, so only that one makes a rotation wait.
@@ -529,6 +610,8 @@ async def fetch_async(
     egress_on: frozenset[int] = frozenset(),
     egress_board: str | None = None,
     retry_on: frozenset[int] = TRANSIENT,
+    prefer_spare: bool = False,
+    request_pacer: RoutePacer | None = None,
     **kwargs: Any,
 ):
     """Async counterpart to :func:`fetch`: the same retry policy over a caller-supplied
@@ -561,6 +644,10 @@ async def fetch_async(
     stream that is waiting; for its twelve peers it is the difference between landing and dying as
     ``curl: (56)``. See the 2026-09-05 amendment to ADR-0063.
     """
+    if prefer_spare and egress_group is None:
+        raise ValueError("prefer_spare requires an opted-in egress_group")
+    if request_pacer is not None and (kwargs.get("proxies") or kwargs.get("proxy")):
+        raise ValueError("request_pacer uses the resolved route, not explicit proxies")
     policy = _retry_policy(
         method,
         url,
@@ -570,6 +657,7 @@ async def fetch_async(
         egress_on=egress_on,
         egress_board=egress_board,
         retry_on=retry_on,
+        preferred=prefer_spare,
     )
     step = next(policy)
     while True:
@@ -577,7 +665,9 @@ async def fetch_async(
             # Async twin, not `proxy_for`: the sync one blocks on the rotation gate, and blocking
             # the loop here froze the very requests a drain waits on, so the drain always timed
             # out and restarted through them (see `spare_egress.proxy_for_async`).
-            step = policy.send(await spare_egress.proxy_for_async(step.group))
+            step = policy.send(
+                await _paced_route_async(step.group, prefer_spare, request_pacer)
+            )
         elif isinstance(step, _SendRequest):
             try:
                 with spare_egress.riding_the_tunnel(step.proxy):
