@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import tempfile
 import zipfile
 from collections import Counter
 from pathlib import Path
@@ -17,11 +18,12 @@ import pyarrow.parquet as pq
 
 from headstart.ingest import role_family_classifier as rfc
 from headstart.ingest import trend_reference
+from headstart.ingest.index_plan import boards_by_canon, live_keep_set, resolve_board
 from headstart.trends import role_taxonomy
 from headstart.trends.trend_history import DELTAS
 
 
-def decide(rows, manifest):
+def decide(rows, manifest, live):
     """Recompute placements from preserved model inputs, without reference labels."""
     result = {}
     for job_id, row in rows.items():
@@ -43,7 +45,7 @@ def decide(rows, manifest):
                 family = rfc.SOFTWARE_ENGINEERING
         if family != role_taxonomy.NON_TECH:
             result[job_id] = (
-                row["reference_board"],
+                resolve_board(job_id, live),
                 family,
                 role_taxonomy.band(
                     row["min_years"], row.get("title"), row.get("employment_type")
@@ -75,6 +77,9 @@ def main():
         live[stamp] = +levels
     results = []
     failures = 0
+    args.report.parent.mkdir(parents=True, exist_ok=True)
+    scope = "observed tech stock placements only"
+    args.report.write_text(json.dumps({"scope": scope, "complete": False, "ticks": []}))
     for metadata, rows in trend_reference.checkpoints(
         args.facts, live, state_dir=args.state
     ):
@@ -83,14 +88,31 @@ def main():
         archive = args.facts / "reference_rules" / f"{method['rules_fingerprint']}.zip"
         with zipfile.ZipFile(archive) as z:
             # Refuse to interpret historical rule inputs with a different classifier/band implementation.
-            for name in (
+            required = [
                 "src/headstart/ingest/role_family_classifier.py",
                 "src/headstart/trends/role_taxonomy.py",
-            ):
+                "src/headstart/ingest/index_plan.py",
+                "src/headstart/scrapers/registry.py",
+            ]
+            required += [
+                name
+                for name in z.namelist()
+                if name.startswith("src/headstart/boards/") and name.endswith(".py")
+            ]
+            for name in required:
                 if z.read(name) != Path(name).read_bytes():
                     raise ValueError(f"frozen rule differs from validator: {name}")
             manifest = json.loads(z.read("config/role_family_classifier/manifest.json"))
-        candidate = decide(rows, manifest)
+            with tempfile.TemporaryDirectory(prefix="trend-reference-ledgers-") as tmp:
+                for name in z.namelist():
+                    if name.startswith("data/validate/"):
+                        if ".." in Path(name).parts:
+                            raise ValueError("unsafe rule archive member")
+                        z.extract(name, tmp)
+                live_boards = boards_by_canon(
+                    live_keep_set(Path(tmp) / "data/validate/liveness")
+                )
+        candidate = decide(rows, manifest, live_boards)
         expected = {
             i: (r["reference_board"], r["reference_family"], r["reference_band"])
             for i, r in rows.items()
@@ -119,15 +141,15 @@ def main():
                 ],
             }
         )
+        args.report.write_text(
+            json.dumps({"scope": scope, "complete": False, "ticks": results}, indent=2)
+        )
         print(
             f"{stamp}: {len(candidate)} tech ids; {len(wrong)} placement differences; {len(group_wrong)} count differences",
             flush=True,
         )
-    args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(
-        json.dumps(
-            {"scope": "observed-input reproduction only", "ticks": results}, indent=2
-        )
+        json.dumps({"scope": scope, "complete": True, "ticks": results}, indent=2)
     )
     return int(bool(failures))
 
