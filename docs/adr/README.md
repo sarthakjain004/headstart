@@ -336,11 +336,11 @@ supersedes it and note the supersession in both.
 | [0370](0370-a-sample-counts-a-requisition-once-and-a-place-a-leading-word-names-is-another-place.md) | A sample counts a requisition once, and a place a leading word names is another place (amends 0365, 0325) | 2026-09-30 |
 | [0371](0371-the-eval-reads-an-agency-call-as-a-claim-a-negation-in-its-clause-does-not-deny.md) | The eval reads an agency call as a claim a negation in its clause does not deny (amends 0370) | 2026-09-30 |
 | [0372](0372-a-liveness-probe-reads-code-6-as-dead-only-when-a-public-resolver-agrees.md) | A liveness probe reads curl's code 6 as dead only when a public resolver agrees (relates to 0181, 0189) | 2026-09-30 |
-| [0373](0373-a-positional-embedding-rewrite-is-recovered-before-publication.md) | Recover positional embedding rewrites and validate before publication | 2026-10-02 |
 | [0373](0373-gr8people-follows-the-public-search-and-keys-a-board-on-its-career-host.md) | gr8people follows the public search and keys a Board on its career host | 2026-10-02 |
-| [0374](0374-a-harvest-closes-browser-transport-before-interpreter-exit.md) | Harvest closes browser transport before executor shutdown; abandoned workers retain their original lifetime | 2026-10-02 |
+| [0374](0374-a-positional-embedding-rewrite-is-recovered-before-publication.md) | Recover positional embedding rewrites and validate before publication | 2026-10-02 |
 | [0374](0374-search-is-public-and-sign-in-protects-account-actions.md) | Search is public and sign-in protects Account actions (amends 0042, 0112) | 2026-10-02 |
-| [0375](0375-avature-dual-egress-is-opt-in-and-paced-by-the-actual-route.md) | Opt-in Avature dual egress shares actual-route caps across retries and fallback | 2026-10-02 |
+| [0375](0375-a-harvest-closes-browser-transport-before-interpreter-exit.md) | Harvest closes browser transport before executor shutdown; abandoned workers retain their original lifetime | 2026-10-02 |
+| [0376](0376-avature-dual-egress-is-opt-in-and-paced-by-the-actual-route.md) | Opt-in Avature dual egress shares actual-route caps across retries and fallback | 2026-10-02 |
 | [0378](0378-trends-separates-first-counted-coverage-from-observed-activity.md) | Separate fixed first-counted coverage, entrant backlog/activity and all-known inventory; read quality remains unknown | 2026-10-02 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not

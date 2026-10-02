@@ -31,6 +31,38 @@ class Response:
 
 
 @pytest.mark.parametrize("asynchronous", [False, True])
+@pytest.mark.parametrize(
+    "proxy_kwargs",
+    [
+        {"proxy": "socks5h://explicit:1"},
+        {"proxies": {"https": "socks5h://explicit:1"}},
+    ],
+)
+def test_explicit_proxy_cannot_be_charged_to_another_route(
+    monkeypatch, asynchronous, proxy_kwargs
+):
+    class Pacer:
+        def claim(self, proxy):
+            pytest.fail(
+                "an explicit proxy must not be charged to a managed-route budget"
+            )
+
+    def unexpected_session():
+        pytest.fail("the invalid routing configuration must be rejected before sending")
+
+    monkeypatch.setattr(http, "session", unexpected_session)
+    with pytest.raises(ValueError, match="resolved route"):
+        if asynchronous:
+            asyncio.run(
+                http.fetch_async(
+                    None, "GET", "u", request_pacer=Pacer(), **proxy_kwargs
+                )
+            )
+        else:
+            http.fetch("GET", "u", request_pacer=Pacer(), **proxy_kwargs)
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
 def test_actual_route_cap_covers_retry_and_converging_lanes(monkeypatch, asynchronous):
     clock = Clock()
     monkeypatch.setattr(http.time, "monotonic", lambda: clock.now)

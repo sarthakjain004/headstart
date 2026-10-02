@@ -565,7 +565,7 @@ def fetch(
     """
     if prefer_spare and egress_group is None:
         raise ValueError("prefer_spare requires an opted-in egress_group")
-    if request_pacer is not None and kwargs.get("proxies"):
+    if request_pacer is not None and (kwargs.get("proxies") or kwargs.get("proxy")):
         raise ValueError("request_pacer uses the resolved route, not explicit proxies")
     policy = _retry_policy(
         method,
@@ -646,7 +646,7 @@ async def fetch_async(
     """
     if prefer_spare and egress_group is None:
         raise ValueError("prefer_spare requires an opted-in egress_group")
-    if request_pacer is not None and kwargs.get("proxies"):
+    if request_pacer is not None and (kwargs.get("proxies") or kwargs.get("proxy")):
         raise ValueError("request_pacer uses the resolved route, not explicit proxies")
     policy = _retry_policy(
         method,
