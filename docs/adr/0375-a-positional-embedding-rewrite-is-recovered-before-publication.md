@@ -1,4 +1,4 @@
-# ADR-0374: Recover positional embedding rewrites before publication
+# ADR-0375: Recover positional embedding rewrites before publication
 
 **Status:** accepted · **Date:** 2026-10-02 · **Relates to:** ADR-0190, ADR-0050
 

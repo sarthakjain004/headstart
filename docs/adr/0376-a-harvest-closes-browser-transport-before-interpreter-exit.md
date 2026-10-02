@@ -1,4 +1,4 @@
-# ADR-0375: Harvest closes browser transport before interpreter exit
+# ADR-0376: Harvest closes browser transport before interpreter exit
 
 **Status:** accepted · **Date:** 2026-10-02 · **Relates to:** ADR-0056
 

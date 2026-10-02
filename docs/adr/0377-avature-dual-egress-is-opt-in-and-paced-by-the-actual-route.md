@@ -1,4 +1,4 @@
-# ADR-0376: Avature dual egress is opt-in and paced by the actual route
+# ADR-0377: Avature dual egress is opt-in and paced by the actual route
 
 **Status:** accepted for opt-in evaluation · **Date:** 2026-10-02 · **Relates to:** ADR-0245,
 ADR-0063, ADR-0067, ADR-0081
