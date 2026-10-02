@@ -7,6 +7,33 @@ incumbents. Future raw Job facts still supply non-tech Jobs a widened filter may
 
 from __future__ import annotations
 
+from pathlib import Path
+
+
+def committed_baseline(facts: Path, state: Path) -> Path | None:
+    """Find the baseline on the committed checkpoint chain, ignoring orphan captures."""
+    import pyarrow.parquet as pq
+
+    checkpoint = state / "reference_state.parquet"
+    if not checkpoint.exists():
+        return None
+    cursor = pq.read_schema(checkpoint).metadata[b"ts"].decode()
+    paths = {
+        pq.read_schema(p).metadata[b"ts"].decode(): p
+        for p in (facts / "trend_reference").glob("*.parquet")
+    }
+    seen = set()
+    while cursor:
+        if cursor in seen or cursor not in paths:
+            raise ValueError("broken committed baseline chain")
+        seen.add(cursor)
+        path = paths[cursor]
+        metadata = pq.read_schema(path).metadata
+        if metadata.get(b"baseline") == b"true":
+            return path
+        cursor = metadata[b"previous_tick"].decode()
+    raise ValueError("committed reference has no baseline")
+
 
 def seed_versions(versions, baseline: dict, stamp: str, future_facts):
     """Start versions at ``stamp``, inheriting served Jobs until subsequent facts replace them.

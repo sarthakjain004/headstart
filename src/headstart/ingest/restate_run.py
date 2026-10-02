@@ -148,6 +148,10 @@ def main() -> int:
         return 0
     reads = restate_replay.board_reads(args.facts)
     baseline_sources = {}
+    if args.baseline is None:
+        args.baseline = restate_baseline.committed_baseline(
+            args.facts, args.board_failures.parent
+        )
     if args.baseline is not None:
         import pyarrow.parquet as pq
 
