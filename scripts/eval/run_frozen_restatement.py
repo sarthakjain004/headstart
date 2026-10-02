@@ -23,8 +23,29 @@ from pathlib import Path
 import pyarrow.parquet as pq
 
 from headstart.ingest.board_dormancy import PostedDates
-from headstart.ingest.index_plan import duplicate_ranks
+from headstart.ingest.index_plan import _survivor_key, duplicate_ranks
 from headstart.ingest.restate_baseline import committed_baseline
+
+
+def install_adapters(root: Path, frozen: Path) -> None:
+    """Expose replay helpers while leaving frozen production decisions intact."""
+    for module in (root / "src/headstart/ingest").glob("restate_*.py"):
+        shutil.copy2(module, frozen / "src/headstart/ingest" / module.name)
+    planner = frozen / "src/headstart/ingest/index_plan.py"
+    original = planner.read_text()
+    with planner.open("a") as stream:
+        if "def _survivor_key(" not in original:
+            stream.write("\n\n" + inspect.getsource(_survivor_key))
+        if "def duplicate_ranks(" not in original:
+            stream.write("\n\n" + inspect.getsource(duplicate_ranks))
+    dormancy = frozen / "src/headstart/ingest/board_dormancy.py"
+    if "    def newest(" not in dormancy.read_text():
+        with dormancy.open("a") as stream:
+            stream.write(
+                "\n\n"
+                + textwrap.dedent(inspect.getsource(PostedDates.newest))
+                + "\nPostedDates.newest = newest\n"
+            )
 
 
 def main():
@@ -49,23 +70,19 @@ def main():
                 if Path(name).is_absolute() or ".." in Path(name).parts:
                     raise ValueError("unsafe rule archive member")
             z.extractall(frozen)
-        for module in (root / "src/headstart/ingest").glob("restate_*.py"):
-            shutil.copy2(module, frozen / "src/headstart/ingest" / module.name)
-        # These replay adapters expose existing frozen rule helpers; they do not replace
-        # the captured implementations that decide groups, ranks or Dormancy.
-        planner = frozen / "src/headstart/ingest/index_plan.py"
-        if "def duplicate_ranks(" not in planner.read_text():
-            with planner.open("a") as stream:
-                stream.write("\n\n" + inspect.getsource(duplicate_ranks))
-        dormancy = frozen / "src/headstart/ingest/board_dormancy.py"
-        if "    def newest(" not in dormancy.read_text():
-            with dormancy.open("a") as stream:
-                stream.write(
-                    "\n\n"
-                    + textwrap.dedent(inspect.getsource(PostedDates.newest))
-                    + "\nPostedDates.newest = newest\n"
-                )
+        install_adapters(root, frozen)
         env = os.environ | {"PYTHONPATH": str(frozen / "src")}
+        subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "from headstart.ingest.index_plan import duplicate_ranks; from headstart.ingest.board_dormancy import PostedDates; assert duplicate_ranks(['greenhouse:probe:1'], {'greenhouse:probe'}); PostedDates().newest('greenhouse:probe')",
+            ],
+            cwd=frozen,
+            env=env,
+            check=True,
+        )
+        print("Frozen replay adapter preflight passed", flush=True)
         command = [
             sys.executable,
             "-u",
