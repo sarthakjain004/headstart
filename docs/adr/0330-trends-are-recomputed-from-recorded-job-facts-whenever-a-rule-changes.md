@@ -102,6 +102,29 @@ The owner's other decisions (2026-09-29):
 
 ## Consequences
 
+### Validation repair, 2026-10-02
+
+The Sept 30 comparison mixed an old Board ledger with newer production coverage,
+and lacked the Jobs the index already served before fact capture. Exact comparison
+starts from a Reference baseline containing every served Job. Earlier observations
+remain available but have incomplete starting coverage.
+
+`trend_reference` captures served source fields, description, half-precision vector
+and independent placement once, then writes changed and removed ids per Tick.
+Historical edits keep their own input versions. This supplements pre-filter Job
+facts; it does not invent raw fields absent from the served table. Half precision
+remains approximate near classifier decision boundaries.
+
+The checkpoint index commits with live tick state; input fragments name their parent
+and run identity. Orphan fragments from failed state publication cannot advance
+the next checkpoint. Code, model configuration and Board ledgers are preserved by
+content fingerprint. Capture failure remains non-fatal to Search but must block
+validation of the affected window.
+
+Median total gaps cannot prove correctness. Compare per-id membership and placement,
+then each Board/family/band at every tick under identical preserved rules. Separately
+measure intentional differences caused by restating with changed rules.
+
 - **A rule change stops breaking lines** once steps 3 and 4 land. Until then the facts accumulate
   and nothing reads them.
 - **The facts can only start now.** Every day not recorded is a day no later rule can restate.

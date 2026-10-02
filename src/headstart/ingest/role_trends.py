@@ -41,6 +41,7 @@ Run: python -m headstart.ingest.role_trends
 from __future__ import annotations
 
 import argparse
+from dataclasses import asdict
 from datetime import timedelta
 from pathlib import Path
 
@@ -308,6 +309,7 @@ def main() -> int:
     ap.add_argument("--board-ledger", type=Path, default=_BOARD_LEDGER)
     ap.add_argument("--assignments", type=Path, default=_ASSIGNMENTS)
     ap.add_argument("--reassignments", type=Path, default=_REASSIGNMENTS)
+    ap.add_argument("--reference-facts", type=Path)
     # sync's evictions not yet booked, and this run's Unauthoritative Boards (ADR-0227)
     ap.add_argument("--eviction-queue", type=Path, default=EVICTION_QUEUE_PATH)
     ap.add_argument(
@@ -496,6 +498,22 @@ def main() -> int:
             exc_info=True,
         )
         return 1
+    if args.reference_facts is not None:
+        from headstart.ingest import trend_reference
+
+        try:
+            rules = trend_reference.freeze_rules(REPO_ROOT, args.reference_facts)
+            reference = trend_reference.capture(
+                table,
+                placed,
+                args.reference_facts,
+                ts,
+                asdict(methodology) | {"rules_fingerprint": rules},
+                state_dir=args.state,
+            )
+            _log.info(f"Trends reference recorded -> {reference}")
+        except Exception:  # noqa: BLE001 - diagnostics must not stop index publication
+            _log.warning("Trends reference missing for this tick", exc_info=True)
     stock_top = sorted(
         ((k, c) for k, c in counts.items() if k[0] == "stock"), key=lambda kv: -kv[1]
     )[:5]
