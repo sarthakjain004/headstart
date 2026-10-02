@@ -108,8 +108,7 @@ Boards and hand the Apply button off to them, and are scraped as Boards keyed by
 (`careers.cognizant.com`, ADR-0264). `wp_job_openings` is a WordPress plugin a company runs on its
 own site, which takes applications itself, so each site is a Board keyed by its host (ADR-0266).
 
-The company-specific providers — `amazon`, `apple`, `bytedance`, `google`, `meta`, `tesla`, `tiktok`, `uber`
-(ADR-0139) — are **Single source scrapers**: each company's own in-house careers system, not a
+Company-specific providers, such as `amazon`, `apple`, and `google` (ADR-0139) — are **Single source scrapers**: each company's own in-house careers system, not a
 multi-tenant platform, so there's no discovery step and each carries a fixed, hand-entered slug
 rather than a crawled tenant roster. `phenom` is a career-site skin over other ATSes rather than a
 platform of its own, so its ledger is deliberately narrow — only tenants whose backing board
@@ -292,7 +291,8 @@ because what they serve is near-duplicate spam. `CONTEXT.md`'s
 `tests/test_board_counts.py` verifies the glossary against the committed ledgers. This README
 links to that maintained source instead of duplicating its changing totals.
 
-Boards with no postings are skipped as having nothing to read. A run takes a bounded slice and splits it between a scored head (top boards by a
+Boards with no postings are skipped as having nothing to read. A run takes a bounded slice and
+splits it between a scored head (top boards by a
 sticky measure of tech-job yield, large enough to hold every board that yields tech) and a tail
 that rotates through everything else, the boards looked at longest ago first, so
 newly-productive boards can never starve and eviction keeps working on boards outside the head.

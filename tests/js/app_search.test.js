@@ -94,7 +94,7 @@ function loadApp(respond, cfg = {}, doc = {}) {
     + '\n;globalThis.__t = { go, goToPage, loadSets, runSet, page: () => page, jobCard, savedRow,'
     + ' salStop, SALARY_STOPS, stops: () => SALARY_STOPS, sync: syncSalarySlider, slide: salSlide,'
     + ' handleSetAction, searchCompany, dropFilter, readSearchHash, setCompany, applySetToControls,'
-    + ' saveSearch, searchHash, queryMode };';
+    + ' saveSearch, searchHash, queryMode, restoreSigninSearch };';
   vm.runInNewContext(src, ctx);
   return { nodes, fetches, posted, t: ctx.__t, ctx, docHandlers, logged };
 }
@@ -976,4 +976,28 @@ test('the rail says how many non-tech roles this search leaves out, and nothing 
   included.nodes.includenontech.checked = true;
   await included.t.go();
   assert.equal(included.nodes['nontech-hidden'].textContent, '');
+});
+
+
+test('optional sign-in preserves the current semantic search and filters in this tab', () => {
+  const { nodes, ctx, t } = loadApp(() => [], SCOPES);
+  const stored = new Map();
+  ctx.sessionStorage = {
+    setItem: (key, value) => stored.set(key, value),
+    getItem: key => stored.get(key),
+    removeItem: key => stored.delete(key),
+  };
+  set(nodes, 'q', 'backend engineer at a climate startup');
+  set(nodes, 'maxyears', '3');
+  nodes.remote.type = 'checkbox'; nodes.remote.checked = true;
+  ctx.location.hash = '#search';
+  nodes.signin.fire('click');
+  assert.strictEqual(nodes.signin.href, '/signin#search');
+  set(nodes, 'q', ''); set(nodes, 'maxyears', ''); nodes.remote.checked = false;
+  t.restoreSigninSearch();
+  assert.strictEqual(nodes.q.value, 'backend engineer at a climate startup');
+  assert.strictEqual(nodes.maxyears.value, '3');
+  assert.strictEqual(nodes.remote.checked, true);
+  assert.strictEqual(t.queryMode(), 'meaning');
+  assert.strictEqual(stored.size, 0);
 });

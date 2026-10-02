@@ -13,7 +13,8 @@ records still require a signed session. The owner chose public browsing before a
 `/` renders Home and Search without a session, with the existing per-address read limits.
 Public UI assets are accessible. `/signin` hosts the existing Google sign-in page, labels its
 purpose as saving jobs and searches, and returns to the selected tab after successful sign-in.
-The public header links to it. Account tabs and résumé sync controls render only for a signed-in
+The public header links to it. The active query, filters and scope stay in tab-local
+session storage during sign-in and are restored once on return. Account tabs and résumé sync controls render only for a signed-in
 Account when their backing store is configured. Every Account API retains its existing wall.
 A browser-only résumé draft remains available without sign-in, as before.
 

@@ -13,12 +13,13 @@ URLs followed redirects to `/hcmUI/CandidateExperience/errors/404`, despite HTTP
 confirms #873 still affects the product. The retired Board is parked, so the next ingest run
 using this code prunes its held rows and cannot scrape them back in. Unpark only when public
 applications work. A live search for the historically reported `sphinixusa` returned no rows;
-that old issue count is not treated as a current count.
+that old issue count is not treated as a current count. An exact Board-scoped search for
+`lever:latitudeinc` also returned zero rows.
 
 ## Anonymous browsing
 
 `/` renders the app without a session. Search, public Trends/Hot and browser-only résumé drafts
-are accessible. Sign-in is optional through `/signin`, preserving the selected tab. Account
+are accessible. Sign-in is optional through `/signin`, preserving the selected tab and the active query, filters and scope in tab-local storage. Account
 features and sync controls render only for a signed-in Account; all Account routes remain
 protected. The browser preview used the existing test encoder/table (two fixture jobs), not
 the production corpus. Google authentication was not exercised against a real account.
@@ -62,3 +63,13 @@ Historical measurements and schema examples remain snapshots, not live statistic
 Local probe outputs and runtime logs are kept under `experiment/launch-readiness/`, gitignored.
 Runtime logs must remain private. Production verification after deployment is recorded below
 when observed; source changes alone do not establish that stale rows have drained.
+
+
+## Source validation
+
+Before rebasing onto the new gr8people addition, the full Python suite passed: 9,825 passed,
+2 skipped, 2 expected failures. After rebasing and adding search-state preservation, 341
+relevant Python tests and all 557 JavaScript tests passed. Ruff lint/format and diff checks
+passed. Independent Standards and Spec reviews found no blocking issue; the orphaned count
+calculation identified by Standards was removed. These are source checks, not a production
+sign-in or Account-write test.

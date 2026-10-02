@@ -127,8 +127,6 @@ def _counts() -> dict[str, int]:
         # above. Both are real; each doc must be checked in the order it actually states.
         "excluded_before_dedupe": len(exclude_first_excluded),
         "dedupe_after_exclude": len(kept_live) - len(kept_groups),
-        "newer_dead_after_exclude": len(kept_groups)
-        - len(_elected_boards(exclude_first_kept)),
         "parked": sum(1 for c in unaliased if c.lowercase_identity in PARKED_BOARDS),
         "Scrapable Board": len(load(LEDGER, min_jobs=0)),
         "Hiring Board": len(load(LEDGER, min_jobs=1)),
