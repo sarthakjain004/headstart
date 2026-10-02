@@ -2,24 +2,28 @@
 
 [![CI](https://github.com/sarthakjain004/headstart/actions/workflows/ci.yml/badge.svg)](https://github.com/sarthakjain004/headstart/actions/workflows/ci.yml)
 [![pipeline](https://github.com/sarthakjain004/headstart/actions/workflows/pipeline.yml/badge.svg)](https://github.com/sarthakjain004/headstart/actions/workflows/pipeline.yml)
-[![ADRs](https://img.shields.io/badge/ADRs-200-blue)](./docs/adr/)
+[![Searchable tech jobs](https://img.shields.io/endpoint?url=https%3A%2F%2Fimposeidon-headstart-search.hf.space%2Fbadges%2Fjobs&cacheSeconds=300)](https://imposeidon-headstart-search.hf.space)
+[![ADRs](https://img.shields.io/badge/architecture-decision_log-blue)](./docs/adr/)
 [![Python](https://img.shields.io/badge/python-3.12+-blue)](./pyproject.toml)
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue)](./LICENSE)
 
 ### Every opening. Straight from the source.
 
-**468,376 software-engineering roles**, read directly from the companies' own hiring boards.
+Software-engineering and tech roles, read directly from companies' own hiring boards.
+The badge above reads the searchable-job count from the running service; open
+[HeadStart](https://imposeidon-headstart-search.hf.space) for the current count. Badge caches
+can lag by a few minutes, and a sleeping or restarting service may make the badge unavailable.
 
 Not from a feed employers had to opt in to. Not from a list ranked by who paid.
 
-**[Search the index](https://imposeidon-headstart-search.hf.space)** (free; Google sign-in) ·
+**[Search the index](https://imposeidon-headstart-search.hf.space)** (free; browse without signing in) ·
 **[Read the decisions](./docs/adr/)**
 
 ---
 
 ### It costs nothing to run. All of it.
 
-Discovery. 55 scrapers. Embeddings. Vector search. Email and Telegram alerts.
+Discovery. ATS scrapers. Embeddings. Vector search. Email and Telegram alerts.
 
 Fork it, add your tokens, and the whole pipeline is yours — running on free tiers, end to
 end. No card. No trial. Not a stripped tier of something else: the same code that serves the
@@ -33,16 +37,17 @@ Semantic search over local embeddings, with the structured filters — years, sa
 employment type — left exactly where they belong: under your control, not inferred from a
 sentence.
 
-### 47 ATSes. One shape.
+### Many hiring platforms. One shape.
 
-Greenhouse, Workday, Lever, Ashby, iCIMS, Oracle, Taleo (both editions), BambooHR, Phenom, and 37 more, plus eight
-companies' own career sites.
+Greenhouse, Workday, Lever, Ashby, iCIMS, Oracle, Taleo, BambooHR, Phenom, and more, plus
+companies' own career sites. The [scraper registry](src/headstart/scrapers/registry.py) is the
+current list; new providers appear there automatically.
 HeadStart finds which companies host boards on which ATS, checks that each board is alive,
 and normalizes every posting into a single `Job`. You never learn an ATS's name.
 
 ### Everything above is measured.
 
-And every limit ships next to the result it qualifies. 200 ADRs record the options that lost,
+And every limit ships next to the result it qualifies. The [decision log](docs/adr/) records the options that lost,
 not just the one that won. When a later measurement contradicts an earlier one, the ADR is
 amended in place rather than quietly edited.
 
@@ -80,7 +85,7 @@ unparseable input with a 400 rather than silently ignoring it.
 - **Freshness:** the index is reconciled incrementally, never rebuilt. New postings are added,
   closed ones are evicted, and metadata already in the table gets corrected as fresher scrapes
   arrive — so a fix reaches rows indexed long ago, not only new ones (ADR-0014, ADR-0061, ADR-0062).
-- **Signed in:** the full UI sits behind Google sign-in (`SECRET_KEY` + `GOOGLE_CLIENT_ID`,
+- **Signed in:** search and browsing work without signing in; Google sign-in protects account features (`SECRET_KEY` + `GOOGLE_CLIENT_ID`,
   ADR-0042). Signing in unlocks three per-account tabs: **Matches** (saved searches, one of which
   can become an email Subscription), **Saved** (starred jobs), and **Profile** (paste a résumé;
   one LLM call extracts a career record and a role-describing query, editable before it runs — the
@@ -88,14 +93,13 @@ unparseable input with a 400 rather than silently ignoring it.
 
 ## ATS coverage
 
-**55 scrapers**, selected from a registry by the `ats` key: `adp`, `adp_recruiting`, `amazon`, `apple`, `ashby`,
-`avature`, `bamboohr`, `breezy`, `bytedance`, `clearcompany`, `cornerstone`, `darwinbox`, `eightfold`, `freshteam`, `gem`, `google`, `gr8people`, `greenhouse`,
-`happydance`, `icims`, `jazzhr`, `jibe`, `jobvite`, `join`, `keka`, `lever`, `meta`, `mynexthire`, `oracle`, `peoplestrong`, `personio`, `phenom`,
-`pinpoint`, `pyjamahr`, `radancy`, `recruitee`, `ripplehire`, `rippling`, `sensehq`, `smartrecruiters`, `spire2grow`, `successfactors`,
-`taleo_be`, `taleo_enterprise`, `teamtailor`, `tesla`, `tiktok`, `trakstar`, `turbohire`, `uber`, `workable`,
-`workday`, `wp_job_openings`, `zoho`, `zwayam`. All but `join` are active: `join`'s boards run ~1 tech job in ~10k (German-SMB
-listings, almost entirely non-tech), pure noise for a tech-only index, so `registry.DISABLED_ATS`
-skips it — the scraper class and tests stay intact, and re-enabling it is a one-line change.
+Scrapers are selected from the [registry](src/headstart/scrapers/registry.py) by their `ats`
+key. That file lists every built provider and `DISABLED_ATS` lists those withheld from the
+pipeline. Per-provider measurements live under [docs](docs/README.md); the committed
+[liveness ledgers](data/validate/liveness/) hold the discovered Boards.
+
+`join` is disabled because its measured German-SMB listings are almost entirely non-tech;
+the scraper and tests remain available.
 `adp` and `adp_recruiting` are two separate ADP products, ADP Workforce Now and ADP Recruiting
 Management, each with its own host, API and Board identity. `radancy` is not an ATS at all but
 a **Career front**: Radancy's TalentBrew sites (`jobs.intuit.com`) mirror a company's real ATS
@@ -104,7 +108,7 @@ Boards and hand the Apply button off to them, and are scraped as Boards keyed by
 (`careers.cognizant.com`, ADR-0264). `wp_job_openings` is a WordPress plugin a company runs on its
 own site, which takes applications itself, so each site is a Board keyed by its host (ADR-0266).
 
-Eight of the 54 — `amazon`, `apple`, `bytedance`, `google`, `meta`, `tesla`, `tiktok`, `uber`
+The company-specific providers — `amazon`, `apple`, `bytedance`, `google`, `meta`, `tesla`, `tiktok`, `uber`
 (ADR-0139) — are **Single source scrapers**: each company's own in-house careers system, not a
 multi-tenant platform, so there's no discovery step and each carries a fixed, hand-entered slug
 rather than a crawled tenant roster. `phenom` is a career-site skin over other ATSes rather than a
@@ -127,7 +131,7 @@ literal "Recruitment", and `adp_recruiting` (ADP Recruiting Management, a separa
 reads `clientName` off the career-site record it already fetches for its token (ADR-0202), and
 `workday` votes one name out of its postings' `hiringOrganization` legal entities, checked against
 its board page and cached per Board in `data/validate/company_names/workday.csv` (ADR-0216). The
-eight **Single source scrapers** above need no page fetch for
+**Single source scrapers** above need no page fetch for
 it: one fixed company each, so the name is declared as `BaseScraper.COMPANY` and always served.
 No Board is served under its **ATS slug** (ADR-0212). A hand-curated name in
 `config/company_names.csv` overrides every source; an all-caps legal name is title-cased; and a
@@ -136,10 +140,9 @@ Board no source names is served under its humanised tenant (`nvidia.wd5.myworkda
 a vendor's code (Oracle's pods, ADP's GUIDs). A name is a display value, never an identity, which
 is why `CompanyPrefs` is keyed by **board_key** and never by company name.
 
-The liveness pipeline has probed **337,701 ledger rows**: 213,139 live, 118,042 dead, 6,520 unknown
-— rows, not boards; they collapse to 206,507 Unique Boards once duplicate spellings of the same
-board are folded together and the 4 with a `dead` row newer than their newest `live` row are dropped (`CONTEXT.md` §Counting
-Boards).
+Coverage changes as discovery and liveness checks land. See [Counting Boards](CONTEXT.md#counting-boards)
+for the definitions and test-checked ledger counts. A ledger row is not necessarily a unique
+or Scrapable Board, and the searchable-job count is a different measure again.
 
 ## What this optimises for
 
@@ -151,11 +154,9 @@ hitting the host, not by reading code. This is a rule with a scar behind it: a "
 to tell dead from empty" guard looked obviously correct and died on contact, because 9 of 12 boards
 the ledger already called dead answered `GET /` with 200. Findings carry their sample size.
 
-**Record the rejected options, not just the chosen one.** 200 ADRs, **135** carrying a heading that
-weighs alternatives (`grep -lEi '^#{2,3} .*(alternativ|options? (considered|rejected)|rejected)'
-docs/adr/`). When a later measurement contradicts an earlier one the ADR is amended or superseded
-in place rather than quietly edited — **57** name an `Amends:` / `Supersedes:` relationship in
-their header — so the reasoning stays auditable even when it turns out to be wrong.
+**Record the rejected options, not just the chosen one.** The [ADRs](docs/adr/) record alternatives
+and link amendments and superseding decisions. New decisions appear in that directory
+without a README count to maintain, so the reasoning stays auditable as the project grows.
 
 **Publish the limits next to the result.** Coverage tables say what is excluded and why. A number
 without its caveat is treated as a defect.
@@ -189,14 +190,14 @@ flowchart TB
         D1["<b>discover</b><br/>Common Crawl · Wayback<br/>careers-page fingerprint"]
         D2["<b>merge</b><br/>union + dedupe per ATS"]
         D3["<b>validate</b><br/>liveness-probe each board"]
-        D4[("<b>liveness ledger</b><br/>213,139 live rows of 337,701<br/>git-tracked, authoritative")]
+        D4[("<b>liveness ledger</b><br/>probed Board rows<br/>git-tracked, authoritative")]
         D1 --> D2 --> D3 --> D4
     end
 
     subgraph P["② Ingest &nbsp;·&nbsp; GitHub Actions, back-to-back &nbsp;·&nbsp; ADR-0025 / ADR-0026"]
         direction LR
         P1["<b>scrape-plan</b><br/>1 VM<br/>pick a board slice, LPT pack"]
-        P2["<b>scrape</b><br/>≤15 VMs · 75m budget<br/>54 enabled scrapers → fragments"]
+        P2["<b>scrape</b><br/>≤15 VMs · 75m budget<br/>enabled scrapers → fragments"]
         P3["<b>join</b><br/>1 VM<br/>union · tech-filter · descriptions<br/>ledgers · plan embed"]
         P4["<b>embed</b><br/>≤15 VMs · 180m budget<br/>nomic on CPU → fragments"]
         P5["<b>merge</b><br/>1 VM · single writer<br/>concat · meta refresh · sync · prune · trends · companies · index"]
@@ -287,25 +288,11 @@ ATS board already serves it), case-variant duplicate spellings, boards whose new
 `dead`, and real boards deliberately parked — most of them Jibe career sites whose every posting
 another board we scrape already serves, a few because their cost dwarfs their tech yield, two
 because what they serve is near-duplicate spam. `CONTEXT.md`'s
-§Counting Boards names each of these stages precisely, and `tests/test_board_counts.py` keeps this
-table in lockstep with the committed ledger:
+[Counting Boards](CONTEXT.md#counting-boards) names each of these stages precisely;
+`tests/test_board_counts.py` verifies the glossary against the committed ledgers. This README
+links to that maintained source instead of duplicating its changing totals.
 
-| | boards | |
-| --- | ---: | --- |
-| live rows in the ledger | 213,139 | a row, not a board — 6,628 of them are duplicate spellings |
-| − `registry.DISABLED_ATS` | −25,488 | all of it `join` |
-| − `excluded_and_parked.EXCLUDED_BOARDS` | −430 | vendor and customer test/sandbox/demo/dev boards and one historical feed, confirmed by reading their postings |
-| − alias ledger | −1,986 | one board under a second hostname or label, a career section or career site another of the same tenant already covers, an Eightfold career site its backing ATS board already serves, or a Radancy front another front already lists (ADR-0111, ADR-0182, ADR-0186, ADR-0202, ADR-0205, ADR-0222, ADR-0254, ADR-0265, ADR-0301) |
-| − case-variant dedupe | −6,625 | `company/External` and `company/external` are one board (ADR-0023) |
-| − newer `dead` row | −4 | a board is read only if no `dead` row is newer than its newest `live` one; all 4 re-probed dead (ADR-0219) |
-| − `excluded_and_parked.PARKED_BOARDS` | −357 | real boards withheld for now — six for scrape cost, two for near-duplicate spam, six Jibe clients whose every posting is on a Workday or Oracle board already held, 288 whose every posting is on an iCIMS board we scrape (ADR-0240), five employee-only Radancy fronts (ADR-0246), 31 Happydance fronts whose Backing Board is held (ADR-0264), four Phenom skins over a board already held (CLAUDE.md's Phenom landing rule), one Taleo section whose postings a held Phenom front already serves, two Cornerstone tenants whose only postings are the employer's own test copies, one Radancy front whose robots.txt disallows everything, one WP Job Openings content site whose "postings" are mostly articles (ADR-0266), three login-walled iCIMS internal portals (#810), three second hosts of a Spire2Grow workspace already read under its company's own host (ADR-0362), two TurboHire pages that mirror a SuccessFactors board already held (ADR-0363), one Greenhouse referral-only board whose postings copy its employer's public board, Carrier's gr8people mirror retaining unavailable Workday postings (ADR-0373) |
-| = **Scrapable Board** | **178,249** | |
-
-That order matters: excluding before deduping reads −430 and −6,625, deduping first reads −427,
-because three excluded boards were themselves duplicates. Both land on 178,249.
-
-Of those, **122,865 are currently hiring** — the 55,384 live-but-empty boards are skipped as having
-nothing to read. A run takes a bounded slice and splits it between a scored head (top boards by a
+Boards with no postings are skipped as having nothing to read. A run takes a bounded slice and splits it between a scored head (top boards by a
 sticky measure of tech-job yield, large enough to hold every board that yields tech) and a tail
 that rotates through everything else, the boards looked at longest ago first, so
 newly-productive boards can never starve and eviction keeps working on boards outside the head.
@@ -419,7 +406,7 @@ Note the raw corpus files under `data/jobs/` carry a few fields the served table
 ## Layout
 
 - `src/headstart/` — shared library, used by both the pipeline and the curated feed:
-  `scrapers/` (55 per-ATS + `base`/`registry`, the scrape engine `harvest.py`, and
+  `scrapers/` (per-ATS implementations + `base`/`registry`, the scrape engine `harvest.py`, and
   `country_codes.py`, the ISO table two scrapers read), `llm_router.py`, the one seam every LLM
   call goes through, `embedding_conventions.py`, the model and prefixes the index and the query
   share, and `log.py`.
@@ -565,7 +552,7 @@ your own. The auth model and failure modes are in
 
 ## More
 
-- **Design decisions:** [`docs/adr/`](./docs/adr/) — 200 numbered ADRs (the option picked, the
+- **Design decisions:** [`docs/adr/`](./docs/adr/) — the decision log (the option picked, the
   ones rejected, and why).
 - **Domain glossary:** [`CONTEXT.md`](./CONTEXT.md) — the ubiquitous language (ATS, Board, Slug,
   Job, Discovery, Liveness, Feed, Doc, Bucket, GitHub VM…).

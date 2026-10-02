@@ -190,6 +190,7 @@ async function signOut(){
   window.alert('Sign-out didn\'t go through — you are still signed in. Try again.');
 }
 el('signout').addEventListener('click', signOut);
+if (el('signin')) el('signin').addEventListener('click', () => { el('signin').href = '/signin' + location.hash; });
 const age = d => {
   const t = Date.parse(d || ''); if (isNaN(t)) return '';
   const days = Math.floor((Date.now() - t) / 86400000);

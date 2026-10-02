@@ -32,6 +32,7 @@
       <h1>Head<em>Start</em></h1>
     </div>
     <div class="top-right">
+      {% if signin_on %}<a class="ghost" id="signin" href="/signin">Sign in to save jobs and searches</a>{% endif %}
       <span class="note" id="who"></span>
       <button class="ghost" id="signout" style="display:none">Sign out</button>
       <span class="count"><b>{{ njobs }}</b> jobs indexed</span>
