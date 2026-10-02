@@ -73,6 +73,12 @@ class BaselineSources:
         self._db.close()
         self._temporary.cleanup()
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        self.close()
+
 
 def committed_baseline(facts: Path, state: Path) -> Path | None:
     """Find the baseline on the committed checkpoint chain, ignoring orphan captures."""

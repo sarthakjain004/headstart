@@ -27,6 +27,20 @@ def test_disk_backed_sources_are_exact_and_cache_is_bounded():
         sources.close()
 
 
+def test_baseline_source_context_cleans_up_after_failure():
+    from pathlib import Path
+
+    import pytest
+
+    from headstart.ingest.restate_baseline import BaselineSources
+
+    sources = BaselineSources("baseline")
+    directory = Path(sources._temporary.name)
+    with pytest.raises(RuntimeError), sources:
+        raise RuntimeError("classifier failed")
+    assert not directory.exists()
+
+
 def test_unread_baseline_job_is_not_lost_and_future_edit_replaces_it():
     schema = pa.schema(
         [

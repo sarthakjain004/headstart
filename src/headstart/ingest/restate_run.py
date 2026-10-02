@@ -25,6 +25,7 @@ from __future__ import annotations
 import argparse
 import gc
 import shutil
+from contextlib import ExitStack
 from pathlib import Path
 
 import numpy as np
@@ -157,6 +158,12 @@ def main() -> int:
     )
     args = ap.parse_args()
 
+    with ExitStack() as resources:
+        return _run(args, resources)
+
+
+def _run(args, resources) -> int:
+
     runs = restate_replay.runs(args.facts)
     if not runs:
         _log.info(f"no Job facts under {args.facts} yet — nothing to restate")
@@ -242,7 +249,9 @@ def main() -> int:
     pa.default_memory_pool().release_unused()
     if baseline_stamp is not None:
         _log.info("loading baseline version vectors and descriptions in batches")
-        baseline_sources = restate_baseline.BaselineSources(baseline_stamp)
+        baseline_sources = resources.enter_context(
+            restate_baseline.BaselineSources(baseline_stamp)
+        )
         for batch in baseline_file.iter_batches(
             batch_size=4096, columns=["id", "vector", "description"]
         ):
@@ -321,8 +330,6 @@ def main() -> int:
         version_sources=baseline_sources,
     )
     _log.info(f"placed {served.num_rows} served intervals in a family and band")
-    if isinstance(baseline_sources, restate_baseline.BaselineSources):
-        baseline_sources.close()
     del descriptions, baseline_sources, ids, titles, requisitions, wanted, latest_ids
     gc.collect()
     pa.default_memory_pool().release_unused()
