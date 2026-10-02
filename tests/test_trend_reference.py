@@ -122,9 +122,36 @@ def test_replay_requires_its_baseline_and_preserves_each_edit(tmp_path):
         "2026-10-02T01:00:00+00:00",
         {},
     )
-    ticks = list(tr.checkpoints(facts))
+    live = ["2026-10-02T00:00:00+00:00", "2026-10-02T01:00:00+00:00"]
+    ticks = list(tr.checkpoints(facts, live))
     assert ticks[0][1]["lever:acme:1"]["description"] == "Old description"
     assert ticks[1][1]["lever:acme:1"]["description"] == "Edited"
     first.unlink()
     with pytest.raises(ValueError, match="parent chain"):
-        list(tr.checkpoints(facts))
+        list(tr.checkpoints(facts, live))
+
+
+def test_missing_middle_tick_is_not_a_quiet_tick(tmp_path):
+    facts = tmp_path / "facts"
+    tr.capture(source(tmp_path, [job()]), {}, facts, "2026-10-02T00:00:00+00:00", {})
+    tr.capture(source(tmp_path, [job()]), {}, facts, "2026-10-02T02:00:00+00:00", {})
+    with pytest.raises(ValueError, match="coverage"):
+        list(tr.checkpoints(facts, [f"2026-10-02T0{i}:00:00+00:00" for i in range(3)]))
+
+
+def test_unpublished_orphan_tail_does_not_advance_replay(tmp_path):
+    facts = tmp_path / "facts"
+    first = tr.capture(
+        source(tmp_path, [job()]), {}, facts, "2026-10-02T00:00:00+00:00", {}
+    )
+    table = pq.read_table(first)
+    metadata = table.schema.metadata | {
+        b"ts": b"2026-10-02T01:00:00+00:00",
+        b"previous_tick": b"2026-10-02T00:00:00+00:00",
+        b"baseline": b"false",
+    }
+    pq.write_table(
+        table.replace_schema_metadata(metadata), facts / tr.DIRECTORY / "orphan.parquet"
+    )
+    ticks = list(tr.checkpoints(facts, ["2026-10-02T00:00:00+00:00"]))
+    assert len(ticks) == 1

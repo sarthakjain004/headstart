@@ -510,6 +510,8 @@ def main() -> int:
                 ts,
                 asdict(methodology) | {"rules_fingerprint": rules},
                 state_dir=args.state,
+                row_parts=dict(zip(ids, row_logits, strict=True)),
+                title_cache=cache,
             )
             _log.info(f"Trends reference recorded -> {reference}")
         except Exception:  # noqa: BLE001 - diagnostics must not stop index publication
