@@ -2093,17 +2093,17 @@ function renderCoverageSummary(d){
     <p class="kind">${esc(date(s.from))} to ${esc(date(s.to))} · Freshness unknown</p>
     <div class="coverage-grid">
       <div><h4>Sites tracked at start</h4><p>${esc(count(c.boards))} ${c.boards === 1 ? 'site' : 'sites'} · start ${esc(date(s.baseline))}</p>
-        <p>Stock: ${esc(count(c.stock_start))} at start → ${esc(count(c.stock_latest))} latest</p>
+        <p>Known jobs: ${esc(count(c.stock_start))} at start → ${esc(count(c.stock_latest))} latest</p>
         <p>${esc(turnover(c))}</p><p>${esc(exposure(c))}</p></div>
       <div><h4>Sites added since start</h4><p>${esc(count(e.boards))} ${e.boards === 1 ? 'site' : 'sites'} · ${esc(count(e.first_counted_backlog))} first-counted backlog</p>
-        <p>Stock: ${esc(count(e.stock_latest))} latest</p><p>${esc(turnover(e))}</p><p>${esc(exposure(e, true))}</p></div>
+        <p>Known jobs: ${esc(count(e.stock_latest))} latest</p><p>${esc(turnover(e))}</p><p>${esc(exposure(e, true))}</p></div>
       <div><h4>All known jobs</h4><p>${esc(count(s.all_known.boards))} sites · same dates</p>
-        <p>Stock: ${esc(count(s.all_known.stock_start))} at start → ${esc(count(s.all_known.stock_latest))} latest</p>
+        <p>Known jobs: ${esc(count(s.all_known.stock_start))} at start → ${esc(count(s.all_known.stock_latest))} latest</p>
         <p>Includes sites added since start.</p></div>
     </div>
     <p class="kind">Tracked sites may have missing measurements; initial backlog is coverage, not new hiring.</p>
     <details${open ? ' open' : ''}><summary>What these numbers mean</summary>
-      <p>Stock is the jobs known at each date, regardless of the chart’s measure or watched-role breakdown.
+      <p>Known jobs means the jobs counted at each date, regardless of the chart’s measure or watched-role breakdown.
         First counted means first present in HeadStart’s count history, not a posting date or first successful read.
         Sites read with zero jobs can be missing from this history. Departed sites remain in the starting group.</p>
       <p>Category summaries include linked earlier category names, even when only added sites used those names.</p>
@@ -2111,7 +2111,7 @@ function renderCoverageSummary(d){
         other sites have shorter histories. Their observation periods differ, so these totals are not normalized comparisons.
         Zero recorded events do not prove no hiring. These counts do not describe the whole job market.</p>
       <p>Known counting-change updates and their settling updates are left out of activity using the existing
-        Trends rule, site by site. Stock and net counting adjustments still include those updates.
+        Trends rule, site by site. Known-job counts and net counting adjustments still include those updates.
         Activity can differ from the headline: it includes added sites, keeps unaffected sites, and excludes
         settling updates even when the rule change fell at the window’s start. The headline can also withhold
         other partial reads. An index addition may be an older posting found later; neither figure proves

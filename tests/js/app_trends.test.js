@@ -211,7 +211,7 @@ test('coverage separates first-counted backlog from later observations and keeps
   assert.match(host.innerHTML, /unknown recorded closures\/removals/);
   assert.match(host.innerHTML, /Known closure gaps: 0 sites/);
   assert.match(host.innerHTML, /1 sites added later/);
-  assert.match(host.innerHTML, /Stock: 50 at start → 155 latest/);
+  assert.match(host.innerHTML, /Known jobs: 50 at start → 155 latest/);
   assert.match(host.innerHTML, /Start eligibility: unknown · endpoint freshness: unknown/);
   assert.match(host.innerHTML, /successful zero-job sites: unknown/);
   assert.match(host.innerHTML, /zero jobs can be missing/);
@@ -235,7 +235,7 @@ test('coverage states its full category scope even on New and a watched-role dri
   await t.load('software-engineering');
   assert.match(nodes['trends-coverage-summary'].innerHTML, /Category: software-engineering/);
   assert.match(nodes['trends-coverage-summary'].innerHTML, /regardless of the chart’s measure or watched-role breakdown/);
-  assert.match(nodes['trends-coverage-summary'].innerHTML, /Stock: 50 at start → 52 latest/);
+  assert.match(nodes['trends-coverage-summary'].innerHTML, /Known jobs: 50 at start → 52 latest/);
   assert.match(nodes['trends-coverage-summary'].innerHTML, /shorter than selected window/);
 });
 
