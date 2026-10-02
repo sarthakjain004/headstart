@@ -1669,7 +1669,7 @@ let trendData = null, trendDrill = null;
 // The unit token is 'change', not 'index': CONTEXT.md's "index" is the served corpus, and this
 // same file labels the reference line "whole index" in that sense. One word, two meanings, in
 // one function was a grep hazard. The UI has always called this unit Change.
-let trendMetric = 'stock', trendUnit = 'change', trendSplit = 'bands', trendCoverage = 'all';
+let trendMetric = 'stock', trendUnit = 'change', trendSplit = 'bands', trendCoverage = 'comparable';
 let trendDays = 'all';      // the date-range preset: 7 | 30 | 90 | 'all'; a custom bound beats it
 let hoveredSeries = null;   // legend/chart hover-focus name — dims every other line (§ emphasis)
 let hoverIndex = null;      // the stamp the crosshair is parked on — the keyboard walks this
@@ -1848,7 +1848,7 @@ function readTrendHash(){
   unitWanted = null;
   trendUnit = ['share', 'count', 'change'].includes(lower('unit')) ? lower('unit') : 'change';
   trendMetric = lower('metric') === 'new' ? 'new' : 'stock';
-  trendCoverage = lower('coverage') === 'comparable' ? 'comparable' : 'all';
+  trendCoverage = lower('coverage') === 'all' ? 'all' : 'comparable';
   // A custom range rides in the link as UTC minutes; the fields show them in local time.
   const since = q.get('since'), until = q.get('until');
   if (since || until){
@@ -1899,7 +1899,7 @@ function trendHash(){
     if (r.since) q.set('since', r.since.slice(0, 16));
     if (r.until) q.set('until', r.until.slice(0, 16));
   } else if (trendDays !== 'all') q.set('days', trendDays);
-  if (trendCoverage !== 'all') q.set('coverage', trendCoverage);
+  q.set('coverage', trendCoverage);
   return '#trends' + (q.size ? '?' + q : '');
 }
 function writeTrendHash(push){
@@ -1934,9 +1934,13 @@ function viewKind(d){
 
 // The whole the picks are measured against: the dashed line's label, its name in prose, and
 // what a share is a share of. The index with no pick; the company, or all picks, with some.
+const companySitesOnly = () => (trendData?.coverage || trendCoverage) === 'comparable' || !!trendAtsSelected();
 function pickScope(){
   const n = trendPicks.length;
-  return !n ? { ref: 'whole market', whole: 'the whole market', share: 'a share of all jobs' }
+  if (n && companySitesOnly()) return n === 1
+    ? { ref: 'tracked company sites', whole: 'the company’s tracked sites', share: 'a share of openings on the company’s tracked sites' }
+    : { ref: 'picked tracked sites', whole: 'the picked companies’ tracked sites', share: 'a share of openings on the picked companies’ tracked sites' };
+  return !n ? { ref: 'tracked stock', whole: 'HeadStart’s tracked stock', share: 'a share of tracked jobs' }
     : n === 1 ? { ref: 'whole company', whole: 'the whole company', share: 'a share of the company’s openings' }
     : { ref: 'all picked', whole: 'all picked companies together', share: 'a share of the picked companies’ openings' };
 }
@@ -1974,7 +1978,7 @@ function stepNote(d, marked){
   if (!d.series.length) return '';
   const parts = [];
   if (marked.found)
-    parts.push(`Solid grey lines mark jumps that aren’t hiring: ${
+    parts.push(`Solid grey lines mark known counting changes: ${
       marked.removal ? 'duplicates removed, ' : ''}job sites found later, or a company added later.`);
   // Said only where a line carries a step and has a figure read off it: Zomato, with no
   // percentage, and a Count view, whose lines are real levels, both got the Change sentence.
@@ -2051,6 +2055,66 @@ function comparableNote(d){
 }
 function viewNotes(d){ return [comparableNote(d), companyNote(d)].filter(Boolean).join(' '); }
 
+// Stock and exposure come from the Board history, independent of the chart's measure/split.
+let coverageBaseline = null;
+function renderCoverageSummary(d){
+  const host = el('trends-coverage-summary');
+  const status = el('trends-cohort-status');
+  const s = d.coverage_summary;
+  if (!host) return;
+  host.hidden = !s;
+  if (!s){
+    host.innerHTML = '';
+    if (status) status.textContent = '';
+    return;
+  }
+  const date = ts => new Date(ts).toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
+  if (status && coverageBaseline !== s.baseline){
+    status.textContent = coverageBaseline == null ? ''
+      : `Cohort population changed: Sites tracked at start now uses ${date(s.baseline)} as its baseline.`;
+  }
+  coverageBaseline = s.baseline;
+  const count = n => n == null ? 'unknown' : n.toLocaleString();
+  const exposure = (group, added = false) => group.observed_since
+    ? `${added ? 'Earliest activity' : 'Activity'} since ${date(group.observed_since)}${
+      group.observed_since > s.from ? ' · shorter than selected window' : ''}` : 'Activity period unknown';
+  const turnover = group => `${count(group.observed_opened)} subsequent observed openings · `
+    + `${count(group.recorded_closed)} recorded closures/removals`;
+  const c = s.cohort, e = s.entrants;
+  const scope = s.scope === 'family' ? `Category: ${d.family_label || s.family}` : 'All tech categories';
+  const open = host.querySelector('details')?.open;
+  host.innerHTML = `<h3>Job-site coverage · ${esc(scope)}</h3>
+    <p class="kind">${esc(date(s.from))} to ${esc(date(s.to))} · Freshness unknown</p>
+    <div class="coverage-grid">
+      <div><h4>Sites tracked at start</h4><p>${esc(count(c.boards))} ${c.boards === 1 ? 'site' : 'sites'} · start ${esc(date(s.baseline))}</p>
+        <p>Stock: ${esc(count(c.stock_start))} at start → ${esc(count(c.stock_latest))} latest</p>
+        <p>${esc(turnover(c))}</p><p>${esc(exposure(c))}</p></div>
+      <div><h4>Sites added since start</h4><p>${esc(count(e.boards))} ${e.boards === 1 ? 'site' : 'sites'} · ${esc(count(e.first_counted_backlog))} first-counted backlog</p>
+        <p>Stock: ${esc(count(e.stock_latest))} latest</p><p>${esc(turnover(e))}</p><p>${esc(exposure(e, true))}</p></div>
+      <div><h4>All known jobs</h4><p>${esc(count(c.boards + e.boards))} sites · same dates</p>
+        <p>Stock: ${esc(count(s.all_known.stock_start))} at start → ${esc(count(s.all_known.stock_latest))} latest</p>
+        <p>Includes sites added since start.</p></div>
+    </div>
+    <p class="kind">Tracked sites may have missing measurements; initial backlog is coverage, not new hiring.</p>
+    <details${open ? ' open' : ''}><summary>What these numbers mean</summary>
+      <p>Stock is the jobs known at each date, regardless of the chart’s measure or watched-role breakdown.
+        First counted means first present in HeadStart’s count history, not a posting date or first successful read.
+        Sites read with zero jobs can be missing from this history. Departed sites remain in the starting group.</p>
+      <p>Activity starts after each site’s first count. The added-sites date is the earliest start in that group;
+        other sites have shorter histories. Their observation periods differ, so these totals are not normalized comparisons.
+        Zero recorded events do not prove no hiring. These counts do not describe the whole job market.</p>
+      <p>Known closure gaps: ${esc(count(c.closures_unseen))} sites in the starting group;
+        ${esc(count(e.closures_unseen))} sites added later. Gaps, including zero, do not establish complete freshness.
+        Recorded closures/removals are partial observations. Dormant policy evictions and rule changes can affect them;
+        they do not establish employer intent or causal hiring activity.</p>
+      <p>Net counting adjustments: ${esc(count(c.net_recounted))} in the starting group;
+        ${esc(count(e.net_recounted))} at sites added later. This is additions minus removals caused by counting adjustments,
+        so it can be negative; it is not a count of events.</p>
+      <p>Start eligibility: ${esc(s.quality.start_eligibility)} · endpoint freshness: ${esc(s.quality.endpoint_freshness)} ·
+        successful zero-job sites: ${esc(s.quality.successful_zero_boards)} · event causes: ${esc(s.quality.event_causes)}.</p>
+    </details>`;
+}
+
 // One sentence per company above the tiles — the answer a reader came for, in words: how many
 // tech openings it has and which way they moved, in openings as well as percent. An indexed
 // chart asks the reader to work that out; this says it. Net of the marked steps like every
@@ -2072,8 +2136,8 @@ function verdictLines(d){
     // opened against closed, never as "more openings": the lines keep recounts nothing sizes
     // (Boards dropped, duplicates removed), and a line up 400 read "about 10 more openings". That the runs of such a change
     // are left out (`turnover_left_out`) is said under "How to read this", not here (ADR-0248).
-    const net = t.net == null ? '' : t.net < 0 ? `about ${aboutCount(-t.net)} more closed than opened — `
-      : t.net > 0 ? `about ${aboutCount(t.net)} more opened than closed — ` : 'as many opened as closed — ';
+    const net = t.net == null ? '' : t.net < 0 ? `about ${aboutCount(-t.net)} more recorded closures/removals than observed openings — `
+      : t.net > 0 ? `about ${aboutCount(t.net)} more observed openings than recorded closures/removals — ` : 'as many observed openings as recorded closures/removals — ';
     return [{ name: viewKind(d) === 'bands' ? drillLabel() : 'All tech roles', days: 0,
       text: `${net}${turnoverPhrase(whole, d)}.` }];
   }
@@ -2131,7 +2195,7 @@ function turnoverPhrase(line, d){
   // Where every Board's closures went uncounted the reading gives no closed count, and the
   // sentence none: Google, one Board, read "18 closed … closures not counted on 1 board".
   if (t.closed == null) return `about ${aboutCount(t.opened)} opened${since}; closures not counted`;
-  return `about ${aboutCount(t.opened)} opened, ${aboutCount(t.closed)} closed${since}`;
+  return `about ${aboutCount(t.opened)} opened, ${aboutCount(t.closed)} recorded closures/removals${since}`;
 }
 // One company sentence from a line reading (ADR-0233): its openings, its hiring move, its
 // percentage and weekly rate, and its "Not hiring" by cause, each as the reading gives it.
@@ -2237,7 +2301,7 @@ function drawVerdict(d){
   // The not-hiring part folded under its total, as a disclosure: the answer first, the counting
   // for whoever wants it.
   const item = l => `<li><b>${esc(l.name)}</b>: ${esc(l.text)}${l.detail
-    ? `<details class="verdict-why"><summary>Not hiring: ${esc(l.detail.total)}</summary><ul>${
+    ? `<details class="verdict-why"><summary>Known counting changes: ${esc(l.detail.total)}</summary><ul>${
       l.detail.causes.map(c => `<li>${esc(causeText(c, d))}</li>`).join('')}</ul></details>` : ''}</li>`;
   const { riser, faller } = tileMovers(d, chartedAndOther(d).charted);
   const unfolded = new Set(lines.slice(0, VERDICTS_SHOWN));
@@ -2294,11 +2358,11 @@ function drawTitle(){
   const kind = trendData ? viewKind(trendData) : null;
   el('trends-title').textContent =
     trendDrill && trendRaw && trendRaw.family_known === false ? `No category called “${trendDrill}”`
-    : kind === 'drillCompany' && several ? `How ${drillLabel()} hiring compares ${where}`
+    : kind === 'drillCompany' && several ? `How ${drillLabel()} openings compare ${where}`
     : kind === 'roles' ? `Tracked roles in ${drillLabel()}${where ? ' ' + where : ''}`
-    : trendDrill && where ? `How ${drillLabel()} hiring is moving ${where}`
-    : !trendDrill && several && topSplitNow() === 'company' ? `How tech hiring compares ${where}`
-    : !trendDrill && where && topSplitNow() === 'total' ? `How tech hiring is moving ${where}`
+    : trendDrill && where ? `How ${drillLabel()} openings are moving ${where}`
+    : !trendDrill && several && topSplitNow() === 'company' ? `How tech openings compare ${where}`
+    : !trendDrill && where && topSplitNow() === 'total' ? `How tech openings are moving ${where}`
     : 'Which tech roles are growing' + (where ? ' ' + where : '');
 }
 
@@ -2616,7 +2680,8 @@ async function loadTrends(family){
 // left the refused picks' chart and sentence standing under the note that refused them.
 function clearTrendsView(){
   trendData = null; trendRaw = null;
-  ['trends-chart', 'trends-legend', 'trends-verdict', 'trends-kpi', 'trends-table', 'trends-full-table',
+  if (el('trends-cohort-status')) el('trends-cohort-status').textContent = '';
+  ['trends-chart', 'trends-legend', 'trends-verdict', 'trends-kpi', 'trends-coverage-summary', 'trends-table', 'trends-full-table',
     'trends-changes'].forEach(id => { if (el(id)) el(id).innerHTML = ''; });
   if (el('trends-changes')) el('trends-changes').hidden = true;
 }
@@ -2653,7 +2718,7 @@ function showTrendsError(msg){
   // read this" block used to survive a failed fetch, so a panel with no chart still carried
   // 190 words about how to read one. The scope line goes with them: "24 categories · 471
   // measurements" under a "didn't load" banner describes the payload that is NOT on screen.
-  ['trends-kpi', 'trends-table-wrap', 'trends-chart-note'].forEach(id => {
+  ['trends-kpi', 'trends-coverage-summary', 'trends-table-wrap', 'trends-chart-note'].forEach(id => {
     if (el(id)) el(id).hidden = true;
   });
   if (el('trends-scope')) el('trends-scope').textContent = '';
@@ -2665,7 +2730,7 @@ function showTrendsError(msg){
   if (el('trends-error')){ el('trends-error').hidden = false; el('trends-error-msg').textContent = msg; }
 }
 // Everything that states the answer in words, dimmed together while a new one is fetched.
-const ANSWER_TEXT = ['trends-verdict', 'trends-kpi', 'trends-empty', 'trends-chart-note'];
+const ANSWER_TEXT = ['trends-verdict', 'trends-kpi', 'trends-coverage-summary', 'trends-empty', 'trends-chart-note'];
 function dimAnswer(on){ ANSWER_TEXT.forEach(id => { if (el(id)) el(id).classList.toggle('loading', on); }); }
 function hideTrendsError(){
   setTrendsBusy(false);
@@ -2992,6 +3057,7 @@ function trendPlotWidth(host = el('trends-chart') && el('trends-chart').parentEl
 
 function drawTrends(){
   const d = trendData; if (!d) return;
+  renderCoverageSummary(d);
   const host = el('trends-chart') && el('trends-chart').parentElement;
   const W = trendPlotWidth(host);
   const { charted, other, shown } = chartedAndOther(d);
@@ -3331,7 +3397,9 @@ function drawTrends(){
   el('trends-chart').setAttribute('aria-label',
     `Line chart. ${trendMetric === 'new' ? `Openings ${newCounts(d)}` : 'All live openings'}${where}`
     + `${view.grouping ? ` by ${view.grouping(trendDrill)}` : ', every category summed into one line'}, as ${
-        trendUnit === 'share' ? (view.split === 'company' ? 'a share of each company’s own openings' : pickScope().share)
+        trendUnit === 'share' ? (view.split === 'company'
+          ? (companySitesOnly() ? 'a share of openings on each company’s tracked sites' : 'a share of each company’s own openings')
+          : pickScope().share)
         : trendUnit === 'change' ? 'change from each line’s own count at the window’s start, which is 100'
         : 'a count'}`
     + `${atsPick ? `, ${atsPick.length} of the sources` : ''}, over ${measured}.`
@@ -3341,15 +3409,15 @@ function drawTrends(){
   // only exist from the run this shipped in forward, not because the pipeline itself is new —
   // conflating the two would read as "the pipeline is broken" rather than "you narrowed it."
   el('trends-empty').textContent = runs === 0
-    ? (trendCoverage === 'comparable' && d.ledger_start
+    ? (trendPicks.length && d.ledger_start && trendRange().until && trendRange().until < d.ledger_start
+      ? `These dates end before HeadStart began tracking companies on ${stampLabel(d.ledger_start, true)} — choose later dates.`
+      : trendCoverage === 'comparable' && d.ledger_start
         && (!trendRange().since || trendRange().since < d.ledger_start)
       // Comparable keeps the Boards counted at the window's start, and per-Board counting has
       // a start of its own: a window opening before it has no cohort at all, so "widen" is the
       // wrong advice there.
-      ? `“Tracked from start” works only from ${stampLabel(d.ledger_start, true)} — choose a later start date.`
+      ? `“Sites tracked at start” works only from ${stampLabel(d.ledger_start, true)} — choose a later start date.`
       // A window ending before counting began: the date it could not reach, not just "widen".
-      : trendPicks.length && d.ledger_start && trendRange().until && trendRange().until < d.ledger_start
-      ? `These dates end before HeadStart began tracking companies on ${stampLabel(d.ledger_start, true)} — choose later dates.`
       : 'No data for these dates — widen them, or clear them to see everything.')
     : runs < 2 && trendPicks.length
     ? `${viewNotes(d)} A trend line appears after a few more updates.`.trim()
@@ -3392,7 +3460,8 @@ function drawTrends(){
   parts.push(trendMetric === 'new'
     ? `Jobs ${newCounts(d)}.`
     : (trendUnit === 'share'
-      ? `Each line is a share of ${view.split === 'company' ? 'its company’s own openings'
+      ? `Each line is a share of ${view.split === 'company'
+        ? (companySitesOnly() ? 'openings on its company’s tracked sites' : 'its company’s own openings')
         : trendPicks.length ? `all openings ${at}` : 'all open jobs'}.`
       : trendUnit === 'change'
       // A line with no count at the window's start is based on its own first one.
@@ -3668,11 +3737,11 @@ function buildTrendsTable(){
     // "Share, change +6.2%" did not say whether that was points or a relative change.
     + (trendUnit === 'share'
       ? th('Share change', 'How much the share grew or shrank, relative to where it started — not percentage points')
-      : th('Hiring %', 'Change from hiring since the start, as a percentage'))
-    + th('Hiring', 'Openings gained or lost through hiring')
-    + th('Not hiring', 'Jumps that aren’t hiring, like duplicates removed or job sites found later')
+      : th('Adjusted change %', 'Change after recorded counting adjustments, as a percentage; not causal hiring activity'))
+    + th('Adjusted change', 'Openings gained or lost after recorded counting adjustments')
+    + th('Counting changes', 'Known counting changes, like duplicates removed or job sites found later')
     // What the hiring move is made of (ADR-0227), on the runs that move counts.
-    + (withTurnover ? th('Opened', 'Jobs opened in this window') + th('Closed', 'Jobs closed in this window') : '')
+    + (withTurnover ? th('Observed openings', 'Openings observed in this window') + th('Recorded closures/removals', 'Partial recorded removals; Dormant policy evictions and rule changes can affect these counts') : '')
     + th('At start', 'Openings at the start of the window')
     + th('Low', 'The lowest figure in the window') + th('High', 'The highest figure in the window') + '</tr>';
   const dash = '<td class="flat">—</td>';
@@ -3715,7 +3784,10 @@ function buildTrendsTable(){
     + dash + dash + openings(closing.hiring) + dash
     + (withTurnover ? dash + dash : '') + dash + dash + dash + '</tr>' : '';
   const many = kind === 'bands' ? 'levels' : 'categories';
-  const whole = kind === 'bands' ? 'the whole category' : trendPicks.length > 1 ? 'all the companies' : 'the whole company';
+  const whole = kind === 'bands'
+    ? (trendPicks.length && companySitesOnly() ? 'the category on the picked companies’ tracked sites' : 'the whole category')
+    : trendPicks.length && companySitesOnly() ? pickScope().whole
+    : trendPicks.length > 1 ? 'all the companies' : 'the whole company';
   // The rows are said to add up only where the reading's checks say they do. Opened and closed
   // are counted line by line (a category leaves out a Found Board's run the company counts), so
   // they are never said to.
@@ -3723,9 +3795,9 @@ function buildTrendsTable(){
   // hiring cell is blank), so the other columns of the rows do not reach the first row's.
   // Named by its label, not as "the first row" (ADR-0255).
   const addsUp = !problemsOf(reading).length
-    ? `; the ${many} below${closing ? ' and “Moved between categories” add up to its hiring' : ' add up to it'}` : '';
+    ? `; the ${many} below${closing ? ' and “Moved between categories” add up to its adjusted change' : ' add up to it'}` : '';
   const note = withTotal ? `<caption>“${esc(totalLabel)}” covers ${whole}${addsUp}.${
-    withTurnover ? ' Opened and closed are counted for each line, so they may not add up.' : ''}</caption>` : '';
+    withTurnover ? ' Observed openings and recorded closures/removals are counted for each line, so they may not add up.' : ''}</caption>` : '';
   return `${note}<thead>${head}</thead><tbody>${body}${closingRow}</tbody>`;
 }
 
@@ -4033,7 +4105,9 @@ function setUnit(value, shareLocked, changeLocked){
 function shareLock(){
   if (trendMetric === 'new') return 'Share is off here — a share of “new” openings over all live ones has no reading.';
   if (!trendDrill && topSplitNow() === 'company' && trendPicks.length > 1)
-    return 'Share is off here — each line is a whole company, so as a share of itself it is always 100%.';
+    return companySitesOnly()
+      ? 'Share is off here — each line covers its company’s tracked sites, so as a share of itself it is always 100%.'
+      : 'Share is off here — each line is a whole company, so as a share of itself it is always 100%.';
   // All of a company's tech roles as a share of all its openings read "96%": a tech filter's
   // measure, not a hiring one.
   if (!trendDrill && trendPicks.length && topSplitNow() === 'total')

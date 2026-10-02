@@ -65,9 +65,9 @@
          cannot lift a line. #}
       <span class="ctl-label" id="trends-lbl-coverage">Job sites</span>
       <span class="seg" id="trends-coverage" role="radiogroup" aria-labelledby="trends-lbl-coverage">
-        <button data-coverage="all" role="radio" aria-checked="true" tabindex="0">All</button>
-        <button data-coverage="comparable" role="radio" aria-checked="false" tabindex="-1"
-                title="Only sites tracked from the start date, so new ones can’t lift a line">Tracked from start</button>
+        <button data-coverage="all" role="radio" aria-checked="false" tabindex="-1">All</button>
+        <button data-coverage="comparable" role="radio" aria-checked="true" tabindex="0"
+                title="Sites first counted by the start date; departed sites remain, and measurement consistency is unknown">Sites tracked at start</button>
       </span>
     </span>
     <span class="ctl">
@@ -141,6 +141,8 @@
      its figures are still shown, and this says they do not fully add up. #}
   <div class="trends-note" id="trends-reconcile" role="status" hidden></div>
   <div class="trends-verdict" id="trends-verdict" hidden></div>
+  <p class="trends-note" id="trends-cohort-status" role="status" aria-live="polite" aria-atomic="true"></p>
+  <section class="trends-coverage-summary" id="trends-coverage-summary" aria-label="Job-site coverage summary" hidden></section>
   <div class="trends-kpi" id="trends-kpi" hidden></div>
   {# The loading state. Same grid as the chart below it, so the panel does not jump when the
      data lands — the skeleton IS the reserved space rather than an extra block above it.
@@ -187,11 +189,12 @@
     <p class="kind"><b>Share</b> is each line’s slice of the whole (all jobs, or the companies you
     picked), so adding companies doesn’t lift every line at once.</p>
     <p class="kind"><b>Change</b> starts every line at 100, so 120 means 20% more openings. The
-    dashed line is the whole market, or the companies you picked: a line above it is growing
+    dashed line is HeadStart’s tracked stock, or the companies you picked: a line above it is growing
     faster than the whole.</p>
-    <p class="kind">Grey vertical lines mark jumps that aren’t hiring. Opened and closed can be too
-    low: some sites don’t show when a job closes, and days when HeadStart changed how it counts
-    are left out.</p>
+    <p class="kind">Grey vertical lines mark known counting changes. Observed openings and recorded
+    closures/removals can be too low: some sites don’t show when a posting disappears, and days when
+    HeadStart changed how it counts are left out. Recorded closures/removals are not confirmed employer
+    closures: Dormant policy evictions and rule changes can affect them. Adjusted trends do not isolate causal hiring activity.</p>
     {# A category's line only (ADR-0057): a job can change category, never company or title. #}
     <p class="kind" id="trends-how-moves">A job can move to another category when HeadStart learns
     more about it, which looks like one job closing and another opening. Read a category’s trend

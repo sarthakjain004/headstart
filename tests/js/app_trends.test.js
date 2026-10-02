@@ -161,12 +161,129 @@ test('the comparable-coverage control sends its explicit scope', async () => {
   assert.match(requested, /coverage=comparable/);
 });
 
+test('the real UI defaults to sites tracked at start, including a link without coverage', async () => {
+  const { t, ctx } = loadApp();
+  const asked = answering(ctx, fixture());
+  await t.load(null);
+  assert.equal(asked.at(-1).get('coverage'), 'comparable');
+  t.coverageSet('all');
+  ctx.location.hash = '#trends?days=30';
+  t.readHash();
+  await t.load(null);
+  assert.equal(asked.at(-1).get('coverage'), 'comparable');
+  assert.ok(asked.at(-1).has('base'));
+});
+
+test('explicit All survives a shared hash and continues to use the compatible All API', async () => {
+  const { t, ctx } = loadApp();
+  t.coverageSet('all');
+  const shared = t.hash();
+  assert.equal(shared, '#trends?coverage=all');
+  t.coverageSet('comparable');
+  ctx.location.hash = shared;
+  t.readHash();
+  const asked = answering(ctx, fixture());
+  await t.load(null);
+  assert.equal(t.hash(), shared);
+  assert.equal(asked.at(-1).has('coverage'), false);
+});
+
+function coverageSummary(){
+  const d = fixture(), [from, to] = d.stamps;
+  return { baseline: from, from, to, scope: 'tech', family: null,
+    cohort: { boards: 2, stock_start: 50, stock_latest: 52, observed_opened: 4,
+      recorded_closed: 2, closures_unseen: 0, observed_since: from, net_recounted: -2 },
+    entrants: { boards: 1, first_counted_backlog: 100, stock_latest: 103, observed_opened: 3,
+      recorded_closed: null, closures_unseen: 1, observed_since: to, net_recounted: null },
+    all_known: { stock_start: 50, stock_latest: 155 },
+    quality: { start_eligibility: 'unknown', endpoint_freshness: 'unknown', successful_zero_boards: 'unknown', event_causes: 'unknown' } };
+}
+
+test('coverage separates first-counted backlog from later observations and keeps unknown quality visible', async () => {
+  const { t, ctx, nodes } = loadApp();
+  const summary = coverageSummary();
+  answering(ctx, { ...fixture(), coverage_summary: summary });
+  await t.load(null);
+  const host = nodes['trends-coverage-summary'];
+  assert.equal(host.hidden, false);
+  assert.match(host.innerHTML, /100 first-counted backlog/);
+  assert.match(host.innerHTML, /3 subsequent observed openings/);
+  assert.match(host.innerHTML, /unknown recorded closures\/removals/);
+  assert.match(host.innerHTML, /Known closure gaps: 0 sites/);
+  assert.match(host.innerHTML, /1 sites added later/);
+  assert.match(host.innerHTML, /Stock: 50 at start → 155 latest/);
+  assert.match(host.innerHTML, /Start eligibility: unknown · endpoint freshness: unknown/);
+  assert.match(host.innerHTML, /successful zero-job sites: unknown/);
+  assert.match(host.innerHTML, /zero jobs can be missing/);
+  assert.match(host.innerHTML, /Tracked sites may have missing measurements/);
+  assert.match(host.innerHTML, /Departed sites remain/);
+  assert.match(host.innerHTML, /Freshness unknown/);
+  assert.match(host.innerHTML, /<details><summary>What these numbers mean<\/summary>/);
+  assert.match(host.innerHTML, /Net counting adjustments: -2/);
+  assert.match(host.innerHTML, /earliest start in that group/);
+  assert.match(host.innerHTML, /Dormant policy evictions and rule changes/);
+  assert.match(host.innerHTML, /do not establish complete freshness/);
+  assert.doesNotMatch(host.innerHTML, /100%|103 subsequent observed openings/);
+});
+
+test('coverage states its full category scope even on New and a watched-role drill', async () => {
+  const { t, ctx, nodes } = loadApp();
+  const summary = { ...coverageSummary(), scope: 'family', family: 'software-engineering' };
+  t.metricSet('new'); t.splitSet('roles');
+  answering(ctx, { ...fixture(), coverage_summary: summary, watch_parents: ['software-engineering'] });
+  await t.load('software-engineering');
+  assert.match(nodes['trends-coverage-summary'].innerHTML, /Category: software-engineering/);
+  assert.match(nodes['trends-coverage-summary'].innerHTML, /regardless of the chart’s measure or watched-role breakdown/);
+  assert.match(nodes['trends-coverage-summary'].innerHTML, /Stock: 50 at start → 52 latest/);
+  assert.match(nodes['trends-coverage-summary'].innerHTML, /shorter than selected window/);
+});
+
+test('a changing summary baseline announces the new cohort, without announcements on repaint', async () => {
+  const { t, ctx, nodes } = loadApp();
+  const summary = coverageSummary();
+  answering(ctx, { ...fixture(), coverage_summary: summary });
+  await t.load(null);
+  assert.equal(nodes['trends-cohort-status'].textContent, '');
+  t.rangeSet('30');
+  answering(ctx, { ...fixture(), coverage_summary: { ...summary, baseline: summary.to } });
+  await t.load(null);
+  const announcement = nodes['trends-cohort-status'].textContent;
+  assert.match(announcement, /Cohort population changed: Sites tracked at start/);
+  t.draw();
+  assert.equal(nodes['trends-cohort-status'].textContent, announcement);
+  answering(ctx, { ...fixture(), coverage_summary: null });
+  await t.load(null);
+  assert.equal(nodes['trends-coverage-summary'].hidden, true);
+  assert.equal(nodes['trends-coverage-summary'].innerHTML, '');
+});
+
+test('coverage template first paint agrees with default and has an atomic accessible status', () => {
+  const template = fs.readFileSync(path.join(path.dirname(APP_JS), '..', 'templates', 'trends.html'), 'utf8');
+  assert.match(template, /data-coverage="comparable" role="radio" aria-checked="true" tabindex="0"/);
+  assert.match(template, />Sites tracked at start<\/button>/);
+  assert.match(template, /id="trends-cohort-status" role="status" aria-live="polite" aria-atomic="true"/);
+});
+
+test('comparable company captions and shares name the company tracked sites', () => {
+  const { t, nodes } = loadApp();
+  showGolden(t, 'found_board_on_a_category_line');
+  t.data().coverage = 'comparable';
+  t.setUnit('share', false);
+  t.draw();
+  assert.match(nodes['trends-chart'].attrs['aria-label'], /company’s tracked sites/);
+  nodes['trends-error'] = Object.assign(fakeEl(), { hidden: true });
+  t.table(true);
+  assert.match(nodes['trends-table'].innerHTML, /covers the company’s tracked sites/);
+  assert.doesNotMatch(nodes['trends-table'].innerHTML, /covers the whole company/);
+});
+
 /** A page served under a boot's answers version (ADR-0251), its timers held for the test to run:
  * `run()` fires every timer still pending, as if the reader had stayed. The history's newest
  * tick is Sep 20, which the date presets are measured back from (ADR-0269). */
 const NEWEST = '2026-09-20T12:00:00+00:00';
 function versionedApp() {
   const app = loadApp(null, { answers_version: 'b00t', trends_newest_tick: NEWEST });
+  app.t.coverageSet('all');   // cache fixtures exercise explicit All
   const timers = new Map();
   let next = 0;
   app.ctx.setTimeout = (fn, ms) => { timers.set(++next, { fn, ms }); return next; };
@@ -375,7 +492,7 @@ test('a page with no answers version asks as it always did, and nothing ahead', 
   const { t, ctx } = loadApp();
   const asked = answering(ctx, fixture());
   await t.load(null);
-  assert.deepStrictEqual(asked.map(q => q.toString()), ['']);
+  assert.deepStrictEqual(asked.map(q => q.toString()), ['coverage=comparable']);
 });
 
 const mk = (name, label, latest) => ({ name, label, points: [latest, latest], latest });
@@ -798,7 +915,7 @@ test('a box asks at once, and a quick burst after it asks once, for the selectio
   assert.deepStrictEqual([...timers.values()].map(x => x.ms), [300]);
   [...timers.values()].forEach(x => x.fn());
   assert.equal(calls.length, 2);
-  assert.match(calls[1].url, /\?ats=keka&?/);
+  assert.match(calls[1].url, /[?&]ats=keka&?/);
   calls.forEach((c, i) => c.answer(tagged(i)));
   await settle();
   assert.equal(t.draws(), 1);       // the first was cancelled by the second: one paint
@@ -1264,6 +1381,7 @@ test('a link replaces the picks through the hash, labelled by the name it showed
   assert.equal(ctx.location.hash, '#trends?company=workday%3Aacme%2Fsite1');
   assert.ok(t.readHash());
   same(t.picks(), [{ key: 'workday:acme/site1', label: 'Acme' }]);
+  ctx.location.hash = t.hash();   // the successful load canonicalizes the shared link
   assert.ok(!t.readHash(), 'the same hash again changes nothing');
 });
 
@@ -1756,7 +1874,7 @@ test('the sentence says how much of the chart’s move was not hiring', () => {
   showGolden(t, 'found_board_on_a_category_line');
   t.draw();
   assert.match(nodes['trends-verdict'].innerHTML,
-    /Acme<\/b>: [^—<]*— 1,700 tech openings, about flat in 3 days \(\+0\.0%, \+0\)\.<details class="verdict-why"><summary>Not hiring: \+200 openings<\/summary><ul><li>Sep 15 3 more job sites found: \+200 openings<\/li><\/ul>/);
+    /Acme<\/b>: [^—<]*— 1,700 tech openings, about flat in 3 days \(\+0\.0%, \+0\)\.<details class="verdict-why"><summary>Known counting changes: \+200 openings<\/summary><ul><li>Sep 15 3 more job sites found: \+200 openings<\/li><\/ul>/);
 });
 
 test('compared company by company, the heading asks how hiring compares', () => {
@@ -1764,7 +1882,7 @@ test('compared company by company, the heading asks how hiring compares', () => 
   t.setPicks([ACME, BETA]);
   t.set(companies([['greenhouse:acme', 'Acme', [100, 100, 100, 100]], ['lever:beta', 'Beta', [100, 100, 150, 150]]]));
   t.draw();
-  assert.equal(nodes['trends-title'].textContent, 'How tech hiring compares at 2 companies');
+  assert.equal(nodes['trends-title'].textContent, 'How tech openings compare at 2 companies');
 });
 
 test('Enter before the suggestions arrive picks the top one when they do', async () => {
@@ -1813,7 +1931,7 @@ test('the table names what its change leaves out, and start, hiring and not hiri
   nodes['trends-error'] = Object.assign(fakeEl(), { hidden: true });   // no failed load showing
   t.table(true);
   const html = nodes['trends-table'].innerHTML;
-  assert.match(html, />Hiring %<\/th><th scope="col" title="[^"]+">Hiring<\/th><th scope="col" title="[^"]+">Not hiring<\/th><th scope="col" title="[^"]+">At start</);
+  assert.match(html, />Adjusted change %<\/th><th scope="col" title="[^"]+">Adjusted change<\/th><th scope="col" title="[^"]+">Counting changes<\/th><th scope="col" title="[^"]+">At start</);
   const a = t.data().reading.lines[0].move;
   const [latest, , hiring, notHiring, start] = tableCells(html, 'a');
   assert.equal(start + hiring + notHiring, latest, 'under Count a row reads start + hiring + not hiring = latest');
@@ -1874,7 +1992,7 @@ test('the sentence names each cause of the non-hiring move, with its size', () =
   t.setUnit('count', false);
   t.draw();
   assert.match(nodes['trends-verdict'].innerHTML,
-    /Acme<\/b>: [^—<]*— 1,010 tech openings, up 1\.0% in 3 days \(\+10[^)]*\)\.<details class="verdict-why"><summary>Not hiring: −2,000 openings<\/summary><ul><li>Sep 15 duplicate postings removed: −2,000 openings<\/li><\/ul>/);
+    /Acme<\/b>: [^—<]*— 1,010 tech openings, up 1\.0% in 3 days \(\+10[^)]*\)\.<details class="verdict-why"><summary>Known counting changes: −2,000 openings<\/summary><ul><li>Sep 15 duplicate postings removed: −2,000 openings<\/li><\/ul>/);
 });
 
 test('a run with duplicates removed beside a counting change names each by its size', () => {
@@ -1910,7 +2028,7 @@ test('a drill is titled for its category and its company', () => {
   t.setPicks([ACME]);
   t.set({ ...picked({}), family_label: 'AI / Machine Learning' }, 'ai-ml');
   t.draw();
-  assert.equal(nodes['trends-title'].textContent, 'How AI / Machine Learning hiring is moving at Acme');
+  assert.equal(nodes['trends-title'].textContent, 'How AI / Machine Learning openings are moving at Acme');
 });
 
 
@@ -2000,7 +2118,7 @@ test('counting changes are named in words that read, and counted once each', () 
   t.setUnit('count', false);
   t.draw();
   assert.match(nodes['trends-verdict'].innerHTML,
-    /<summary>Not hiring: \+50 openings<\/summary><ul><li>Sep 15 we redrew our job categories, so some jobs moved to a different category: \+20 openings<\/li><li>Sep 17 we got better at spotting tech jobs and changed our list of job categories, so some jobs were added to or dropped from the counts or moved to a different category: \+30 openings<\/li><\/ul>/);
+    /<summary>Known counting changes: \+50 openings<\/summary><ul><li>Sep 15 we redrew our job categories, so some jobs moved to a different category: \+20 openings<\/li><li>Sep 17 we got better at spotting tech jobs and changed our list of job categories, so some jobs were added to or dropped from the counts or moved to a different category: \+30 openings<\/li><\/ul>/);
 });
 
 test('under New a filter change and its week-later echo are one change', () => {
@@ -2222,7 +2340,7 @@ test('under New, an echo whose change fell before the window is dated by that ch
   t.setUnit('count', false);
   t.draw();
   assert.match(nodes['trends-verdict'].innerHTML,
-    /<summary>Not hiring: −40 openings<\/summary><ul><li>Sep 19 a week after we got better at spotting tech jobs on Sep 11, the jobs that change moved stopped being new: −40 openings<\/li><\/ul>/);
+    /<summary>Known counting changes: −40 openings<\/summary><ul><li>Sep 19 a week after we got better at spotting tech jobs on Sep 11, the jobs that change moved stopped being new: −40 openings<\/li><\/ul>/);
 });
 
 test('a category sorted in by a counting change reads so, and its openings count as that change', () => {
@@ -2433,7 +2551,7 @@ test('the marked-changes list sizes each change on the company alone, as the sen
   t.draw();
   const list = nodes['trends-changes'].innerHTML;
   assert.match(list, /we got better at spotting tech jobs, so some jobs were added to or dropped from the counts — Acme \+90 openings<\/li>/, 'the company alone, no category beside it');
-  assert.match(nodes['trends-verdict'].innerHTML, /Not hiring: \+90 openings/, 'the same +90');
+  assert.match(nodes['trends-verdict'].innerHTML, /Known counting changes: \+90 openings/, 'the same +90');
 });
 test('a category a counting change sorted into existence reads so, and the list gives the company’s size', () => {
   const { t, nodes } = loadApp();
@@ -2546,7 +2664,7 @@ test('a company sentence gives the jobs its net change is made of', () => {
   t.draw();
   // #684's shape: the answer first, then the move, then what it is made of, in the main text.
   assert.match(nodes['trends-verdict'].innerHTML,
-    /<b>Acme<\/b>: holding steady — 1,000 tech openings, [^<]*\. About 500 opened, 490 closed\./);
+    /<b>Acme<\/b>: holding steady — 1,000 tech openings, [^<]*\. About 500 opened, 490 recorded closures\/removals\./);
 });
 
 test('turnover stays in the main text, never in the not-hiring disclosure', () => {
@@ -2556,7 +2674,7 @@ test('turnover stays in the main text, never in the not-hiring disclosure', () =
   const html = nodes['trends-verdict'].innerHTML;
   assert.match(html, /<details class="verdict-why">/, 'the tech-filter step is disclosed');
   const [main, why] = html.split('<details class="verdict-why">');
-  assert.match(main, /About 500 opened, 490 closed/);
+  assert.match(main, /About 500 opened, 490 recorded closures\/removals/);
   assert.doesNotMatch(why, /opened/);
 });
 
@@ -2565,7 +2683,7 @@ test('turnover that began inside the window says from when', () => {
   t.setPicks([ACME]);
   t.set(busyAcme({ turnover_since: FOUR[1] }));
   t.draw();
-  assert.match(nodes['trends-verdict'].innerHTML, /\. About 500 opened, 490 closed since Sep 14[.;]/);
+  assert.match(nodes['trends-verdict'].innerHTML, /\. About 500 opened, 490 recorded closures\/removals since Sep 14[.;]/);
 });
 
 test('the table gives each line its opened and closed', () => {
@@ -2577,7 +2695,7 @@ test('the table gives each line its opened and closed', () => {
   nodes['trends-error'] = Object.assign(fakeEl(), { hidden: true });
   t.table(true);
   const html = nodes['trends-table'].innerHTML;
-  assert.match(html, />Not hiring<\/th><th scope="col" title="[^"]+">Opened<\/th><th scope="col" title="[^"]+">Closed<\/th>/);
+  assert.match(html, />Counting changes<\/th><th scope="col" title="[^"]+">Observed openings<\/th><th scope="col" title="[^"]+">Recorded closures\/removals<\/th>/);
   assert.match(html, /<td>500<\/td><td>490<\/td>/);
 });
 
@@ -2593,7 +2711,7 @@ test('the index gets a hiring net from its turnover, and table columns too', () 
   t.setUnit('count', false);
   t.draw();
   assert.match(nodes['trends-verdict'].innerHTML,
-    /<b>All tech roles<\/b>: about 10 more opened than closed — about 50 opened, 40 closed\./);
+    /<b>All tech roles<\/b>: about 10 more observed openings than recorded closures\/removals — about 50 opened, 40 recorded closures\/removals\./);
   assert.doesNotMatch(nodes['trends-verdict'].innerHTML, /HeadStart has counted|boards?\b|runs?\b/);
   nodes['trends-error'] = Object.assign(fakeEl(), { hidden: true });
   t.table(true);
@@ -2603,7 +2721,7 @@ test('the index gets a hiring net from its turnover, and table columns too', () 
   Object.assign(fewer.reading.total.move.turnover, { opened: 40, closed: 50, net: -10 });
   t.set(fewer);
   t.draw();
-  assert.match(nodes['trends-verdict'].innerHTML, /about 10 more closed than opened — about 40 opened, 50 closed\./);
+  assert.match(nodes['trends-verdict'].innerHTML, /about 10 more recorded closures\/removals than observed openings — about 40 opened, 50 recorded closures\/removals\./);
 });
 
 test('Opening more than closing leads with opened less closed and gives both counts', () => {
@@ -2671,7 +2789,7 @@ test('a trend opened from Hot carries the company and Hot’s base, and nothing 
   t.set(companies([['greenhouse:bosch', 'Bosch', [100, 200, 300, 540]]]));
   t.draw();
   assert.doesNotMatch(nodes['trends-empty'].textContent, /Hot/);
-  assert.match(t.hash(), /^#trends\?company=greenhouse%3Abosch&since=2026-09-13T00%3A00$/);
+  assert.match(t.hash(), /^#trends\?company=greenhouse%3Abosch&since=2026-09-13T00%3A00&coverage=comparable$/);
 });
 
 test('a Hot row reads Following only once every Board of its company is followed', () => {
@@ -2693,7 +2811,7 @@ showGolden(t, 'duplicate_removal_scales_the_history_before_it');
   t.draw();
   const html = nodes['trends-verdict'].innerHTML;
   assert.match(html, /\(\+60[ ,)]/, '50 + 10 real hires; lifted, it read +110');
-  assert.match(html, /Not hiring: −1,000 openings/);
+  assert.match(html, /Known counting changes: −1,000 openings/);
   // The removal is its share of the tech openings before it; the +50 of doubled growth before it
   // is a cause of its own, so the list sums to the sentence.
   const list = nodes['trends-changes'].innerHTML;
@@ -2740,7 +2858,7 @@ showGolden(t, 'change_before_a_removal_counts_at_the_scale_it_leaves');
   const list = nodes['trends-changes'].innerHTML;
   assert.match(list, /we got better at spotting tech jobs, so some jobs were added to or dropped from the counts — Micron \+200 openings/, 'one size in every window (ADR-0233)');
   assert.match(list, /duplicate postings removed — Micron −1,100 openings/);
-  assert.match(nodes['trends-verdict'].innerHTML, /Not hiring: −900 openings/);
+  assert.match(nodes['trends-verdict'].innerHTML, /Known counting changes: −900 openings/);
 });
 
 
@@ -2770,7 +2888,7 @@ showGolden(t, 'change_settling_on_a_removal_run_is_sized_at_that_runs_scale');
   t.draw();
   const list = nodes['trends-changes'].innerHTML;
   const total = [...list.matchAll(/— Micron ([−+][\d,]+) opening/g)].reduce((a, m) => a + Number(m[1].replace('−', '-').replace(',', '')), 0);
-  const said = nodes['trends-verdict'].innerHTML.match(/Not hiring: ([−+][\d,]+) opening/)[1];
+  const said = nodes['trends-verdict'].innerHTML.match(/Known counting changes: ([−+][\d,]+) opening/)[1];
   assert.equal(total, Number(said.replace('−', '-').replace(',', '')), 'the list sums to the sentence');
   assert.match(list, /we got better at spotting tech jobs, so some jobs were added to or dropped from the counts — Micron \+250 openings/);
 });
@@ -2798,7 +2916,7 @@ test('inside a category the marked removal is sized, so the list sums to the sen
   t.setUnit('count', false);
   t.draw();
   const list = nodes['trends-changes'].innerHTML;
-  const said = nodes['trends-verdict'].innerHTML.match(/Not hiring: ([−+][\d,]+) opening/);
+  const said = nodes['trends-verdict'].innerHTML.match(/Known counting changes: ([−+][\d,]+) opening/);
   assert.ok(said, nodes['trends-verdict'].innerHTML);
   const total = [...list.matchAll(/— Micron, ai-ml ([−+][\d,]+) opening/g)].reduce((a, m) => a + Number(m[1].replace('−', '-').replace(',', '')), 0);
   assert.equal(total, Number(said[1].replace('−', '-').replace(',', '')), list);
@@ -3037,7 +3155,7 @@ test('over every golden reading, each company\'s Not hiring is the reading\'s, a
     // The tracked roles have no company line: their sentence names no figure. Nor does the
     // index's, which gives its turnover alone.
     if (!(d.companies || []).length || /roles matched by job title/.test(verdict)) continue;
-    const sentences = [...verdict.matchAll(/<li><b>([^<]*)<\/b>: ([^<]*)(<details class="verdict-why"><summary>Not hiring: ([^<]*)<\/summary>)?/g)];
+    const sentences = [...verdict.matchAll(/<li><b>([^<]*)<\/b>: ([^<]*)(<details class="verdict-why"><summary>Known counting changes: ([^<]*)<\/summary>)?/g)];
     const listed = listedSizes(nodes['trends-changes'].innerHTML);
     const lines = d.reading.company_lines;
     for (const [, who, , , shownNotHiring] of sentences) {
@@ -3118,13 +3236,13 @@ test('the table says its rows add up only where the reading reconciles', () => {
     t.table(true);
     return nodes['trends-table'].innerHTML.match(/<caption>([^<]*)<\/caption>/)[1];
   };
-  assert.equal(caption(() => {}), '“All tech roles” covers the whole company; the categories below and “Moved between categories” add up to its hiring.');
+  assert.equal(caption(() => {}), '“All tech roles” covers the whole company; the categories below and “Moved between categories” add up to its adjusted change.');
   assert.equal(caption(d => { d.reading.lines[0].move.hiring += 1; }), '“All tech roles” covers the whole company.');
 });
 
 // ---- critique round 17 ------------------------------------------------------------------------
 test('where every board had its closures go uncounted, no closed count is given', () => {
-  // Google, one Board, read "about 1 opened, 18 closed since Sep 25, closures not counted on 1
+  // Google, one Board, read "about 1 opened, 18 recorded closures\/removals since Sep 25, closures not counted on 1
   // board", which contradicts itself.
   const { t, nodes } = drawGolden('closures_uncounted_on_every_board_give_no_closed_count');
   t.draw();

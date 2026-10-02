@@ -1082,7 +1082,12 @@ class TrendHistory:
         base_at = None
         if question.coverage == "comparable" and self._first_delta < len(self._ticks):
             first_delta = self._ticks[self._first_delta]
-            base_at = bisect_left(self._ticks, max(base or first_delta, first_delta))
+            base_at = bisect_left(
+                self._ticks,
+                max(
+                    base or first_delta, first_delta, self._ledger_start or first_delta
+                ),
+            )
         return (
             replace(question, since=None, until=None, base=None),
             lo,
@@ -1615,6 +1620,9 @@ class TrendHistory:
         )
         payload = {
             "coverage": coverage,
+            "coverage_summary": self._coverage_summary(
+                stamps, base_stamp, company_of, ats, family, rename
+            ),
             # How long a posting counts as new: the page says it, and netting under New takes a
             # tech-filter change out again a week on, when the openings it let in age out.
             "new_window_days": NEW_WINDOW_DAYS,
@@ -1698,6 +1706,141 @@ class TrendHistory:
             else {},
         }
         return payload
+
+    def _coverage_summary(
+        self,
+        stamps: list[str],
+        base: str | None,
+        company_of: dict[str, str] | None,
+        ats: list[str],
+        family: str | None,
+        rename: dict[str, str],
+    ) -> dict | None:
+        """First-counted coverage and recorded activity, independent of chart metric.
+
+        Count history cannot prove authoritative eligibility (empty read Boards leave no
+        stock delta), successful reads at either endpoint, or whole-market hiring. Membership
+        uses each Board's first stock count, including Boards that subsequently leave.
+        Entrants' initial stock is coverage; only later turnover is observed activity.
+        """
+        if not stamps or not self._ledger_start or stamps[0] < self._ledger_start:
+            return None
+        if (
+            family
+            and family not in self._family_labels
+            and not any(
+                rename.get(name, name) == family for name in self._families.names
+            )
+        ):
+            # "Other" in the chart is a fold of lines, not a stored category named "other".
+            # An unknown drill cannot be counted as zero: explicitly summarize all tech.
+            family = None
+        baseline = base or stamps[0]
+        known = {
+            board: seen
+            for board, (seen, _) in self._board_arrivals.items()
+            if seen <= stamps[-1]
+            and _in_ats_scope(board, ats)
+            and (company_of is None or board in company_of)
+        }
+        cohort = {b for b, seen in known.items() if seen <= baseline}
+        entrants = set(known) - cohort
+        d = self._deltas
+        family_codes = [
+            i
+            for i, name in enumerate(self._families.names)
+            if name != NON_TECH
+            and not name.startswith(WATCH_PREFIX)
+            and (not family or rename.get(name, name) == family)
+        ]
+        stock = (d["metric"] == 1) & np.isin(d["family"], family_codes)
+        first_tick, last_tick = (
+            bisect_left(self._ticks, ts) for ts in (stamps[0], stamps[-1])
+        )
+        size = len(self._boards.names)
+
+        def levels(tick: int) -> np.ndarray:
+            rows = stock & (d["tick"] <= tick)
+            return np.bincount(d["board"][rows], d["delta"][rows], size)
+
+        start, latest = levels(first_tick), levels(last_tick)
+        arrivals = np.full(size, len(self._ticks), dtype=np.int64)
+        for board, seen in known.items():
+            arrivals[self._boards.get(board)] = bisect_left(self._ticks, seen)
+        landed = stock & (d["tick"] == arrivals[d["board"]])
+        backlog = np.bincount(d["board"][landed], d["delta"][landed], size)
+
+        def total(values: np.ndarray, boards: set[str]) -> int:
+            return int(sum(values[self._boards.get(b)] for b in boards))
+
+        def activity(boards: set[str]) -> dict:
+            # A zero here is zero recorded events, never evidence of a successful read.
+            since = (
+                max(stamps[0], min(known[b] for b in boards), self._turnover_since)
+                if boards and self._turnover_since
+                else None
+            )
+            available = bool(
+                boards
+                and self._turnover_since
+                and any(
+                    ts > max(stamps[0], min(known[b] for b in boards))
+                    and ts >= self._turnover_since
+                    for ts in stamps
+                )
+            )
+            counts = Counter()
+            for board in boards:
+                for row in self._turnover.get(board, ()):
+                    if not (max(stamps[0], known[board]) < row["ts"] <= stamps[-1]):
+                        continue
+                    held = rename.get(row["family"], row["family"])
+                    if held == NON_TECH or held.startswith(WATCH_PREFIX):
+                        continue
+                    if family and held != family:
+                        continue
+                    kind, sign = _TURNOVER_KIND_OF[row["metric"]]
+                    counts[kind] += sign * row["delta"]
+            unseen = sum(
+                any(
+                    max(stamps[0], known[board]) < row["ts"] <= stamps[-1]
+                    for row in self._unscoped_markers.get(board, ())
+                )
+                for board in boards
+            )
+            return {
+                "boards": len(boards),
+                "stock_start": total(start, boards),
+                "stock_latest": total(latest, boards),
+                "observed_opened": counts["opened"] if available else None,
+                "recorded_closed": counts["closed"] if available else None,
+                "net_recounted": counts["recounted"] if available else None,
+                "closures_unseen": unseen,
+                "observed_since": since,
+            }
+
+        entrant_summary = activity(entrants)
+        entrant_summary["first_counted_backlog"] = total(backlog, entrants)
+        return {
+            "baseline": baseline,
+            "membership_basis": "first_stock_count",
+            "from": stamps[0],
+            "to": stamps[-1],
+            "scope": "family" if family else "tech",
+            "family": family,
+            "cohort": activity(cohort),
+            "entrants": entrant_summary,
+            "all_known": {
+                "stock_start": total(start, set(known)),
+                "stock_latest": total(latest, set(known)),
+            },
+            "quality": {
+                "start_eligibility": "unknown",
+                "endpoint_freshness": "unknown",
+                "successful_zero_boards": "unknown",
+                "event_causes": "unknown",
+            },
+        }
 
     def _index_found(
         self, stamps: list[str], ats: list[str], line_of, names: set[str]
@@ -1909,7 +2052,9 @@ class TrendHistory:
             # counted by Board: nothing earlier can be told apart, and answering "nothing" left
             # a 30-day window blank for a reader who only asked to hold coverage fixed. The
             # first run at or after the asked start, as All coverage starts its window.
-            at = bisect_left(stamps, max(base, first_delta))
+            at = bisect_left(
+                stamps, max(base, first_delta, self._ledger_start or first_delta)
+            )
             base_stamp = stamps[at] if at < len(stamps) else stamps[-1]
             eligible = {
                 board
