@@ -142,16 +142,21 @@ def main():
         peak_mb = max(
             peak_mb, resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss // 1024
         )
+        peak_bytes = max(
+            peak_mb * 1024**2,
+            resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss * 1024,
+        )
         (diagnostics / "summary.json").write_text(
             json.dumps(
                 {
                     "peak_mb": peak_mb,
+                    "peak_rss_bytes": peak_bytes,
                     "exit": process.returncode,
                     "watchdog_killed": False,
                     "elapsed_seconds": time.monotonic() - started,
                     "rules_fingerprint": fingerprint,
                     "baseline": baseline.name,
-                    "memory_target_mb": 10 * 1024,
+                    "memory_target_bytes": 10_000_000_000,
                 },
                 indent=2,
             )
@@ -163,7 +168,7 @@ def main():
         if process.returncode == 0 and os.environ.get("GITHUB_OUTPUT"):
             with Path(os.environ["GITHUB_OUTPUT"]).open("a") as output:
                 output.write("completed=true\n")
-        return process.returncode or int(peak_mb >= 10 * 1024)
+        return process.returncode or int(peak_bytes >= 10_000_000_000)
 
 
 if __name__ == "__main__":

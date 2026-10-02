@@ -66,6 +66,8 @@ def _vectors(db: Path, facts_dir: Path, wanted: set[str]) -> dict[str, object]:
     import pyarrow.parquet as pq
 
     vectors: dict[str, object] = {}
+    if not wanted:
+        return vectors
     selected = pa.array(sorted(wanted), pa.string())
     for path in sorted((facts_dir / job_facts.JOB_VECTORS).glob("*.parquet")):
         for batch in pq.ParquetFile(path).iter_batches(
@@ -99,7 +101,7 @@ def _descriptions(store: Path, wanted: set[str]) -> dict[str, str]:
     from headstart.ingest.update_descriptions import _entries
 
     texts: dict[str, str] = {}
-    if not store.exists():
+    if not wanted or not store.exists():
         return texts
     for ats_dir in sorted(p for p in store.iterdir() if p.is_dir()):
         for job_id, text in _entries(ats_dir):
@@ -245,12 +247,37 @@ def main() -> int:
         for batch in baseline_file.iter_batches(
             batch_size=4096, columns=["id", "vector", "description"]
         ):
-            for row in batch.to_pylist():
+            table = pa.Table.from_batches([batch])
+            matrix = (
+                table["vector"]
+                .combine_chunks()
+                .flatten()
+                .to_numpy()
+                .reshape(len(table), -1)
+                .astype(np.float16, copy=False)
+            )
+            # The row views retain only the vector buffer, not Python lists of every
+            # component or the batch's description column.
+            for row, vector in zip(
+                table.select(["id", "description"]).to_pylist(), matrix, strict=True
+            ):
                 baseline_sources[(row["id"], baseline_stamp)] = (
-                    np.asarray(row["vector"], dtype=np.float16),
+                    vector,
                     row["description"],
                 )
-    descriptions = _descriptions(args.descriptions, set(served["id"].to_pylist()))
+        _log.info(f"loaded {len(baseline_sources)} baseline version sources")
+    latest_ids = {
+        job_id
+        for job_id, start in zip(
+            served["id"].to_pylist(), served["valid_from"].to_pylist(), strict=True
+        )
+        if (job_id, start) not in baseline_sources
+    }
+    _log.info(
+        f"loading latest descriptions for {len(latest_ids)} IDs without baseline sources"
+    )
+    descriptions = _descriptions(args.descriptions, latest_ids)
+    _log.info(f"loaded {len(descriptions)} latest descriptions; applying English gate")
     served = restate_served.english_only(
         served, descriptions, is_english, version_sources=baseline_sources
     )
@@ -286,7 +313,7 @@ def main() -> int:
             lambda c: role_family_classifier.save_cache(args.title_cache, c),
         )
         _log.info(f"encoded {added} title(s) the classifier cache lacked")
-    wanted = set(ids)
+    wanted = set(ids) & latest_ids
     served = restate_place.placements(
         served,
         head,
@@ -296,7 +323,7 @@ def main() -> int:
         version_sources=baseline_sources,
     )
     _log.info(f"placed {served.num_rows} served intervals in a family and band")
-    del descriptions, baseline_sources, ids, titles, requisitions, wanted
+    del descriptions, baseline_sources, ids, titles, requisitions, wanted, latest_ids
     gc.collect()
     pa.default_memory_pool().release_unused()
 

@@ -48,7 +48,25 @@ selection, all-Job narrow Arrow tables, Board reads and baseline sources are als
 proportional to their inputs. These are intentionally not described as constant
 memory; the complete replay's measured high-water mark is the acceptance check.
 
-Production acceptance requires the whole replay below 10 GiB, plus an independent
+Production acceptance requires the whole replay below 10 GB (10,000,000,000 bytes), plus an independent
 live-history comparison. The read-only workflow pins an immutable HF revision and
 retains the input inventory, resource samples, high-water mark and comparison output.
-No pipeline dispatch, HF publication, rule change or merge is part of this fix.
+No full-pipeline dispatch, HF publication, rule change or PR merge is part of this fix.
+
+## First measured attempt
+
+[37000940207](https://github.com/sarthakjain004/headstart/actions/runs/37000940207)
+used exactly `d644c8de3670a3580f190b67ef48f7c28a2b3d54` (934 files), the baseline
+`2026-10-02T10:27:41+00:00` and frozen rules
+`09379c2acca919c65ec448674969de1c21605769435b42b8a88b709521731d04`.
+Version loading, seeding and Dormancy peaked at 5,746 MiB. Later assembly of baseline
+version sources / latest descriptions reached 12,779 MiB and triggered the watchdog.
+No counts or correctness comparison were produced, so this was not acceptance.
+
+The next change removes Python lists of baseline vector components: Arrow float16
+buffers supply equivalent NumPy row views. Every baseline version source is retained.
+Latest description/vector stores are read only for IDs with a served version lacking
+a baseline source; future versions of baseline IDs remain included. This avoids
+loading a second text/vector copy that the baseline override would never use.
+Regression starts red when a baseline-only replay requests latest inputs, then
+passes with the preserved baseline text/vector used instead.

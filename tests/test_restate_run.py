@@ -162,15 +162,17 @@ def test_no_facts_is_nothing_to_restate(tmp_path, monkeypatch):
     assert not (tmp_path / "out").exists()
 
 
+@pytest.mark.parametrize("future_changed", [False, True])
 def test_complete_baseline_keeps_a_served_job_absent_from_all_scrapes(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, future_changed
 ):
     import pyarrow as pa
     import pyarrow.parquet as pq
 
     facts = tmp_path / "facts"
-    for stamp in RUNS[:2]:
-        _record(facts, stamp, [(f"{BOARD}:1", "Backend Engineer")])
+    for index, stamp in enumerate(RUNS[:2]):
+        title = "QA Lead" if future_changed and index else "Backend Engineer"
+        _record(facts, stamp, [(f"{BOARD}:1", title)])
     families, head, cache = _config(tmp_path)
     baseline_stamp = "2026-09-01T00:30:00+00:00"
     baseline = tmp_path / "baseline.parquet"
@@ -182,7 +184,7 @@ def test_complete_baseline_keeps_a_served_job_absent_from_all_scrapes(
             "title": "Backend Engineer",
             "department": "Engineering",
             "description": text,
-            "vector": [0.0, 0.0],
+            "vector": [n / 4, 0.0],
             "reference_board": BOARD,
         }
         for n in (1, 2)
@@ -217,9 +219,38 @@ def test_complete_baseline_keeps_a_served_job_absent_from_all_scrapes(
         str(tmp_path / "restated"),
     ]
     monkeypatch.setattr(sys, "argv", args)
+
+    def latest_inputs(_path, wanted):
+        expected = {f"{BOARD}:1"} if future_changed else set()
+        assert wanted == expected, "only later versions need latest inputs"
+        return {job_id: text.replace("3 years", "8 years") for job_id in wanted}
+
+    monkeypatch.setattr(restate_run, "_descriptions", latest_inputs)
+    monkeypatch.setattr(
+        restate_run,
+        "_vectors",
+        lambda db, facts, wanted: {
+            job_id: np.zeros(2, np.float32) for job_id in latest_inputs(db, wanted)
+        },
+    )
+    observed_vectors = []
+    original_logits = rfc.Head.row_logits
+
+    def logits(head, matrix):
+        observed_vectors.extend(matrix.tolist())
+        return original_logits(head, matrix)
+
+    monkeypatch.setattr(rfc.Head, "row_logits", logits)
     assert restate_run.main() == 0
+    expected_vectors = [[0.25, 0.0], [0.5, 0.0]]
+    if future_changed:
+        expected_vectors.insert(1, [0.0, 0.0])
+    assert observed_vectors == expected_vectors
     _, levels = trend_history.board_levels(tmp_path / "restated")
     assert sum(n for k, n in levels.items() if k[1] == "stock") == 2
+    if future_changed:
+        assert levels[(BOARD, "stock", "qa-test", "staff")] == 1
+        assert levels[(BOARD, "stock", "software-engineering", "mid")] == 1
 
 
 def test_selected_description_read_preserves_updates_and_blanks(tmp_path):
