@@ -248,6 +248,18 @@ test('coverage uses the backend Other label without exposing a hidden category',
   assert.doesNotMatch(nodes['trends-coverage-summary'].innerHTML, /Unclassified tech|unclassified-tech/);
 });
 
+test('coverage activity visibly names methodology exclusions instead of showing rule spikes', async () => {
+  const { t, ctx, nodes } = loadApp();
+  const summary = coverageSummary();
+  summary.entrants.activity_excluded_updates = 2;
+  summary.entrants.activity_excluded_ticks = [summary.from, summary.to];
+  answering(ctx, { ...fixture(), coverage_summary: summary });
+  await t.load(null);
+  assert.match(nodes['trends-coverage-summary'].innerHTML, /3 subsequent observed openings/);
+  assert.match(nodes['trends-coverage-summary'].innerHTML, /2 updates left out for counting changes/);
+  assert.match(nodes['trends-coverage-summary'].innerHTML, /neither is proof of newly posted jobs/);
+});
+
 test('a changing summary baseline announces the new cohort, without announcements on repaint', async () => {
   const { t, ctx, nodes } = loadApp();
   const summary = coverageSummary();

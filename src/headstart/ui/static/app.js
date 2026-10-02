@@ -2084,7 +2084,8 @@ function renderCoverageSummary(d){
     ? `${added ? 'Earliest activity' : 'Activity'} since ${date(group.observed_since)}${
       group.observed_since > s.from ? ' · shorter than selected window' : ''}` : 'Activity period unknown';
   const turnover = group => `${count(group.observed_opened)} subsequent observed openings · `
-    + `${count(group.recorded_closed)} recorded closures/removals`;
+    + `${count(group.recorded_closed)} recorded closures/removals${group.activity_excluded_updates
+      ? ` · ${count(group.activity_excluded_updates)} updates left out for counting changes` : ''}`;
   const c = s.cohort, e = s.entrants;
   const scope = s.scope === 'family' ? `Category: ${s.family_label || d.family_label || s.family}` : 'All tech categories';
   const open = host.querySelector('details')?.open;
@@ -2109,6 +2110,10 @@ function renderCoverageSummary(d){
       <p>Activity starts after each site’s first count. The added-sites date is the earliest start in that group;
         other sites have shorter histories. Their observation periods differ, so these totals are not normalized comparisons.
         Zero recorded events do not prove no hiring. These counts do not describe the whole job market.</p>
+      <p>Known counting-change updates and their settling updates are left out of activity using the existing
+        Trends rule, Board by Board. Stock and net counting adjustments still include those updates.
+        Activity can differ from the headline because its scope includes added sites and the headline can
+        withhold other partial reads; neither is proof of newly posted jobs or employer intent.</p>
       <p>Known closure gaps: ${esc(count(c.closures_unseen))} sites in the starting group;
         ${esc(count(e.closures_unseen))} sites added later. Gaps, including zero, do not establish complete freshness.
         Recorded closures/removals are partial observations. Dormant policy evictions and rule changes can affect them;

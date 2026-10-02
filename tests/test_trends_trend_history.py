@@ -578,6 +578,67 @@ def test_count_summary_cannot_see_an_authoritatively_read_zero_board(tmp_path):
     )
 
 
+def _coverage_rule_change_ticks(state):
+    old, added = "lever:old", "lever:added"
+    for day, stock, metric, events in (
+        (0, 0, "recounted_in", 0),
+        (1, 100, "recounted_in", 100),
+        (2, 1100, "opened", 1000),
+        (3, 1600, "opened", 500),
+        (4, 1603, "opened", 3),
+    ):
+        levels = {(old, "stock", "software-engineering", "mid"): 10}
+        if stock:
+            levels[added, "stock", "software-engineering", "mid"] = stock
+        method = _methodology(2)
+        if day >= 2:
+            method = trend_history.Methodology("7681eb07a2b5", 2, 6, 15, 5)
+        trend_history.record_tick(
+            state,
+            _stamp(day),
+            levels,
+            {(added, metric, "software-engineering", "mid"): events} if events else {},
+            method,
+        )
+    return TrendHistory.load(state, _NO_CONFIG)
+
+
+def test_coverage_activity_excludes_filter_change_and_settling_spikes(tmp_path):
+    history = _coverage_rule_change_ticks(tmp_path)
+    answer = history.unnetted_answer(TrendQuestion())
+    summary = answer["coverage_summary"]
+    assert summary["entrants"]["first_counted_backlog"] == 100
+    assert summary["entrants"]["stock_latest"] == 1603
+    assert summary["entrants"]["observed_opened"] == 3
+    assert summary["entrants"]["activity_excluded_ticks"] == [_stamp(2), _stamp(3)]
+    assert summary["entrants"]["activity_excluded_updates"] == 2
+    payload, _ = line_reading.trends_payload(answer)
+    assert payload["reading"]["total"]["move"]["turnover"]["opened"] == 3
+    # If every subsequent activity interval is excluded, unknown replaces a false quiet 0.
+    short = history.unnetted_answer(TrendQuestion(until=_stamp(3)))["coverage_summary"]
+    assert short["entrants"]["observed_opened"] is None
+
+
+def test_internal_hot_and_line_readings_skip_coverage_summary_work(
+    tmp_path, monkeypatch
+):
+    history = _coverage_ticks(tmp_path)
+
+    def unexpected(*args, **kwargs):
+        raise AssertionError(
+            "UI coverage summary should not run for an internal line reading"
+        )
+
+    monkeypatch.setattr(history, "_coverage_summary", unexpected)
+    line_reading.read_trends(history, TrendQuestion())
+    moves = line_reading.read_company_moves(
+        history,
+        line_reading.TrendWindow(since=_stamp(0), until=_stamp(3)),
+        ["workday:acme/main"],
+    )
+    assert "workday:acme/main" in moves
+
+
 # ---- the taxonomy, directory and rule copies the answers read (moved from the Space's tests)
 
 _REPO_FAMILIES = Path(__file__).resolve().parents[1] / "config" / "role_families.json"

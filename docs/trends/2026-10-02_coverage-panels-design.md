@@ -47,10 +47,11 @@ Otherwise it contains:
 | `entrants.first_counted_backlog` | Tech stock at each entrant Board's own first count, summed once |
 | `entrants.stock_start`, `entrants.stock_latest` | Entrants' endpoint tech stock, including entrants first counted before a later explicit window start |
 | `all_known.boards`, `all_known.stock_start`, `all_known.stock_latest` | First-counted Board count and endpoint tech stock over both groups; the browser formats these backend counts |
-| `cohort/entrants.observed_opened` | Recorded Opened after both window start and each Board's own first count; null where no subsequent turnover exposure exists |
+| `cohort/entrants.observed_opened` | Recorded Opened after both window start and each Board's own first count, excluding existing counting-change/settling intervals Board by Board; null where no usable subsequent turnover exposure remains |
 | `cohort/entrants.recorded_closed` | Recorded Closed over the same interval, labelled **recorded closures/removals** in the UI |
 | `cohort/entrants.net_recounted` | Signed Recounted in less out, labelled net counting adjustments; not a count of events or a second count of first-counted backlog |
 | `cohort/entrants.observed_since` | Earliest possible recorded turnover exposure for the group, bounded by window start, first count, and turnover-ledger start; individual sites can start later |
+| `cohort/entrants.activity_excluded_ticks`, `activity_excluded_updates` | Actual ticks and backend count of updates omitted for counting changes; duplicate-removal updates apply only to affected Boards |
 | `cohort/entrants.closures_unseen` | Distinct group Boards with a recorded unscoped marker after window start and by window end |
 | `quality` | `start_eligibility`, `endpoint_freshness`, `successful_zero_boards`, `event_causes` are explicitly `unknown` |
 
@@ -65,8 +66,12 @@ The New-this-week chart does not change the summary's stock into a flow.
 
 Recorded events are observations under the existing ledger's rules, not proof of employer
 intent or a cause-pure hiring series. Closed can include Dormant policy evictions; rule and
-scraper changes can affect observations. Recounting and netted chart movement may differ
-from these raw recorded events. Zero recorded events do not prove flat hiring. Even zero
+scraper changes can affect observations. Activity reuses `netting.left_out_runs` to exclude
+known line-moving methodology updates and their settling updates, and duplicate-removal
+updates on affected Boards only. Stock and signed net recounting remain unfiltered.
+The card names omitted updates. Its population includes entrants, and the headline can
+withhold other partial reads, so the figures need not match; neither proves newly posted
+jobs or employer intent. Zero recorded events do not prove flat hiring. Even zero
 `closures_unseen` proves neither complete read coverage nor endpoint freshness: failed,
 partial and unscheduled reads are not fully reconstructible from count history. No net
 or quality percentage is derived from incomplete closure evidence.
@@ -91,6 +96,8 @@ line count and stated total. Before claiming quality:
    unscoped read, unscheduled tick, off-Board departure and restored Board identity.
 
 This slice adds no pipeline writes, deployment action, historical backfill or facts download.
+Internal line/Hot readings explicitly skip UI summary work, avoiding per-Company global
+history scans at boot. HTTP responses still include the summary without additional UI fetches.
 Parent's independent memory/restatement verification and visual review remain separate gates.
 
 ## Regression scenarios

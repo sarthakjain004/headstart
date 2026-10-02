@@ -1096,9 +1096,15 @@ class TrendHistory:
             base_at,
         )
 
-    def unnetted_answer(self, question: TrendQuestion) -> dict:
+    def unnetted_answer(
+        self, question: TrendQuestion, *, include_coverage_summary: bool = True
+    ) -> dict:
         """Role counts over time (ADR-0040, ADR-0051), before any line is netted: what
         ``line_reading`` reads (ADR-0233).
+
+        ``include_coverage_summary=False`` skips response-only panel work for internal
+        line readings, especially Hot's many Company readings at boot. It is not a query
+        parameter and changes no line count or reading.
 
         ``metric`` ``stock`` (default) is live openings; ``new`` is those first seen inside the
         flow window. Default view: one series per family, each point the family's total across
@@ -1622,7 +1628,9 @@ class TrendHistory:
             "coverage": coverage,
             "coverage_summary": self._coverage_summary(
                 stamps, base_stamp, company_of, ats, family
-            ),
+            )
+            if include_coverage_summary
+            else None,
             # How long a posting counts as new: the page says it, and netting under New takes a
             # tech-filter change out again a week on, when the openings it let in age out.
             "new_window_days": NEW_WINDOW_DAYS,
@@ -1762,6 +1770,7 @@ class TrendHistory:
             return np.bincount(d["board"][rows], d["delta"][rows], size)
 
         start, latest = levels(first_tick), levels(last_tick)
+        every, touched = netting.left_out_runs(self._epochs, stamps)
         arrivals = np.full(size, len(self._ticks), dtype=np.int64)
         for board, seen in known.items():
             arrivals[self._boards.get(board)] = bisect_left(self._ticks, seen)
@@ -1774,17 +1783,37 @@ class TrendHistory:
         def activity(boards: set[str]) -> dict:
             # A zero here is zero recorded events, never evidence of a successful read.
             first_count = min((known[b] for b in boards), default=stamps[0])
+            affected = (
+                {b for b in boards if self._company_dedup_touched(b)}
+                if touched
+                else set()
+            )
+            untouched_first = min((known[b] for b in boards - affected), default=None)
             since = (
                 max(stamps[0], first_count, self._turnover_since)
                 if boards and self._turnover_since
                 else None
             )
-            available = bool(
+            recorded_available = bool(
                 boards
                 and self._turnover_since
                 and any(
                     ts > max(stamps[0], first_count) and ts >= self._turnover_since
                     for ts in stamps
+                )
+            )
+            available = bool(
+                boards
+                and self._turnover_since
+                and any(
+                    ts > max(stamps[0], first_count)
+                    and ts >= self._turnover_since
+                    and k not in every
+                    and (
+                        k not in touched
+                        or (untouched_first is not None and ts > untouched_first)
+                    )
+                    for k, ts in enumerate(stamps)
                 )
             )
             counts = Counter()
@@ -1798,6 +1827,11 @@ class TrendHistory:
                     if family and held not in lineage:
                         continue
                     kind, sign = _TURNOVER_KIND_OF[row["metric"]]
+                    k = bisect_left(stamps, row["ts"])
+                    if kind != "recounted" and (
+                        k in every or (board in affected and k in touched)
+                    ):
+                        continue
                     counts[kind] += sign * row["delta"]
             unseen = sum(
                 any(
@@ -1806,15 +1840,22 @@ class TrendHistory:
                 )
                 for board in boards
             )
+            excluded = [
+                stamps[k]
+                for k in sorted(every | (touched if affected else set()))
+                if boards and stamps[k] > max(stamps[0], first_count)
+            ]
             return {
                 "boards": len(boards),
                 "stock_start": total(start, boards),
                 "stock_latest": total(latest, boards),
                 "observed_opened": counts["opened"] if available else None,
                 "recorded_closed": counts["closed"] if available else None,
-                "net_recounted": counts["recounted"] if available else None,
+                "net_recounted": counts["recounted"] if recorded_available else None,
                 "closures_unseen": unseen,
                 "observed_since": since,
+                "activity_excluded_ticks": excluded,
+                "activity_excluded_updates": len(excluded),
             }
 
         entrant_summary = activity(entrants)

@@ -408,7 +408,9 @@ class CompanyMove:
 def read_trends(history, question) -> TrendReading:
     """The reading of ``question`` (a ``trend_history.TrendQuestion``) over ``history`` (a
     ``trend_history.TrendHistory``)."""
-    return read_answer(history.unnetted_answer(question))
+    return read_answer(
+        history.unnetted_answer(question, include_coverage_summary=False)
+    )
 
 
 def read_company_moves(
@@ -427,7 +429,8 @@ def read_company_moves(
     moves = {}
     for key in keys:
         answer = history.unnetted_answer(
-            TrendQuestion(companies=(key,), since=window.since, until=window.until)
+            TrendQuestion(companies=(key,), since=window.since, until=window.until),
+            include_coverage_summary=False,
         )
         drawn, view = _viewed(answer)
         move = (
