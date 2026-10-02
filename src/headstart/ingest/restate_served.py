@@ -208,6 +208,18 @@ def clip_dormant(served, periods: Mapping[str, list[DormantPeriod]]):
     before its Board was judged Dormant is cut from the Board's next authoritative read."""
     import pyarrow as pa
 
+    batches = [
+        _clip_dormant_batch(pa.Table.from_batches([batch]), periods)
+        for batch in served.to_batches(max_chunksize=8192)
+    ]
+    if not batches:
+        return served.append_column("starts_as", pa.nulls(0, pa.string()))
+    return pa.concat_tables(batches)
+
+
+def _clip_dormant_batch(served, periods):
+    import pyarrow as pa
+
     rows = served.to_pylist()
     out = []
     for row in rows:

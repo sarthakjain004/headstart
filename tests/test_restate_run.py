@@ -220,3 +220,24 @@ def test_complete_baseline_keeps_a_served_job_absent_from_all_scrapes(
     assert restate_run.main() == 0
     _, levels = trend_history.board_levels(tmp_path / "restated")
     assert sum(n for k, n in levels.items() if k[1] == "stock") == 2
+
+
+def test_selected_description_read_preserves_updates_and_blanks(tmp_path):
+    from headstart.ingest.update_descriptions import read_store
+
+    _describe(
+        tmp_path, {f"{BOARD}:1": "old", f"{BOARD}:2": "kept", f"{BOARD}:3": "ignored"}
+    )
+    with gzip.open(tmp_path / "greenhouse" / "0001.jsonl.gz", "wt") as stream:
+        for job_id, text in [(f"{BOARD}:1", "new"), (f"{BOARD}:2", " ")]:
+            stream.write(json.dumps({"id": job_id, "description": text}) + "\n")
+    wanted = {f"{BOARD}:1", f"{BOARD}:2"}
+    assert (
+        restate_run._descriptions(tmp_path, wanted)
+        == {
+            job_id: text
+            for job_id, text in read_store(tmp_path / "greenhouse").items()
+            if job_id in wanted
+        }
+        == {f"{BOARD}:1": "new"}
+    )

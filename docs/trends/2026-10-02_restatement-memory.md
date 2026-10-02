@@ -36,7 +36,17 @@ Tests compare full and selected lifecycle replay, including changes into/out of 
 absence and relisting, and compare whole/batched placement with baseline sources.
 Combined regression compares full and selected served stock/turnover with non-tech
 Dormancy evidence and a real Eightfold/Workday duplicate group.
-120 targeted tests pass, including state-fetch and workflow checks; Ruff passes.
+124 targeted tests pass, including state-fetch and workflow checks; Ruff passes.
+An explicit initially non-tech → tech → removed fixture checks that admission is
+not backdated and every selected-ID event matches full replay. Dormancy clipping
+rejects whole-table conversion in its regression. Counting receives only its nine
+required columns; placement input stores are released before counting.
+
+Global duplicate folding still materializes selected served rows while grouping
+incumbents. Counting sorts its narrow rows and retains event counters. Candidate
+selection, all-Job narrow Arrow tables, Board reads and baseline sources are also
+proportional to their inputs. These are intentionally not described as constant
+memory; the complete replay's measured high-water mark is the acceptance check.
 
 Production acceptance requires the whole replay below 10 GiB, plus an independent
 live-history comparison. The read-only workflow pins an immutable HF revision and

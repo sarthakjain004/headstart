@@ -389,3 +389,37 @@ def test_initially_non_tech_id_becomes_tech_then_removed_without_backdating(tmp_
     assert ticks[0] == ticks[1]
     assert ticks[1][0][1] == {}
     assert ticks[1][3][1] == {}
+
+
+def test_dormancy_clipping_does_not_convert_whole_table():
+    import pyarrow as pa
+
+    served = pa.Table.from_pylist(
+        [
+            {
+                "id": A1,
+                "board": BOARD_A,
+                "served_from": DAYS[0],
+                "served_to": None,
+                "ended_as": None,
+            }
+        ],
+        schema=pa.schema(
+            [
+                (name, pa.string())
+                for name in ("id", "board", "served_from", "served_to", "ended_as")
+            ]
+        ),
+    )
+
+    class BatchOnly:
+        def __getattr__(self, name):
+            return getattr(served, name)
+
+        def to_pylist(self):
+            raise AssertionError("whole-table Python conversion")
+
+    clipped = rs.clip_dormant(BatchOnly(), {BOARD_A: [(DAYS[1], DAYS[2], DAYS[3])]})
+    assert [
+        (r["served_from"], r["served_to"], r["starts_as"]) for r in clipped.to_pylist()
+    ] == [(DAYS[0], DAYS[2], None), (DAYS[3], None, "revived")]

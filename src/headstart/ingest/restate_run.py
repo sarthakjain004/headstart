@@ -296,6 +296,9 @@ def main() -> int:
         version_sources=baseline_sources,
     )
     _log.info(f"placed {served.num_rows} served intervals in a family and band")
+    del descriptions, baseline_sources, ids, titles, requisitions, wanted
+    gc.collect()
+    pa.default_memory_pool().release_unused()
 
     methodology = trend_history.Methodology(
         family_list_fingerprint=role_taxonomy.family_list_fingerprint(args.families),
@@ -308,7 +311,22 @@ def main() -> int:
     shutil.rmtree(args.out, ignore_errors=True)
     previous: tuple[str | None, dict] = (None, {})
     ticks = restate_count.tick_counts(
-        served, runs, restate_replay.first_reads(reads), restate_place.place_of
+        served.select(
+            [
+                "id",
+                "board",
+                "dedup_group",
+                "served_from",
+                "served_to",
+                "starts_as",
+                "ended_as",
+                "family",
+                "band",
+            ]
+        ),
+        runs,
+        restate_replay.first_reads(reads),
+        restate_place.place_of,
     )
     for n, (run, levels, turnover) in enumerate(ticks, 1):
         if broken := restate_count.unbalanced(previous[1], levels, turnover):

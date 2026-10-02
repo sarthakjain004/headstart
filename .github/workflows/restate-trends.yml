@@ -55,10 +55,12 @@ jobs:
           DATASET_REVISION: ${{ inputs.dataset_revision }}
         run: python -u scripts/eval/fetch_restatement_inputs.py
       - name: Restate
+        id: replay
         env:
           ENCODE_BUDGET_SECONDS: ${{ inputs.encode_budget_seconds }}
         run: python -u scripts/eval/run_frozen_restatement.py
       - name: Compare with the live history
+        if: ${{ always() && steps.replay.outputs.completed == 'true' }}
         run: python scripts/eval/compare_restated_trends.py --live data/state --restated data/restated
       - name: Keep the Restatement
         if: always()

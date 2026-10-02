@@ -160,6 +160,9 @@ def main():
             f"Replay exit={process.returncode}; peak resident memory={peak_mb} MB",
             flush=True,
         )
+        if process.returncode == 0 and os.environ.get("GITHUB_OUTPUT"):
+            with Path(os.environ["GITHUB_OUTPUT"]).open("a") as output:
+                output.write("completed=true\n")
         return process.returncode or int(peak_mb >= 10 * 1024)
 
 

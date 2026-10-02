@@ -845,6 +845,32 @@ def test_download_does_nothing_for_an_empty_wanted_set(
     sf._download("repo", [], set(), None, tmp_path)  # must not raise
 
 
+def test_replay_revision_pins_both_small_and_ranged_downloads(
+    tmp_path, hub, monkeypatch
+):
+    urls = []
+    hub.hf_hub_url = lambda repo, filename, repo_type, revision: (
+        f"fake://{repo}/{revision}/{filename}"
+    )
+
+    def fetched(url, *args):
+        urls.append(url)
+
+    monkeypatch.setattr(sf, "_fetch_whole", fetched)
+    monkeypatch.setattr(sf, "_fetch_ranged", fetched)
+    siblings = [
+        types.SimpleNamespace(rfilename="small", size=1),
+        types.SimpleNamespace(rfilename="large", size=sf._BIG_FILE_BYTES),
+    ]
+    sf._download(
+        "repo", siblings, {"small", "large"}, None, tmp_path, revision="frozen-sha"
+    )
+    assert sorted(urls) == [
+        "fake://repo/frozen-sha/large",
+        "fake://repo/frozen-sha/small",
+    ]
+
+
 # --- retry_hub: ADR-0033's ladder around a single Hub call ------------------------------------
 #
 # It exists because `state_guard`'s record/verify bracket the fetch on the critical path of the
