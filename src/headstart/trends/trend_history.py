@@ -1621,7 +1621,7 @@ class TrendHistory:
         payload = {
             "coverage": coverage,
             "coverage_summary": self._coverage_summary(
-                stamps, base_stamp, company_of, ats, family, rename
+                stamps, base_stamp, company_of, ats, family
             ),
             # How long a posting counts as new: the page says it, and netting under New takes a
             # tech-filter change out again a week on, when the openings it let in age out.
@@ -1714,7 +1714,6 @@ class TrendHistory:
         company_of: dict[str, str] | None,
         ats: list[str],
         family: str | None,
-        rename: dict[str, str],
     ) -> dict | None:
         """First-counted coverage and recorded activity, independent of chart metric.
 
@@ -1725,12 +1724,11 @@ class TrendHistory:
         """
         if not stamps or not self._ledger_start or stamps[0] < self._ledger_start:
             return None
+        lineage = self._lineage(family) if family else frozenset()
         if (
             family
             and family not in self._family_labels
-            and not any(
-                rename.get(name, name) == family for name in self._families.names
-            )
+            and not lineage.intersection(self._families.names)
         ):
             # "Other" in the chart is a fold of lines, not a stored category named "other".
             # An unknown drill cannot be counted as zero: explicitly summarize all tech.
@@ -1751,7 +1749,7 @@ class TrendHistory:
             for i, name in enumerate(self._families.names)
             if name != NON_TECH
             and not name.startswith(WATCH_PREFIX)
-            and (not family or rename.get(name, name) == family)
+            and (not family or name in lineage)
         ]
         stock = (d["metric"] == 1) & np.isin(d["family"], family_codes)
         first_tick, last_tick = (
@@ -1775,8 +1773,9 @@ class TrendHistory:
 
         def activity(boards: set[str]) -> dict:
             # A zero here is zero recorded events, never evidence of a successful read.
+            first_count = min((known[b] for b in boards), default=stamps[0])
             since = (
-                max(stamps[0], min(known[b] for b in boards), self._turnover_since)
+                max(stamps[0], first_count, self._turnover_since)
                 if boards and self._turnover_since
                 else None
             )
@@ -1784,8 +1783,7 @@ class TrendHistory:
                 boards
                 and self._turnover_since
                 and any(
-                    ts > max(stamps[0], min(known[b] for b in boards))
-                    and ts >= self._turnover_since
+                    ts > max(stamps[0], first_count) and ts >= self._turnover_since
                     for ts in stamps
                 )
             )
@@ -1794,16 +1792,16 @@ class TrendHistory:
                 for row in self._turnover.get(board, ()):
                     if not (max(stamps[0], known[board]) < row["ts"] <= stamps[-1]):
                         continue
-                    held = rename.get(row["family"], row["family"])
+                    held = row["family"]
                     if held == NON_TECH or held.startswith(WATCH_PREFIX):
                         continue
-                    if family and held != family:
+                    if family and held not in lineage:
                         continue
                     kind, sign = _TURNOVER_KIND_OF[row["metric"]]
                     counts[kind] += sign * row["delta"]
             unseen = sum(
                 any(
-                    max(stamps[0], known[board]) < row["ts"] <= stamps[-1]
+                    stamps[0] < row["ts"] <= stamps[-1]
                     for row in self._unscoped_markers.get(board, ())
                 )
                 for board in boards
@@ -1828,9 +1826,15 @@ class TrendHistory:
             "to": stamps[-1],
             "scope": "family" if family else "tech",
             "family": family,
+            "family_label": (
+                HIDDEN_FAMILY_LABEL
+                if family in self._hidden_families
+                else self._family_labels.get(family, family)
+            ),
             "cohort": activity(cohort),
             "entrants": entrant_summary,
             "all_known": {
+                "boards": len(known),
                 "stock_start": total(start, set(known)),
                 "stock_latest": total(latest, set(known)),
             },

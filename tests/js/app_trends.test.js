@@ -195,7 +195,7 @@ function coverageSummary(){
       recorded_closed: 2, closures_unseen: 0, observed_since: from, net_recounted: -2 },
     entrants: { boards: 1, first_counted_backlog: 100, stock_latest: 103, observed_opened: 3,
       recorded_closed: null, closures_unseen: 1, observed_since: to, net_recounted: null },
-    all_known: { stock_start: 50, stock_latest: 155 },
+    all_known: { boards: 3, stock_start: 50, stock_latest: 155 },
     quality: { start_eligibility: 'unknown', endpoint_freshness: 'unknown', successful_zero_boards: 'unknown', event_causes: 'unknown' } };
 }
 
@@ -237,6 +237,15 @@ test('coverage states its full category scope even on New and a watched-role dri
   assert.match(nodes['trends-coverage-summary'].innerHTML, /regardless of the chart’s measure or watched-role breakdown/);
   assert.match(nodes['trends-coverage-summary'].innerHTML, /Stock: 50 at start → 52 latest/);
   assert.match(nodes['trends-coverage-summary'].innerHTML, /shorter than selected window/);
+});
+
+test('coverage uses the backend Other label without exposing a hidden category', async () => {
+  const { t, ctx, nodes } = loadApp();
+  const summary = { ...coverageSummary(), scope: 'family', family: 'unclassified-tech', family_label: 'Other' };
+  answering(ctx, { ...fixture(), coverage_summary: summary, family_label: 'Unclassified tech' });
+  await t.load('unclassified-tech');
+  assert.match(nodes['trends-coverage-summary'].innerHTML, /Category: Other/);
+  assert.doesNotMatch(nodes['trends-coverage-summary'].innerHTML, /Unclassified tech|unclassified-tech/);
 });
 
 test('a changing summary baseline announces the new cohort, without announcements on repaint', async () => {

@@ -367,7 +367,7 @@ def test_coverage_summary_keeps_backlog_separate_from_later_openings(tmp_path):
     assert summary["entrants"]["recorded_closed"] == 1
     assert summary["entrants"]["net_recounted"] == 0
     assert summary["entrants"]["observed_since"] == _stamp(1)
-    assert summary["all_known"] == {"stock_start": 10, "stock_latest": 122}
+    assert summary["all_known"] == {"boards": 3, "stock_start": 10, "stock_latest": 122}
     # Newcomer activity is visible even though absent from the fixed cohort chart.
     assert answer["series"][0]["latest"] == 0
     assert summary["entrants"]["stock_latest"] == 122
@@ -482,7 +482,7 @@ def test_category_summary_excludes_nontech_and_watch_duplicates(tmp_path):
         )
     )["coverage_summary"]
     assert summary["scope"] == "family"
-    assert summary["all_known"] == {"stock_start": 2, "stock_latest": 1}
+    assert summary["all_known"] == {"boards": 3, "stock_start": 2, "stock_latest": 1}
     assert summary["entrants"]["first_counted_backlog"] == 1
 
 
@@ -506,12 +506,51 @@ def test_hidden_family_summary_counts_its_actual_rows(tmp_path):
             {},
             _methodology(2),
         )
-    summary = TrendHistory.load(tmp_path, _NO_CONFIG).unnetted_answer(
+    summary = TrendHistory.load(tmp_path, _REPO_FAMILIES.parent).unnetted_answer(
         TrendQuestion(family="unclassified-tech")
     )["coverage_summary"]
     assert summary["scope"] == "family"
     assert summary["family"] == "unclassified-tech"
-    assert summary["all_known"] == {"stock_start": 3, "stock_latest": 4}
+    assert summary["family_label"] == "Other"
+    assert summary["all_known"] == {"boards": 1, "stock_start": 3, "stock_latest": 4}
+
+
+def test_category_lineage_keeps_entrant_activity_and_arrival_read_gaps(tmp_path):
+    old, entrant = "lever:old", "lever:added"
+    for day, count, events in (
+        (0, 0, {}),
+        (
+            1,
+            100,
+            {
+                (entrant, "recounted_in", "ai-ml", "mid"): 100,
+                (entrant, "unscoped", "all", "all"): 1,
+            },
+        ),
+        (2, 103, {(entrant, "opened", "ai-ml", "mid"): 3}),
+    ):
+        levels = {(old, "stock", "software-engineering", "mid"): 10}
+        if count:
+            levels[entrant, "stock", "ai-ml", "mid"] = count
+        trend_history.record_tick(
+            tmp_path, _stamp(day), levels, events, _methodology(2)
+        )
+    history = TrendHistory.load(tmp_path, _REPO_FAMILIES.parent)
+    summary = history.unnetted_answer(
+        TrendQuestion(
+            family="ai-ml-data-science",
+            coverage="comparable",
+        )
+    )["coverage_summary"]
+    assert summary["scope"] == "family"
+    assert summary["family"] == "ai-ml-data-science"
+    assert summary["cohort"]["stock_latest"] == 0
+    assert summary["entrants"]["first_counted_backlog"] == 100
+    assert summary["entrants"]["stock_latest"] == 103
+    assert summary["entrants"]["observed_opened"] == 3
+    # Read quality includes arrival-tick failures even though its backlog is not activity.
+    assert summary["entrants"]["closures_unseen"] == 1
+    assert summary["entrants"]["net_recounted"] == 0
 
 
 def test_count_summary_cannot_see_an_authoritatively_read_zero_board(tmp_path):

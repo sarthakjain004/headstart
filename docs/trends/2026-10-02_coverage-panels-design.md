@@ -40,13 +40,13 @@ Otherwise it contains:
 | `baseline` | Effective cohort baseline; the chart's `base` under comparable, otherwise the first plotted tick |
 | `membership_basis` | `first_stock_count`; never first authoritative read |
 | `from`, `to` | First and last plotted tick; activity excludes events on `from` |
-| `scope`, `family` | All tech categories, or selected family; independent of chart metric, level or watched-role split |
+| `scope`, `family`, `family_label` | All tech categories, or selected family's linked category lineage; independent of chart metric, level or watched-role split. Hidden family label is Other |
 | `cohort.boards` | Fixed original first-counted Board denominator in Company/source scope |
 | `cohort.stock_start`, `cohort.stock_latest` | Tech inventory at the window endpoints for those same Boards |
 | `entrants.boards` | Boards first stock-counted after baseline and by the last tick |
 | `entrants.first_counted_backlog` | Tech stock at each entrant Board's own first count, summed once |
 | `entrants.stock_start`, `entrants.stock_latest` | Entrants' endpoint tech stock, including entrants first counted before a later explicit window start |
-| `all_known.stock_start`, `all_known.stock_latest` | Endpoint tech stock over both groups |
+| `all_known.boards`, `all_known.stock_start`, `all_known.stock_latest` | First-counted Board count and endpoint tech stock over both groups; the browser formats these backend counts |
 | `cohort/entrants.observed_opened` | Recorded Opened after both window start and each Board's own first count; null where no subsequent turnover exposure exists |
 | `cohort/entrants.recorded_closed` | Recorded Closed over the same interval, labelled **recorded closures/removals** in the UI |
 | `cohort/entrants.net_recounted` | Signed Recounted in less out, labelled net counting adjustments; not a count of events or a second count of first-counted backlog |
@@ -56,6 +56,9 @@ Otherwise it contains:
 
 Stock excludes non-tech and watched-role duplicate counts. Category drill summaries include
 every band of that category; a watched-role drill still labels its summary as the category's.
+Linked retired category names are included across the full summary population, independent
+of which families the fixed cohort alone holds. A read-gap marker on an entrant's arrival
+tick remains quality evidence even though arrival-tick stock is backlog, not activity.
 An unknown category (including a literal `other`, which is not the chart's folded Other row)
 gets an explicitly all-tech summary rather than a misleading zero category count.
 The New-this-week chart does not change the summary's stock into a flow.

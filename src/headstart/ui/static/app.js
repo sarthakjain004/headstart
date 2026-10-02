@@ -2086,7 +2086,7 @@ function renderCoverageSummary(d){
   const turnover = group => `${count(group.observed_opened)} subsequent observed openings · `
     + `${count(group.recorded_closed)} recorded closures/removals`;
   const c = s.cohort, e = s.entrants;
-  const scope = s.scope === 'family' ? `Category: ${d.family_label || s.family}` : 'All tech categories';
+  const scope = s.scope === 'family' ? `Category: ${s.family_label || d.family_label || s.family}` : 'All tech categories';
   const open = host.querySelector('details')?.open;
   host.innerHTML = `<h3>Job-site coverage · ${esc(scope)}</h3>
     <p class="kind">${esc(date(s.from))} to ${esc(date(s.to))} · Freshness unknown</p>
@@ -2096,7 +2096,7 @@ function renderCoverageSummary(d){
         <p>${esc(turnover(c))}</p><p>${esc(exposure(c))}</p></div>
       <div><h4>Sites added since start</h4><p>${esc(count(e.boards))} ${e.boards === 1 ? 'site' : 'sites'} · ${esc(count(e.first_counted_backlog))} first-counted backlog</p>
         <p>Stock: ${esc(count(e.stock_latest))} latest</p><p>${esc(turnover(e))}</p><p>${esc(exposure(e, true))}</p></div>
-      <div><h4>All known jobs</h4><p>${esc(count(c.boards + e.boards))} sites · same dates</p>
+      <div><h4>All known jobs</h4><p>${esc(count(s.all_known.boards))} sites · same dates</p>
         <p>Stock: ${esc(count(s.all_known.stock_start))} at start → ${esc(count(s.all_known.stock_latest))} latest</p>
         <p>Includes sites added since start.</p></div>
     </div>
@@ -2105,6 +2105,7 @@ function renderCoverageSummary(d){
       <p>Stock is the jobs known at each date, regardless of the chart’s measure or watched-role breakdown.
         First counted means first present in HeadStart’s count history, not a posting date or first successful read.
         Sites read with zero jobs can be missing from this history. Departed sites remain in the starting group.</p>
+      <p>Category summaries include linked earlier category names, even when only added sites used those names.</p>
       <p>Activity starts after each site’s first count. The added-sites date is the earliest start in that group;
         other sites have shorter histories. Their observation periods differ, so these totals are not normalized comparisons.
         Zero recorded events do not prove no hiring. These counts do not describe the whole job market.</p>
