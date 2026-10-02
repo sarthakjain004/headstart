@@ -52,9 +52,9 @@ jobs:
           python -m headstart.ingest.state_fetch 'data/facts/*' 'data/state/*' \
             'data/descriptions/*' 'data/lancedb/*'
       - name: Restate
-        run: >-
-          python -m headstart.ingest.restate_run
-          --encode-budget-seconds "${{ inputs.encode_budget_seconds }}"
+        env:
+          ENCODE_BUDGET_SECONDS: ${{ inputs.encode_budget_seconds }}
+        run: python -u scripts/eval/run_frozen_restatement.py
       - name: Compare with the live history
         run: python scripts/eval/compare_restated_trends.py --live data/state --restated data/restated
       - name: Keep the Restatement

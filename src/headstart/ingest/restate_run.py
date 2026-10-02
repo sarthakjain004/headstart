@@ -271,6 +271,24 @@ def main() -> int:
         trend_history.record_tick(
             args.out, run, levels, turnover, methodology, replayed=previous
         )
+        import pyarrow.compute as pc
+        import pyarrow.parquet as pq
+
+        active = pc.and_(
+            pc.less_equal(served["served_from"], run),
+            pc.or_kleene(
+                pc.is_null(served["served_to"]), pc.greater(served["served_to"], run)
+            ),
+        )
+        active = pc.and_(active, pc.is_valid(served["family"]))
+        placements = served.filter(active).select(["id", "board", "family", "band"])
+        directory = args.out / "placements"
+        directory.mkdir(parents=True, exist_ok=True)
+        pq.write_table(
+            placements.replace_schema_metadata({b"ts": run.encode()}),
+            directory / job_facts.file_name(run),
+            compression="zstd",
+        )
         previous = (run, levels)
         _log.info(f"tick {n}/{len(runs)} {run}: {sum(turnover.values())} moves")
     _log.info(f"restated {len(runs)} ticks under today's rules -> {args.out}")
