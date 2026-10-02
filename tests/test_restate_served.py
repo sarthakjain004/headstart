@@ -344,3 +344,48 @@ def test_selected_wide_replay_matches_full_with_non_tech_dormancy_and_backing_de
             )
         )
     assert results[0] == results[1]
+
+
+def test_initially_non_tech_id_becomes_tech_then_removed_without_backdating(tmp_path):
+    from headstart.ingest import restate_count
+
+    facts = tmp_path / "facts"
+    steps = [
+        [(BOARD_A, _job(A1, "Cashier"))],
+        [(BOARD_A, _job(A1))],
+        [],
+        [],
+    ]
+    for stamp, jobs in zip(RUNS, steps):
+        _record(facts, stamp, jobs, {BOARD_A})
+    is_tech = lambda title, department: title == "Backend Engineer"
+    full = rr.job_versions(facts)
+    selected = rr.job_versions(facts, wanted=rr.eligible_ids(facts, is_tech))
+    assert selected.equals(full)
+    rows = selected.to_pylist()
+    assert [(r["valid_from"], r["valid_to"], r["ended_as"]) for r in rows] == [
+        (RUNS[0], RUNS[1], "changed"),
+        (RUNS[1], RUNS[2], "unlisted"),
+    ]
+    reads = rr.board_reads(facts)
+    ticks = []
+    for versions in (full, selected):
+        served = rs.served_intervals(
+            versions, reads, is_tech=is_tech, live={}, keep_set=None
+        )
+        assert [(r["served_from"], r["served_to"]) for r in served.to_pylist()] == [
+            (RUNS[1], RUNS[3])
+        ]
+        ticks.append(
+            list(
+                restate_count.tick_counts(
+                    served,
+                    RUNS[:4],
+                    rr.first_reads(reads),
+                    lambda row: ("software-engineering", "mid"),
+                )
+            )
+        )
+    assert ticks[0] == ticks[1]
+    assert ticks[1][0][1] == {}
+    assert ticks[1][3][1] == {}
