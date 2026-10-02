@@ -32,6 +32,63 @@ cl = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(cl)
 
 
+@pytest.mark.parametrize("count", [0, 168])
+def test_gr8people_public_board_and_api_count_are_both_required(monkeypatch, count):
+    from fake_fetcher import FakeResponse
+
+    monkeypatch.setattr(
+        cl, "_get", lambda *_args, **_kwargs: (200, b"assets.gr8people.com")
+    )
+    monkeypatch.setattr(
+        cl,
+        "_fetch",
+        lambda *_args, **_kwargs: FakeResponse(
+            text=json.dumps(
+                {
+                    "data": {
+                        "searchJobs": {"results": {"nodes": [], "totalCount": count}}
+                    }
+                }
+            )
+        ),
+    )
+    assert cl.p_gr8people("careers.teradata.com", "") == (cl.LIVE, count)
+
+
+def test_gr8people_public_404_is_dead_without_asking_a_retained_api(monkeypatch):
+    monkeypatch.setattr(cl, "_get", lambda *_args, **_kwargs: (404, b""))
+    monkeypatch.setattr(
+        cl,
+        "_fetch",
+        lambda *_args, **_kwargs: pytest.fail(
+            "dead public Board must not trust its API"
+        ),
+    )
+    assert cl.p_gr8people("ardene.gr8people.com", "") == (cl.DEAD, None)
+
+
+@pytest.mark.parametrize("status,body", [(200, b"marketing"), (429, b""), ("dns", b"")])
+def test_gr8people_unsettled_page_is_unknown(monkeypatch, status, body):
+    monkeypatch.setattr(cl, "_get", lambda *_args, **_kwargs: (status, body))
+    assert cl.p_gr8people("x.gr8people.com", "") == (cl.UNKNOWN, None)
+
+
+def test_gr8people_graphql_error_on_200_is_unknown(monkeypatch):
+    from fake_fetcher import FakeResponse
+
+    monkeypatch.setattr(
+        cl, "_get", lambda *_args, **_kwargs: (200, b"assets.gr8people.com")
+    )
+    monkeypatch.setattr(
+        cl,
+        "_fetch",
+        lambda *_args, **_kwargs: FakeResponse(
+            text='{"errors":[{"message":"unavailable"}]}'
+        ),
+    )
+    assert cl.p_gr8people("x.gr8people.com", "") == (cl.UNKNOWN, None)
+
+
 @pytest.fixture(autouse=True)
 def _no_spare_egress(monkeypatch):
     """No test in this file may reach the machine's real WARP daemon.

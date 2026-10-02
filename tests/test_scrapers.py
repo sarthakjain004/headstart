@@ -12601,6 +12601,13 @@ _STATED_PAGE = {
 #: internals to recover what was parametrised.
 _RESOLVE_ROWS = [
     (
+        "gr8people",
+        "careers.teradata.com",
+        "Search Careers at Teradata",
+        "Teradata",
+        "https://careers.teradata.com/jobs",
+    ),
+    (
         "ashby",
         "1password",
         "1Password Jobs",

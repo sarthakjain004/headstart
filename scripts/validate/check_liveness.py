@@ -2059,6 +2059,39 @@ def p_smartrecruiters(t, u):
     return (LIVE, 0) if served else (DEAD, None)
 
 
+def p_gr8people(t, u):
+    # The API retains Ardene's 22 postings although all public Board/job pages 404
+    # (2026-10-02). Establish the public Board before trusting its API count.
+    from headstart.scrapers.gr8people import (
+        search_body,
+        search_results,
+        uses_google_search,
+    )
+
+    scraper = _scraper_for_row("gr8people", t, u)
+    status, body = _get(scraper.board_page())
+    if status in (404, 410):
+        return DEAD, None
+    if status != 200 or b"assets.gr8people.com" not in body:
+        _note("body-unparseable" if status == 200 else "board-unreachable")
+        return UNKNOWN, None
+    try:
+        response = _fetch(
+            "POST",
+            scraper.url(),
+            json=search_body(first=1, google=uses_google_search(body.decode("utf-8"))),
+            headers={"User-Agent": UA},
+        )
+        if response is None or response.status_code != 200:
+            _note("api-unreachable")
+            return UNKNOWN, None
+        result = search_results(response.json())
+    except (ValueError, http.RequestsError):
+        _note("body-unparseable")
+        return UNKNOWN, None
+    return LIVE, result["totalCount"]
+
+
 def p_spire2grow(t, u):
     # The Board is a career-site host. Its workspace lookup is the dead-versus-live question: an
     # unknown host answers 404 "No Workspace Found for the domain name" (24 of 24 non-tenant hosts
@@ -3524,6 +3557,7 @@ PROBES = {
     "taleo_be": p_taleo_be,
     "taleo_enterprise": p_taleo_enterprise,
     "gem": p_gem,
+    "gr8people": p_gr8people,
     "happydance": p_happydance,
 }
 

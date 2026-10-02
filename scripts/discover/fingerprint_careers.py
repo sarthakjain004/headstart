@@ -156,6 +156,13 @@ PATTERNS: dict[str, tuple[str, list[str]]] = {
             r"(?:boards|job-boards)(?:\.eu)?\.greenhouse\.io/([a-zA-Z0-9_-]+)",
         ],
     ),
+    "gr8people": (
+        "ats",
+        [
+            HOST + r"([a-z0-9-]+\.(?:gr8people|workgr8)\.com)",
+            r"assets\.gr8people\.com/builds/app-career-site",
+        ],
+    ),
     "lever": (
         "ats",
         [
@@ -628,6 +635,7 @@ PROVIDER_DOMAINS = {
     "smartrecruiters": {"smartrecruiters.com"},
     "teamtailor": {"teamtailor.com"},
     "freshteam": {"freshteam.com", "freshworks.com"},
+    "gr8people": {"gr8people.com", "workgr8.com"},
     "trakstar": {"trakstar.com"},
     "sensehq": {"sensehq.com"},
     "rippling": {"rippling.com"},
@@ -672,6 +680,8 @@ CNAME_ZONES = {
     "zwayam.com": "zwayam",
     "openings.co": "zwayam",
     "greenhouse.io": "greenhouse",
+    "gr8people.com": "gr8people",
+    "workgr8.com": "gr8people",
     "lever.co": "lever",
     "ashbyhq.com": "ashby",
     "zohorecruit.com": "zoho",
@@ -875,7 +885,7 @@ QUERY_HOST_ATS = frozenset({"successfactors", "zwayam", "phenom", "icims"})
 # only the vanity-domain fingerprint (which captures nothing) needs the evidence host instead.
 # wp_job_openings' and spire2grow's fingerprints never capture a host: the Board is always the
 # evidence host.
-HOST_SLUG_ATS = frozenset({"zoho", "wp_job_openings", "spire2grow"})
+HOST_SLUG_ATS = frozenset({"zoho", "wp_job_openings", "spire2grow", "gr8people"})
 # ATSes whose slug is a full host inside the provider's own zone (oracle.py: "the slug is the
 # careers host"; eightfold and personio the same), so the CNAME target *is* the right answer.
 PROVIDER_HOST_ATS = frozenset({"oracle", "eightfold", "personio"})
@@ -909,7 +919,7 @@ CNAME_LABEL_ATS = frozenset(
 
 # Bump when a probe gains a materially new signal.  Resume skips only a row from this exact
 # channel set, and never suppresses an unreachable result.
-CHANNELS = "apply-url+cname-chain+http+robots+sitemap+jsbundle+slugprobe:v5"
+CHANNELS = "apply-url+cname-chain+http+robots+sitemap+jsbundle+slugprobe:v6"
 if _DNS is None:
     CHANNELS += ":no-dns"
 CHANNELS += ":psl-v1"
@@ -1279,6 +1289,12 @@ def normalise_tenant(ats: str, tenant: str, evidence: str) -> str:
     """
     if not evidence:
         return tenant
+    if ats == "gr8people":
+        if " CNAME " in evidence:
+            return evidence.split(" CNAME ")[0].lower()
+        if tenant.lower().startswith("assets.") or "." not in tenant:
+            return (urlsplit(evidence).hostname or "").lower()
+        return tenant.lower()
     if " API " in evidence:
         return tenant
     source_host = evidence.split(" CNAME ")[0].lower() if " CNAME " in evidence else ""

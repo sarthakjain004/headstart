@@ -1606,5 +1606,11 @@ PARKED_BOARDS: frozenset[str] = frozenset(
         # goes dead, or once cross-ATS deduplication exists.
         "turbohire:cipla",
         "turbohire:ciplasouthafrica",
+        # Carrier's gr8people feed retains 4,167 postings while its held Workday Board
+        # lists 1,054. All 41 gr8people requisitions dated Sep 26–Oct 2 are held there;
+        # all 36 recent gr8people-only redirects failed at Workday (S22), with three
+        # live positive controls and one browser-confirmed missing page. Parked by
+        # the owner on 2026-10-02; revisit after a stale-feed audit (ADR-0373).
+        "gr8people:carriernoam.workgr8.com",
     }
 )

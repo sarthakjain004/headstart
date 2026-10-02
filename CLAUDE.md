@@ -185,6 +185,11 @@ belong in README and CONTEXT.md, where `tests/test_board_counts.py` checks them.
   measurements: `docs/discovery/2026-09-23_indeed-sweep-landing.md`. CSB-only tenants
   (Ericsson-class, DWR-RPC) remain the known gap.
 
+- **gr8people: re-run `scripts/validate/gr8people_shared_clients.py --apply` after
+  refreshing its ledger.** Public hosts can share one `(orgId, clientId)` without
+  redirecting. The script confirms equal posting sets before writing `shared-reqs`
+  aliases; the generic redirect scan refuses to overwrite them (ADR-0373).
+
 ### To build, by evidence
 
 Evidence for the first two is in `docs/discovery/2026-09-23_indeed-sweep-landing.md`.

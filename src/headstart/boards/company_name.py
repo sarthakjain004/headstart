@@ -166,6 +166,9 @@ _GEM_NOT_A_LABEL = r"^(?!(?:open|search|current|all|our|new|latest|available)\s)
 PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
     "ashby": (re.compile(r"^(?P<name>.+?)\s+Jobs$", re.IGNORECASE),),
     "eightfold": _CAREERS_WRAPPER,
+    "gr8people": (
+        re.compile(r"^(?:Search\s+)?Careers\s+at\s+(?P<name>.+)$", re.IGNORECASE),
+    ),
     # freshteam: not the `<title>` ("Careers" on every Board) but the `/jobs` page's `og:title`,
     # "Careers - {Name}" on 106 of 120 affected Boards (2026-09-24); the rest serve an 889-byte
     # shell with no og: tags at all. `FreshteamScraper.company_from_page` reads it.
@@ -472,6 +475,7 @@ _VENDOR_ALIASES: dict[str, frozenset[str]] = {
     # No vendor-branded gem board was observed in the 60-board sample — kept as the same
     # precaution taleo_enterprise's own entry below is.
     "gem": frozenset({"gem"}),
+    "gr8people": frozenset({"grpeople"}),
     # The vendor runs its own board on this platform (`careers.phenom.com`, title "Careers at
     # Phenom"), which is a wrapper this ATS *does* match — so unlike taleo_enterprise's, this
     # entry is not merely precautionary. `phenompeople` is the legacy brand the CDN and the dead
