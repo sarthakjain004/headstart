@@ -1,0 +1,52 @@
+[
+  {
+    "key": "4709",
+    "title": "FSR - Chicago, IL",
+    "descriptionHTML": "<p><b>In This Role You Will:</b></p> \n<ul> \n <li> <p>Provide excellent customer service by identifying customer needs and determining the best solution for them.</p> </li> \n <li> <p>Educate customers on Morgan Stanley \u2019s competitive advantage and identify additional products they would benefit from.</p> </li> \n <li> <p>Show us your determination to drive sales by engaging customers and identifying new opportunities.</p> </li> \n <li> <p>Follow processes and manage your time efficiently throughout",
+    "structuredDataJSON": "{\"@context\": \"http://schema.org/\", \"hiringOrganization\": {\"@type\": \"Organization\", \"name\": \"Morgan Stanley E-TRADE\"}, \"@type\": \"JobPosting\", \"title\": \"FSR - Chicago, IL\", \"identifier\": \"JR019381\", \"datePosted\": \"2026-03-18T19:59:49.013Z\", \"jobLocation\": {\"@type\": \"Place\", \"address\": {\"@type\": \"PostalAddress\", \"addressRegion\": \"Illinois\", \"addressLocality\": \"Chicago\", \"addressCountry\": \"United States\"}}}",
+    "workplaceType": "ON_SITE",
+    "postedOn": "2026-03-18T19:59:49.013Z",
+    "positionType": {
+      "name": "Full Time"
+    },
+    "primaryPlace": null,
+    "places": {
+      "nodes": []
+    },
+    "jobCategory": {
+      "name": "Finance"
+    },
+    "payRangeLow": null,
+    "payRangeHigh": null,
+    "payRangeType": null,
+    "currencyCode": null
+  },
+  {
+    "key": "34295",
+    "title": "Team Lead",
+    "descriptionHTML": "<p><span style=\"text-decoration: underline;\"><strong>Job Description Summary</strong></span><br> The Team Lead assists in supervising and managing all day-to-day store operations while ensuring that 100% compliance exists with all established Company policies and procedures. Provides leadership, guidance and training to the store staff via direction from the Store Manager and the Assistant Store Manager. In the absence of the Store Manager and Assistant Manager, the Team Lead assumes full respon",
+    "structuredDataJSON": "{\"@context\": \"http://schema.org/\", \"hiringOrganization\": {\"@type\": \"Organization\", \"name\": \"Rookie Kids\"}, \"@type\": \"JobPosting\", \"title\": \"Team Lead\", \"identifier\": \"34295\", \"datePosted\": \"2026-08-12T23:22:48.26Z\", \"jobLocation\": {\"@type\": \"Place\", \"address\": {\"@type\": \"PostalAddress\", \"addressRegion\": \"California\", \"addressLocality\": \"Glendale\", \"addressCountry\": \"United States\"}}}",
+    "workplaceType": "ON_SITE",
+    "postedOn": "2026-08-12T23:22:48.26Z",
+    "positionType": {
+      "name": "Full Time"
+    },
+    "primaryPlace": {
+      "name": "Glendale, CA, USA"
+    },
+    "places": {
+      "nodes": [
+        {
+          "name": "Glendale, CA, USA"
+        }
+      ]
+    },
+    "jobCategory": {
+      "name": "Store"
+    },
+    "payRangeLow": 19.62,
+    "payRangeHigh": null,
+    "payRangeType": "HOURLY",
+    "currencyCode": "USD"
+  }
+]

@@ -59,6 +59,14 @@ def test_gr8people_keeps_vendor_hosts_and_fingerprints_a_vanity_site():
         )
         == "careers.teradata.com"
     )
+    assert (
+        fp.normalise_tenant(
+            "gr8people",
+            "lb.gr8people.com",
+            "Careers.Teradata.com CNAME lb.gr8people.com",
+        )
+        == "careers.teradata.com"
+    )
 
 
 def test_a_mynexthire_embed_names_its_tenant_label_on_either_front():

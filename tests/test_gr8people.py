@@ -54,6 +54,25 @@ def postings():
     )
 
 
+def test_jsonld_location_and_hourly_pay_are_kept_from_recorded_boards():
+    raw = json.loads(
+        (Path(__file__).parent / "fixtures/gr8people_location_hourly.json").read_text()
+    )
+    jobs = Gr8PeopleScraper("etrade.gr8people.com", "E-TRADE").parse(raw, "now")
+    assert jobs[0].location == "Chicago, Illinois, United States"
+    assert jobs[1].salary == "19.62 USD per-hour"
+
+
+def test_a_missing_description_keeps_the_posting_and_absent_fields_unknown():
+    row = postings()[0]
+    row.update(descriptionHTML=None, postedOn=None, workplaceType=None)
+    jobs = Gr8PeopleScraper("careers.teradata.com", "Teradata").parse([row], "now")
+    assert len(jobs) == 1
+    assert jobs[0].description is None
+    assert jobs[0].posted_at is None
+    assert jobs[0].remote is None
+
+
 def envelope(nodes, *, total=3, more=False, cursor=None):
     return {
         "data": {

@@ -635,6 +635,7 @@ PROVIDER_DOMAINS = {
     "smartrecruiters": {"smartrecruiters.com"},
     "teamtailor": {"teamtailor.com"},
     "freshteam": {"freshteam.com", "freshworks.com"},
+    "gr8people": {"gr8people.com", "workgr8.com"},
     "trakstar": {"trakstar.com"},
     "sensehq": {"sensehq.com"},
     "rippling": {"rippling.com"},
@@ -679,6 +680,8 @@ CNAME_ZONES = {
     "zwayam.com": "zwayam",
     "openings.co": "zwayam",
     "greenhouse.io": "greenhouse",
+    "gr8people.com": "gr8people",
+    "workgr8.com": "gr8people",
     "lever.co": "lever",
     "ashbyhq.com": "ashby",
     "zohorecruit.com": "zoho",
@@ -1287,6 +1290,8 @@ def normalise_tenant(ats: str, tenant: str, evidence: str) -> str:
     if not evidence:
         return tenant
     if ats == "gr8people":
+        if " CNAME " in evidence:
+            return evidence.split(" CNAME ")[0].lower()
         if tenant.lower().startswith("assets.") or "." not in tenant:
             return (urlsplit(evidence).hostname or "").lower()
         return tenant.lower()
