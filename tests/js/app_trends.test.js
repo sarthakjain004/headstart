@@ -191,9 +191,9 @@ test('explicit All survives a shared hash and continues to use the compatible Al
 function coverageSummary(){
   const d = fixture(), [from, to] = d.stamps;
   return { baseline: from, from, to, scope: 'tech', family: null,
-    cohort: { boards: 2, stock_start: 50, stock_latest: 52, observed_opened: 4,
+    cohort: { boards: 2, stock_start: 50, stock_latest: 52, recorded_index_additions: 4,
       recorded_closed: 2, closures_unseen: 0, observed_since: from, net_recounted: -2 },
-    entrants: { boards: 1, first_counted_backlog: 100, stock_latest: 103, observed_opened: 3,
+    entrants: { boards: 1, first_counted_backlog: 100, stock_latest: 103, recorded_index_additions: 3,
       recorded_closed: null, closures_unseen: 1, observed_since: to, net_recounted: null },
     all_known: { boards: 3, stock_start: 50, stock_latest: 155 },
     quality: { start_eligibility: 'unknown', endpoint_freshness: 'unknown', successful_zero_boards: 'unknown', event_causes: 'unknown' } };
@@ -207,7 +207,7 @@ test('coverage separates first-counted backlog from later observations and keeps
   const host = nodes['trends-coverage-summary'];
   assert.equal(host.hidden, false);
   assert.match(host.innerHTML, /100 first-counted backlog/);
-  assert.match(host.innerHTML, /3 subsequent observed openings/);
+  assert.match(host.innerHTML, /3 subsequent recorded index additions/);
   assert.match(host.innerHTML, /unknown recorded closures\/removals/);
   assert.match(host.innerHTML, /Known closure gaps: 0 sites/);
   assert.match(host.innerHTML, /1 sites added later/);
@@ -224,7 +224,7 @@ test('coverage separates first-counted backlog from later observations and keeps
   assert.match(host.innerHTML, /earliest start in that group/);
   assert.match(host.innerHTML, /Dormant policy evictions and rule changes/);
   assert.match(host.innerHTML, /do not establish complete freshness/);
-  assert.doesNotMatch(host.innerHTML, /100%|103 subsequent observed openings/);
+  assert.doesNotMatch(host.innerHTML, /100%|103 subsequent recorded index additions/);
 });
 
 test('coverage states its full category scope even on New and a watched-role drill', async () => {
@@ -255,9 +255,9 @@ test('coverage activity visibly names methodology exclusions instead of showing 
   summary.entrants.activity_excluded_ticks = [summary.from, summary.to];
   answering(ctx, { ...fixture(), coverage_summary: summary });
   await t.load(null);
-  assert.match(nodes['trends-coverage-summary'].innerHTML, /3 subsequent observed openings/);
+  assert.match(nodes['trends-coverage-summary'].innerHTML, /3 subsequent recorded index additions/);
   assert.match(nodes['trends-coverage-summary'].innerHTML, /2 updates left out for counting changes/);
-  assert.match(nodes['trends-coverage-summary'].innerHTML, /neither is proof of newly posted jobs/);
+  assert.match(nodes['trends-coverage-summary'].innerHTML, /neither figure proves\s+newly posted jobs/);
 });
 
 test('a changing summary baseline announces the new cohort, without announcements on repaint', async () => {
@@ -2686,7 +2686,7 @@ test('a company sentence gives the jobs its net change is made of', () => {
   t.draw();
   // #684's shape: the answer first, then the move, then what it is made of, in the main text.
   assert.match(nodes['trends-verdict'].innerHTML,
-    /<b>Acme<\/b>: holding steady — 1,000 tech openings, [^<]*\. About 500 opened, 490 recorded closures\/removals\./);
+    /<b>Acme<\/b>: holding steady — 1,000 tech openings, [^<]*\. About 500 recorded index additions, 490 recorded closures\/removals\./);
 });
 
 test('turnover stays in the main text, never in the not-hiring disclosure', () => {
@@ -2696,7 +2696,7 @@ test('turnover stays in the main text, never in the not-hiring disclosure', () =
   const html = nodes['trends-verdict'].innerHTML;
   assert.match(html, /<details class="verdict-why">/, 'the tech-filter step is disclosed');
   const [main, why] = html.split('<details class="verdict-why">');
-  assert.match(main, /About 500 opened, 490 recorded closures\/removals/);
+  assert.match(main, /About 500 recorded index additions, 490 recorded closures\/removals/);
   assert.doesNotMatch(why, /opened/);
 });
 
@@ -2705,7 +2705,7 @@ test('turnover that began inside the window says from when', () => {
   t.setPicks([ACME]);
   t.set(busyAcme({ turnover_since: FOUR[1] }));
   t.draw();
-  assert.match(nodes['trends-verdict'].innerHTML, /\. About 500 opened, 490 recorded closures\/removals since Sep 14[.;]/);
+  assert.match(nodes['trends-verdict'].innerHTML, /\. About 500 recorded index additions, 490 recorded closures\/removals since Sep 14[.;]/);
 });
 
 test('the table gives each line its opened and closed', () => {
@@ -2717,7 +2717,7 @@ test('the table gives each line its opened and closed', () => {
   nodes['trends-error'] = Object.assign(fakeEl(), { hidden: true });
   t.table(true);
   const html = nodes['trends-table'].innerHTML;
-  assert.match(html, />Counting changes<\/th><th scope="col" title="[^"]+">Observed openings<\/th><th scope="col" title="[^"]+">Recorded closures\/removals<\/th>/);
+  assert.match(html, />Counting changes<\/th><th scope="col" title="[^"]+">Recorded index additions<\/th><th scope="col" title="[^"]+">Recorded closures\/removals<\/th>/);
   assert.match(html, /<td>500<\/td><td>490<\/td>/);
 });
 
@@ -2733,7 +2733,7 @@ test('the index gets a hiring net from its turnover, and table columns too', () 
   t.setUnit('count', false);
   t.draw();
   assert.match(nodes['trends-verdict'].innerHTML,
-    /<b>All tech roles<\/b>: about 10 more observed openings than recorded closures\/removals — about 50 opened, 40 recorded closures\/removals\./);
+    /<b>All tech roles<\/b>: about 10 more recorded index additions than recorded closures\/removals — about 50 recorded index additions, 40 recorded closures\/removals\./);
   assert.doesNotMatch(nodes['trends-verdict'].innerHTML, /HeadStart has counted|boards?\b|runs?\b/);
   nodes['trends-error'] = Object.assign(fakeEl(), { hidden: true });
   t.table(true);
@@ -2743,7 +2743,7 @@ test('the index gets a hiring net from its turnover, and table columns too', () 
   Object.assign(fewer.reading.total.move.turnover, { opened: 40, closed: 50, net: -10 });
   t.set(fewer);
   t.draw();
-  assert.match(nodes['trends-verdict'].innerHTML, /about 10 more recorded closures\/removals than observed openings — about 40 opened, 50 recorded closures\/removals\./);
+  assert.match(nodes['trends-verdict'].innerHTML, /about 10 more recorded closures\/removals than recorded index additions — about 40 recorded index additions, 50 recorded closures\/removals\./);
 });
 
 test('Opening more than closing leads with opened less closed and gives both counts', () => {
@@ -3269,7 +3269,7 @@ test('where every board had its closures go uncounted, no closed count is given'
   const { t, nodes } = drawGolden('closures_uncounted_on_every_board_give_no_closed_count');
   t.draw();
   const verdict = nodes['trends-verdict'].innerHTML;
-  assert.match(verdict, /\. About 500 opened; closures not counted\./);
+  assert.match(verdict, /\. About 500 recorded index additions; closures not counted\./);
   assert.doesNotMatch(verdict, /closed/);
   assert.match(nodes['trends-table'].innerHTML, /<td>500<\/td><td class="flat" title="[^"]+">not counted<\/td>/);
 });

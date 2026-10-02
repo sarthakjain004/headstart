@@ -33,7 +33,13 @@ from pathlib import Path
 
 import numpy as np
 
-from headstart.boards.board_identity import ats_of, board_end, board_of, lower_key
+from headstart.boards.board_identity import (
+    ats_of,
+    board_end,
+    board_of,
+    lower_key,
+    tenant,
+)
 from headstart.boards.board_operator import company_operator
 from headstart.trends import company_suggestions, netting
 from headstart.trends.role_taxonomy import (
@@ -1770,7 +1776,27 @@ class TrendHistory:
             return np.bincount(d["board"][rows], d["delta"][rows], size)
 
         start, latest = levels(first_tick), levels(last_tick)
-        every, touched = netting.left_out_runs(self._epochs, stamps)
+        every_tick, touched_tick = netting.left_out_runs(self._epochs, self._ticks)
+        every = {
+            k
+            for k, ts in enumerate(stamps)
+            if bisect_left(self._ticks, ts) in every_tick
+        }
+        touched = {
+            k
+            for k, ts in enumerate(stamps)
+            if bisect_left(self._ticks, ts) in touched_tick
+        }
+        dedup_peers = defaultdict(list)
+        if touched:
+            for board in known:
+                dedup_peers[ats_of(board), tenant(board).lower()].append(board)
+        susceptible = {
+            board
+            for peers in dedup_peers.values()
+            if netting.dedup_touched(peers)
+            for board in peers
+        }
         arrivals = np.full(size, len(self._ticks), dtype=np.int64)
         for board, seen in known.items():
             arrivals[self._boards.get(board)] = bisect_left(self._ticks, seen)
@@ -1783,11 +1809,7 @@ class TrendHistory:
         def activity(boards: set[str]) -> dict:
             # A zero here is zero recorded events, never evidence of a successful read.
             first_count = min((known[b] for b in boards), default=stamps[0])
-            affected = (
-                {b for b in boards if self._company_dedup_touched(b)}
-                if touched
-                else set()
-            )
+            affected = boards & susceptible if touched else set()
             untouched_first = min((known[b] for b in boards - affected), default=None)
             since = (
                 max(stamps[0], first_count, self._turnover_since)
@@ -1849,7 +1871,7 @@ class TrendHistory:
                 "boards": len(boards),
                 "stock_start": total(start, boards),
                 "stock_latest": total(latest, boards),
-                "observed_opened": counts["opened"] if available else None,
+                "recorded_index_additions": counts["opened"] if available else None,
                 "recorded_closed": counts["closed"] if available else None,
                 "net_recounted": counts["recounted"] if recorded_available else None,
                 "closures_unseen": unseen,

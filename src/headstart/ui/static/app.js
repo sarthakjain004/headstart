@@ -2083,7 +2083,7 @@ function renderCoverageSummary(d){
   const exposure = (group, added = false) => group.observed_since
     ? `${added ? 'Earliest activity' : 'Activity'} since ${date(group.observed_since)}${
       group.observed_since > s.from ? ' · shorter than selected window' : ''}` : 'Activity period unknown';
-  const turnover = group => `${count(group.observed_opened)} subsequent observed openings · `
+  const turnover = group => `${count(group.recorded_index_additions)} subsequent recorded index additions · `
     + `${count(group.recorded_closed)} recorded closures/removals${group.activity_excluded_updates
       ? ` · ${count(group.activity_excluded_updates)} updates left out for counting changes` : ''}`;
   const c = s.cohort, e = s.entrants;
@@ -2111,9 +2111,11 @@ function renderCoverageSummary(d){
         other sites have shorter histories. Their observation periods differ, so these totals are not normalized comparisons.
         Zero recorded events do not prove no hiring. These counts do not describe the whole job market.</p>
       <p>Known counting-change updates and their settling updates are left out of activity using the existing
-        Trends rule, Board by Board. Stock and net counting adjustments still include those updates.
-        Activity can differ from the headline because its scope includes added sites and the headline can
-        withhold other partial reads; neither is proof of newly posted jobs or employer intent.</p>
+        Trends rule, site by site. Stock and net counting adjustments still include those updates.
+        Activity can differ from the headline: it includes added sites, keeps unaffected sites, and excludes
+        settling updates even when the rule change fell at the window’s start. The headline can also withhold
+        other partial reads. An index addition may be an older posting found later; neither figure proves
+        newly posted jobs or employer intent.</p>
       <p>Known closure gaps: ${esc(count(c.closures_unseen))} sites in the starting group;
         ${esc(count(e.closures_unseen))} sites added later. Gaps, including zero, do not establish complete freshness.
         Recorded closures/removals are partial observations. Dormant policy evictions and rule changes can affect them;
@@ -2147,8 +2149,8 @@ function verdictLines(d){
     // opened against closed, never as "more openings": the lines keep recounts nothing sizes
     // (Boards dropped, duplicates removed), and a line up 400 read "about 10 more openings". That the runs of such a change
     // are left out (`turnover_left_out`) is said under "How to read this", not here (ADR-0248).
-    const net = t.net == null ? '' : t.net < 0 ? `about ${aboutCount(-t.net)} more recorded closures/removals than observed openings — `
-      : t.net > 0 ? `about ${aboutCount(t.net)} more observed openings than recorded closures/removals — ` : 'as many observed openings as recorded closures/removals — ';
+    const net = t.net == null ? '' : t.net < 0 ? `about ${aboutCount(-t.net)} more recorded closures/removals than recorded index additions — `
+      : t.net > 0 ? `about ${aboutCount(t.net)} more recorded index additions than recorded closures/removals — ` : 'as many recorded index additions as recorded closures/removals — ';
     return [{ name: viewKind(d) === 'bands' ? drillLabel() : 'All tech roles', days: 0,
       text: `${net}${turnoverPhrase(whole, d)}.` }];
   }
@@ -2205,8 +2207,8 @@ function turnoverPhrase(line, d){
   const since = d.turnover_since && d.turnover_since > d.stamps[0] ? ` since ${stampLabel(d.turnover_since, true)}` : '';
   // Where every Board's closures went uncounted the reading gives no closed count, and the
   // sentence none: Google, one Board, read "18 closed … closures not counted on 1 board".
-  if (t.closed == null) return `about ${aboutCount(t.opened)} opened${since}; closures not counted`;
-  return `about ${aboutCount(t.opened)} opened, ${aboutCount(t.closed)} recorded closures/removals${since}`;
+  if (t.closed == null) return `about ${aboutCount(t.opened)} recorded index additions${since}; closures not counted`;
+  return `about ${aboutCount(t.opened)} recorded index additions, ${aboutCount(t.closed)} recorded closures/removals${since}`;
 }
 // One company sentence from a line reading (ADR-0233): its openings, its hiring move, its
 // percentage and weekly rate, and its "Not hiring" by cause, each as the reading gives it.
@@ -3753,7 +3755,7 @@ function buildTrendsTable(){
     + th('Adjusted change', 'Openings gained or lost after recorded counting adjustments')
     + th('Counting changes', 'Known counting changes, like duplicates removed or job sites found later')
     // What the hiring move is made of (ADR-0227), on the runs that move counts.
-    + (withTurnover ? th('Observed openings', 'Openings observed in this window') + th('Recorded closures/removals', 'Partial recorded removals; Dormant policy evictions and rule changes can affect these counts') : '')
+    + (withTurnover ? th('Recorded index additions', 'Recorded additions in this window, not proof of newly posted jobs') + th('Recorded closures/removals', 'Partial recorded removals; Dormant policy evictions and rule changes can affect these counts') : '')
     + th('At start', 'Openings at the start of the window')
     + th('Low', 'The lowest figure in the window') + th('High', 'The highest figure in the window') + '</tr>';
   const dash = '<td class="flat">—</td>';
@@ -3809,7 +3811,7 @@ function buildTrendsTable(){
   const addsUp = !problemsOf(reading).length
     ? `; the ${many} below${closing ? ' and “Moved between categories” add up to its adjusted change' : ' add up to it'}` : '';
   const note = withTotal ? `<caption>“${esc(totalLabel)}” covers ${whole}${addsUp}.${
-    withTurnover ? ' Observed openings and recorded closures/removals are counted for each line, so they may not add up.' : ''}</caption>` : '';
+    withTurnover ? ' Recorded index additions and recorded closures/removals are counted for each line, so they may not add up.' : ''}</caption>` : '';
   return `${note}<thead>${head}</thead><tbody>${body}${closingRow}</tbody>`;
 }
 

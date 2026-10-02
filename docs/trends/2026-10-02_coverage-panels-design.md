@@ -47,7 +47,7 @@ Otherwise it contains:
 | `entrants.first_counted_backlog` | Tech stock at each entrant Board's own first count, summed once |
 | `entrants.stock_start`, `entrants.stock_latest` | Entrants' endpoint tech stock, including entrants first counted before a later explicit window start |
 | `all_known.boards`, `all_known.stock_start`, `all_known.stock_latest` | First-counted Board count and endpoint tech stock over both groups; the browser formats these backend counts |
-| `cohort/entrants.observed_opened` | Recorded Opened after both window start and each Board's own first count, excluding existing counting-change/settling intervals Board by Board; null where no usable subsequent turnover exposure remains |
+| `cohort/entrants.recorded_index_additions` | Ledger Opened after both window start and each site's own first count, excluding counting-change/settling intervals with full preceding tick context; additions to the index, not proof of newly posted jobs; null where no usable activity interval remains |
 | `cohort/entrants.recorded_closed` | Recorded Closed over the same interval, labelled **recorded closures/removals** in the UI |
 | `cohort/entrants.net_recounted` | Signed Recounted in less out, labelled net counting adjustments; not a count of events or a second count of first-counted backlog |
 | `cohort/entrants.observed_since` | Earliest possible recorded turnover exposure for the group, bounded by window start, first count, and turnover-ledger start; individual sites can start later |
@@ -69,8 +69,14 @@ intent or a cause-pure hiring series. Closed can include Dormant policy eviction
 scraper changes can affect observations. Activity reuses `netting.left_out_runs` to exclude
 known line-moving methodology updates and their settling updates, and duplicate-removal
 updates on affected Boards only. Stock and signed net recounting remain unfiltered.
-The card names omitted updates. Its population includes entrants, and the headline can
-withhold other partial reads, so the figures need not match; neither proves newly posted
+The card names omitted updates. Exclusions are computed against the full tick sequence,
+then projected into the displayed window, so a change on the first displayed tick still
+excludes its following settling update. Dedup susceptibility uses scoped sites grouped
+by ATS and canonical Tenant; a Lever-only scope is unaffected by another site's Eightfold
+susceptibility, while two scoped Workday sibling sites retain the exclusion.
+Its population includes entrants, and the headline's existing window-relative/company-wide
+heuristic can differ or withhold other partial reads. Both surfaces label additions as
+**recorded index additions**, so differing omission policies are explicit; neither proves newly posted
 jobs or employer intent. Zero recorded events do not prove flat hiring. Even zero
 `closures_unseen` proves neither complete read coverage nor endpoint freshness: failed,
 partial and unscheduled reads are not fully reconstructible from count history. No net
@@ -126,3 +132,9 @@ Closed/open summaries, full Trends panels and focused radio screenshots are reta
 locally under `experiment/trends-coverage-panels-2026-10-02/artifacts/`; they are not
 committed. This report stands alone; screenshots are synthetic examples, not corpus evidence.
 Parent visual review and independent restatement verification remain required before merge.
+
+Review regressions additionally cover a window beginning on a rule-widening tick across
+All/comparable, stock/New, category/total and picked/unpicked views: 500 settling additions
+stay excluded and the later 3 additions remain. Lever-only scope retains 5 additions despite
+its Company's Eightfold site; scoped Workday siblings retain dedup exclusions. These are
+first-counted/recorded observations, not authoritative read-quality or employer-cause proof.

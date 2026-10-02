@@ -2372,7 +2372,7 @@ def test_trends_comparable_coverage_keeps_only_boards_known_at_the_base(
     assert summary["entrants"]["first_counted_backlog"] == 100
     assert summary["all_known"]["stock_latest"] == 111
     assert summary["quality"]["endpoint_freshness"] == "unknown"
-    assert summary["entrants"]["observed_opened"] is None
+    assert summary["entrants"]["recorded_index_additions"] is None
 
 
 def test_trends_comparable_base_can_be_an_unchanged_measurement(

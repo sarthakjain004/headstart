@@ -363,7 +363,7 @@ def test_coverage_summary_keeps_backlog_separate_from_later_openings(tmp_path):
     assert summary["cohort"]["net_recounted"] == -10
     assert summary["entrants"]["boards"] == 2
     assert summary["entrants"]["first_counted_backlog"] == 120
-    assert summary["entrants"]["observed_opened"] == 3
+    assert summary["entrants"]["recorded_index_additions"] == 3
     assert summary["entrants"]["recorded_closed"] == 1
     assert summary["entrants"]["net_recounted"] == 0
     assert summary["entrants"]["observed_since"] == _stamp(1)
@@ -385,7 +385,7 @@ def test_existing_employers_new_board_is_a_coverage_addition(tmp_path):
     assert summary["cohort"]["boards"] == 1
     assert summary["entrants"]["boards"] == 1
     assert summary["entrants"]["first_counted_backlog"] == 100
-    assert summary["entrants"]["observed_opened"] == 3
+    assert summary["entrants"]["recorded_index_additions"] == 3
     assert summary["all_known"]["stock_latest"] == 102
 
 
@@ -416,7 +416,7 @@ def test_range_changes_choose_different_first_counted_populations(tmp_path):
     assert (start["baseline"], start["cohort"]["boards"]) == (_stamp(0), 1)
     assert (later["baseline"], later["cohort"]["boards"]) == (_stamp(1), 3)
     assert later["entrants"]["boards"] == 0
-    assert later["cohort"]["observed_opened"] == 3
+    assert later["cohort"]["recorded_index_additions"] == 3
 
 
 def test_summary_respects_explicit_earlier_base_and_source_filter(tmp_path):
@@ -433,7 +433,7 @@ def test_summary_respects_explicit_earlier_base_and_source_filter(tmp_path):
     assert summary["cohort"]["boards"] == 1
     assert summary["entrants"]["first_counted_backlog"] == 100
     # The opening booked at the window start predates this window's activity.
-    assert summary["entrants"]["observed_opened"] == 0
+    assert summary["entrants"]["recorded_index_additions"] == 0
     assert summary["all_known"]["stock_start"] == 112
 
 
@@ -449,7 +449,7 @@ def test_single_tick_has_unknown_turnover_not_zero(tmp_path):
     summary = _coverage_ticks(tmp_path).unnetted_answer(TrendQuestion(until=_stamp(1)))[
         "coverage_summary"
     ]
-    assert summary["entrants"]["observed_opened"] is None
+    assert summary["entrants"]["recorded_index_additions"] is None
     assert summary["entrants"]["recorded_closed"] is None
 
 
@@ -469,7 +469,7 @@ def test_first_recorded_turnover_tick_is_available_at_window_end(tmp_path):
     summary = TrendHistory.load(tmp_path, _NO_CONFIG).unnetted_answer(TrendQuestion())[
         "coverage_summary"
     ]
-    assert summary["cohort"]["observed_opened"] == 2
+    assert summary["cohort"]["recorded_index_additions"] == 2
 
 
 def test_category_summary_excludes_nontech_and_watch_duplicates(tmp_path):
@@ -547,7 +547,7 @@ def test_category_lineage_keeps_entrant_activity_and_arrival_read_gaps(tmp_path)
     assert summary["cohort"]["stock_latest"] == 0
     assert summary["entrants"]["first_counted_backlog"] == 100
     assert summary["entrants"]["stock_latest"] == 103
-    assert summary["entrants"]["observed_opened"] == 3
+    assert summary["entrants"]["recorded_index_additions"] == 3
     # Read quality includes arrival-tick failures even though its backlog is not activity.
     assert summary["entrants"]["closures_unseen"] == 1
     assert summary["entrants"]["net_recounted"] == 0
@@ -600,6 +600,15 @@ def _coverage_rule_change_ticks(state):
             {(added, metric, "software-engineering", "mid"): events} if events else {},
             method,
         )
+    (state / "company_directory.json").write_text(
+        json.dumps(
+            {
+                "companies": [
+                    {"name": "Acme", "boards": [old, added]},
+                ]
+            }
+        )
+    )
     return TrendHistory.load(state, _NO_CONFIG)
 
 
@@ -609,14 +618,14 @@ def test_coverage_activity_excludes_filter_change_and_settling_spikes(tmp_path):
     summary = answer["coverage_summary"]
     assert summary["entrants"]["first_counted_backlog"] == 100
     assert summary["entrants"]["stock_latest"] == 1603
-    assert summary["entrants"]["observed_opened"] == 3
+    assert summary["entrants"]["recorded_index_additions"] == 3
     assert summary["entrants"]["activity_excluded_ticks"] == [_stamp(2), _stamp(3)]
     assert summary["entrants"]["activity_excluded_updates"] == 2
     payload, _ = line_reading.trends_payload(answer)
     assert payload["reading"]["total"]["move"]["turnover"]["opened"] == 3
     # If every subsequent activity interval is excluded, unknown replaces a false quiet 0.
     short = history.unnetted_answer(TrendQuestion(until=_stamp(3)))["coverage_summary"]
-    assert short["entrants"]["observed_opened"] is None
+    assert short["entrants"]["recorded_index_additions"] is None
 
 
 def test_internal_hot_and_line_readings_skip_coverage_summary_work(
@@ -637,6 +646,93 @@ def test_internal_hot_and_line_readings_skip_coverage_summary_work(
         ["workday:acme/main"],
     )
     assert "workday:acme/main" in moves
+
+
+@pytest.mark.parametrize("coverage", ["all", "comparable"])
+@pytest.mark.parametrize("metric", ["stock", "new"])
+@pytest.mark.parametrize("family", [None, "software-engineering"])
+@pytest.mark.parametrize("picked", [False, True])
+def test_starting_on_rule_change_retains_settling_exclusion(
+    tmp_path,
+    coverage,
+    metric,
+    family,
+    picked,
+):
+    history = _coverage_rule_change_ticks(tmp_path)
+    summary = history.unnetted_answer(
+        TrendQuestion(
+            coverage=coverage,
+            metric=metric,
+            family=family,
+            companies=("lever:old",) if picked else (),
+            base=_stamp(2) if coverage == "comparable" else None,
+            since=_stamp(2) if coverage == "all" else None,
+        )
+    )["coverage_summary"]
+    assert summary["from"] == _stamp(2)
+    assert summary["cohort"]["recorded_index_additions"] == 3
+    assert summary["cohort"]["activity_excluded_ticks"] == [_stamp(3)]
+    assert summary["cohort"]["activity_excluded_updates"] == 1
+
+
+def test_lever_only_scope_is_not_affected_by_companys_eightfold_dedup(tmp_path):
+    lever, mirror = "lever:acme", "eightfold:acme"
+    for day, opened in ((0, 0), (1, 2), (2, 3)):
+        method = trend_history.Methodology(
+            "7681eb07a2b5", 2, 5, 15, 5 if day == 0 else 6
+        )
+        trend_history.record_tick(
+            tmp_path,
+            _stamp(day),
+            {
+                (lever, "stock", "software-engineering", "mid"): (10, 12, 15)[day],
+                (mirror, "stock", "software-engineering", "mid"): 20,
+            },
+            {(lever, "opened", "software-engineering", "mid"): opened}
+            if opened
+            else {},
+            method,
+        )
+    (tmp_path / "company_directory.json").write_text(
+        json.dumps(
+            {
+                "companies": [
+                    {"name": "Acme", "boards": [lever, mirror]},
+                ]
+            }
+        )
+    )
+    history = TrendHistory.load(tmp_path, _NO_CONFIG)
+    summary = history.unnetted_answer(
+        TrendQuestion(companies=(lever,), ats=("lever",))
+    )["coverage_summary"]
+    assert summary["cohort"]["recorded_index_additions"] == 5
+    assert summary["cohort"]["activity_excluded_ticks"] == []
+    assert summary["all_known"]["boards"] == 1
+
+
+def test_scoped_workday_siblings_still_exclude_dedup_intervals(tmp_path):
+    main, second = "workday:acme/main", "workday:acme/second"
+    for day in (0, 1, 2):
+        method = trend_history.Methodology(
+            "7681eb07a2b5", 2, 5, 15, 5 if day == 0 else 6
+        )
+        trend_history.record_tick(
+            tmp_path,
+            _stamp(day),
+            {
+                (main, "stock", "software-engineering", "mid"): 10 if day == 0 else 11,
+                (second, "stock", "software-engineering", "mid"): 20,
+            },
+            {(main, "opened", "software-engineering", "mid"): 1} if day == 1 else {},
+            method,
+        )
+    summary = TrendHistory.load(tmp_path, _NO_CONFIG).unnetted_answer(TrendQuestion())[
+        "coverage_summary"
+    ]
+    assert summary["cohort"]["recorded_index_additions"] is None
+    assert summary["cohort"]["activity_excluded_ticks"] == [_stamp(1), _stamp(2)]
 
 
 # ---- the taxonomy, directory and rule copies the answers read (moved from the Space's tests)
