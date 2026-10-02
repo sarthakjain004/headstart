@@ -735,6 +735,50 @@ def test_scoped_workday_siblings_still_exclude_dedup_intervals(tmp_path):
     assert summary["cohort"]["activity_excluded_ticks"] == [_stamp(1), _stamp(2)]
 
 
+@pytest.mark.parametrize("picked", [False, True])
+def test_later_sibling_does_not_retroactively_exclude_earlier_additions(
+    tmp_path, picked
+):
+    main, later = "workday:acme/main", "workday:acme/second"
+    for day in (0, 1, 2, 3):
+        method = trend_history.Methodology(
+            "7681eb07a2b5", 2, 5, 15, 5 if day == 0 else 6
+        )
+        levels = {(main, "stock", "software-engineering", "mid"): (10, 12, 15, 15)[day]}
+        if day == 3:
+            levels[later, "stock", "software-engineering", "mid"] = 100
+        events = (
+            {(main, "opened", "software-engineering", "mid"): (2, 3)[day - 1]}
+            if day in (1, 2)
+            else {}
+        )
+        trend_history.record_tick(tmp_path, _stamp(day), levels, events, method)
+    (tmp_path / "company_directory.json").write_text(
+        json.dumps(
+            {
+                "companies": [
+                    {"name": "Acme", "boards": [main, later]},
+                ]
+            }
+        )
+    )
+    history = TrendHistory.load(tmp_path, _NO_CONFIG)
+    cohorts = []
+    for end in (2, 3):
+        summary = history.unnetted_answer(
+            TrendQuestion(
+                coverage="comparable",
+                companies=(main,) if picked else (),
+                until=_stamp(end),
+            )
+        )["coverage_summary"]
+        cohorts.append(summary["cohort"])
+        assert summary["cohort"]["recorded_index_additions"] == 5
+        assert summary["cohort"]["activity_excluded_ticks"] == []
+    assert cohorts[0]["boards"] == cohorts[1]["boards"] == 1
+    assert summary["entrants"]["first_counted_backlog"] == 100
+
+
 # ---- the taxonomy, directory and rule copies the answers read (moved from the Space's tests)
 
 _REPO_FAMILIES = Path(__file__).resolve().parents[1] / "config" / "role_families.json"

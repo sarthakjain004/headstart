@@ -12,7 +12,7 @@ companies labelled by ATS) · **Relates to:**
 figure, reading field, API field or stored data · **Extended by:**
 [ADR-0255](0255-every-tab-speaks-to-a-job-seeker.md) (every other tab, the company sentence and
 the table's headers) · **Amended by:**
-[ADR-0374](0374-trends-separates-first-counted-coverage-from-observed-activity.md)
+[ADR-0378](0378-trends-separates-first-counted-coverage-from-observed-activity.md)
 (Sites tracked at start is the UI default; first-counted coverage and observed activity are separate)
 
 ## Context

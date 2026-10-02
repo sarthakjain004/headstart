@@ -1787,16 +1787,18 @@ class TrendHistory:
             for k, ts in enumerate(stamps)
             if bisect_left(self._ticks, ts) in touched_tick
         }
-        dedup_peers = defaultdict(list)
-        if touched:
-            for board in known:
-                dedup_peers[ats_of(board), tenant(board).lower()].append(board)
-        susceptible = {
-            board
-            for peers in dedup_peers.values()
-            if netting.dedup_touched(peers)
-            for board in peers
-        }
+        susceptible = {}
+        for k in touched:
+            dedup_peers = defaultdict(list)
+            for board, seen in known.items():
+                if seen <= stamps[k]:
+                    dedup_peers[ats_of(board), tenant(board).lower()].append(board)
+            susceptible[k] = {
+                board
+                for peers in dedup_peers.values()
+                if netting.dedup_touched(peers)
+                for board in peers
+            }
         arrivals = np.full(size, len(self._ticks), dtype=np.int64)
         for board, seen in known.items():
             arrivals[self._boards.get(board)] = bisect_left(self._ticks, seen)
@@ -1809,8 +1811,15 @@ class TrendHistory:
         def activity(boards: set[str]) -> dict:
             # A zero here is zero recorded events, never evidence of a successful read.
             first_count = min((known[b] for b in boards), default=stamps[0])
-            affected = boards & susceptible if touched else set()
-            untouched_first = min((known[b] for b in boards - affected), default=None)
+            affected = {
+                k: boards & peers for k, peers in susceptible.items() if boards & peers
+            }
+            untouched_first = {
+                k: min(
+                    (known[b] for b in boards - affected.get(k, set())), default=None
+                )
+                for k in touched
+            }
             since = (
                 max(stamps[0], first_count, self._turnover_since)
                 if boards and self._turnover_since
@@ -1833,7 +1842,7 @@ class TrendHistory:
                     and k not in every
                     and (
                         k not in touched
-                        or (untouched_first is not None and ts > untouched_first)
+                        or (untouched_first[k] is not None and ts > untouched_first[k])
                     )
                     for k, ts in enumerate(stamps)
                 )
@@ -1851,7 +1860,7 @@ class TrendHistory:
                     kind, sign = _TURNOVER_KIND_OF[row["metric"]]
                     k = bisect_left(stamps, row["ts"])
                     if kind != "recounted" and (
-                        k in every or (board in affected and k in touched)
+                        k in every or board in affected.get(k, set())
                     ):
                         continue
                     counts[kind] += sign * row["delta"]
@@ -1864,7 +1873,7 @@ class TrendHistory:
             )
             excluded = [
                 stamps[k]
-                for k in sorted(every | (touched if affected else set()))
+                for k in sorted(every | affected.keys())
                 if boards and stamps[k] > max(stamps[0], first_count)
             ]
             return {

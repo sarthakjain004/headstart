@@ -1,4 +1,4 @@
-# ADR-0374: Trends separates first-counted coverage from observed activity
+# ADR-0378: Trends separates first-counted coverage from observed activity
 
 **Status:** accepted · **Date:** 2026-10-02 · **Amends:** ADR-0248's UI coverage default;
 builds on ADR-0143, ADR-0227 and ADR-0230.

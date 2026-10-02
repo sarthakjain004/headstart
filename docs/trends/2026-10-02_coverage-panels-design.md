@@ -74,6 +74,8 @@ then projected into the displayed window, so a change on the first displayed tic
 excludes its following settling update. Dedup susceptibility uses scoped sites grouped
 by ATS and canonical Tenant; a Lever-only scope is unaffected by another site's Eightfold
 susceptibility, while two scoped Workday sibling sites retain the exclusion.
+Peer membership is evaluated at each affected tick using first-count history, so discovering
+a sibling later cannot retroactively suppress an earlier site's recorded additions.
 Its population includes entrants, and the headline's existing window-relative/company-wide
 heuristic can differ or withhold other partial reads. Both surfaces label additions as
 **recorded index additions**, so differing omission policies are explicit; neither proves newly posted
