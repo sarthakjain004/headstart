@@ -416,10 +416,15 @@ def note_routed(group: str) -> None:
         _traffic[group]["routed"] += 1
 
 
-def note_settled(group: str, status: int | None, walls: frozenset[int]) -> None:
+def note_settled(
+    group: str, status: int | None, walls: frozenset[int], *, preferred: bool = False
+) -> None:
     """Count one *request* the spare egress carried to a final outcome, bucketed by what that
     outcome says about the egress itself. ``status`` is None for a request that never settled on
     one — a transport failure through the proxy.
+
+    ``preferred`` requests chose the proxy proactively, so they are kept separately and never
+    inflate the count of requests rescued from a direct-route wall.
 
     Three buckets, because a single "recovered" counter conflated failures calling for opposite
     responses. It counted per *attempt*, so a request that walled twice before succeeding scored
@@ -440,6 +445,10 @@ def note_settled(group: str, status: int | None, walls: frozenset[int]) -> None:
     """
     with _traffic_lock:
         counts = _traffic[group]
+        if preferred:
+            counts["preferred_requests"] += 1
+            counts["preferred_200" if status == 200 else "preferred_non_200"] += 1
+            return  # proactive traffic did not need rescuing from a direct-address wall
         counts["requests"] += 1
         if status == 200:
             counts["rescued"] += 1
@@ -541,6 +550,13 @@ def report() -> list[str]:
             f"{group}: walled; spare egress rescued {rescued:,}/{asked:,} walled "
             f"request(s) ({rate}); {routed:,} attempt(s) carried{tail}"
         )
+    for group, seen in sorted(counts.items()):
+        if seen["preferred_requests"]:
+            lines.append(
+                f"{group}: preferred spare egress returned HTTP 200 for "
+                f"{seen['preferred_200']:,}/{seen['preferred_requests']:,} request(s); "
+                "excluded from the wall-rescue rate"
+            )
     return lines
 
 
@@ -557,27 +573,34 @@ def _rides_the_tunnel(group: str | None) -> bool:
         return group in _walled
 
 
-def proxy_for(group: str | None) -> str | None:
+def proxy_for(group: str | None, *, prefer_spare: bool = False) -> str | None:
     """The proxy ``group`` should be routed through now, or None to stay on the direct route.
 
     None until the group is walled — so the fast path costs one set lookup — and None *after* it is
     walled if no spare egress can be brought up, in which case the caller degrades to the direct
     route it would have used before this existed.
 
+    ``prefer_spare`` also requests the proxy before a wall. It waits on the same rotation gate,
+    returns None if that gate overruns, and does not mark the group walled merely by choosing it.
+
     **Blocking, and only safe off the event loop.** Both waits below can take
     :data:`_CONNECT_TIMEOUT` seconds. A coroutine must call :func:`proxy_for_async` instead — see
     that function for what calling this one on a loop cost.
     """
-    if not _rides_the_tunnel(group):
+    if not prefer_spare and not _rides_the_tunnel(group):
         return None
     # Wait out an in-flight rotation rather than handing back a port the restart has taken away.
     # Bounded: if a rotation overruns, going direct beats blocking the whole shard behind it.
     if not _gate.wait(timeout=_CONNECT_TIMEOUT):
         _note_gate_timeout()
+        if prefer_spare:
+            return None
     return proxy_url()
 
 
-async def proxy_for_async(group: str | None) -> str | None:
+async def proxy_for_async(
+    group: str | None, *, prefer_spare: bool = False
+) -> str | None:
     """:func:`proxy_for` for a coroutine: same answer, without stalling the event loop.
 
     **This exists because calling the sync one from a coroutine deadlocked the drain.** Both of
@@ -603,13 +626,15 @@ async def proxy_for_async(group: str | None) -> str | None:
     dial — is only ever contended on the first one, so the executor is never held for the long wait
     the way it would be if the gate wait went there too.
     """
-    if not _rides_the_tunnel(group):
+    if not prefer_spare and not _rides_the_tunnel(group):
         return None
     deadline = time.monotonic() + _CONNECT_TIMEOUT
     while not _gate.is_set() and time.monotonic() < deadline:
         await asyncio.sleep(_GATE_POLL)
     if not _gate.is_set():
         _note_gate_timeout()
+        if prefer_spare:
+            return None
     return await asyncio.to_thread(proxy_url)
 
 

@@ -340,6 +340,7 @@ supersedes it and note the supersession in both.
 | [0373](0373-gr8people-follows-the-public-search-and-keys-a-board-on-its-career-host.md) | gr8people follows the public search and keys a Board on its career host | 2026-10-02 |
 | [0374](0374-a-harvest-closes-browser-transport-before-interpreter-exit.md) | Harvest closes browser transport before executor shutdown; abandoned workers retain their original lifetime | 2026-10-02 |
 | [0374](0374-search-is-public-and-sign-in-protects-account-actions.md) | Search is public and sign-in protects Account actions (amends 0042, 0112) | 2026-10-02 |
+| [0375](0375-avature-dual-egress-is-opt-in-and-paced-by-the-actual-route.md) | Opt-in Avature dual egress shares actual-route caps across retries and fallback | 2026-10-02 |
 | [0378](0378-trends-separates-first-counted-coverage-from-observed-activity.md) | Separate fixed first-counted coverage, entrant backlog/activity and all-known inventory; read quality remains unknown | 2026-10-02 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
