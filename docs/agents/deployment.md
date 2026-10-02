@@ -20,6 +20,9 @@ data/facts/job_facts/{stamp}.parquet  # what each scrape saw of every Job, tech 
 data/facts/board_reads/{stamp}.parquet # every Board each run read, and its outcome (ADR-0330)
 data/facts/job_vectors/{tick}.parquet # closed Jobs' description vectors, float16 (ADR-0330)
 data/facts/listed_jobs.parquet        # the Listed set the next run's facts are diffed against
+data/facts/trend_reference/{tick}.parquet # served baseline, then edits and removals
+data/facts/reference_rules/{hash}.zip # immutable code/config/Board inputs
+data/state/reference_state.parquet   # checkpoint parent/digests; commits with live ticks
 data/state/board_priority.csv         # sticky per-board tech-priority EWMA (ADR-0022)
 data/state/published_dirs.json        # which roots were last published (ADR-0095)
 ```

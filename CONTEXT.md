@@ -364,6 +364,12 @@ _Avoid_: **Scraped Board** — that is a Board read at least once, ever; a Board
 **Job vector archive** (ADR-0330):
 The description vectors of Jobs the embedding store dropped (`embed_prune`), kept at half precision in `data/facts/job_vectors/`, one file per **Tick**, each naming the embedder that made them. What lets a later classifier head re-sort a closed Job without re-embedding it; the text itself stays in the **Description store**.
 
+**Reference baseline** (ADR-0330):
+The complete observed starting state of the served index, including Jobs that later scrapes cannot reach and duplicate copies already kept. It anchors an exact replay comparison; observations before it have incomplete starting coverage.
+
+**Reference checkpoint** (ADR-0330):
+The observed changes to served inputs and placements at one Tick, linked to the previous checkpoint. It preserves edits and provides an independent result against which a Restatement can be checked.
+
 **Listed set** (ADR-0330):
 Every currently listed Job id with its **Board** and a hash of its raw fields, in `data/facts/listed_jobs.parquet`. State, not history: `scrape_join` diffs each run against it to write the run's **Job facts** and rewrites it, all or nothing, and `merge` uploads both in one commit.
 _Avoid_: reading it as the tech stock — it holds every listed Job, tech or not.
