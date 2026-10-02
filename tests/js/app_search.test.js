@@ -1001,3 +1001,13 @@ test('optional sign-in preserves the current semantic search and filters in this
   assert.strictEqual(t.queryMode(), 'meaning');
   assert.strictEqual(stored.size, 0);
 });
+
+
+test('anonymous pages do not request protected company preferences', async () => {
+  const publicNodes = {};
+  const { fetches } = loadApp(() => [], SCOPES, {
+    getElementById: id => id === 'my-companies' ? null : (publicNodes[id] ||= fakeEl()),
+  });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.ok(!fetches.includes('/companies'));
+});

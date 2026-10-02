@@ -1090,6 +1090,7 @@ const capOverflow = new Map();   // listId -> Map(board -> [card html])
 // is the controls simply not rendering, but any other failure leaves the server excluding
 // hidden companies while the page shows no "N hidden" to undo it with.
 async function loadCompanies(){
+  if (!CAN_COMPANIES) return true;
   try{
     const r = await fetch('/companies');
     if (r.ok){ myCompanies = await r.json(); return true; }

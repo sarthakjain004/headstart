@@ -69,7 +69,7 @@ when observed; source changes alone do not establish that stale rows have draine
 
 Before rebasing onto the new gr8people addition, the full Python suite passed: 9,825 passed,
 2 skipped, 2 expected failures. After rebasing and adding search-state preservation, 341
-relevant Python tests and all 557 JavaScript tests passed. Ruff lint/format and diff checks
+relevant Python tests and all 558 JavaScript tests passed. Ruff lint/format and diff checks
 passed. Independent Standards and Spec reviews found no blocking issue; the orphaned count
 calculation identified by Standards was removed. These are source checks, not a production
 sign-in or Account-write test.
