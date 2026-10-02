@@ -97,7 +97,8 @@ def main():
             required += [
                 name
                 for name in z.namelist()
-                if name.startswith("src/headstart/boards/") and name.endswith(".py")
+                if name.startswith(("src/headstart/boards/", "src/headstart/scrapers/"))
+                and name.endswith(".py")
             ]
             for name in required:
                 if z.read(name) != Path(name).read_bytes():

@@ -35,7 +35,7 @@ jobs:
                   'data/facts/trend_reference/*', 'data/facts/reference_rules/*',
                   'data/state/reference_state.parquet', 'data/state/role_trend_board_deltas/*'])
           PY
-      - name: Validate every id and count group
+      - name: Validate observed tech stock placements and count groups
         run: python -u scripts/eval/validate_trend_reference.py
       - name: Keep validation evidence
         if: always()
