@@ -188,7 +188,7 @@ belong in README and CONTEXT.md, where `tests/test_board_counts.py` checks them.
 - **gr8people: re-run `scripts/validate/gr8people_shared_clients.py --apply` after
   refreshing its ledger.** Public hosts can share one `(orgId, clientId)` without
   redirecting. The script confirms equal posting sets before writing `shared-reqs`
-  aliases; the generic redirect scan refuses to overwrite them (ADR-0372).
+  aliases; the generic redirect scan refuses to overwrite them (ADR-0373).
 
 ### To build, by evidence
 

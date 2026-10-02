@@ -84,7 +84,7 @@ _log = log.get(__name__, __spec__)
 #:     (ADR-0210's amendment).
 #: 9 — Radancy ``subset-reqs`` aliases, the signal's first ledger for Radancy: 5 fronts (ADR-0265).
 #: 11 — Taleo Enterprise ``subset-reqs`` from a twin host onto its linked host: 14 sections (ADR-0307).
-#: 12 — gr8people's first ``shared-reqs`` alias ledger: two public client twins (ADR-0372).
+#: 12 — gr8people's first ``shared-reqs`` alias ledger: two public client twins (ADR-0373).
 DEDUP_VERSION = 12
 
 

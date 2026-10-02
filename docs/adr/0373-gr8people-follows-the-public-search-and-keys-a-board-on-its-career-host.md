@@ -1,4 +1,4 @@
-# ADR-0372: gr8people follows the public search and keys a Board on its career host
+# ADR-0373: gr8people follows the public search and keys a Board on its career host
 
 **Status:** proposed (Carrier landing pending) · **Date:** 2026-10-02 · **Relates to:** #970, ADR-0001, ADR-0111, ADR-0158, ADR-0188, [measurement](../gr8people/2026-10-02_graphql-measurement.md)
 
