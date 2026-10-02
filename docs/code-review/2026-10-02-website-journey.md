@@ -31,16 +31,18 @@ browser-reproduced rather than inferred from endpoint behavior.
   its attempted name; reopening restored the stored name with no Retry. This missed the
   research contract requiring retained answers and retry after transport failures.
 
+A follow-up P2 finding caught Retry still targeting the prior search after selection changed. Retry now derives from the active search and drafts are pruned when their search is deleted.
+
 No unasked scope creep or other material spec regression was found. Browser spot checks
 covered all panels at 320/390/768/1024/1440px. Marketing claims distinguish source findings,
 HeadStart hypotheses and fixture verification. The compact tour's unavailable/hidden
 Trends target was noted as an observation, not a blocking finding.
 
-Total findings: Standards 2 (worst: native printing); Spec 2 (worst: offscreen import result).
+Total findings: Standards 2 (worst: native printing); Spec 3 (worst: retry targeting an unselected search).
 
 ## Resolution and verification
 
-All four findings were fixed. The percentage is constrained to the ring's 52px box. Print
+All five findings were fixed. The percentage is constrained to the ring's 52px box. Print
 hides both product additions and the compact template rule is screen-only. Import feedback
 lives beside Read, and success reveals/focuses the editable profile heading. Refused rename
 names are retained, reopening uses the draft, and Retry resends it without retyping.

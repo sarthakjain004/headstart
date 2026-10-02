@@ -1129,7 +1129,6 @@ function draw(rows, target){
    listener + data attributes — never inline handlers with interpolated names. ---- */
 let mySets = null, activeSetId = null;
 const renameDrafts = new Map();
-let retryRenameId = null;
 let matchesRequest = 0;
 
 async function loadSets(){
@@ -1150,6 +1149,8 @@ async function loadSets(){
 
 function renderSets(){
   const strip = el('sets-strip');
+  for (const id of renameDrafts.keys()) if (!mySets.some(set => set.id === id)) renameDrafts.delete(id);
+  drawRenameRetry();
   if (!mySets.length){
     strip.innerHTML = '';
     if (el('matches-actions')) el('matches-actions').innerHTML = '';
@@ -1240,7 +1241,7 @@ async function handleSetAction(act, id){
   if (act === 'run') return runSet(id);
   if (act === 'refine'){ applySetToControls(s); navigation.navigate('#search', { focus: 'results' }); go(); return; }
   if (act === 'rename'){
-    const choice = await HeadStartDecision.request({ title: 'Rename saved search', label: 'Search name', value: renameDrafts.get(id) ?? s.name, confirm: 'Rename' });
+    const choice = await HeadStartDecision.request({ title: 'Rename saved search', label: 'Search name', value: renameDrafts.get(id)?.name ?? s.name, confirm: 'Rename' });
     const name = choice.confirmed ? choice.value : '';
     if (!name || name === s.name) return;
     await renameSet(id, name);
@@ -1268,19 +1269,24 @@ async function handleSetAction(act, id){
 async function renameSet(id, name){
   const s = (mySets || []).find(set => set.id === id);
   if (!s) return;
-  renameDrafts.set(id, name);
   const button = el('rename-retry');
   if (button) button.disabled = true;
   const response = await postAndReloadSets('/sets', { id, name, query: s.query, filters: s.search_filters });
   await setRefusal(response);
   const failed = !response || !response.ok;
-  if (failed) retryRenameId = id;
-  else { retryRenameId = null; renameDrafts.delete(id); }
-  if (el('set-action-error')) el('set-action-error').textContent = failed ? el('matches-msg').textContent : '';
-  if (button) { button.hidden = !failed; button.disabled = false; }
+  if (failed) renameDrafts.set(id, { name, error: el('matches-msg').textContent });
+  else renameDrafts.delete(id);
+  drawRenameRetry();
+  if (button) button.disabled = false;
+}
+function drawRenameRetry(){
+  const draft = renameDrafts.get(activeSetId);
+  if (el('set-action-error')) el('set-action-error').textContent = draft?.error || '';
+  if (el('rename-retry')) el('rename-retry').hidden = !draft;
 }
 if (el('rename-retry')) el('rename-retry').addEventListener('click', () => {
-  if (retryRenameId) renameSet(retryRenameId, renameDrafts.get(retryRenameId));
+  const draft = renameDrafts.get(activeSetId);
+  if (draft) renameSet(activeSetId, draft.name);
 });
 
 // A set action the server refused says why in #matches-msg; a dropped one says so too.

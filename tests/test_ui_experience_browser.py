@@ -38,7 +38,14 @@ def experience():
             "query": "backend",
             "search_filters": {},
             "emails": False,
-        }
+        },
+        {
+            "id": "frontend",
+            "name": "Frontend roles",
+            "query": "frontend",
+            "search_filters": {},
+            "emails": False,
+        },
     ]
     jobs = [
         {
@@ -405,6 +412,10 @@ def test_import_feedback_and_failed_rename_retain_the_user_context(experience, w
     page.locator("#decision-value").fill("Retained draft name")
     page.locator("#decision-confirm").click()
     pw.expect(page.locator("#rename-retry")).to_be_visible()
+    page.locator('#sets-strip [data-id="frontend"] button').click()
+    pw.expect(page.locator("#rename-retry")).to_be_hidden()
+    page.locator('#sets-strip [data-id="backend"] button').click()
+    pw.expect(page.locator("#rename-retry")).to_be_visible()
     page.locator('#matches-actions [data-act="rename"]').click()
     pw.expect(page.locator("#decision-value")).to_have_value("Retained draft name")
     page.keyboard.press("Escape")
@@ -412,6 +423,21 @@ def test_import_feedback_and_failed_rename_retain_the_user_context(experience, w
     page.locator("#rename-retry").click()
     pw.expect(page.locator("#sets-strip")).to_contain_text("Retained draft name")
     assert writes[-1][1]["name"] == "Retained draft name"
+    page.route(
+        "**/sets",
+        lambda route: (
+            route.fulfill(status=503, json={"error": "Fixture rename unavailable"})
+            if route.request.method == "POST"
+            else route.continue_()
+        ),
+    )
+    page.locator('#matches-actions [data-act="rename"]').click()
+    page.locator("#decision-value").fill("Draft before deletion")
+    page.locator("#decision-confirm").click()
+    pw.expect(page.locator("#rename-retry")).to_be_visible()
+    page.locator('#matches-actions [data-act="del"]').click()
+    page.locator("#decision-confirm").click()
+    pw.expect(page.locator("#rename-retry")).to_be_hidden()
     page.close()
 
 
