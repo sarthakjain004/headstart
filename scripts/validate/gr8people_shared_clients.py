@@ -55,9 +55,9 @@ def main() -> None:
         for host in hosts:
             scraper = Gr8PeopleScraper(host)
             jobs = scraper.fetch()
-            if scraper.truncated:
+            if scraper.truncated or len(jobs) != scraper.listing_total:
                 raise SystemExit(
-                    f"{host}: {scraper.truncated}; refusing a partial alias scan"
+                    f"{host}: {len(jobs)}/{scraper.listing_total}, {scraper.truncated}; refusing a partial alias scan"
                 )
             id_sets[host] = {job.id.rsplit(":", 1)[1] for job in jobs}
         for host in hosts:
@@ -74,6 +74,11 @@ def main() -> None:
                 )
                 print(
                     f"bury {host} -> {canonical}: {len(id_sets[host])} identical postings",
+                    flush=True,
+                )
+            elif host != canonical:
+                print(
+                    f"diverged {host} / {canonical}: {len(id_sets[host] - id_sets[canonical])} / {len(id_sets[canonical] - id_sets[host])} ids unique to each; removing any previous alias",
                     flush=True,
                 )
     print(f"{len(aliases)} aliases", flush=True)

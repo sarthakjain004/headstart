@@ -14,6 +14,7 @@ from headstart.scrapers.gr8people import (
     search_body,
     uses_google_search,
 )
+from headstart.search_filters import employment_type_filter
 
 
 def test_the_browser_feature_flags_choose_its_public_search_surface():
@@ -157,6 +158,24 @@ def test_a_false_end_flag_still_checks_the_stated_total():
     scraper = scraper_with_pages([envelope(postings()[:1], total=168)])
     assert len(scraper.fetch()) == 1
     assert scraper.truncated
+
+
+def test_alias_validation_can_observe_a_shortfall_ingestion_tolerates():
+    rows = [{**postings()[0], "key": str(1000 + i)} for i in range(100)]
+    scraper = scraper_with_pages([envelope(rows, total=101)])
+    assert len(scraper.fetch()) == 100
+    assert scraper.truncated is None
+    assert scraper.listing_total == 101
+
+
+@pytest.mark.parametrize(
+    "label", ["Temp Full Time", "In-House Temp - Full Time - Non-Exempt"]
+)
+def test_measured_temporary_labels_are_both_contract_and_full_time(label):
+    row = {**postings()[0], "positionType": {"name": label}}
+    job = Gr8PeopleScraper("careers.teradata.com").parse([row], "now")[0]
+    assert employment_type_filter.flags(job.employment_type)["is_contract"] is True
+    assert employment_type_filter.flags(job.employment_type)["is_full_time"] is True
 
 
 def test_public_board_404_raises_even_when_the_api_could_list_jobs():

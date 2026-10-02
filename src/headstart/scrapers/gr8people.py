@@ -110,6 +110,7 @@ def search_results(body: dict) -> dict:
 class Gr8PeopleScraper(BaseScraper):
     ats = "gr8people"
     url_shape = r"https://[\w.-]+/jobs/\d+(?:/[^/?#]+)?"
+    listing_total: int | None = None
 
     @staticmethod
     def slug_from(tenant: str, url: str) -> str:
@@ -204,6 +205,7 @@ class Gr8PeopleScraper(BaseScraper):
                 expected,
                 f"listing returned {len(rows)}/{expected} unique postings",
             )
+        self.listing_total = expected
         return list(rows.values())
 
     def parse(self, raw: list[dict], scraped_at: str) -> list[Job]:
@@ -218,6 +220,11 @@ class Gr8PeopleScraper(BaseScraper):
             ):
                 continue
             seen.add(native_id)
+            employment_type = (row.get("positionType") or {}).get("name")
+            if employment_type:
+                employment_type = re.sub(
+                    r"\bTemp\b", "Temporary", employment_type, flags=re.IGNORECASE
+                )
             places = [
                 p["name"]
                 for p in (row.get("places") or {}).get("nodes", [])
@@ -250,7 +257,7 @@ class Gr8PeopleScraper(BaseScraper):
                     posted_at=row.get("postedOn"),
                     scraped_at=scraped_at,
                     description=html_to_text(row.get("descriptionHTML")) or None,
-                    employment_type=(row.get("positionType") or {}).get("name"),
+                    employment_type=employment_type,
                     salary=self._salary_field(row),
                 )
             )

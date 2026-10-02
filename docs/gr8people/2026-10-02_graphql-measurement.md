@@ -70,7 +70,10 @@ The browser directly showed 168 results and opened job 220261 correctly.
 
 Full `descriptionHTML`, locations, category, dates and pay fields are available
 in the listing; no per-job detail pass or pre-detail gate is needed. Browser job
-pages and listing descriptions were compared on Teradata, Batesville and E-TRADE.
+pages and listing descriptions were compared on three postings: Teradata 220261
+was 2,932 plain-text characters on both surfaces; Batesville 1140 was 4,494 on
+both; E-TRADE 4709 was 1,034 on both. Each pair was exactly equal after stripping
+HTML. This is a three-posting check, not a claim of universal equality.
 The id-only URL `/jobs/{key}` redirects to the title-slug URL on the first two,
 and renders directly on E-TRADE. The scraper serves the id-only public job page,
 never the application/login URL. Ardene's unavailable job page is excluded.
@@ -95,6 +98,12 @@ All locations are retained: Teradata job 220447 names Bengaluru and Hyderabad;
 220076 names San Diego and Seattle. E-TRADE's 12 records have no native places,
 but JSON-LD names their cities (e.g. Chicago, Illinois, United States). Native
 workplaceType distinguishes hybrid from remote even when location text is vague.
+Across 6,665 postings with an explicit REMOTE/ON_SITE value and nonempty native
+location, native and location-keyword verdicts differ on **113 (1.70%)**. All 113
+are native REMOTE with a location lacking the word remote (e.g. Financial
+Operations Manager at West Star, located United States). There are **zero**
+native ON_SITE records whose location says remote. The native explicit label
+supplies information the location fallback misses; HYBRID stays unknown.
 Teradata's repeated responses carried unchanged postedOn values; the scraper
 keeps missing dates missing rather than reading an uncalibrated fallback.
 
@@ -105,7 +114,12 @@ currency and period for the shared parser. `ON_TARGET_EARNINGS` states no period
 so those values are left to description extraction rather than assumed annual.
 No native required-years field was seen in the public fragment; experience remains
 available through the existing description/title cascade. Unknown positionType
-wording is preserved, not translated into invented employment types.
+wording is preserved, except the measured standalone abbreviation Temp is expanded
+to Temporary. Six postings across AgileOne Global, AppleOne and Aspiranet carried
+`Temp Full Time` or `In-House Temp - Full Time - Non-Exempt`; the shared flags read
+both full-time and contract after expansion. A seventh `Full Time Temporary`
+posting already reaches both flags. All 21 observed nonempty position labels
+were passed through employment_type.flags; unfamiliar labels are not guessed.
 
 The 55-Board set yields **1,307 tech-filter matches from 11,865 postings** (11.0%);
 11,606 pass the ingestion English gate (97.8%). These are classifier outcomes,
@@ -168,7 +182,8 @@ backing-Board exclusion is inferred from this one measured case.
 
 ## Verification and reproducibility
 
-The fixture contains three trimmed, real Teradata postings; tokens and visitor
+The fixtures contain five trimmed, real postings (three Teradata, one E-TRADE,
+one Rookie Kids); tokens and visitor
 data are omitted. Regression tests cover fields, cursor paging, false terminators,
 HTTP/GraphQL failure, deleted nodes, aliases, empty Boards and canonical identity.
 The requested `verify_scraper.py gr8people 20` sample included 5 readable Boards
@@ -186,6 +201,7 @@ No pipeline, deployment or bench workflow was manually dispatched.
 Local notebook: `experiment/gr8people-graphql/LOG.md`, with capture/probe scripts
 `recon.py`, `api_probe.py`, `variants.py`, `census.py`, `cc_sweep.py`,
 `measure_pool.py`, `pagination_probe.py`, `backing_probe.py` and
-`rate_and_spotchecks.py`; captures are in its artifacts/ directory and uncommitted.
+`rate_and_spotchecks.py` and `paired_measurement.py`; captures are in its artifacts/
+directory and uncommitted.
 The committed miner, liveness probe and shared-client validator reproduce the
 discovery/landing procedure without those local captures.

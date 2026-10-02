@@ -919,7 +919,7 @@ CNAME_LABEL_ATS = frozenset(
 
 # Bump when a probe gains a materially new signal.  Resume skips only a row from this exact
 # channel set, and never suppresses an unreachable result.
-CHANNELS = "apply-url+cname-chain+http+robots+sitemap+jsbundle+slugprobe:v5"
+CHANNELS = "apply-url+cname-chain+http+robots+sitemap+jsbundle+slugprobe:v6"
 if _DNS is None:
     CHANNELS += ":no-dns"
 CHANNELS += ":psl-v1"
