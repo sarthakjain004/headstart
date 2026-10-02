@@ -2060,9 +2060,14 @@ let coverageBaseline = null;
 function renderCoverageSummary(d){
   const host = el('trends-coverage-summary');
   const status = el('trends-cohort-status');
+  const brief = el('trends-coverage-brief');
   const s = d.coverage_summary;
   if (!host) return;
   host.hidden = !s;
+  if (brief){
+    brief.hidden = !s;
+    brief.textContent = s ? `${s.cohort.boards.toLocaleString()} ${s.cohort.boards === 1 ? 'site' : 'sites'} tracked at start · Freshness unknown` : '';
+  }
   if (!s){
     host.innerHTML = '';
     if (status) status.textContent = '';
@@ -2681,6 +2686,7 @@ async function loadTrends(family){
 function clearTrendsView(){
   trendData = null; trendRaw = null;
   if (el('trends-cohort-status')) el('trends-cohort-status').textContent = '';
+  if (el('trends-coverage-brief')) el('trends-coverage-brief').hidden = true;
   ['trends-chart', 'trends-legend', 'trends-verdict', 'trends-kpi', 'trends-coverage-summary', 'trends-table', 'trends-full-table',
     'trends-changes'].forEach(id => { if (el(id)) el(id).innerHTML = ''; });
   if (el('trends-changes')) el('trends-changes').hidden = true;

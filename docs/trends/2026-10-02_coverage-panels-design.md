@@ -26,6 +26,8 @@ Company shares and reference captions qualify comparable/source-filtered scopes 
 Company's tracked sites. The three compact cards keep dates, site counts, stock and activity
 visible; freshness unknown and the backlog/read-gap caveat stay inline. Native
 **What these numbers mean** disclosure holds the longer quality, policy and exposure limits.
+On mobile the full summary follows the chart, KPI and controls. A compact starting-site
+count/freshness line stays above the chart; desktop retains the three-column summary.
 
 ## Additive response contract
 
@@ -107,6 +109,9 @@ equalled viewport width at each size, no page errors, three labelled cards visib
 unknown freshness readable without color, disclosure initially closed and keyboard Enter
 opens it, and radio ArrowLeft moves selection/focus with correct ARIA and roving tabindex.
 Trends radio controls measured 44px high, including after screenshot/repaint.
+The final mobile order was checked from rendered bounding boxes: full summary below
+controls, compact cohort/freshness line above the plot. Keyboard focus has an inset ring
+using the existing accent token, and radio focus/selection survive keyboard navigation.
 Closed/open summaries, full Trends panels and focused radio screenshots are retained
 locally under `experiment/trends-coverage-panels-2026-10-02/artifacts/`; they are not
 committed. This report stands alone; screenshots are synthetic examples, not corpus evidence.

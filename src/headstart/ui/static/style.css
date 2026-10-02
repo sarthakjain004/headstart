@@ -623,6 +623,9 @@ p.note{ max-width:74ch; }   /* running text (Profile, Résumé): a measure, now 
 .coverage-grid h4{ margin:0 0 5px; color:var(--ink); font-size:14px; }
 .trends-coverage-summary summary{ cursor:pointer; min-height:44px; align-content:center; }
 .trends-controls .seg button{ min-height:44px; min-width:44px; }
+.trends-controls .seg button:focus-visible{ outline:2px solid var(--accent); outline-offset:-2px; }
+.trends-coverage-brief{ display:none; font-size:12.5px; color:var(--ink-2); margin:4px 0 10px; }
+.trends-coverage-brief[hidden]{ display:none !important; }
 .trends-coverage-summary.loading{ opacity:.55; }
 .trends-verdict .verdict-early{ margin:6px 0 0; font-size:12.5px; color:var(--ink-3); }
 .note-more[hidden]{ display:none !important; }
@@ -919,7 +922,8 @@ p.note{ max-width:74ch; }   /* running text (Profile, Résumé): a measure, now 
   .trends-companies{ order:0; }   /* after the head in source order: the subject, above the chart */
   .trends-note, .trends-error{ order:1; }
   .trends-verdict{ order:2; }
-  .trends-coverage-summary, #trends-cohort-status{ order:3; }
+  .trends-coverage-brief{ display:block; order:2; }
+  .trends-coverage-summary{ order:8; }
   .trends-skel, .trends-chart-wrap{ order:3; }
   /* The legend straight under the plot: it is the plot's key, and a phone draws no end
      labels, so with the filters between them the lines had no names within a screen. The

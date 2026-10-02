@@ -218,6 +218,7 @@ test('coverage separates first-counted backlog from later observations and keeps
   assert.match(host.innerHTML, /Tracked sites may have missing measurements/);
   assert.match(host.innerHTML, /Departed sites remain/);
   assert.match(host.innerHTML, /Freshness unknown/);
+  assert.match(nodes['trends-coverage-brief'].textContent, /2 sites tracked at start · Freshness unknown/);
   assert.match(host.innerHTML, /<details><summary>What these numbers mean<\/summary>/);
   assert.match(host.innerHTML, /Net counting adjustments: -2/);
   assert.match(host.innerHTML, /earliest start in that group/);
