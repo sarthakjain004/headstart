@@ -168,3 +168,31 @@ def test_an_archive_that_cannot_be_written_leaves_the_store_whole(
         _run(tmp_path, "--apply")
 
     assert set(_read_store(tmp_path / "store")) == {"a:1", "a:2", "b:1", "b:2", "c:1"}
+
+
+def test_prune_recovers_interrupted_rewrite_before_reading_and_archiving(
+    tmp_path, monkeypatch
+):
+    """A later prune archives the survivor's own vector rather than the old file's prefix."""
+    from headstart.ingest import embed_merge
+
+    _setup(tmp_path, served=["a:1"], corpus=[])
+    store = tmp_path / "store"
+    real_replace = Path.replace
+
+    def killed(self, target):
+        result = real_replace(self, target)
+        if Path(target).name == "meta.jsonl":
+            raise KeyboardInterrupt("killed after metadata replacement")
+        return result
+
+    monkeypatch.setattr(Path, "replace", killed)
+    with pytest.raises(KeyboardInterrupt):
+        embed_merge.evict_ids(
+            store / "meta.jsonl", store / "embeddings.f32", _DIM, {"a:2", "b:1", "b:2"}
+        )
+    monkeypatch.setattr(Path, "replace", real_replace)
+    assert _run(tmp_path, "--apply") == 0
+    assert _archived(tmp_path) == {"c:1": 4.0}
+    assert _read_store(store) == {"a:1": 0.0}
+    assert json.loads((store / "manifest.json").read_text())["count"] == 1

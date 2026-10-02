@@ -22,6 +22,10 @@ renders nothing, and Turnstile never runs), and a hard per-board navigation dead
 are never retried — a retried 403 is not a pass; the one retry is for pydoll's own occasional
 evaluate-shape hiccup, a client-side fault.
 
+Harvest closes Chrome and its event loop explicitly before Python shuts down its executors.
+Callers outside harvest retain a synchronous process/profile reap at exit; no async CDP/DNS work
+runs from that late callback.
+
 Requires a display: production wraps the scrape in ``xvfb-run`` (pipeline.yml); locally a real
 window opens. Chrome starts only when the first caller actually reaches ``origin()``, so shards
 whose boards never hit a wall never pay for it.
@@ -161,6 +165,10 @@ _loop: asyncio.AbstractEventLoop | None = None
 _browser = None
 _gate: asyncio.Semaphore | None = None
 _atexit_registered = False
+_loop_thread: threading.Thread | None = None
+_generation = 0
+_worker_state = threading.local()
+_calls: set[asyncio.Task] = set()
 
 
 def _run(coro, timeout: float):
@@ -172,7 +180,26 @@ def _run(coro, timeout: float):
     deadlocks. Cancelling delivers ``CancelledError`` into the coroutine, whose own
     ``except BaseException`` hands the slot back.
     """
-    future = asyncio.run_coroutine_threadsafe(coro, _loop)
+    loop = _loop
+    if loop is None or loop.is_closed():
+        coro.close()
+        raise RuntimeError("browser transport is shut down")
+
+    async def invoke():
+        task = asyncio.current_task()
+        _calls.add(task)
+        try:
+            return await coro
+        finally:
+            _calls.discard(task)
+
+    invocation = invoke()
+    try:
+        future = asyncio.run_coroutine_threadsafe(invocation, loop)
+    except RuntimeError:
+        invocation.close()
+        coro.close()
+        raise
     try:
         return future.result(timeout)
     except BaseException:
@@ -182,15 +209,18 @@ def _run(coro, timeout: float):
 
 def _ensure_started() -> None:
     """The process's one Chrome, started on first use, with a launch retry."""
-    global _loop, _browser, _atexit_registered
+    global _loop, _loop_thread, _browser, _atexit_registered
     with _lock:
+        if getattr(_worker_state, "generation", _generation) != _generation:
+            raise RuntimeError("browser transport stopped with this harvest")
         if _browser is not None:
             return
         if _loop is None:
             _loop = asyncio.new_event_loop()
-            threading.Thread(
+            _loop_thread = threading.Thread(
                 target=_loop.run_forever, name="browser-http", daemon=True
-            ).start()
+            )
+            _loop_thread.start()
 
         async def _start():
             global _gate
@@ -223,7 +253,7 @@ def _ensure_started() -> None:
             try:
                 _browser = _run(_start(), timeout=60)
                 if not _atexit_registered:
-                    atexit.register(shutdown)
+                    atexit.register(_reap_at_exit)
                     _atexit_registered = True
                 _log.info(
                     f"browser transport: Chrome up in {time.monotonic() - started:.1f}s "
@@ -244,16 +274,90 @@ def _ensure_started() -> None:
         ) from last
 
 
-def shutdown() -> None:
-    """Close the browser. Registered atexit; safe to call twice."""
+def _reap(browser) -> None:
+    """Reap in order even if CDP teardown failed; never delete a live Chrome's profile."""
+    try:
+        browser._browser_process_manager.stop_process()
+        browser._temp_directory_manager.cleanup()
+    except Exception:  # noqa: BLE001 - cleanup must preserve the harvest outcome
+        _trace_teardown_failure("browser transport: reaping Chrome raised")
+
+
+def _reap_at_exit() -> None:
+    """Last-resort OS cleanup for callers outside harvest, with no async networking.
+
+    Python shuts its thread executors down *before* ordinary atexit callbacks. pydoll's
+    __aexit__ may reconnect to CDP, which needs executor-backed DNS and fails at that point.
+    """
     global _browser
+    browser, _browser = _browser, None
+    if browser is not None:
+        _reap(browser)
+
+
+def worker_scope():
+    """Bind a harvest batch before its workers are dispatched, including before a first wall.
+
+    A worker abandoned by a cancelled harvest may enter its scope only after teardown. Capture
+    the generation at decorator construction so that worker cannot adopt a later lifetime.
+    """
     with _lock:
-        browser, _browser = _browser, None
-    if browser is not None and _loop is not None:
+        generation = _generation
+
+    @contextmanager
+    def scope():
+        previous = getattr(_worker_state, "generation", None)
+        _worker_state.generation = generation
         try:
-            _run(browser.__aexit__(None, None, None), timeout=15)
+            yield
+        finally:
+            if previous is None:
+                del _worker_state.generation
+            else:
+                _worker_state.generation = previous
+
+    return scope()
+
+
+def shutdown() -> None:
+    """Release Chrome and its event loop before interpreter finalization; idempotent.
+
+    An interrupted harvest leaves worker threads fetching. Refuse subsequent lazy launches
+    from those workers: their results are discarded and they must not resurrect Chrome.
+    """
+    global _browser, _loop, _loop_thread, _gate, _generation
+    with _lock:
+        _generation += 1
+        browser, _browser = _browser, None
+        loop, thread = _loop, _loop_thread
+        if loop is None:
+            return
+
+        async def close():
+            # Cancel abandoned navigations/fetches first, so their finally blocks return tab
+            # slots before Chrome goes away. Keep pydoll's own CDP reader tasks alive until
+            # __aexit__ completes: its close command needs them to receive the response.
+            pending = [t for t in _calls if t is not asyncio.current_task()]
+            for task in pending:
+                task.cancel()
+            if pending:
+                await asyncio.gather(*pending, return_exceptions=True)
+            if browser is not None:
+                await browser.__aexit__(None, None, None)
+
+        try:
+            _run(close(), timeout=15)
         except Exception:  # noqa: BLE001 - shutdown must never mask the run's real outcome
             _log.info("browser transport: shutdown raised", exc_info=True)
+            if browser is not None:
+                _reap(browser)
+        finally:
+            loop.call_soon_threadsafe(loop.stop)
+            if thread is not None:
+                thread.join(timeout=2)
+            if not loop.is_running():
+                loop.close()
+            _loop, _loop_thread, _gate = None, None, None
 
 
 class _Page:

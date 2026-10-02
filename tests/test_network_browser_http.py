@@ -366,3 +366,349 @@ def test_a_broken_blocking_install_warns_once_then_informs(monkeypatch, caplog):
     assert all(
         "subresource blocking unavailable" in r.getMessage() for r in caplog.records
     )
+
+
+@pytest.mark.parametrize("exit_path", ["direct", "harvest", "failed_harvest"])
+def test_process_exit_reaps_chrome_before_profile_cleanup(tmp_path, exit_path):
+    """Interpreter shutdown disables executor submissions before ordinary atexit hooks.
+
+    pydoll's CDP reconnection resolves a host through that executor. Exercise real interpreter
+    finalization, with an adapter that has the same dependency, rather than calling shutdown
+    inside pytest where the executor is still alive.
+    """
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    script = r"""
+import asyncio
+import logging
+import runpy
+import sys
+from pathlib import Path
+from headstart.network import browser_http as bh
+from headstart.scrapers import harvest
+from headstart.boards.company_ref import CompanyRef
+logging.basicConfig(level=logging.INFO)
+namespace = runpy.run_path(sys.argv[1])
+marker = Path(sys.argv[2])
+class Chrome(namespace['_FakeChrome']):
+    async def __aexit__(self, *exc):
+        await asyncio.to_thread(lambda: None)
+        self._browser_process_manager.stop_process()
+        self._temp_directory_manager.cleanup()
+chrome = Chrome()
+def stopped():
+    marker.write_text('stopped\n')
+def cleaned():
+    assert marker.read_text() == 'stopped\n'
+    marker.write_text('stopped\ncleaned\n')
+chrome._browser_process_manager.stop_process = stopped
+chrome._temp_directory_manager.cleanup = cleaned
+bh._chrome_factory = lambda: chrome
+async def blocking(tab):
+    pass
+bh._install_blocking = blocking
+class Scraper:
+    truncated = None
+    def fetch(self):
+        with bh.origin('https://example.invalid/careers'):
+            pass
+        return []
+harvest.get_scraper = lambda *args, **kwargs: Scraper()
+if sys.argv[3] == 'direct':
+    Scraper().fetch()
+else:
+    def callback(*args):
+        if sys.argv[3] == 'failed_harvest':
+            raise ValueError('original harvest failure')
+    try:
+        harvest.scrape_all([CompanyRef('x', 'example')], jobs_dir=marker.parent / 'jobs',
+                          on_board=callback)
+    except ValueError as exc:
+        assert str(exc) == 'original harvest failure'
+"""
+    marker = tmp_path / "reaped"
+    environment = dict(os.environ, PYTHONPATH=str(Path(bh.__file__).parents[2]))
+    result = subprocess.run(
+        [sys.executable, "-c", script, __file__, str(marker), exit_path],
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "cannot schedule new futures" not in result.stderr, result.stderr
+    assert "shutdown raised" not in result.stderr, result.stderr
+    assert marker.read_text() == "stopped\ncleaned\n"
+
+
+def test_shutdown_releases_the_loop_and_allows_a_new_lifetime(fresh):
+    with bh.origin("https://example.invalid/careers"):
+        pass
+    loop, thread = bh._loop, bh._loop_thread
+    bh.shutdown()
+    bh.shutdown()
+    assert loop.is_closed()
+    assert not thread.is_alive()
+    with bh.origin("https://example.invalid/careers"):
+        pass
+    assert len(fresh.tabs) == 2
+    assert bh._loop is not loop
+
+
+def test_shutdown_releases_the_loop_after_failed_start(monkeypatch):
+    class DiesOnStart(_FakeChrome):
+        async def start(self):
+            raise OSError("launch failed")
+
+    monkeypatch.setattr(bh, "_chrome_factory", DiesOnStart)
+    with (
+        pytest.raises(RuntimeError, match="failed to start"),
+        bh.origin("https://example.invalid"),
+    ):
+        pass
+    loop, thread = bh._loop, bh._loop_thread
+    bh.shutdown()
+    assert loop.is_closed()
+    assert not thread.is_alive()
+
+
+def test_lazy_shutdown_does_not_create_an_event_loop(monkeypatch):
+    bh.shutdown()
+    monkeypatch.setattr(
+        bh, "_chrome_factory", lambda: pytest.fail("Chrome should stay lazy")
+    )
+    bh.shutdown()
+    assert bh._loop is None
+
+
+def test_interrupted_harvest_cannot_launch_chrome_from_an_abandoned_worker(
+    fresh, monkeypatch, tmp_path
+):
+    from threading import Event
+
+    from headstart.boards.company_ref import CompanyRef
+    from headstart.scrapers import harvest
+
+    entered, released, finished = Event(), Event(), Event()
+    failures = []
+
+    class Scraper:
+        truncated = None
+
+        def __init__(self, slug):
+            self.slug = slug
+
+        def fetch(self):
+            if self.slug == "complete":
+                assert entered.wait(2)
+                return []
+            entered.set()
+            assert released.wait(2)
+            try:
+                with bh.origin("https://example.invalid/careers"):
+                    pass
+            except RuntimeError as exc:
+                failures.append(str(exc))
+            finally:
+                finished.set()
+            return []
+
+    monkeypatch.setattr(
+        harvest, "get_scraper", lambda ats, slug, *args, **kwargs: Scraper(slug)
+    )
+
+    def interrupt(*args):
+        raise ValueError("original harvest failure")
+
+    try:
+        with pytest.raises(ValueError, match="original harvest failure"):
+            harvest.scrape_all(
+                [
+                    CompanyRef("greenhouse", "complete"),
+                    CompanyRef("greenhouse", "late"),
+                ],
+                jobs_dir=tmp_path,
+                max_workers=2,
+                on_board=interrupt,
+            )
+    finally:
+        released.set()
+        assert finished.wait(2)
+    assert failures == ["browser transport stopped with this harvest"]
+    assert not fresh.started
+    # The stale worker is refused; a new caller still owns a new browser lifetime.
+    with bh.origin("https://example.invalid/careers"):
+        pass
+    assert fresh.started
+
+
+def test_shutdown_cancels_a_navigation_and_returns_its_tab_slot(fresh, monkeypatch):
+    import asyncio
+    from concurrent.futures import CancelledError
+    from threading import Event, Thread
+
+    entered = Event()
+    errors = []
+
+    async def stalled(self, url, timeout=None):
+        entered.set()
+        await asyncio.sleep(3600)
+
+    monkeypatch.setattr(_FakeTab, "go_to", stalled)
+
+    def worker():
+        try:
+            with bh.worker_scope(), bh.origin("https://example.invalid/careers"):
+                pass
+        except CancelledError:
+            errors.append("cancelled")
+
+    thread = Thread(target=worker)
+    thread.start()
+    try:
+        assert entered.wait(2)
+        gate = bh._gate
+        bh.shutdown()
+    finally:
+        thread.join(timeout=2)
+    assert not thread.is_alive()
+    assert errors == ["cancelled"]
+    assert fresh.tabs[0].closed
+    assert gate._value == bh._TAB_WIDTH
+    assert bh._loop is None
+
+
+def test_failed_chrome_exit_reaps_without_masking_the_harvest_error(
+    fresh, monkeypatch, tmp_path
+):
+    from headstart.boards.company_ref import CompanyRef
+    from headstart.scrapers import harvest
+
+    async def failed_exit(*args):
+        raise RuntimeError("CDP teardown failed")
+
+    monkeypatch.setattr(fresh, "__aexit__", failed_exit)
+
+    class Scraper:
+        truncated = None
+
+        def fetch(self):
+            with bh.origin("https://example.invalid/careers"):
+                pass
+            return []
+
+    monkeypatch.setattr(harvest, "get_scraper", lambda *args, **kwargs: Scraper())
+
+    def failed_callback(*args):
+        raise ValueError("original harvest failure")
+
+    with pytest.raises(ValueError, match="original harvest failure"):
+        harvest.scrape_all(
+            [CompanyRef("greenhouse", "example")],
+            jobs_dir=tmp_path,
+            on_board=failed_callback,
+        )
+    assert fresh._browser_process_manager.stopped == 1
+    assert fresh._temp_directory_manager.cleaned == 1
+    assert bh._loop is None
+
+
+def test_worker_dispatched_before_shutdown_cannot_adopt_a_later_generation(
+    fresh, monkeypatch, tmp_path
+):
+    """A dispatched worker can be paused before scope entry, outside in_flight tracking.
+
+    cancel_futures cannot cancel its already-running Future. Bind the scope when the harvest
+    builds its worker function, before this delayed entry, so it cannot join a new lifetime.
+    """
+    from contextlib import contextmanager
+    from threading import Event, Lock
+
+    from headstart.boards.company_ref import CompanyRef
+    from headstart.scrapers import harvest
+
+    entered, released, finished = Event(), Event(), Event()
+    failures = []
+    scope_lock = Lock()
+    entered_scopes = 0
+    original_scope = bh.worker_scope
+
+    def delayed_scope():
+        bound = original_scope()
+
+        @contextmanager
+        def delay():
+            nonlocal entered_scopes
+            with scope_lock:
+                entered_scopes += 1
+                second = entered_scopes == 2
+            if second:
+                entered.set()
+                assert released.wait(2)
+            with bound._recreate_cm():
+                yield
+
+        return delay()
+
+    monkeypatch.setattr(bh, "worker_scope", delayed_scope)
+
+    class Scraper:
+        truncated = None
+
+        def __init__(self, slug):
+            self.slug = slug
+
+        def fetch(self):
+            if self.slug == "complete":
+                assert entered.wait(2)
+                return []
+            try:
+                with bh.origin("https://example.invalid/careers"):
+                    pass
+            except RuntimeError as exc:
+                failures.append(str(exc))
+            finally:
+                finished.set()
+            return []
+
+    monkeypatch.setattr(
+        harvest, "get_scraper", lambda ats, slug, *args, **kwargs: Scraper(slug)
+    )
+
+    def interrupt(*args):
+        raise ValueError("original harvest failure")
+
+    try:
+        with pytest.raises(ValueError, match="original harvest failure"):
+            harvest.scrape_all(
+                [
+                    CompanyRef("greenhouse", "complete"),
+                    CompanyRef("greenhouse", "late"),
+                ],
+                jobs_dir=tmp_path,
+                max_workers=2,
+                on_board=interrupt,
+            )
+    finally:
+        released.set()
+        assert finished.wait(2)
+    assert failures == ["browser transport stopped with this harvest"]
+    assert not fresh.started
+    # Independent callers and a subsequent batch still own a fresh lifetime.
+    monkeypatch.setattr(bh, "worker_scope", original_scope)
+    with bh.origin("https://example.invalid/careers"):
+        pass
+    assert fresh.started
+    bh.shutdown()
+    result = harvest.scrape_all(
+        [CompanyRef("greenhouse", "late")],
+        jobs_dir=tmp_path / "later",
+        max_workers=1,
+    )
+    assert result.boards == 1 and not result.errors
+    assert len(fresh.tabs) == 2
+    assert failures == ["browser transport stopped with this harvest"]

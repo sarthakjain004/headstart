@@ -285,45 +285,30 @@ def test_an_upgrade_still_replaces_its_stale_row_when_a_fragment_does_arrive(tmp
     _assert_consistent(store, 3)
 
 
-def test_eviction_shrinks_meta_before_vectors_so_a_crash_leaves_a_readable_store(
-    tmp_path, monkeypatch
-):
-    """A SIGTERM between the two `replace()` calls must not corrupt the store.
-
-    `EmbeddingStore`'s invariant is that vectors are always at least as long as meta — it appends
-    vectors first for exactly that reason, and `_reconcile_store` refuses to open the inverse.
-    Replacing vectors first inverted it: a kill in that window (merge carries a 48 min job
-    timeout) left vectors short against a long meta, and every later run's merge died on "prior
-    store corrupt" until a human repaired it.
-
-    Simulated by making the *second* replace raise, which is what a kill in the window looks like
-    to the file system, then asserting the surviving state satisfies the invariant.
-    """
-    pytest.importorskip("numpy")
+def test_eviction_failure_never_reassigns_survivors_vectors(tmp_path, monkeypatch):
+    """A failed second rename must not pair surviving ids with the old vector prefix."""
+    np = pytest.importorskip("numpy")
     store = tmp_path / "store"
     _write_store(store, ["a", "b", "c", "d"])
-
+    np.repeat(np.arange(4, dtype="float32"), _DIM).tofile(store / "embeddings.f32")
     real_replace = Path.replace
-    calls: list[str] = []
+    failed = False
 
-    def _replace(self, target):
-        calls.append(Path(target).name)
-        if len(calls) == 2:  # the crash: first rename landed, second never runs
-            raise KeyboardInterrupt("SIGTERM between the two replaces")
+    def fail_vector_once(self, target):
+        nonlocal failed
+        if Path(target).name == "embeddings.f32" and not failed:
+            failed = True
+            raise OSError("failed vector replacement")
         return real_replace(self, target)
 
-    monkeypatch.setattr(Path, "replace", _replace)
-    with pytest.raises(KeyboardInterrupt):
+    monkeypatch.setattr(Path, "replace", fail_vector_once)
+    with pytest.raises(OSError, match="failed vector replacement"):
         ms.evict_ids(store / "meta.jsonl", store / "embeddings.f32", _DIM, {"b", "c"})
-
-    # meta.jsonl is the authority, so it is the file that must have shrunk first
-    assert calls[0] == "meta.jsonl"
-    meta_rows = len(_store_ids(store))
-    vec_rows = (store / "embeddings.f32").stat().st_size // (_DIM * 4)
-    assert vec_rows >= meta_rows, (
-        f"store left corrupt: {vec_rows} vector rows against {meta_rows} meta rows — "
-        "EmbeddingStore requires vectors >= meta"
-    )
+    ms._reconcile_store(store / "meta.jsonl", store / "embeddings.f32", _DIM)
+    ids = _store_ids(store)
+    values = np.fromfile(store / "embeddings.f32", dtype="float32").reshape(-1, _DIM)
+    assert dict(zip(ids, values[:, 0], strict=True)) == {"a": 0.0, "d": 3.0}
+    _assert_consistent(store, 2)
 
 
 def test_a_non_english_drop_needs_no_replacement(tmp_path):
@@ -338,3 +323,131 @@ def test_a_non_english_drop_needs_no_replacement(tmp_path):
 
     assert _store_ids(store) == ["a", "c"]
     _assert_consistent(store, 2)
+
+
+@pytest.mark.parametrize(
+    "target_name", [ms._REWRITE, "meta.jsonl", "embeddings.f32", "manifest.json"]
+)
+def test_interrupted_eviction_recovers_before_append_tail_reconciliation(
+    tmp_path, monkeypatch, target_name
+):
+    """Simulate abrupt termination after each rename; no catch/cleanup executes."""
+    np = pytest.importorskip("numpy")
+    store = tmp_path / "store"
+    _write_store(store, ["a", "b", "c", "d"])
+    np.repeat(np.arange(4, dtype="float32"), _DIM).tofile(store / "embeddings.f32")
+    real_replace = Path.replace
+
+    def interrupt_after_replace(self, target):
+        result = real_replace(self, target)
+        if Path(target).name == target_name:
+            raise KeyboardInterrupt("killed after rename")
+        return result
+
+    monkeypatch.setattr(Path, "replace", interrupt_after_replace)
+    with pytest.raises(KeyboardInterrupt):
+        ms.evict_ids(store / "meta.jsonl", store / "embeddings.f32", _DIM, {"b", "c"})
+    assert (store / ms._REWRITE).exists()
+    monkeypatch.setattr(Path, "replace", real_replace)
+    assert (
+        ms._reconcile_store(store / "meta.jsonl", store / "embeddings.f32", _DIM) == 2
+    )
+    values = np.fromfile(store / "embeddings.f32", dtype="float32").reshape(-1, _DIM)
+    assert dict(zip(_store_ids(store), values[:, 0], strict=True)) == {
+        "a": 0.0,
+        "d": 3.0,
+    }
+    _assert_consistent(store, 2)
+    assert not (store / ms._REWRITE).exists()
+    ms.check_store(store)  # recovery is idempotent
+
+
+def test_publication_guard_refuses_an_unresolved_rewrite(tmp_path, monkeypatch):
+    pytest.importorskip("numpy")
+    store = tmp_path / "store"
+    _write_store(store, ["a", "b", "c"])
+    real_replace = Path.replace
+
+    def fail_vector(self, target):
+        if Path(target).name == "embeddings.f32":
+            raise OSError("disk unavailable")
+        return real_replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", fail_vector)
+    with pytest.raises(OSError):
+        ms.evict_ids(store / "meta.jsonl", store / "embeddings.f32", _DIM, {"b"})
+    with pytest.raises(OSError):
+        ms.check_store(store)
+    assert (store / ms._REWRITE).exists()
+
+
+@pytest.mark.parametrize("damage", ["manifest", "metadata", "vectors"])
+def test_publication_guard_refuses_inconsistent_store(tmp_path, damage):
+    store = tmp_path / "store"
+    _write_store(store, ["a", "b"])
+    if damage == "manifest":
+        (store / "manifest.json").write_text(json.dumps({"dim": _DIM, "count": 7}))
+    elif damage == "metadata":
+        with (store / "meta.jsonl").open("a") as fh:
+            fh.write('{"id":')
+    else:
+        (store / "embeddings.f32").write_bytes(bytes(_DIM * 4))
+    with pytest.raises(RuntimeError, match="refusing publication"):
+        ms.check_store(store)
+
+
+def test_publication_cli_recovers_after_process_exit_without_cleanup(tmp_path):
+    """os._exit bypasses every Python handler, as a killed nonfatal prune process does."""
+    import os
+    import subprocess
+    import textwrap
+
+    np = pytest.importorskip("numpy")
+    store = tmp_path / "store"
+    _write_store(store, ["a", "b", "c", "d"])
+    np.repeat(np.arange(4, dtype="float32"), _DIM).tofile(store / "embeddings.f32")
+    source = Path(ms.__file__).resolve().parents[2]
+    env = {**os.environ, "PYTHONPATH": str(source)}
+    crash = textwrap.dedent(
+        """
+        import os, sys
+        from pathlib import Path
+        from headstart.ingest.embed_merge import evict_ids
+        store = Path(sys.argv[1])
+        real_replace = Path.replace
+        def killed(self, target):
+            result = real_replace(self, target)
+            if Path(target).name == 'meta.jsonl':
+                os._exit(73)
+            return result
+        Path.replace = killed
+        evict_ids(store / 'meta.jsonl', store / 'embeddings.f32', 4, {'b', 'c'})
+        """
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", crash, str(store)], env=env, check=False
+    )
+    assert result.returncode == 73
+    assert (store / ms._REWRITE).exists()
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "headstart.ingest.embed_merge",
+            "--check-store",
+            "--store",
+            str(store),
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    values = np.fromfile(store / "embeddings.f32", dtype="float32").reshape(-1, _DIM)
+    assert dict(zip(_store_ids(store), values[:, 0], strict=True)) == {
+        "a": 0.0,
+        "d": 3.0,
+    }
+    _assert_consistent(store, 2)
+    assert not (store / ms._REWRITE).exists()

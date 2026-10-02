@@ -27,7 +27,7 @@ from headstart.boards.board_identity import board_identity
 from headstart.boards.company_ref import CompanyRef
 from headstart.boards.cost_ledger import SHARD_HEADER, shard_row
 from headstart.jobs.job import Job
-from headstart.network import http
+from headstart.network import browser_http, http
 from headstart.scrapers.base import BoardUnreadable
 from headstart.scrapers.registry import get_scraper
 
@@ -234,6 +234,7 @@ def scrape_all(
     # rather than raised, because the partial Jobs are real and must still be written (ADR-0053).
     truncated: dict[str, str] = {}
 
+    @browser_http.worker_scope()
     def run_one(company: CompanyRef) -> list[Job]:
         start = time.monotonic()
         key = f"{company.ats}:{company.slug}"
@@ -406,7 +407,13 @@ def scrape_all(
                 0,
                 unfinished=True,
             )
-        writer.close()
+        try:
+            writer.close()
+        finally:
+            # Browser CDP shutdown can resolve DNS through asyncio's thread executor. Do it
+            # while that executor is alive, rather than from Python's late atexit phase.
+            # Abandoned workers must not lazily launch another browser after this teardown.
+            browser_http.shutdown()
     return RunResult(
         errors=errors, truncated=truncated, unique=len(seen_ids), boards=done
     )

@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 
 from headstart import log
@@ -44,6 +45,7 @@ _FRAGMENTS = REPO_ROOT / "data" / "embeddings" / "fragments"
 # Written by embed_plan; consumed here and by `index sync` (ADR-0050).
 _UPGRADES = PENDING_UPGRADES_PATH
 _FLOAT_BYTES = 4  # float32
+_REWRITE = ".pending-eviction.json"
 
 
 def _dim_from_manifest(path: Path) -> int | None:
@@ -88,9 +90,76 @@ def _good_meta_lines(meta_path: Path) -> tuple[list[str], int]:
     return good, 0
 
 
+def _sync_dir(store: Path) -> None:
+    fd = os.open(store, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def _sync_file(path: Path) -> None:
+    with path.open("rb") as fh:
+        os.fsync(fh.fileno())
+
+
+def recover_eviction(store: Path) -> None:
+    """Finish a journaled positional rewrite before any reader can truncate a mixed pair.
+
+    Staged files are durable before the journal is installed. A consumed staged filename means
+    that replacement landed; replaying the remaining replacements is therefore idempotent. The
+    journal remains until the manifest and both files are durable and consistent. Single writer,
+    as for the merge itself; this is not a concurrent-reader transaction.
+    """
+    marker = store / _REWRITE
+    if not marker.exists():
+        return
+    pending = json.loads(marker.read_text(encoding="utf-8"))
+    for name in ("meta.jsonl", "embeddings.f32"):
+        target = store / name
+        staged = target.with_suffix(target.suffix + ".tmp")
+        if staged.exists():
+            staged.replace(target)
+            _sync_dir(store)
+    count, dim = pending["count"], pending["dim"]
+    rows, bad = _good_meta_lines(store / "meta.jsonl")
+    if (
+        bad
+        or len(rows) != count
+        or (store / "embeddings.f32").stat().st_size != count * dim * _FLOAT_BYTES
+    ):
+        raise RuntimeError("pending embedding eviction has inconsistent staged files")
+    manifest_path = store / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["count"] = count
+    staged_manifest = manifest_path.with_suffix(".json.tmp")
+    staged_manifest.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    _sync_file(staged_manifest)
+    staged_manifest.replace(manifest_path)
+    _sync_dir(store)
+    marker.unlink()
+    _sync_dir(store)
+    _log.info(f"completed embedding eviction rewrite: {count} rows")
+
+
+def check_store(store: Path) -> None:
+    """Recover an interrupted eviction, then fail closed before publication on torn files."""
+    recover_eviction(store)
+    manifest = json.loads((store / "manifest.json").read_text(encoding="utf-8"))
+    rows, bad = _good_meta_lines(store / "meta.jsonl")
+    if (
+        bad
+        or len(rows) != manifest["count"]
+        or (store / "embeddings.f32").stat().st_size
+        != len(rows) * manifest["dim"] * _FLOAT_BYTES
+    ):
+        raise RuntimeError("embedding store inconsistent; refusing publication")
+
+
 def _reconcile_store(meta_path: Path, vec_path: Path, dim: int | None) -> int:
     """Align the prior store before appending (it should already be clean; be safe on top of any
     state). Returns its row count; truncates a too-long vector tail, fails on a too-short one."""
+    recover_eviction(meta_path.parent)
     if not meta_path.exists():
         return 0
     good, dropped = _good_meta_lines(meta_path)
@@ -143,6 +212,7 @@ def evict_ids(meta_path: Path, vec_path: Path, dim: int, ids: set[str]) -> int:
     old ``has_description: false`` row would keep marking the Job degraded and it would re-embed on
     every run forever.
     """
+    recover_eviction(meta_path.parent)
     if not ids or not meta_path.exists():
         return 0
     # Imported here, not at module scope: every other path in this module treats vectors as raw
@@ -168,16 +238,25 @@ def evict_ids(meta_path: Path, vec_path: Path, dim: int, ids: set[str]) -> int:
     )
     vectors[kept_rows].tofile(tmp_vec)
     tmp_meta.write_text("".join(kept_meta), encoding="utf-8")
-    # Meta first, then vectors — the same order the store is *appended* in, inverted, and for the
-    # same reason. `EmbeddingStore` writes vectors before their metadata so the vector file is
-    # always at least as long as meta; shrinking has to shorten meta first to preserve that. The
-    # other order leaves a window where vectors are short and meta is long, and a SIGTERM there
-    # (merge has a 48 min job timeout) is exactly the state `_reconcile_store` refuses to open —
-    # every later run's merge would die on "prior store corrupt" until a human repaired it.
-    # Crashing between these two replaces now costs only re-dropping the vector rows, which
-    # `EmbeddingStore`'s resume truncation already does.
-    tmp_meta.replace(meta_path)
-    tmp_vec.replace(vec_path)
+    # A prefix truncation cannot repair an interior deletion: surviving ids would inherit the
+    # deleted rows' vectors. Keep the prepared pair recoverable until both renames have landed.
+    for staged in (tmp_meta, tmp_vec):
+        _sync_file(staged)
+    marker = meta_path.parent / _REWRITE
+    staged_marker = marker.with_suffix(".json.tmp")
+    staged_marker.write_text(
+        json.dumps({"count": len(kept_rows), "dim": dim}), encoding="utf-8"
+    )
+    _sync_file(staged_marker)
+    staged_marker.replace(marker)
+    _sync_dir(meta_path.parent)
+    try:
+        recover_eviction(meta_path.parent)
+    except Exception:
+        # A recoverable filesystem error can finish immediately; a persistent one keeps its
+        # journal and fails closed. SIGTERM/SIGKILL instead leave it for the next recovery gate.
+        recover_eviction(meta_path.parent)
+        raise
     return dropped
 
 
@@ -216,10 +295,19 @@ def main() -> int:
         "which makes an empty fragment set the expected outcome; omit it (the default) when "
         "the count is simply unknown, e.g. a local run",
     )
+    ap.add_argument(
+        "--check-store",
+        action="store_true",
+        help="recover interrupted eviction and validate before publication; do not merge",
+    )
     args = ap.parse_args()
 
     store = Path(args.store)
+    if args.check_store:
+        check_store(store)
+        return 0
     store.mkdir(parents=True, exist_ok=True)
+    recover_eviction(store)
     meta_path = store / "meta.jsonl"
     vec_path = store / "embeddings.f32"
 

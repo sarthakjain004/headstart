@@ -41,7 +41,13 @@ from headstart.boards.board_identity import ats_of
 from headstart.embedding_conventions import MODEL, PROD_TABLE
 from headstart.ingest import REPO_ROOT, job_facts, observability, run_ts
 from headstart.ingest.corpus import iter_jobs
-from headstart.ingest.embed_merge import _FLOAT_BYTES, _dim_from_manifest, evict_ids
+from headstart.ingest.embed_merge import (
+    _FLOAT_BYTES,
+    _dim_from_manifest,
+    check_store,
+    evict_ids,
+    recover_eviction,
+)
 from headstart.ingest.index import _all_ids, check_base
 
 _log = log.get(__name__, __spec__)
@@ -108,6 +114,7 @@ def main() -> int:
         _log.info(f"no store at {store} — nothing to prune")
         return 0
 
+    recover_eviction(store)
     served = _served_ids(Path(args.db))
     # An empty or missing table is never evidence that every vector is dead: refuse rather than
     # empty the store, which would re-embed the whole corpus.
@@ -143,14 +150,9 @@ def main() -> int:
     # vector rows past the last meta line as dropped, so the subtraction would come out short.
     with meta_path.open(encoding="utf-8") as fh:
         remaining = sum(1 for line in fh if line.strip())
-    manifest = json.loads(manifest_path.read_text())
-    manifest["count"] = remaining
-    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-    if vec_path.stat().st_size != remaining * dim * _FLOAT_BYTES:
-        log.fail(
-            _log,
-            f"store inconsistent after prune: {vec_path.stat().st_size} bytes for {remaining} rows",
-        )
+    # The paired rewrite commits its manifest with the files; rewriting it here would create
+    # another interruption window after the transaction had already completed.
+    check_store(store)
     _log.info(
         f"done: dropped {dropped} vectors ({archived} archived); store now holds "
         f"{remaining} -> {store}"
@@ -168,6 +170,5 @@ if __name__ == "__main__":
     log.run_logging_crash(
         _log,
         main,
-        "embed_prune failed — the store keeps its unserved vectors this run and uploads "
-        "larger, not wrong",
+        "embed_prune failed — recover and validate the store before publication",
     )
