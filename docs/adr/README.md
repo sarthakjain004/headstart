@@ -325,5 +325,7 @@ supersedes it and note the supersession in both.
 | [0357](0357-the-owner-keeps-the-smallest-stated-experience-and-get-job-names-the-others.md) | The owner keeps the smallest stated experience, and get_job names the others (re-affirms 0079) | 2026-09-29 |
 | [0358](0358-a-sitemap-that-states-no-title-is-read-from-its-portals-search-pages.md) | A sitemap that states no posting's title is read from its portals' search pages (amends 0245) | 2026-09-29 |
 
+| [0375](0375-replay-selects-whole-job-lifecycles-and-keeps-all-job-dormancy-evidence.md) | Replay selects whole Job lifecycles and keeps all-Job Dormancy evidence | 2026-10-02 |
+
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*
