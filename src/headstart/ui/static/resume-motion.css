@@ -1,0 +1,7 @@
+/* Feedback timing and animations. State, focus and data updates never wait for motion. */
+.rb-seg-tab{ transition:background var(--step), color var(--step); }
+.rb-h{ transition:opacity var(--step); }
+.rb-caret{ transition:transform var(--step); }
+@media (prefers-reduced-motion: reduce){
+.rb-caret, .rb-seg-tab, .rb-h{ transition-duration:.01ms; }
+}

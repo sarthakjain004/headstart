@@ -1,0 +1,5 @@
+<script nonce="{{ csp_nonce }}">try {
+  if (localStorage.getItem('hs.navCollapsed')) document.documentElement.dataset.nav = 'collapsed';
+  const theme = localStorage.getItem('hs.theme');
+  if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
+} catch (e) {}</script>

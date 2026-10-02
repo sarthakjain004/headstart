@@ -1,0 +1,26 @@
+/* Sign-in skin; authentication remains in the template. */
+body{ background:var(--ground); color:var(--ink); -webkit-font-smoothing:antialiased; }
+.brand .name em{ color:var(--accent); }
+.lede{ color:var(--ink-2); }
+.lede b{ color:var(--ink); }
+.proof{ background:var(--rule); border-color:var(--rule); border-radius:14px; }
+.stat{ background:var(--raise); }
+.stat .v{ color:var(--accent); }
+.stat .k{ color:var(--ink-2); }
+.card{ background:var(--raise); border-color:var(--rule); border-radius:18px; }
+.points li{ color:var(--ink-2); }
+.points svg{ color:var(--accent); }
+.points b{ color:var(--ink); }
+.gate{ background:var(--raise-2); border-color:var(--rule-2); border-radius:18px; }
+.terms{ color:var(--ink-2); }
+.note{ color:var(--ink-2); }
+.openout{ text-decoration:none; color:var(--ground); border-radius:12px; background:var(--accent); }
+.openout:hover{ filter:saturate(1.12); }
+.checkable{ color:var(--ink-2); }
+.checkable a{ color:var(--ink-2); text-decoration:none; border-bottom-color:var(--rule-2); }
+.checkable a:hover{ color:var(--accent); border-bottom-color:var(--accent); }
+.sep{ opacity:.5; }
+a:focus-visible, .openout:focus-visible{ outline:2px solid var(--accent); outline-offset:3px; border-radius:4px; }
+
+.brand{ text-decoration:none; color:var(--ink); }
+.signin-disclosure{ color:var(--ink-2); }

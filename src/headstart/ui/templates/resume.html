@@ -19,6 +19,7 @@
    they name is what you fix. So the four panes that were a segment plus a nested tablist —
    Document / Design / Checks / Keywords — are now two workspaces with no nesting at all. #}
 <section class="rb" id="rb">
+  <div class="page-head"><div><p class="page-eyebrow">Prepare to apply</p><h2>Build your résumé</h2><p class="page-intro">Write your story, tailor a version for a job, then download it.</p></div></div>
 
   {# ONE band, three groups, hairline-separated: the document, the version, the actions. Grouping
      is the whole point — the eight controls that used to sit here at one visual weight gave a
@@ -196,10 +197,10 @@
       {# `rb-checkscard` is a hook, not a look: below 1000px the stylesheet orders this card above
          the form and the miniature below it, and keying that on "the .rb-card in this aside"
          would silently catch the next card added here. #}
-      <section class="rb-card rb-checkscard">
-        <h2 class="rb-card-head">Checks<span class="rb-badge" id="rb-badge-checks" hidden>0</span></h2>
+      <details class="rb-card rb-checkscard" id="rb-checks-disclosure" open>
+        <summary class="rb-card-head"><h2>Writing checks<span class="rb-badge" id="rb-badge-checks" hidden>0</span></h2><span aria-hidden="true">▾</span></summary>
         <div class="rb-cardbody" id="rb-pane-checks"></div>
-      </section>
+      </details>
 
     </aside>
   </div>
@@ -207,6 +208,7 @@
   <div class="rb-work" id="rb-pane-preview" role="tabpanel" aria-labelledby="rb-seg-preview"
        tabindex="0" hidden>
     <div class="rb-stage">
+      <button class="ghost rb-template-open" data-act="templates">Change template</button>
       {# The page. Its width is the layout's own paper width, so what is on screen is what
          prints — the preview and the PDF are one stylesheet (resume_export.js). #}
       <div class="rb-paper-wrap" id="rb-paper-wrap"><div class="rb-paper" id="rb-paper" role="group"

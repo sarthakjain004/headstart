@@ -11,7 +11,7 @@
   'use strict';
 
   const STEPS = [
-    { tab: null, targets: ['nav.tabs'], title: 'Everything is one click away',
+    { tab: null, targets: ['nav.tabs', 'nav.mobile-nav'], title: 'Everything is one click away',
       body: 'Search, your saved jobs, hiring trends and the résumé builder all live here. On a ' +
             'wide screen, the button at the top folds it to icons and back.',
       bodyFolded: 'These icons lead to Search, your saved jobs, hiring trends and the résumé ' +
@@ -31,7 +31,6 @@
   // How long a step waits for its target before skipping it: a result list can still be
   // loading when its tab opens.
   const WAIT_MS = 2500;
-  const OFFERED_KEY = 'hs.tourOffered';
 
   let tour = null;   // the open tour's elements and state; null when closed
   let seq = 0;       // bumped on every move, so a slow wait cannot land after a newer one
@@ -79,7 +78,6 @@
     if (tour) return;
     // Before the offer goes: when it started the tour, its button is the opener.
     const opener = document.activeElement;
-    dismissOffer();
     skipped.clear();
     const spot = make('div', 'tour-spot');
     const pop = make('div', 'tour-pop');
@@ -126,6 +124,7 @@
       const step = STEPS[i];
       if (!usable(step)) continue;
       if (step.tab && panelOf(step.tab).hidden) location.hash = '#' + step.tab;
+      if (step.targets.includes('#rail') && document.getElementById('search-filters')) document.getElementById('search-filters').open = true;
       const target = await waitForTarget(step);
       if (!tour || mine !== seq) return;
       if (target) { render(i, target); return; }
@@ -202,39 +201,10 @@
     else if (visible(q)) q.focus();
   }
 
-  /* The offer, once per browser, on a first visit that lands on Home. A browser that will not
-     remember it (storage blocked) is never offered, since it would be offered on every visit. */
-  function offerOnce(){
-    const home = panelOf('home');
-    if (!home || home.hidden) return;
-    try {
-      if (localStorage.getItem(OFFERED_KEY)) return;
-      localStorage.setItem(OFFERED_KEY, '1');
-    } catch (e) { return; }
-    const offer = make('div', 'tour-offer');
-    offer.setAttribute('role', 'region');
-    offer.setAttribute('aria-label', 'Tour');
-    const text = make('p', '', 'New here? A quick tour shows you around.');
-    const yes = make('button', 'btn-primary', 'Take the tour');
-    const no = make('button', 'ghost', 'No thanks');
-    yes.type = no.type = 'button';
-    yes.setAttribute('data-tour-start', '');
-    no.addEventListener('click', dismissOffer);
-    offer.append(text, yes, no);
-    document.body.append(offer);
-    // An offer is for the page it was made on: moving to another tab declines it.
-    root.addEventListener('hashchange', dismissOffer, { once: true });
-  }
-  function dismissOffer(){
-    const offer = document.querySelector('.tour-offer');
-    if (offer) offer.remove();
-  }
-
   // Every "Take a tour" button, wherever it renders, with no inline handler.
   document.addEventListener('click', e => {
     if (e.target.closest && e.target.closest('[data-tour-start]')) start();
   });
-  offerOnce();
 
   root.GuidedTour = { start };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

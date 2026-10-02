@@ -55,117 +55,59 @@ document.querySelectorAll('input[name="qmode"]').forEach(r => r.addEventListener
   if (el('q').value.trim()) go(); else writeSearchHash();
 }));
 
-/* ---- tabs. The hash names the panel (#search, #trends); the bare URL and any hash naming
-   neither a panel nor something inside one land on Home (ADR-0249), so a stale link — the
-   retired `#data` included — never strands anyone on a blank page. Trends data loads the
-   first time its tab opens, not on page load. ---- */
-const DEFAULT_TAB = 'home';
-// A tab can carry its own state after a `?` (`#trends?company=…`, ADR-0185), so the hash is
-// named by what comes before it.
-const hashName = () => location.hash.replace('#','').split('?')[0];
-function currentTab(){
-  const name = hashName();
-  if (document.getElementById('panel-' + name)) return name;
-  // An in-page anchor (the skip link's `#results`, Home's `#how-matching`) names an element
-  // rather than a panel: the tab is whichever panel holds it. Without this the skip link
-  // switched the page to Home the moment the default stopped being Search.
-  const panel = hashAnchor()?.closest('.panel');
-  return panel ? panel.id.slice('panel-'.length) : DEFAULT_TAB;
-}
-// The element a hash names when it names no panel, or null.
-function hashAnchor(){
-  const name = hashName();
-  return name && !document.getElementById('panel-' + name) ? document.getElementById(name) : null;
-}
-function showTab(name){
-  document.querySelectorAll('.panel').forEach(p => { p.hidden = p.id !== 'panel-' + name; });
-  document.querySelectorAll('.tabs [data-tab]').forEach(a => {
-    a.setAttribute('aria-current', a.dataset.tab === name ? 'page' : 'false');
-    // On a 390px phone the strip scrolls, and the tab you are on sat off its edge.
-    if (a.dataset.tab === name && a.scrollIntoView) a.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-  });
-  if (name === 'search' && readSearchHash()) go();
-  if (name === 'hot' && el('hot-results') && !hotData) loadHot();
-  if (name === 'trends' && el('trends')){
+/* Navigation is a deep module: one transition path for links, history and hand-offs.
+   Page entry keeps each screen's actual data freshness policy here. */
+const navigation = HeadStartNavigation.create({ document, window, location, storage: { setItem: (key, value) => localStorage.setItem(key, value) }, onEnter: enterScreen });
+function currentTab(){ return navigation.current(); }
+function enterScreen({ screen, source }){
+  if (screen === 'search' && readSearchHash()) go();
+  if (screen === 'hot' && el('hot-results') && !hotData) loadHot();
+  if (screen === 'trends' && el('trends')){
     // Back onto a bare `#trends` is a view with no picks; the tab strip's own bare link keeps
     // them. One Back after picking Google landed on `#trends` and the kept pick wrote itself
     // straight back, so the press did nothing.
     const bare = location.hash.indexOf('?') < 0;
-    if (bare && !viaTabStrip && trendPicks.length){ replacePicks([]); loadTrends(null); return; }
+    if (bare && source !== 'navigation' && trendPicks.length){ replacePicks([]); loadTrends(null); return; }
     const linked = readTrendHash();
     if (linked || !trendData) loadTrends(linked ? linked.family : null);
     else writeTrendHash();   // the tab strip's bare `#trends` gets the view back, for sharing
   }
-  if (name === 'matches' && el('sets-strip')){
+  if (screen === 'matches' && el('sets-strip')){
     if (!mySets) loadSets();
     else if (activeSetId) runSet(activeSetId);   // re-run on every visit — never stale
   }
-  if (name === 'saved' && el('saved-results')) loadSaved();   // re-check "closed" on every visit
-  if (name === 'profile' && el('pquery')) loadProfile();      // server truth on every visit
+  if (screen === 'saved' && el('saved-results')) loadSaved();   // re-check "closed" on every visit
+  if (screen === 'profile' && el('pquery')) loadProfile();      // server truth on every visit
   // The résumé builder converts pixels to inches from the page's measured width, and a hidden
   // panel measures zero — so it re-paints on the way in rather than on page load.
-  if (name === 'resume' && window.ResumeEditor) ResumeEditor.shown();
+  if (screen === 'resume' && window.ResumeEditor) ResumeEditor.shown();
 }
-// Home's search box (ADR-0249) hands its words to the Search tab and runs them there. Focus
-// follows to the results once the tab is open — the button it left is hidden with Home — and
-// to the list rather than the box, so a phone's keyboard does not come back over the jobs.
 if (el('home-search')) el('home-search').addEventListener('submit', e => {
   e.preventDefault();
   el('q').value = el('home-q').value;
-  setQueryMode('meaning');   // Home asks for a role described in words
-  window.addEventListener('hashchange', () => el('results').focus(), { once: true });
-  location.hash = '#search';
+  setQueryMode('meaning');
+  navigation.navigate('#search', { focus: 'results' });
   go();
 });
-let shownTab = null;
-window.addEventListener('hashchange', () => {
-  const tab = currentTab();
-  showTab(tab);
-  viaTabStrip = false;
-  // The browser scrolls to an anchor before this runs, while its panel is still hidden — so it
-  // scrolls nowhere, and the section is found here instead. A switch to another tab starts at
-  // its top: the sidebar stays in view down a long page, and a click there used to open the
-  // next tab at the scroll depth of the last one.
-  const anchor = hashAnchor();
-  if (anchor) anchor.scrollIntoView({ block: 'start' });
-  else if (shownTab !== tab) window.scrollTo(0, 0);
-  shownTab = tab;
-});
-// Whether the hash change about to land came from the tab strip's own link (showTab). Reset on
-// every hash change, so a click that changed nothing (a cmd-click, a tab already open) cannot
-// leave it set for a later Back.
-let viaTabStrip = false;
-document.addEventListener('click', e => { if (e.target.closest && e.target.closest('.tabs [data-tab]')) viaTabStrip = true; }, true);
-
-// The sidebar folds to its icons and back (ADR-0249). base.html applies the stored state before
-// the first paint; this keeps the button's own state in step with it and remembers each flip.
-const NAV_KEY = 'hs.navCollapsed';
-function drawNavToggle(){
-  const btn = el('nav-toggle');
-  const folded = document.documentElement.dataset.nav === 'collapsed';
-  // Only the state flips; the name stays "Navigation labels" (base.html). Changing both read as
-  // "Expand navigation, collapsed". The visible tooltip still says what a click will do, drawn
-  // by CSS from data-tip — a `title` would be read out as a description that flips too.
-  btn.setAttribute('aria-expanded', String(!folded));
-  btn.setAttribute('data-tip', folded ? 'Expand navigation' : 'Collapse navigation');
-}
-function flipNav(){
-  const fold = document.documentElement.dataset.nav !== 'collapsed';
-  if (fold) document.documentElement.dataset.nav = 'collapsed';
-  else delete document.documentElement.dataset.nav;
-  try { localStorage.setItem(NAV_KEY, fold ? '1' : ''); } catch(e){}
-  drawNavToggle();
-}
-el('nav-toggle').addEventListener('click', flipNav);
-drawNavToggle();
-function flipTheme(){
-  const now = document.documentElement.getAttribute('data-theme')
+function currentTheme(){
+  return document.documentElement.dataset.theme
     || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
-  document.documentElement.setAttribute('data-theme', now === 'dark' ? 'light' : 'dark');
+}
+function drawTheme(){
+  const label = currentTheme() === 'dark' ? 'Use light theme' : 'Use dark theme';
+  el('theme').setAttribute('aria-label', label);
+  el('theme').setAttribute('title', label);
+}
+function flipTheme(){
+  const theme = currentTheme() === 'dark' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = theme;
+  try { localStorage.setItem('hs.theme', theme); } catch (e) {}
+  drawTheme();
 }
 // Every control is wired here rather than by an inline onclick, which the page's
 // Content-Security-Policy refuses to run (#595).
 el('theme').addEventListener('click', flipTheme);
+drawTheme();
 // The examples describe roles, so they run by meaning whichever mode was on.
 function tryIt(btn){ el('q').value = btn.textContent.trim(); setQueryMode('meaning'); go(); }
 document.querySelectorAll('.hint .chip').forEach(b => b.addEventListener('click', () => tryIt(b)));
@@ -420,8 +362,10 @@ for (const id of SEGMENTED_SELECTS){
 // Every other rail control searches on `change` too, so no filter waits for the Search button
 // (issue #755): a switch or a <select> on the pick, a typed field on Enter or on leaving it. The
 // radio rows and the salary slider have their own listeners, so they are left out here.
-if (el('rail')) el('rail').addEventListener('change', e => {
-  if (e.target.matches('select, input:not([type="radio"]):not([type="range"])')) go();
+['rail', 'quick-filters'].forEach(id => {
+  if (el(id)) el(id).addEventListener('change', e => {
+    if (e.target.matches('select, input:not([type="radio"]):not([type="range"])')) go();
+  });
 });
 /* ---- the salary bracket's slider. Two native ranges over one track; `#salmin`/`#salmax`
    stay the values every other part of this file reads (currentFilters, clearAll, dropFilter,
@@ -596,7 +540,7 @@ function searchCompany(boards, label, q, category, aside, counted){
   searchScope = { boards, label, category: category || null, aside: aside || 0, counted: counted || null };
   el('company').value = '';   // the text filter would narrow the Boards again, by name
   if (q != null) el('q').value = q;
-  location.hash = searchHash();
+  navigation.navigate(searchHash(), { focus: 'results' });
   go();
 }
 function searchHash(){
@@ -697,7 +641,7 @@ async function fetchPage(){
   let rows, r;
   try { r = await fetch('/search?'+p); rows = await r.json(); }
   catch(e){ logFail('GET', '/search', r ? r.status : 0, e); if (request !== searchRequest) return;
-            busy(false); el('results').innerHTML = '<div class="empty">That search didn\'t go through. Try again.</div>';
+            busy(false); el('results').innerHTML = '<div class="empty">That search didn\'t go through. Your search is still here.<button class="ghost" data-retry-search>Try again</button></div>';
             setResultRows(1);
             el('n').textContent = ''; el('kind').textContent = ''; return; }
   if (request !== searchRequest) return;
@@ -708,7 +652,7 @@ async function fetchPage(){
     // clearing filters that were never the problem.
     el('results').innerHTML = '<div class="empty">' + (r.status >= 500
       ? esc((rows && rows.error) || ('The search failed (status ' + r.status + ').')) + ' Try again.'
-      : 'One of the filters isn\'t valid — clear it and try again.') + '</div>';
+      : 'One of the filters isn\'t valid — clear it and try again.') + '<button class="ghost" data-retry-search>Try again</button></div>';
     setResultRows(1);
     el('n').textContent = ''; el('kind').textContent = ''; return; }
   // Paint the ranked rows as soon as /search returns. Facets are independent counts and can be
@@ -1003,7 +947,7 @@ function jobCard(r, i, canHideCompany){
   const s = Number(r.score) || 0, pct = matchPct(s);
   const cls = ['card', r.closed && 'gone'].filter(Boolean).join(' ');
   return `
-    <div class="${cls}" style="${ranked?`--tone:${tone(s)}; `:''}animation-delay:${Math.min(i,12)*35}ms">
+    <div class="${cls}" style="${ranked?`--tone:${tone(s)}; `:''}">
       <div class="who">
         <a class="title" href="${esc(safeUrl(r.url))}" target="_blank" rel="noopener">${esc(r.title)}<svg class="ext" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M6.5 3.5H3.5v9h9v-3M9.5 3.5h3v3M12.5 3.5 7 9" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sr">, opens on the employer's own site</span></a>
         <div class="org">${esc(r.company)}${r.location? ' <span>·</span> '+esc(r.location) : ''}${
@@ -1044,7 +988,7 @@ function jobCard(r, i, canHideCompany){
             <circle class="ring-track" cx="20" cy="20" r="16" pathLength="100"/>
             <circle class="ring-fill" cx="20" cy="20" r="16" pathLength="100" style="--p:${pct}"/>
           </svg>
-          <div class="v" aria-hidden="true">${pct}%</div>
+          <div class="v" aria-hidden="true">${pct}%</div><span class="match-label">Search match</span>
         </div>`
       // The column stays reserved on an unranked row rather than collapsing. Dropping it moved
       // the star 76px between a browse and a search and left a 107px ragged right edge against
@@ -1184,6 +1128,7 @@ function draw(rows, target){
    one from the controls the user is looking at. All strip actions ride ONE delegated
    listener + data attributes — never inline handlers with interpolated names. ---- */
 let mySets = null, activeSetId = null;
+const renameDrafts = new Map();
 let matchesRequest = 0;
 
 async function loadSets(){
@@ -1204,27 +1149,32 @@ async function loadSets(){
 
 function renderSets(){
   const strip = el('sets-strip');
+  for (const id of renameDrafts.keys()) if (!mySets.some(set => set.id === id)) renameDrafts.delete(id);
+  drawRenameRetry();
   if (!mySets.length){
     strip.innerHTML = '';
+    if (el('matches-actions')) el('matches-actions').innerHTML = '';
     el('matches-msg').textContent = '';
     setResultRows(1, 'matches-results');
     el('matches-results').innerHTML =
-      '<div class="empty"><div class="big">No saved sets yet</div>' +
+      '<div class="empty"><div class="big">No saved searches yet</div>' +
       'Search for a role, tune the filters, then hit "Save this search" — it lands here ' +
-      'and runs live every time you open this tab.</div>';
+      'and runs live every time you open this tab. <a class="btn-primary" href="#search">Find jobs</a></div>';
     return;
   }
   strip.innerHTML = mySets.map(s => `
     <div class="set-chip${s.id === activeSetId ? ' active' : ''}" data-id="${esc(s.id)}">
-      <button class="set-name" data-act="run" data-id="${esc(s.id)}"
+      <button class="set-name" aria-pressed="${s.id === activeSetId}" data-act="run" data-id="${esc(s.id)}"
         title="${esc(s.query)}">${esc(s.name)}${s.emails ? ' <span class="mail-on" title="Emails you new matches">✉</span>' : ''}</button>
-      <span class="set-tools">
-        <button data-act="email" data-id="${esc(s.id)}" title="${s.emails ? 'Stop emailing this set' : 'Email me this set\'s new matches'}">${s.emails ? '✉ on' : '✉'}</button>
-        <button data-act="refine" data-id="${esc(s.id)}" title="Open in Search to adjust">Refine</button>
-        <button data-act="rename" data-id="${esc(s.id)}" title="Rename">✎</button>
-        <button data-act="del" data-id="${esc(s.id)}" title="Delete" aria-label="Delete ${esc(s.name)}">×</button>
-      </span>
-    </div>`).join('');
+</div>`).join('');
+  const active = mySets.find(set => set.id === activeSetId);
+  if (el('matches-actions')) el('matches-actions').innerHTML = active ? `
+    <span class="note">Manage “${esc(active.name)}”</span>
+    <button class="ghost" data-act="refine" data-id="${esc(active.id)}">Refine search</button>
+    <button class="ghost" data-act="email" data-id="${esc(active.id)}" aria-pressed="${!!active.emails}">${active.emails ? 'Email alerts on' : 'Email alerts off'}</button>
+    <button class="ghost" data-act="rename" data-id="${esc(active.id)}">Rename</button>
+    <button class="linkish danger" data-act="del" data-id="${esc(active.id)}">Delete search</button>` : '';
+
 }
 
 // The view controls: refine what the active set SHOWS — never written into the set.
@@ -1289,15 +1239,17 @@ function applySetToControls(s){
 async function handleSetAction(act, id){
   const s = (mySets || []).find(x => x.id === id); if (!s) return;
   if (act === 'run') return runSet(id);
-  if (act === 'refine'){ applySetToControls(s); location.hash = '#search'; go(); return; }
+  if (act === 'refine'){ applySetToControls(s); navigation.navigate('#search', { focus: 'results' }); go(); return; }
   if (act === 'rename'){
-    const name = (window.prompt('Rename this set', s.name) || '').trim();
+    const choice = await HeadStartDecision.request({ title: 'Rename saved search', label: 'Search name', value: renameDrafts.get(id)?.name ?? s.name, confirm: 'Rename' });
+    const name = choice.confirmed ? choice.value : '';
     if (!name || name === s.name) return;
-    await setRefusal(await postAndReloadSets('/sets', { id, name, query: s.query, filters: s.search_filters }));
+    await renameSet(id, name);
     return;
   }
   if (act === 'del'){
-    if (!window.confirm(`Delete “${s.name}”?${s.emails ? ' Its email digest stops too.' : ''}`)) return;
+    const choice = await HeadStartDecision.request({ title: `Delete “${s.name}”?`, body: s.emails ? 'Its email digest stops too.' : 'This removes the saved search. Your saved jobs stay.', confirm: 'Delete search', danger: true });
+    if (!choice.confirmed) return;
     const url = '/sets/' + encodeURIComponent(id);
     let r = null;
     try{ r = await fetch(url, { method: 'DELETE' }); }catch(e){ logFail('DELETE', url, 0, e); }
@@ -1313,6 +1265,36 @@ async function handleSetAction(act, id){
     await setRefusal(await postAndReloadSets('/sets/' + encodeURIComponent(id) + '/email', { on: !s.emails }));
   }
 }
+
+async function renameSet(id, name){
+  if (!mySets){
+    await loadSets();
+    if (!mySets){
+      if (el('set-action-error')) el('set-action-error').textContent = 'Couldn’t reload your searches. Try again.';
+      return;
+    }
+  }
+  const s = (mySets || []).find(set => set.id === id);
+  if (!s) return;
+  const button = el('rename-retry');
+  if (button) button.disabled = true;
+  const response = await postAndReloadSets('/sets', { id, name, query: s.query, filters: s.search_filters });
+  await setRefusal(response);
+  const failed = !response || !response.ok;
+  if (failed) renameDrafts.set(id, { name, error: el('matches-msg').textContent });
+  else renameDrafts.delete(id);
+  drawRenameRetry();
+  if (button) button.disabled = false;
+}
+function drawRenameRetry(){
+  const draft = renameDrafts.get(activeSetId);
+  if (el('set-action-error')) el('set-action-error').textContent = draft?.error || '';
+  if (el('rename-retry')) el('rename-retry').hidden = !draft;
+}
+if (el('rename-retry')) el('rename-retry').addEventListener('click', () => {
+  const draft = renameDrafts.get(activeSetId);
+  if (draft) renameSet(activeSetId, draft.name);
+});
 
 // A set action the server refused says why in #matches-msg; a dropped one says so too.
 async function setRefusal(r){
@@ -1339,7 +1321,9 @@ async function postAndReloadSets(url, body){
 
 function saveSearchToggle(){
   const row = el('saverow');
+  if (el('save-success')) el('save-success').hidden = true;
   row.style.display = row.style.display === 'none' ? '' : 'none';
+  el('savebtn').setAttribute('aria-expanded', String(row.style.display === ''));
   if (row.style.display === '') el('savename').focus();
 }
 
@@ -1349,6 +1333,10 @@ async function saveSearch(){
   const msg = el('savemsg');
   if (!q){ msg.textContent = 'Type the role you want first.'; return; }
   if (!name){ msg.textContent = 'Give it a name.'; return; }
+  const button = el('savego');
+  if (button.disabled) return;
+  button.disabled = true;
+  button.textContent = 'Saving…';
   try{
     const r = await fetch('/sets', { method: 'POST', headers: {'Content-Type': 'application/json'},
       // A Title words set keeps its mode as the filter it is (ADR-0263).
@@ -1360,12 +1348,19 @@ async function saveSearch(){
     el('savename').value = '';
     el('saverow').style.display = 'none';
     msg.textContent = '';
-    el('n').textContent = `Saved — see Matches`;
+    el('savebtn').setAttribute('aria-expanded', 'false');
+    if (el('save-success')) el('save-success').hidden = false;
+    el('n').textContent = 'Search saved.';
+    el('savebtn').focus();
   }catch(e){ logFail('POST', '/sets', 0, e); msg.textContent = 'That request didn\'t go through. Try again.'; }
+  finally { button.disabled = false; button.textContent = 'Save search'; }
 }
 if (el('savebtn')){   // the save controls render only where Saved sets are configured
   el('savebtn').addEventListener('click', saveSearchToggle);
   el('savego').addEventListener('click', saveSearch);
+  if (el('savecancel')) el('savecancel').addEventListener('click', () => {
+    el('saverow').style.display = 'none'; el('savebtn').setAttribute('aria-expanded', 'false'); el('savebtn').focus();
+  });
 }
 
 /* ---- Saved jobs (ADR-0042, ADR-0044): starring keeps a copy of the card's display
@@ -1384,7 +1379,7 @@ function starBtn(jobId, on){
   if (!CAN_STAR || !jobId) return '';
   const has = on != null ? on : savedByJob.has(jobId);
   return `<button class="star${has?' on':''}" data-star="${esc(jobId)}" aria-pressed="${has}"
-    title="${has?'Remove from saved':'Save this job'}" aria-label="${has?'Remove this job from saved':'Save this job'}">${has?'★':'☆'}</button>`;
+    title="${has?'Remove from saved':'Save this job'}" aria-label="${has?'Remove this job from saved':'Save this job'}">${has?'Saved':'Save'}</button>`;
 }
 
 // The visible tab's status line — where star errors land, wherever the click happened.
@@ -1427,7 +1422,7 @@ function paintStars(){
     // The same two strings starBtn draws, or a starred job still announces "Save this job".
     b.setAttribute('title', on ? 'Remove from saved' : 'Save this job');
     b.setAttribute('aria-label', on ? 'Remove this job from saved' : 'Save this job');
-    b.textContent = on ? '★' : '☆';
+    b.textContent = on ? 'Saved' : 'Save';
   });
 }
 
@@ -1438,7 +1433,7 @@ function renderSaved(){
     el('saved-msg').textContent = '';
     setResultRows(1, 'saved-results');
     box.innerHTML = '<div class="empty"><div class="big">Nothing saved yet</div>' +
-      'Hit the ☆ on any result to keep it here — the copy stays even after the posting closes.</div>';
+      'Save a job from your results to keep it here, even after it closes. <a class="btn-primary" href="#search">Find jobs</a></div>';
     return;
   }
   const jobs = mySaved.slice().sort((a,b) => (b.starred_at||'').localeCompare(a.starred_at||''));
@@ -1571,7 +1566,7 @@ async function saveProfile(){
 
 async function parseResume(){
   const text = el('presume').value.trim();
-  const msg = el('profile-msg'), btn = el('pparse');
+  const msg = el('pparse-feedback'), btn = el('pparse');
   if (!text){ msg.textContent = 'Paste your résumé first.'; return; }
   btn.disabled = true; msg.textContent = 'Reading…';
   let ok = false, spent = false;
@@ -1583,7 +1578,10 @@ async function parseResume(){
       ok = true;
       fillProfileForm(d);   // also sets the button from the fresh parses_left
       el('presume').value = '';   // the document was never stored; don't keep it on screen either
-      msg.textContent = 'Read — check the fields below, edit anything, then Save.';
+      msg.textContent = 'Read — review your editable profile, then save it.';
+      el('profile-msg').textContent = msg.textContent;
+      el('profile-fields-heading').scrollIntoView({ block: 'start' });
+      el('profile-fields-heading').focus({ preventScroll: true });
     } else {
       spent = r.status === 502;   // the router answered nothing usable — a read was still spent
       logFail('POST', '/profile/parse', r.status);
@@ -1602,16 +1600,19 @@ function applyProfile(){
   const p = readProfileForm();
   if (!p.query){ el('profile-msg').textContent = 'Fill in what to search for first.'; return; }
   el('q').value = p.query;
+  setQueryMode('meaning');
+  searchScope = null;
   Object.values(CONTROL).forEach(id => { const c = el(id); if (!c) return;
     if (c.type === 'checkbox') c.checked = false; else c.value = ''; });
   if (p.years) el('maxyears').value = p.years;
   if (p.location) el('location').value = p.location;
-  location.hash = '#search';
+  navigation.navigate('#search', { focus: 'results' });
   go();
 }
 
 async function deleteProfile(){
-  if (!window.confirm('Clear your stored profile? Your saved sets and starred jobs stay.')) return;
+  const choice = await HeadStartDecision.request({ title: 'Delete your profile?', body: 'Your saved searches and saved jobs stay.', confirm: 'Delete profile', danger: true });
+  if (!choice.confirmed) return;
   const msg = el('profile-msg');
   try{
     const r = await fetch('/profile', { method: 'DELETE' });
@@ -4473,8 +4474,8 @@ if (el('trends-co-roles')) el('trends-co-roles').addEventListener('click', () =>
 // by exactly the row's net and needs no note reconciling the two.
 function openCompanyTrend(board, name, since){
   if (name) pickLabels.set(board, name);
-  location.hash = '#trends?company=' + encodeURIComponent(board)
-    + (since ? '&since=' + encodeURIComponent(since.slice(0, 16)) : '');
+  navigation.navigate('#trends?company=' + encodeURIComponent(board)
+    + (since ? '&since=' + encodeURIComponent(since.slice(0, 16)) : ''));
 }
 
 // The plot's box changes width after it was drawn when the sidebar folds or the window is
@@ -4688,6 +4689,11 @@ if (el('sets-strip')) el('sets-strip').addEventListener('click', e => {
   const btn = e.target.closest('[data-act]');
   if (btn) handleSetAction(btn.dataset.act, btn.dataset.id);
 });
+if (el('matches-actions')) el('matches-actions').addEventListener('click', e => {
+  const btn = e.target.closest('[data-act]');
+  if (btn) handleSetAction(btn.dataset.act, btn.dataset.id);
+});
+document.addEventListener('click', e => { if (e.target.closest('[data-retry-search]')) go(); });
 // The buttons the Search tab draws as HTML (the filter pills, the pager, the empty result's
 // advice) say what they do in data attributes, read by this one listener: an inline onclick
 // is refused by the Content-Security-Policy (#595).
@@ -4883,7 +4889,7 @@ function hotRow(r, i, lens){
   // The rank is decorative — the list is already ordered and screen readers announce <ol>
   // position — so it is hidden from the accessibility tree rather than read out twice.
   return `
-    <li class="hot-row${op ? ' flagged' : ''}" style="animation-delay:${Math.min(i,12)*30}ms">
+    <li class="hot-row${op ? ' flagged' : ''}">
       <span class="hot-rank" aria-hidden="true">${i + 1}</span>
       <div class="hot-who">
         <div class="hot-name">${esc(r.company)}</div>
@@ -4897,9 +4903,10 @@ function hotRow(r, i, lens){
         <span class="hot-sub">${esc(m.sub)}</span>
       </div>
       <div class="hot-actions">
+        <button class="ghost hot-see" data-hot-key="${esc(r.key)}">See roles</button>
         ${CAN_COMPANIES ? `<button class="ghost hot-track" data-track="${esc(r.key)}"
           aria-pressed="${followed}">${followed ? 'Following' : 'Follow'}</button>` : ''}
-        <button class="ghost hot-see" data-hot-key="${esc(r.key)}">See roles</button>
+
         ${el('trends') ? `<button class="ghost hot-trend" data-trend="${esc(r.key)}"
           data-trend-name="${esc(r.company)}" data-trend-since="${esc((hotData.window || {}).base || '')}">See trend</button>` : ''}
       </div>
@@ -5001,15 +5008,14 @@ restoreSigninSearch();
 readSearchHash();   // a reloaded or shared hand-off (`#search?board=…`) scopes the first search
 go();   // an empty query browses the newest jobs (ADR-0074) — the Search tab is never empty
 whoAmI();
-showTab(currentTab());
-shownTab = currentTab();
+navigation.start();
 // The Trends tab's opening view, so opening the tab is answered from the browser's cache.
 if (el('trends') && currentTab() !== 'trends') prefetchTrends(null, trendMetric);
 // And the Hiring now ranking, 11 KB, the same way.
 if (el('hot-results') && currentTab() !== 'hot' && CFG.answers_version)
   setTimeout(() => fetch(versioned('/hot'), { priority: 'low' }).catch(() => {}), PREFETCH_AFTER);
 // Result cards need star states before the Saved tab is ever opened; landing ON the tab
-// already loads via showTab above.
+// already loads on entry above.
 if (CAN_STAR && currentTab() !== 'saved') loadSaved();
 loadCompanies().then(read => {
   drawMyCompanies();

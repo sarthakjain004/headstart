@@ -3917,8 +3917,8 @@ def test_the_index_pull_fetches_every_state_file_the_app_reads(app, monkeypatch,
 # here rather than ship a quieter, less accountable door.
 
 
-def test_the_door_makes_its_case_before_asking_for_an_identity(auth_app):
-    """ADR-0112: what it is, proof, what sign-in costs, and how to check — then the button."""
+def test_voluntary_signin_keeps_disclosures_and_proof_with_the_action(auth_app):
+    """Voluntary sign-in keeps the account disclosure beside the action and retains proof."""
     page = auth_app.app.test_client().get("/signin").data.decode()
     # The proof numbers are counted, not written: the fake table holds two rows and two
     # ATSes, so a hardcoded marketing figure would not survive this.
@@ -3947,11 +3947,14 @@ def test_the_door_makes_its_case_before_asking_for_an_identity(auth_app):
     assert "signing out drops the session" in page
     # …and the links that make the rest checkable.
     assert "github.com/sarthakjain004/headstart" in page
-    # The ask still comes last, and the embedding-frame escape hatch survives (ADR-0112
-    # changed the page around it, which is exactly when this gets dropped by accident).
-    assert page.index("Why the jobs hold up") < page.index(
-        "Sign in to save jobs and searches"
+    # Public browsing now precedes this voluntary step: keep its action discoverable and
+    # preserve the embedding-frame escape hatch.
+    assert page.index("Sign in to save jobs and searches") < page.index(
+        "Why the jobs hold up"
     )
+    assert page.index(
+        "Signing in stores your email address for your account."
+    ) < page.index('id="gbtn"')
     assert 'id="openout"' in page
 
 
@@ -3998,7 +4001,7 @@ def test_the_signed_in_page_says_what_the_product_is(app):
     assert page.count("github.com/sarthakjain004/headstart/blob/main/PRIVACY.md") >= 2
     # Home is the first tab and the one the bare URL shows (ADR-0249): its panel is the only
     # one the server renders visible, and it is the tab marked current before any script runs.
-    nav = page.split('<nav class="tabs"', 1)[1].split("</nav>", 1)[0]
+    nav = page.split('<nav class="tabs desktop-nav"', 1)[1].split("</nav>", 1)[0]
     assert nav.index('data-tab="home"') < nav.index('data-tab="search"')
     assert 'data-tab="home" aria-current="page"' in nav
     assert '<section class="panel" id="panel-home">' in page
@@ -4013,7 +4016,7 @@ def test_home_says_what_the_product_is_in_plain_words(app):
     home = page.split('id="panel-home"', 1)[1].split('id="panel-search"', 1)[0]
     flat = " ".join(home.split())
     # The figures are counted, not typed: the fake table holds two rows on two ATSes.
-    assert "<b>2</b> tech jobs from <b>2</b> hiring platforms" in flat
+    assert "<b>2</b><span>tech jobs from 2 hiring platforms" in flat
     # The facts the Data tab carried that a visitor needs, in plain words.
     assert "English-language tech roles only, for now" in flat
     assert "refresh every couple of hours" in flat
@@ -4023,8 +4026,10 @@ def test_home_says_what_the_product_is_in_plain_words(app):
     assert 'id="home-q"' in home
     assert 'href="#search"' in home
     assert "data-tour-start" in home
-    # The video slot holds a placeholder, never a player pointed at a file that is not there.
-    assert 'class="home-video"' in home
+    # An explicitly labelled example explains the workflow without invented result scores.
+    assert 'class="home-preview"' in home
+    assert "An example workflow" in home
+    assert "92%" not in home
     assert "<video" not in home
     # No design-record citations and no internal vocabulary: this page is for job seekers.
     assert "ADR" not in home
@@ -4049,12 +4054,12 @@ def test_the_sidebar_fold_is_applied_before_the_first_paint(app):
     page = app.app.test_client().get("/").data.decode()
     head = page.split("</head>", 1)[0]
     assert "hs.navCollapsed" in head
-    assert head.index("hs.navCollapsed") < head.index("style.css")
+    assert head.index("hs.navCollapsed") < head.index("app-layout.css")
     button = page.split('id="nav-toggle"', 1)[1].split(">", 1)[0]
     # A disclosure: a constant name, with aria-expanded as the state that flips.
     assert 'aria-label="Navigation labels"' in button
     assert 'aria-expanded="true"' in button
-    assert '<nav class="tabs" id="site-nav"' in page
+    assert '<nav class="tabs desktop-nav" id="site-nav"' in page
     # Every entry keeps its name as text inside the link, so the folded sidebar still announces it.
     nav = page.split('id="site-nav"', 1)[1].split("</nav>", 1)[0]
     assert nav.count('<span class="nav-label">') == nav.count('class="nav-item"')
@@ -4113,8 +4118,7 @@ def test_the_closed_tag_is_presented_as_an_inference(sets_app, monkeypatch):
 
 
 def test_the_page_offers_a_skip_link_past_the_filter_rail(app):
-    """After the search bar, not at the top of the document: `#q` autofocuses, so a skip link
-    placed before it is never reached by tabbing forward — verified in a browser."""
+    """A direct keyboard route from the query past the filter controls to the results."""
     page = app.app.test_client().get("/").data.decode()
     assert 'class="skip" href="#results"' in page
     assert (
@@ -4123,12 +4127,12 @@ def test_the_page_offers_a_skip_link_past_the_filter_rail(app):
 
 
 def test_the_search_controls_are_one_click_each(app):
-    """Issue #755: the filter bar is always open (no Filters toggle), sort and the short selects
-    are rows of radios drawn beside a hidden <select>, and there is no density toggle."""
+    """Inline choices keep the original selects; compact sorting uses its native control."""
     page = app.app.test_client().get("/").data.decode()
     assert 'id="filtersbtn"' not in page and "toggleRail" not in page
     assert 'id="density"' not in page
-    for control in ("sort", "kwin", "etype", "posted"):
+    assert '<select id="sort" aria-labelledby="sort-lbl"' in page
+    for control in ("kwin", "etype", "posted"):
         assert f'<select id="{control}" hidden' in page
         assert f'id="{control}-seg" role="radiogroup"' in page
 
@@ -4187,28 +4191,16 @@ def test_the_salary_tip_does_not_promise_conversion_without_rates(app, monkeypat
         assert "are converted" not in flat
 
 
-def test_the_door_and_the_app_share_one_palette():
-    """The door inlines its own copy of the tokens (the wall gates /static), and that copy
-    has already drifted once: two critique rounds lifted the app's surfaces for contrast and
-    the door kept the old values, so signing in changed the background and the door held on
-    to a contrast defect the app had fixed. Pinned rather than trusted to discipline."""
+def test_signin_and_the_app_share_appearance_tokens():
+    """One token source, so a reskin reaches both pages without duplicate palettes."""
     ui = Path(__file__).resolve().parents[1] / "src" / "headstart" / "ui"
-    css = (ui / "static" / "style.css").read_text()
-    door = (ui / "templates" / "signin.html").read_text()
-    for token in (
-        "--ground",
-        "--raise",
-        "--raise-2",
-        "--rule",
-        "--rule-2",
-        "--ink",
-        "--ink-2",
-    ):
-        for value in re.findall(rf"{re.escape(token)}:(#[0-9A-Fa-f]{{6}})", door):
-            assert f"{token}:{value}" in css, (
-                f"the door sets {token}:{value}, which style.css does not — the two token "
-                "blocks must move together"
-            )
+    for template in ["base.html", "signin.html"]:
+        source = (ui / "templates" / template).read_text()
+        assert "theme-tokens.css" in source
+        assert "appearance_state.html" in source
+    palette = (ui / "static" / "theme-tokens.css").read_text()
+    assert "--ground:#0A0B0D" in palette and "--ground:#E6E9EE" in palette
+    assert "--ground:" not in (ui / "static" / "signin-skin.css").read_text()
 
 
 def test_board_arrivals_are_a_boards_first_tick_and_its_tech_stock_then(

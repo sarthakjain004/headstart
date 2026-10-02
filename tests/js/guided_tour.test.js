@@ -181,26 +181,11 @@ test('Escape and Skip both close it and give the page back', async () => {
   }
 });
 
-test('the first-visit offer shows once, and never where the browser cannot remember it', () => {
+test('a first visit leaves the visitor free to search; the tour starts only on request', () => {
   const first = loadTour();
-  assert.ok(first.ctx.document.querySelector('.tour-offer'), 'a first visit on Home is offered the tour');
-  assert.equal(first.saved['hs.tourOffered'], '1');
-
-  const again = loadTour({ stored: '1' });
-  assert.equal(again.ctx.document.querySelector('.tour-offer'), null, 'offered once, not every visit');
-
-  const blocked = loadTour({ storageThrows: true });
-  assert.equal(blocked.ctx.document.querySelector('.tour-offer'), null,
-    'blocked storage would offer it on every visit, so it is not offered at all');
+  assert.equal(first.ctx.document.querySelector('.tour-offer'), null);
+  assert.equal(first.ctx.document.querySelector('.tour-pop'), null);
 });
-
-test('starting the tour takes the offer down', async () => {
-  const t = loadTour();
-  t.ctx.GuidedTour.start();
-  await t.tick();
-  assert.equal(t.ctx.document.querySelector('.tour-offer'), null);
-});
-
 test('folded to icons, the first step describes icons, not names it cannot see', async () => {
   const body = t => t.pop().children[2].textContent;
   const folded = loadTour({ folded: true });

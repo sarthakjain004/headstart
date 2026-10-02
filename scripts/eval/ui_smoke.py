@@ -131,8 +131,32 @@ def main() -> None:
                 # The bare URL is Home (ADR-0249), and a first visit is offered the tour once.
                 expect(page.locator("#panel-home")).to_be_visible()
                 expect(page.locator("#panel-search")).to_be_hidden()
-                page.get_by_role("button", name="No thanks", exact=True).click()
                 expect(page.locator(".tour-offer")).to_have_count(0)
+                # Removing Home's skin must not move its content or its controls.
+                geometry = """() => [...document.querySelectorAll('.home, .home *')].map(el => {
+                    const r = el.getBoundingClientRect(); return [r.x, r.y, r.width, r.height];
+                })"""
+                before_skin = page.evaluate(geometry)
+                skin_toggle = """disabled => {
+                    const skin = [...document.styleSheets].find(s => s.href?.split('?')[0].endsWith('/home-theme.css'));
+                    skin.disabled = disabled;
+                }"""
+                page.evaluate(skin_toggle, True)
+                assert page.evaluate(geometry) == before_skin, (
+                    "Home skin changed placement"
+                )
+                page.evaluate(skin_toggle, False)
+                # Home's examples use the same real search hand-off as a typed query.
+                page.get_by_role("button", name="ML infrastructure", exact=True).click()
+                expect(page.locator("#panel-search")).to_be_visible()
+                expect(page.locator("#q")).to_have_value("ML infrastructure, PyTorch")
+                expect(page.locator("#results .title")).to_contain_text(
+                    "ML INFRASTRUCTURE, PYTORCH"
+                )
+                page.locator("#q").fill("")
+                page.locator("#search-go").click()
+                expect(page.locator("#results .title")).to_contain_text("BROWSE")
+                page.get_by_role("link", name="Home", exact=True).click()
                 # The tour: it opens on the navigation, Next moves it to Search's box, Back
                 # returns, and Escape closes it and gives the page back.
                 page.locator("#panel-home [data-tour-start]").first.click()
@@ -170,11 +194,15 @@ def main() -> None:
                         exact=True,
                     )
                 ).to_be_visible()
-                page.get_by_role("link", name="Matches", exact=True).click()
+                if width < 1280:
+                    page.locator("#nav-more").click()
+                page.get_by_role("link", name="Saved searches", exact=True).click()
                 expect(page.locator("#matches-results .title")).to_contain_text("SAVED")
                 page.get_by_role("link", name="Home", exact=True).click()
                 expect(
-                    page.get_by_role("heading", name="What you can do here")
+                    page.get_by_role(
+                        "heading", name="More ways to move your search forward"
+                    )
                 ).to_be_visible()
                 # The sidebar fold (ADR-0249): only a wide screen has the sidebar to fold, and
                 # a fold survives a reload, applied before the first paint.
@@ -202,7 +230,7 @@ def main() -> None:
                     page.get_by_role("link", name="Search", exact=True).click()
                     expect(page.locator("#panel-search")).to_be_visible()
                     # The current tab keeps its marker, and a name shows as a tooltip on hover.
-                    current = page.locator('.tabs [aria-current="page"]')
+                    current = page.locator('.tabs [aria-current="page"]:visible')
                     expect(current).to_have_attribute("data-tab", "search")
                     assert "inset" in current.evaluate(
                         "n => getComputedStyle(n).boxShadow"

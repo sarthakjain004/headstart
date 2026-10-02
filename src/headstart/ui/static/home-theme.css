@@ -1,0 +1,25 @@
+/* Replaceable skin. No dimensions, placement, font metrics or breakpoints here.
+   Both light and dark use the shared semantic tokens from style.css. */
+.home-eyebrow, .home-browse, .home-notes a{ color:var(--accent); }
+.home-lede, .home-search-help, .home-examples > span, .home-proof span,
+.home-demo-query span, .home-demo-steps span, .home-preview figcaption, .home-end span{ color:var(--ink-2); }
+.home-search input{ background:var(--raise); color:var(--ink); border-color:var(--control-border);
+  border-radius:var(--r-md); }
+.home-search input::placeholder{ color:var(--ink-2); }
+.home-search input:focus-visible{ outline:2px solid var(--accent); outline-offset:3px; }
+.home-examples button{ background:var(--raise); color:var(--ink-2); border-color:var(--rule);
+  border-radius:var(--r-pill); cursor:pointer; }
+.home-examples button:hover, .home-card:hover{ border-color:var(--accent); }
+.home-examples button:active{ background:var(--raise-2); }
+.home-browse{ text-decoration:none; }
+.home-browse:hover{ text-decoration:underline; }
+.home-preview, .home-card, .home-steps li, .home-end{ background:var(--raise); border-color:var(--rule);
+  border-radius:var(--r-lg); }
+.home-preview-label, .home-card b, .home-steps b, .home-notes b{ color:var(--ink); }
+.home-demo-query{ background:var(--raise-2); border-color:var(--rule-2); border-radius:var(--r-md); }
+.home-demo-steps li::before, .home-steps li::before{ background:var(--raise-2); color:var(--accent);
+  border-color:var(--rule-2); border-radius:var(--r-pill); }
+.home-proof{ border-color:var(--rule); }
+.home-card, .home-steps li, .home-notes li{ color:var(--ink-2); }
+.home-notes li{ border-color:var(--rule-2); }
+.home :is(button,a,input):focus-visible{ outline:2px solid var(--accent); outline-offset:3px; }

@@ -1,9 +1,12 @@
 <section class="matches">
   <div class="matches-head">
-    <h2>Your matches</h2>
-    <span class="note" id="matches-msg" role="status"></span>
-  </div>
-  <div class="sets-strip" id="sets-strip" aria-label="Saved sets"></div>
+    <div><p class="page-eyebrow">Your workspace</p><h2>Saved searches</h2><p class="page-intro">Revisit the roles you care about without starting over.</p></div>
+    <a class="ghost action" href="#search">New search</a></div>
+  <p class="note" id="matches-msg" role="status"></p>
+  <div class="sets-strip" id="sets-strip" aria-label="Saved searches"></div>
+  <div id="matches-actions" class="matches-actions"></div>
+  <div class="row"><span class="note" id="set-action-error" role="status"></span><button class="ghost" id="rename-retry" hidden>Retry rename</button></div>
+
   {# View controls, not filters: they refine what the active set shows right now and are
      never written into the set (ADR-0043 keeps sets to relative windows that don't age). #}
   <div class="matches-controls" id="matches-controls">
@@ -15,7 +18,7 @@
     </select>
     <button class="ghost dir" id="mdir" data-dir="desc" title="Flip sort direction"
             aria-label="Sort direction, currently descending">↓</button>
-    <span class="spacer"></span>
+    <details class="matches-extra"><summary>Filter by date</summary><div class="matches-date-fields">
     <label class="note" for="mposted-from">Posted</label>
     <input type="date" id="mposted-from" aria-label="Posted from">
     <span class="note">–</span>
@@ -27,6 +30,7 @@
     <input type="date" id="mseen-to" aria-label="First seen to">
     {% endif %}
     <button class="ghost" id="mclear">Clear</button>
+    </div></details>
   </div>
   <p class="kind">This search runs again each time you come back, so the list is always current.
     A closed job drops out once the company's site has been checked twice without it, so that
