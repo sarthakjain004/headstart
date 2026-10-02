@@ -272,3 +272,74 @@ def test_selected_description_read_preserves_updates_and_blanks(tmp_path):
         }
         == {f"{BOARD}:1": "new"}
     )
+
+
+def test_baseline_does_not_revive_a_board_already_observed_dormant(
+    tmp_path, monkeypatch
+):
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    facts = tmp_path / "facts"
+    for stamp in RUNS[:2]:
+        lines = jf.ScrapedLines(facts / jf.SCRAPED_LINES)
+        lines.see(
+            BOARD,
+            {
+                "id": f"{BOARD}:1",
+                "title": "Backend Engineer",
+                "department": "Engineering",
+                "posted_at": "2020-01-01",
+            },
+        )
+        scope = jf.RunScope(authoritative=frozenset({BOARD}), keep_set=None, live={})
+        reads = jf.board_reads(
+            [ShardReport(boards_ok=[BOARD])], lines.board_lines, scope
+        )
+        jf.record_run(lines.close(), facts, stamp, reads, scope)
+    families, head, cache = _config(tmp_path)
+    baseline = tmp_path / "baseline.parquet"
+    schema = pa.schema(
+        [
+            ("kind", pa.string()),
+            ("id", pa.string()),
+            ("vector", pa.list_(pa.float16())),
+            ("description", pa.string()),
+            ("reference_board", pa.string()),
+        ],
+        metadata={b"baseline": b"true", b"ts": b"2026-09-02T00:00:00+00:00"},
+    )
+    pq.write_table(pa.Table.from_pylist([], schema=schema), baseline)
+    _describe(
+        tmp_path / "descriptions",
+        {
+            f"{BOARD}:1": "You will design and maintain software systems for our customers."
+        },
+    )
+    args = [
+        "restate",
+        "--facts",
+        str(facts),
+        "--baseline",
+        str(baseline),
+        "--ledger",
+        str(tmp_path / "no-ledger"),
+        "--board-failures",
+        str(tmp_path / "no-failures"),
+        "--classifier",
+        str(head),
+        "--families",
+        str(families),
+        "--title-cache",
+        str(cache),
+        "--descriptions",
+        str(tmp_path / "descriptions"),
+        "--db",
+        str(tmp_path / "no-db"),
+        "--out",
+        str(tmp_path / "restated"),
+    ]
+    monkeypatch.setattr(sys, "argv", args)
+    assert restate_run.main() == 0
+    _, levels = trend_history.board_levels(tmp_path / "restated")
+    assert sum(n for key, n in levels.items() if key[1] == "stock") == 0

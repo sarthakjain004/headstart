@@ -279,7 +279,9 @@ def english_only(
             version_sources.get((job_id, start), (None, descriptions.get(job_id)))[1]
             or ""
         )
-        key = (job_id, title or "", text)
+        # The version identifies its immutable text; caching whole descriptions would
+        # retain the entire disk-backed baseline in RAM again.
+        key = (job_id, title or "", start)
         if key not in judged:
             judged[key] = is_english(title or "", text)
         keep.append(judged[key])

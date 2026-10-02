@@ -212,10 +212,8 @@ def main() -> int:
     if dormant_versions is None:
         _log.info("no Job facts — nothing to restate")
         return 0
-    if baseline_stamp is not None:
-        dormant_versions = restate_baseline.seed_versions(
-            dormant_versions, inherited, baseline_stamp, future
-        )
+    # Dormancy depends on the actual earlier observations. Rebasing these dates
+    # would revive already-Dormant Boards until their next read.
     periods = restate_served.dormant_periods(dormant_versions, reads, live)
     del dormant_versions
     gc.collect()
@@ -244,6 +242,7 @@ def main() -> int:
     pa.default_memory_pool().release_unused()
     if baseline_stamp is not None:
         _log.info("loading baseline version vectors and descriptions in batches")
+        baseline_sources = restate_baseline.BaselineSources(baseline_stamp)
         for batch in baseline_file.iter_batches(
             batch_size=4096, columns=["id", "vector", "description"]
         ):
@@ -258,13 +257,12 @@ def main() -> int:
             )
             # The row views retain only the vector buffer, not Python lists of every
             # component or the batch's description column.
-            for row, vector in zip(
-                table.select(["id", "description"]).to_pylist(), matrix, strict=True
-            ):
-                baseline_sources[(row["id"], baseline_stamp)] = (
-                    vector,
-                    row["description"],
+            baseline_sources.add_batch(
+                (row["id"], vector, row["description"])
+                for row, vector in zip(
+                    table.select(["id", "description"]).to_pylist(), matrix, strict=True
                 )
+            )
         _log.info(f"loaded {len(baseline_sources)} baseline version sources")
     latest_ids = {
         job_id
@@ -323,6 +321,8 @@ def main() -> int:
         version_sources=baseline_sources,
     )
     _log.info(f"placed {served.num_rows} served intervals in a family and band")
+    if isinstance(baseline_sources, restate_baseline.BaselineSources):
+        baseline_sources.close()
     del descriptions, baseline_sources, ids, titles, requisitions, wanted, latest_ids
     gc.collect()
     pa.default_memory_pool().release_unused()
