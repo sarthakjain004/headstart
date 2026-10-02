@@ -128,7 +128,7 @@ p.note{ max-width:74ch; }
 .match{ width:52px; height:52px; position:relative; }
 .ring{ width:52px; height:52px; display:block; transform:rotate(-90deg); }
 .ring circle{ stroke-width:3.5; }
-.match .v{ position:absolute; inset:0; display:grid; place-items:center; font:600 12px var(--mono); font-variant-numeric:tabular-nums; }
+.match .v{ position:absolute; inset:0 0 auto; height:52px; display:grid; place-items:center; font:600 12px var(--mono); font-variant-numeric:tabular-nums; }
 .card .tags{ display:flex; gap:6px; flex-wrap:wrap; margin-top:7px; align-items:center; }
 .tag{ font:500 11px var(--sans); padding:2px 8px; border-width:1px; border-style:solid; }
 .tag.mono{ font-family:var(--mono); font-variant-numeric:tabular-nums; }
@@ -496,6 +496,7 @@ button:is(.icon-btn,.rb-icon,.star){ width:44px; height:44px; min-width:44px; }
 .matches-extra > summary{ min-height:44px; display:flex; align-items:center; cursor:pointer; padding:8px 12px; font-size:13px; }
 .matches-date-fields{ display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:12px 0; }
 .saverow .go{ min-width:140px; }
+.profile-card > h3{ margin:0 0 16px; font:600 16px/1.4 var(--sans); }
 #sort{ display:none; }
 @media (max-width:760px){
 #sort{ display:block; min-height:44px; max-width:180px; padding:8px 12px; border-width:1px; border-style:solid; font:inherit; }

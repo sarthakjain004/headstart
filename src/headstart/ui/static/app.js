@@ -1128,6 +1128,8 @@ function draw(rows, target){
    one from the controls the user is looking at. All strip actions ride ONE delegated
    listener + data attributes — never inline handlers with interpolated names. ---- */
 let mySets = null, activeSetId = null;
+const renameDrafts = new Map();
+let retryRenameId = null;
 let matchesRequest = 0;
 
 async function loadSets(){
@@ -1238,10 +1240,10 @@ async function handleSetAction(act, id){
   if (act === 'run') return runSet(id);
   if (act === 'refine'){ applySetToControls(s); navigation.navigate('#search', { focus: 'results' }); go(); return; }
   if (act === 'rename'){
-    const choice = await HeadStartDecision.request({ title: 'Rename saved search', label: 'Search name', value: s.name, confirm: 'Rename' });
+    const choice = await HeadStartDecision.request({ title: 'Rename saved search', label: 'Search name', value: renameDrafts.get(id) ?? s.name, confirm: 'Rename' });
     const name = choice.confirmed ? choice.value : '';
     if (!name || name === s.name) return;
-    await setRefusal(await postAndReloadSets('/sets', { id, name, query: s.query, filters: s.search_filters }));
+    await renameSet(id, name);
     return;
   }
   if (act === 'del'){
@@ -1262,6 +1264,24 @@ async function handleSetAction(act, id){
     await setRefusal(await postAndReloadSets('/sets/' + encodeURIComponent(id) + '/email', { on: !s.emails }));
   }
 }
+
+async function renameSet(id, name){
+  const s = (mySets || []).find(set => set.id === id);
+  if (!s) return;
+  renameDrafts.set(id, name);
+  const button = el('rename-retry');
+  if (button) button.disabled = true;
+  const response = await postAndReloadSets('/sets', { id, name, query: s.query, filters: s.search_filters });
+  await setRefusal(response);
+  const failed = !response || !response.ok;
+  if (failed) retryRenameId = id;
+  else { retryRenameId = null; renameDrafts.delete(id); }
+  if (el('set-action-error')) el('set-action-error').textContent = failed ? el('matches-msg').textContent : '';
+  if (button) { button.hidden = !failed; button.disabled = false; }
+}
+if (el('rename-retry')) el('rename-retry').addEventListener('click', () => {
+  if (retryRenameId) renameSet(retryRenameId, renameDrafts.get(retryRenameId));
+});
 
 // A set action the server refused says why in #matches-msg; a dropped one says so too.
 async function setRefusal(r){
@@ -1533,7 +1553,7 @@ async function saveProfile(){
 
 async function parseResume(){
   const text = el('presume').value.trim();
-  const msg = el('profile-msg'), btn = el('pparse');
+  const msg = el('pparse-feedback'), btn = el('pparse');
   if (!text){ msg.textContent = 'Paste your résumé first.'; return; }
   btn.disabled = true; msg.textContent = 'Reading…';
   let ok = false, spent = false;
@@ -1545,7 +1565,10 @@ async function parseResume(){
       ok = true;
       fillProfileForm(d);   // also sets the button from the fresh parses_left
       el('presume').value = '';   // the document was never stored; don't keep it on screen either
-      msg.textContent = 'Read — check the fields below, edit anything, then Save.';
+      msg.textContent = 'Read — review your editable profile, then save it.';
+      el('profile-msg').textContent = msg.textContent;
+      el('profile-fields-heading').scrollIntoView({ block: 'start' });
+      el('profile-fields-heading').focus({ preventScroll: true });
     } else {
       spent = r.status === 502;   // the router answered nothing usable — a read was still spent
       logFail('POST', '/profile/parse', r.status);

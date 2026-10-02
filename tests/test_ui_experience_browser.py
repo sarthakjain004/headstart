@@ -265,6 +265,11 @@ def test_discover_save_manage_prepare_and_recover(experience, width):
     pw.expect(page.locator(".tour-offer")).to_have_count(0)
     page.get_by_role("button", name="Backend engineering", exact=True).click()
     pw.expect(page.locator("#results .title")).to_contain_text("Backend Engineer")
+    ring = page.locator("#results .ring").bounding_box()
+    number = page.locator("#results .match .v").bounding_box()
+    assert (
+        abs((ring["y"] + ring["height"] / 2) - (number["y"] + number["height"] / 2)) < 1
+    )
     pw.expect(page.locator("#results")).to_be_focused()
     page.get_by_role("button", name="Save this job", exact=True).click()
     pw.expect(
@@ -346,8 +351,67 @@ def test_discover_save_manage_prepare_and_recover(experience, width):
     pw.expect(page.locator("#rb-paper")).to_be_visible()
     page.locator("#rb-download").click()
     pw.expect(page.locator("#rb-pop-download")).to_be_visible()
+    page.emulate_media(media="print")
+    pw.expect(page.locator("#panel-resume .page-head")).to_be_hidden()
+    pw.expect(page.locator(".rb-template-open")).to_be_hidden()
+    pw.expect(page.locator("#rb-paper")).to_be_visible()
+    page.emulate_media(media="screen")
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     assert not errors, errors
+    page.close()
+
+
+@pytest.mark.parametrize("width", [390, 1440])
+def test_import_feedback_and_failed_rename_retain_the_user_context(experience, width):
+    browser, url, writes, _, _ = experience
+    page = browser.new_page(
+        viewport={"width": width, "height": 667}, reduced_motion="reduce"
+    )
+    page.goto(url)
+    open_screen(page, "profile", width < 1280)
+    page.locator(".profile-import > summary").click()
+    page.locator("#presume").fill("Fixture resume text")
+    page.route(
+        "**/profile/parse",
+        lambda route: route.fulfill(
+            status=503, json={"error": "Fixture read unavailable"}
+        ),
+    )
+    page.locator("#pparse").click()
+    pw.expect(page.locator("#pparse-feedback")).to_have_text("Fixture read unavailable")
+    assert page.locator("#pparse-feedback").bounding_box()["y"] > 0
+    page.unroute("**/profile/parse")
+    page.route(
+        "**/profile/parse",
+        lambda route: route.fulfill(
+            json={"query": "Parsed backend role", "years": "4", "parses_left": 2}
+        ),
+    )
+    page.locator("#pparse").click()
+    pw.expect(page.locator("#pquery")).to_have_value("Parsed backend role")
+    pw.expect(page.locator("#profile-fields-heading")).to_be_focused()
+    assert page.locator("#pquery").bounding_box()["y"] > 0
+    open_screen(page, "matches", width < 1280)
+    pw.expect(page.locator("#matches-actions")).to_contain_text("Backend roles")
+    page.route(
+        "**/sets",
+        lambda route: (
+            route.fulfill(status=503, json={"error": "Fixture rename unavailable"})
+            if route.request.method == "POST"
+            else route.continue_()
+        ),
+    )
+    page.locator('#matches-actions [data-act="rename"]').click()
+    page.locator("#decision-value").fill("Retained draft name")
+    page.locator("#decision-confirm").click()
+    pw.expect(page.locator("#rename-retry")).to_be_visible()
+    page.locator('#matches-actions [data-act="rename"]').click()
+    pw.expect(page.locator("#decision-value")).to_have_value("Retained draft name")
+    page.keyboard.press("Escape")
+    page.unroute("**/sets")
+    page.locator("#rename-retry").click()
+    pw.expect(page.locator("#sets-strip")).to_contain_text("Retained draft name")
+    assert writes[-1][1]["name"] == "Retained draft name"
     page.close()
 
 

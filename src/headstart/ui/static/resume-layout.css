@@ -194,7 +194,7 @@
 .rb-kwtag{ font-size:.76rem; white-space:nowrap; }
 @media print{
 .top, .tabs, .foot, .rb-bar, .rb-seg, .rb-aside, .rb-form, .rb-stage-foot, .rb-templates,
-  .rb-pop{ display:none !important; }
+  .rb-pop, .rb .page-head, .rb-template-open{ display:none !important; }
 .rb-work[hidden]{ display:block !important; }
 .rb-paper-wrap{ overflow:visible; padding:0; height:auto !important; max-height:none !important; }
 .rb-paper{ transform:none !important; }
@@ -214,4 +214,4 @@
 .rb-template-open{ display:none; }
 .rb-checkscard > summary{ display:flex; align-items:center; justify-content:space-between; min-height:44px; list-style:none; }
 .rb-checkscard h2{ font:inherit; margin:0; }
-@media (max-width:1000px){ .rb-template-open{ display:inline-flex; align-items:center; justify-content:center; align-self:flex-start; margin-bottom:12px; } }
+@media screen and (max-width:1000px){ .rb-template-open{ display:inline-flex; align-items:center; justify-content:center; align-self:flex-start; margin-bottom:12px; } }
