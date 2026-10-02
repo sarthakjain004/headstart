@@ -297,6 +297,488 @@ def test_the_module_keeps_no_copy_of_the_reserved_names():
     assert trend_history.WATCH_PREFIX is role_taxonomy.WATCH_PREFIX
 
 
+def _coverage_ticks(state):
+    """An old employer adds a second Board with backlog, then records actual turnover.
+
+    The baseline Board leaves the served stock; failed and unscheduled reads do not
+    establish endpoint freshness. An authoritative empty Board leaves no count history.
+    """
+    old, added, newcomer = "workday:acme/main", "workday:acme/second", "lever:newco"
+    for day, stocks, events in (
+        (0, {old: 10}, {}),
+        (
+            1,
+            {old: 10, added: 100, newcomer: 20},
+            {
+                (added, "recounted_in", "software-engineering", "mid"): 100,
+                (newcomer, "recounted_in", "software-engineering", "mid"): 20,
+            },
+        ),
+        (
+            2,
+            {old: 10, added: 102, newcomer: 20},
+            {
+                (added, "opened", "software-engineering", "mid"): 3,
+                (added, "closed", "software-engineering", "mid"): 1,
+                (old, "unscoped", "all", "all"): 1,
+            },
+        ),
+        (
+            3,
+            {added: 102, newcomer: 20},
+            {
+                (old, "recounted_out", "software-engineering", "mid"): 10,
+                (added, "unscoped", "all", "all"): 1,
+            },
+        ),
+    ):
+        trend_history.record_tick(
+            state,
+            _stamp(day),
+            {(b, "stock", "software-engineering", "mid"): n for b, n in stocks.items()},
+            events,
+            _methodology(2),
+        )
+    (state / "company_directory.json").write_text(
+        json.dumps(
+            {
+                "companies": [
+                    {"name": "Acme", "boards": [old, added]},
+                    {"name": "Newco", "boards": [newcomer]},
+                ]
+            }
+        )
+    )
+    return TrendHistory.load(state, _NO_CONFIG)
+
+
+def test_coverage_summary_keeps_backlog_separate_from_later_openings(tmp_path):
+    history = _coverage_ticks(tmp_path)
+    answer = history.unnetted_answer(TrendQuestion(coverage="comparable"))
+    summary = answer["coverage_summary"]
+    assert summary["membership_basis"] == "first_stock_count"
+    assert summary["cohort"]["boards"] == 1
+    assert summary["cohort"]["stock_start"] == 10
+    assert summary["cohort"]["stock_latest"] == 0
+    assert summary["cohort"]["net_recounted"] == -10
+    assert summary["entrants"]["boards"] == 2
+    assert summary["entrants"]["first_counted_backlog"] == 120
+    assert summary["entrants"]["recorded_index_additions"] == 3
+    assert summary["entrants"]["recorded_closed"] == 1
+    assert summary["entrants"]["net_recounted"] == 0
+    assert summary["entrants"]["observed_since"] == _stamp(1)
+    assert summary["all_known"] == {"boards": 3, "stock_start": 10, "stock_latest": 122}
+    # Newcomer activity is visible even though absent from the fixed cohort chart.
+    assert answer["series"][0]["latest"] == 0
+    assert summary["entrants"]["stock_latest"] == 122
+    assert line_reading.trends_payload(answer)[0]["coverage_summary"] == summary
+
+
+def test_existing_employers_new_board_is_a_coverage_addition(tmp_path):
+    history = _coverage_ticks(tmp_path)
+    summary = history.unnetted_answer(
+        TrendQuestion(
+            coverage="comparable",
+            companies=("workday:acme/main",),
+        )
+    )["coverage_summary"]
+    assert summary["cohort"]["boards"] == 1
+    assert summary["entrants"]["boards"] == 1
+    assert summary["entrants"]["first_counted_backlog"] == 100
+    assert summary["entrants"]["recorded_index_additions"] == 3
+    assert summary["all_known"]["stock_latest"] == 102
+
+
+def test_failed_and_missing_reads_leave_coverage_quality_unknown(tmp_path):
+    summary = _coverage_ticks(tmp_path).unnetted_answer(TrendQuestion())[
+        "coverage_summary"
+    ]
+    assert summary["cohort"]["closures_unseen"] == 1
+    assert summary["entrants"]["closures_unseen"] == 1
+    assert summary["quality"] == {
+        "start_eligibility": "unknown",
+        "endpoint_freshness": "unknown",
+        "successful_zero_boards": "unknown",
+        "event_causes": "unknown",
+    }
+    # No closure marker on Newco does not establish a successful endpoint read.
+    assert summary["entrants"]["recorded_closed"] == 1
+
+
+def test_range_changes_choose_different_first_counted_populations(tmp_path):
+    history = _coverage_ticks(tmp_path)
+    start = history.unnetted_answer(TrendQuestion(coverage="comparable"))[
+        "coverage_summary"
+    ]
+    later = history.unnetted_answer(
+        TrendQuestion(coverage="comparable", base=_stamp(1))
+    )["coverage_summary"]
+    assert (start["baseline"], start["cohort"]["boards"]) == (_stamp(0), 1)
+    assert (later["baseline"], later["cohort"]["boards"]) == (_stamp(1), 3)
+    assert later["entrants"]["boards"] == 0
+    assert later["cohort"]["recorded_index_additions"] == 3
+
+
+def test_summary_respects_explicit_earlier_base_and_source_filter(tmp_path):
+    history = _coverage_ticks(tmp_path)
+    summary = history.unnetted_answer(
+        TrendQuestion(
+            coverage="comparable",
+            base=_stamp(0),
+            since=_stamp(2),
+            ats=("workday",),
+        )
+    )["coverage_summary"]
+    assert summary["baseline"] == _stamp(0)
+    assert summary["cohort"]["boards"] == 1
+    assert summary["entrants"]["first_counted_backlog"] == 100
+    # The opening booked at the window start predates this window's activity.
+    assert summary["entrants"]["recorded_index_additions"] == 0
+    assert summary["all_known"]["stock_start"] == 112
+
+
+@pytest.mark.parametrize("metric", ["stock", "new"])
+def test_coverage_inventory_has_same_stock_meaning_under_every_metric(tmp_path, metric):
+    history = _coverage_ticks(tmp_path)
+    summary = history.unnetted_answer(TrendQuestion(metric=metric))["coverage_summary"]
+    assert summary["all_known"]["stock_latest"] == 122
+    assert summary["entrants"]["first_counted_backlog"] == 120
+
+
+def test_single_tick_has_unknown_turnover_not_zero(tmp_path):
+    summary = _coverage_ticks(tmp_path).unnetted_answer(TrendQuestion(until=_stamp(1)))[
+        "coverage_summary"
+    ]
+    assert summary["entrants"]["recorded_index_additions"] is None
+    assert summary["entrants"]["recorded_closed"] is None
+
+
+def test_first_recorded_turnover_tick_is_available_at_window_end(tmp_path):
+    board = "lever:acme"
+    for day, n, turnover in (
+        (0, 10, {}),
+        (1, 12, {(board, "opened", "software-engineering", "mid"): 2}),
+    ):
+        trend_history.record_tick(
+            tmp_path,
+            _stamp(day),
+            {(board, "stock", "software-engineering", "mid"): n},
+            turnover,
+            _methodology(2),
+        )
+    summary = TrendHistory.load(tmp_path, _NO_CONFIG).unnetted_answer(TrendQuestion())[
+        "coverage_summary"
+    ]
+    assert summary["cohort"]["recorded_index_additions"] == 2
+
+
+def test_category_summary_excludes_nontech_and_watch_duplicates(tmp_path):
+    _write_ticks(tmp_path)
+    history = TrendHistory.load(tmp_path, _NO_CONFIG)
+    summary = history.unnetted_answer(
+        TrendQuestion(
+            family="software-engineering",
+            split="roles",
+        )
+    )["coverage_summary"]
+    assert summary["scope"] == "family"
+    assert summary["all_known"] == {"boards": 3, "stock_start": 2, "stock_latest": 1}
+    assert summary["entrants"]["first_counted_backlog"] == 1
+
+
+def test_unknown_other_drill_summary_explicitly_covers_all_tech(tmp_path):
+    history = _coverage_ticks(tmp_path)
+    summary = history.unnetted_answer(TrendQuestion(family="other"))["coverage_summary"]
+    assert summary["scope"] == "tech"
+    assert summary["family"] is None
+    assert summary["all_known"]["stock_latest"] == 122
+
+
+def test_hidden_family_summary_counts_its_actual_rows(tmp_path):
+    board = "lever:acme"
+    for day, count in ((0, 3), (1, 4)):
+        trend_history.record_tick(
+            tmp_path,
+            _stamp(day),
+            {
+                (board, "stock", "unclassified-tech", "mid"): count,
+            },
+            {},
+            _methodology(2),
+        )
+    summary = TrendHistory.load(tmp_path, _REPO_FAMILIES.parent).unnetted_answer(
+        TrendQuestion(family="unclassified-tech")
+    )["coverage_summary"]
+    assert summary["scope"] == "family"
+    assert summary["family"] == "unclassified-tech"
+    assert summary["family_label"] == "Other"
+    assert summary["all_known"] == {"boards": 1, "stock_start": 3, "stock_latest": 4}
+
+
+def test_category_lineage_keeps_entrant_activity_and_arrival_read_gaps(tmp_path):
+    old, entrant = "lever:old", "lever:added"
+    for day, count, events in (
+        (0, 0, {}),
+        (
+            1,
+            100,
+            {
+                (entrant, "recounted_in", "ai-ml", "mid"): 100,
+                (entrant, "unscoped", "all", "all"): 1,
+            },
+        ),
+        (2, 103, {(entrant, "opened", "ai-ml", "mid"): 3}),
+    ):
+        levels = {(old, "stock", "software-engineering", "mid"): 10}
+        if count:
+            levels[entrant, "stock", "ai-ml", "mid"] = count
+        trend_history.record_tick(
+            tmp_path, _stamp(day), levels, events, _methodology(2)
+        )
+    history = TrendHistory.load(tmp_path, _REPO_FAMILIES.parent)
+    summary = history.unnetted_answer(
+        TrendQuestion(
+            family="ai-ml-data-science",
+            coverage="comparable",
+        )
+    )["coverage_summary"]
+    assert summary["scope"] == "family"
+    assert summary["family"] == "ai-ml-data-science"
+    assert summary["cohort"]["stock_latest"] == 0
+    assert summary["entrants"]["first_counted_backlog"] == 100
+    assert summary["entrants"]["stock_latest"] == 103
+    assert summary["entrants"]["recorded_index_additions"] == 3
+    # Read quality includes arrival-tick failures even though its backlog is not activity.
+    assert summary["entrants"]["closures_unseen"] == 1
+    assert summary["entrants"]["net_recounted"] == 0
+
+
+def test_count_summary_cannot_see_an_authoritatively_read_zero_board(tmp_path):
+    # Count files have no read outcome. Even naming a zero level does not store its Board.
+    empty = "lever:empty"
+    trend_history.record_tick(
+        tmp_path,
+        _stamp(-1),
+        {
+            (empty, "stock", "software-engineering", "mid"): 0,
+        },
+        {},
+        _methodology(2),
+    )
+    history = _coverage_ticks(tmp_path)
+    answer = history.unnetted_answer(TrendQuestion(coverage="comparable"))
+    summary = answer["coverage_summary"]
+    assert answer["base"] == _stamp(0)
+    assert summary["from"] == _stamp(0)
+    assert summary["cohort"]["boards"] == 1
+    assert summary["quality"]["successful_zero_boards"] == "unknown"
+    assert (
+        history.unnetted_answer(TrendQuestion(until=_stamp(-1)))["coverage_summary"]
+        is None
+    )
+
+
+def _coverage_rule_change_ticks(state):
+    old, added = "lever:old", "lever:added"
+    for day, stock, metric, events in (
+        (0, 0, "recounted_in", 0),
+        (1, 100, "recounted_in", 100),
+        (2, 1100, "opened", 1000),
+        (3, 1600, "opened", 500),
+        (4, 1603, "opened", 3),
+    ):
+        levels = {(old, "stock", "software-engineering", "mid"): 10}
+        if stock:
+            levels[added, "stock", "software-engineering", "mid"] = stock
+        method = _methodology(2)
+        if day >= 2:
+            method = trend_history.Methodology("7681eb07a2b5", 2, 6, 15, 5)
+        trend_history.record_tick(
+            state,
+            _stamp(day),
+            levels,
+            {(added, metric, "software-engineering", "mid"): events} if events else {},
+            method,
+        )
+    (state / "company_directory.json").write_text(
+        json.dumps(
+            {
+                "companies": [
+                    {"name": "Acme", "boards": [old, added]},
+                ]
+            }
+        )
+    )
+    return TrendHistory.load(state, _NO_CONFIG)
+
+
+def test_coverage_activity_excludes_filter_change_and_settling_spikes(tmp_path):
+    history = _coverage_rule_change_ticks(tmp_path)
+    answer = history.unnetted_answer(TrendQuestion())
+    summary = answer["coverage_summary"]
+    assert summary["entrants"]["first_counted_backlog"] == 100
+    assert summary["entrants"]["stock_latest"] == 1603
+    assert summary["entrants"]["recorded_index_additions"] == 3
+    assert summary["entrants"]["activity_excluded_ticks"] == [_stamp(2), _stamp(3)]
+    assert summary["entrants"]["activity_excluded_updates"] == 2
+    payload, _ = line_reading.trends_payload(answer)
+    assert payload["reading"]["total"]["move"]["turnover"]["opened"] == 3
+    # If every subsequent activity interval is excluded, unknown replaces a false quiet 0.
+    short = history.unnetted_answer(TrendQuestion(until=_stamp(3)))["coverage_summary"]
+    assert short["entrants"]["recorded_index_additions"] is None
+
+
+def test_internal_hot_and_line_readings_skip_coverage_summary_work(
+    tmp_path, monkeypatch
+):
+    history = _coverage_ticks(tmp_path)
+
+    def unexpected(*args, **kwargs):
+        raise AssertionError(
+            "UI coverage summary should not run for an internal line reading"
+        )
+
+    monkeypatch.setattr(history, "_coverage_summary", unexpected)
+    line_reading.read_trends(history, TrendQuestion())
+    moves = line_reading.read_company_moves(
+        history,
+        line_reading.TrendWindow(since=_stamp(0), until=_stamp(3)),
+        ["workday:acme/main"],
+    )
+    assert "workday:acme/main" in moves
+
+
+@pytest.mark.parametrize("coverage", ["all", "comparable"])
+@pytest.mark.parametrize("metric", ["stock", "new"])
+@pytest.mark.parametrize("family", [None, "software-engineering"])
+@pytest.mark.parametrize("picked", [False, True])
+def test_starting_on_rule_change_retains_settling_exclusion(
+    tmp_path,
+    coverage,
+    metric,
+    family,
+    picked,
+):
+    history = _coverage_rule_change_ticks(tmp_path)
+    summary = history.unnetted_answer(
+        TrendQuestion(
+            coverage=coverage,
+            metric=metric,
+            family=family,
+            companies=("lever:old",) if picked else (),
+            base=_stamp(2) if coverage == "comparable" else None,
+            since=_stamp(2) if coverage == "all" else None,
+        )
+    )["coverage_summary"]
+    assert summary["from"] == _stamp(2)
+    assert summary["cohort"]["recorded_index_additions"] == 3
+    assert summary["cohort"]["activity_excluded_ticks"] == [_stamp(3)]
+    assert summary["cohort"]["activity_excluded_updates"] == 1
+
+
+def test_lever_only_scope_is_not_affected_by_companys_eightfold_dedup(tmp_path):
+    lever, mirror = "lever:acme", "eightfold:acme"
+    for day, opened in ((0, 0), (1, 2), (2, 3)):
+        method = trend_history.Methodology(
+            "7681eb07a2b5", 2, 5, 15, 5 if day == 0 else 6
+        )
+        trend_history.record_tick(
+            tmp_path,
+            _stamp(day),
+            {
+                (lever, "stock", "software-engineering", "mid"): (10, 12, 15)[day],
+                (mirror, "stock", "software-engineering", "mid"): 20,
+            },
+            {(lever, "opened", "software-engineering", "mid"): opened}
+            if opened
+            else {},
+            method,
+        )
+    (tmp_path / "company_directory.json").write_text(
+        json.dumps(
+            {
+                "companies": [
+                    {"name": "Acme", "boards": [lever, mirror]},
+                ]
+            }
+        )
+    )
+    history = TrendHistory.load(tmp_path, _NO_CONFIG)
+    summary = history.unnetted_answer(
+        TrendQuestion(companies=(lever,), ats=("lever",))
+    )["coverage_summary"]
+    assert summary["cohort"]["recorded_index_additions"] == 5
+    assert summary["cohort"]["activity_excluded_ticks"] == []
+    assert summary["all_known"]["boards"] == 1
+
+
+def test_scoped_workday_siblings_still_exclude_dedup_intervals(tmp_path):
+    main, second = "workday:acme/main", "workday:acme/second"
+    for day in (0, 1, 2):
+        method = trend_history.Methodology(
+            "7681eb07a2b5", 2, 5, 15, 5 if day == 0 else 6
+        )
+        trend_history.record_tick(
+            tmp_path,
+            _stamp(day),
+            {
+                (main, "stock", "software-engineering", "mid"): 10 if day == 0 else 11,
+                (second, "stock", "software-engineering", "mid"): 20,
+            },
+            {(main, "opened", "software-engineering", "mid"): 1} if day == 1 else {},
+            method,
+        )
+    summary = TrendHistory.load(tmp_path, _NO_CONFIG).unnetted_answer(TrendQuestion())[
+        "coverage_summary"
+    ]
+    assert summary["cohort"]["recorded_index_additions"] is None
+    assert summary["cohort"]["activity_excluded_ticks"] == [_stamp(1), _stamp(2)]
+
+
+@pytest.mark.parametrize("picked", [False, True])
+def test_later_sibling_does_not_retroactively_exclude_earlier_additions(
+    tmp_path, picked
+):
+    main, later = "workday:acme/main", "workday:acme/second"
+    for day in (0, 1, 2, 3):
+        method = trend_history.Methodology(
+            "7681eb07a2b5", 2, 5, 15, 5 if day == 0 else 6
+        )
+        levels = {(main, "stock", "software-engineering", "mid"): (10, 12, 15, 15)[day]}
+        if day == 3:
+            levels[later, "stock", "software-engineering", "mid"] = 100
+        events = (
+            {(main, "opened", "software-engineering", "mid"): (2, 3)[day - 1]}
+            if day in (1, 2)
+            else {}
+        )
+        trend_history.record_tick(tmp_path, _stamp(day), levels, events, method)
+    (tmp_path / "company_directory.json").write_text(
+        json.dumps(
+            {
+                "companies": [
+                    {"name": "Acme", "boards": [main, later]},
+                ]
+            }
+        )
+    )
+    history = TrendHistory.load(tmp_path, _NO_CONFIG)
+    cohorts = []
+    for end in (2, 3):
+        summary = history.unnetted_answer(
+            TrendQuestion(
+                coverage="comparable",
+                companies=(main,) if picked else (),
+                until=_stamp(end),
+            )
+        )["coverage_summary"]
+        cohorts.append(summary["cohort"])
+        assert summary["cohort"]["recorded_index_additions"] == 5
+        assert summary["cohort"]["activity_excluded_ticks"] == []
+    assert cohorts[0]["boards"] == cohorts[1]["boards"] == 1
+    assert summary["entrants"]["first_counted_backlog"] == 100
+
+
 # ---- the taxonomy, directory and rule copies the answers read (moved from the Space's tests)
 
 _REPO_FAMILIES = Path(__file__).resolve().parents[1] / "config" / "role_families.json"

@@ -33,7 +33,13 @@ from pathlib import Path
 
 import numpy as np
 
-from headstart.boards.board_identity import ats_of, board_end, board_of, lower_key
+from headstart.boards.board_identity import (
+    ats_of,
+    board_end,
+    board_of,
+    lower_key,
+    tenant,
+)
 from headstart.boards.board_operator import company_operator
 from headstart.trends import company_suggestions, netting
 from headstart.trends.role_taxonomy import (
@@ -1082,7 +1088,12 @@ class TrendHistory:
         base_at = None
         if question.coverage == "comparable" and self._first_delta < len(self._ticks):
             first_delta = self._ticks[self._first_delta]
-            base_at = bisect_left(self._ticks, max(base or first_delta, first_delta))
+            base_at = bisect_left(
+                self._ticks,
+                max(
+                    base or first_delta, first_delta, self._ledger_start or first_delta
+                ),
+            )
         return (
             replace(question, since=None, until=None, base=None),
             lo,
@@ -1091,9 +1102,15 @@ class TrendHistory:
             base_at,
         )
 
-    def unnetted_answer(self, question: TrendQuestion) -> dict:
+    def unnetted_answer(
+        self, question: TrendQuestion, *, include_coverage_summary: bool = True
+    ) -> dict:
         """Role counts over time (ADR-0040, ADR-0051), before any line is netted: what
         ``line_reading`` reads (ADR-0233).
+
+        ``include_coverage_summary=False`` skips response-only panel work for internal
+        line readings, especially Hot's many Company readings at boot. It is not a query
+        parameter and changes no line count or reading.
 
         ``metric`` ``stock`` (default) is live openings; ``new`` is those first seen inside the
         flow window. Default view: one series per family, each point the family's total across
@@ -1615,6 +1632,11 @@ class TrendHistory:
         )
         payload = {
             "coverage": coverage,
+            "coverage_summary": self._coverage_summary(
+                stamps, base_stamp, company_of, ats, family
+            )
+            if include_coverage_summary
+            else None,
             # How long a posting counts as new: the page says it, and netting under New takes a
             # tech-filter change out again a week on, when the openings it let in age out.
             "new_window_days": NEW_WINDOW_DAYS,
@@ -1698,6 +1720,203 @@ class TrendHistory:
             else {},
         }
         return payload
+
+    def _coverage_summary(
+        self,
+        stamps: list[str],
+        base: str | None,
+        company_of: dict[str, str] | None,
+        ats: list[str],
+        family: str | None,
+    ) -> dict | None:
+        """First-counted coverage and recorded activity, independent of chart metric.
+
+        Count history cannot prove authoritative eligibility (empty read Boards leave no
+        stock delta), successful reads at either endpoint, or whole-market hiring. Membership
+        uses each Board's first stock count, including Boards that subsequently leave.
+        Entrants' initial stock is coverage; only later turnover is observed activity.
+        """
+        if not stamps or not self._ledger_start or stamps[0] < self._ledger_start:
+            return None
+        lineage = self._lineage(family) if family else frozenset()
+        if (
+            family
+            and family not in self._family_labels
+            and not lineage.intersection(self._families.names)
+        ):
+            # "Other" in the chart is a fold of lines, not a stored category named "other".
+            # An unknown drill cannot be counted as zero: explicitly summarize all tech.
+            family = None
+        baseline = base or stamps[0]
+        known = {
+            board: seen
+            for board, (seen, _) in self._board_arrivals.items()
+            if seen <= stamps[-1]
+            and _in_ats_scope(board, ats)
+            and (company_of is None or board in company_of)
+        }
+        cohort = {b for b, seen in known.items() if seen <= baseline}
+        entrants = set(known) - cohort
+        d = self._deltas
+        family_codes = [
+            i
+            for i, name in enumerate(self._families.names)
+            if name != NON_TECH
+            and not name.startswith(WATCH_PREFIX)
+            and (not family or name in lineage)
+        ]
+        stock = (d["metric"] == 1) & np.isin(d["family"], family_codes)
+        first_tick, last_tick = (
+            bisect_left(self._ticks, ts) for ts in (stamps[0], stamps[-1])
+        )
+        size = len(self._boards.names)
+
+        def levels(tick: int) -> np.ndarray:
+            rows = stock & (d["tick"] <= tick)
+            return np.bincount(d["board"][rows], d["delta"][rows], size)
+
+        start, latest = levels(first_tick), levels(last_tick)
+        every_tick, touched_tick = netting.left_out_runs(self._epochs, self._ticks)
+        every = {
+            k
+            for k, ts in enumerate(stamps)
+            if bisect_left(self._ticks, ts) in every_tick
+        }
+        touched = {
+            k
+            for k, ts in enumerate(stamps)
+            if bisect_left(self._ticks, ts) in touched_tick
+        }
+        susceptible = {}
+        for k in touched:
+            dedup_peers = defaultdict(list)
+            for board, seen in known.items():
+                if seen <= stamps[k]:
+                    dedup_peers[ats_of(board), tenant(board).lower()].append(board)
+            susceptible[k] = {
+                board
+                for peers in dedup_peers.values()
+                if netting.dedup_touched(peers)
+                for board in peers
+            }
+        arrivals = np.full(size, len(self._ticks), dtype=np.int64)
+        for board, seen in known.items():
+            arrivals[self._boards.get(board)] = bisect_left(self._ticks, seen)
+        landed = stock & (d["tick"] == arrivals[d["board"]])
+        backlog = np.bincount(d["board"][landed], d["delta"][landed], size)
+
+        def total(values: np.ndarray, boards: set[str]) -> int:
+            return int(sum(values[self._boards.get(b)] for b in boards))
+
+        def activity(boards: set[str]) -> dict:
+            # A zero here is zero recorded events, never evidence of a successful read.
+            first_count = min((known[b] for b in boards), default=stamps[0])
+            affected = {
+                k: boards & peers for k, peers in susceptible.items() if boards & peers
+            }
+            untouched_first = {
+                k: min(
+                    (known[b] for b in boards - affected.get(k, set())), default=None
+                )
+                for k in touched
+            }
+            since = (
+                max(stamps[0], first_count, self._turnover_since)
+                if boards and self._turnover_since
+                else None
+            )
+            recorded_available = bool(
+                boards
+                and self._turnover_since
+                and any(
+                    ts > max(stamps[0], first_count) and ts >= self._turnover_since
+                    for ts in stamps
+                )
+            )
+            available = bool(
+                boards
+                and self._turnover_since
+                and any(
+                    ts > max(stamps[0], first_count)
+                    and ts >= self._turnover_since
+                    and k not in every
+                    and (
+                        k not in touched
+                        or (untouched_first[k] is not None and ts > untouched_first[k])
+                    )
+                    for k, ts in enumerate(stamps)
+                )
+            )
+            counts = Counter()
+            for board in boards:
+                for row in self._turnover.get(board, ()):
+                    if not (max(stamps[0], known[board]) < row["ts"] <= stamps[-1]):
+                        continue
+                    held = row["family"]
+                    if held == NON_TECH or held.startswith(WATCH_PREFIX):
+                        continue
+                    if family and held not in lineage:
+                        continue
+                    kind, sign = _TURNOVER_KIND_OF[row["metric"]]
+                    k = bisect_left(stamps, row["ts"])
+                    if kind != "recounted" and (
+                        k in every or board in affected.get(k, set())
+                    ):
+                        continue
+                    counts[kind] += sign * row["delta"]
+            unseen = sum(
+                any(
+                    stamps[0] < row["ts"] <= stamps[-1]
+                    for row in self._unscoped_markers.get(board, ())
+                )
+                for board in boards
+            )
+            excluded = [
+                stamps[k]
+                for k in sorted(every | affected.keys())
+                if boards and stamps[k] > max(stamps[0], first_count)
+            ]
+            return {
+                "boards": len(boards),
+                "stock_start": total(start, boards),
+                "stock_latest": total(latest, boards),
+                "recorded_index_additions": counts["opened"] if available else None,
+                "recorded_closed": counts["closed"] if available else None,
+                "net_recounted": counts["recounted"] if recorded_available else None,
+                "closures_unseen": unseen,
+                "observed_since": since,
+                "activity_excluded_ticks": excluded,
+                "activity_excluded_updates": len(excluded),
+            }
+
+        entrant_summary = activity(entrants)
+        entrant_summary["first_counted_backlog"] = total(backlog, entrants)
+        return {
+            "baseline": baseline,
+            "membership_basis": "first_stock_count",
+            "from": stamps[0],
+            "to": stamps[-1],
+            "scope": "family" if family else "tech",
+            "family": family,
+            "family_label": (
+                HIDDEN_FAMILY_LABEL
+                if family in self._hidden_families
+                else self._family_labels.get(family, family)
+            ),
+            "cohort": activity(cohort),
+            "entrants": entrant_summary,
+            "all_known": {
+                "boards": len(known),
+                "stock_start": total(start, set(known)),
+                "stock_latest": total(latest, set(known)),
+            },
+            "quality": {
+                "start_eligibility": "unknown",
+                "endpoint_freshness": "unknown",
+                "successful_zero_boards": "unknown",
+                "event_causes": "unknown",
+            },
+        }
 
     def _index_found(
         self, stamps: list[str], ats: list[str], line_of, names: set[str]
@@ -1909,7 +2128,9 @@ class TrendHistory:
             # counted by Board: nothing earlier can be told apart, and answering "nothing" left
             # a 30-day window blank for a reader who only asked to hold coverage fixed. The
             # first run at or after the asked start, as All coverage starts its window.
-            at = bisect_left(stamps, max(base, first_delta))
+            at = bisect_left(
+                stamps, max(base, first_delta, self._ledger_start or first_delta)
+            )
             base_stamp = stamps[at] if at < len(stamps) else stamps[-1]
             eligible = {
                 board

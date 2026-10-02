@@ -2366,6 +2366,13 @@ def test_trends_comparable_coverage_keeps_only_boards_known_at_the_base(
     )
     assert d["base"] == _T1
     assert d["series"][0]["points"] == [10, 12, 11]
+    summary = d["coverage_summary"]
+    assert summary["membership_basis"] == "first_stock_count"
+    assert summary["cohort"]["stock_latest"] == 11
+    assert summary["entrants"]["first_counted_backlog"] == 100
+    assert summary["all_known"]["stock_latest"] == 111
+    assert summary["quality"]["endpoint_freshness"] == "unknown"
+    assert summary["entrants"]["recorded_index_additions"] is None
 
 
 def test_trends_comparable_base_can_be_an_unchanged_measurement(
@@ -4278,6 +4285,8 @@ def test_a_board_that_brought_no_tech_openings_is_not_marked(
     )
     arrivals = dict(history._board_arrivals)
     arrivals["workday:hpe/new"] = (_T2, 0)  # its first tick held only non-tech
+    # First-counted Boards are also encoded in the count ledger in a real history.
+    history._boards.code("workday:hpe/new")
     monkeypatch.setattr(history, "_board_arrivals", arrivals)
     served = {**history._served_arrivals, "workday:hpe/new": 4}
     monkeypatch.setattr(history, "_served_arrivals", served)
