@@ -1267,6 +1267,13 @@ async function handleSetAction(act, id){
 }
 
 async function renameSet(id, name){
+  if (!mySets){
+    await loadSets();
+    if (!mySets){
+      if (el('set-action-error')) el('set-action-error').textContent = 'Couldn’t reload your searches. Try again.';
+      return;
+    }
+  }
   const s = (mySets || []).find(set => set.id === id);
   if (!s) return;
   const button = el('rename-retry');

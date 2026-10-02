@@ -423,6 +423,14 @@ def test_import_feedback_and_failed_rename_retain_the_user_context(experience, w
     page.locator("#rename-retry").click()
     pw.expect(page.locator("#sets-strip")).to_contain_text("Retained draft name")
     assert writes[-1][1]["name"] == "Retained draft name"
+    page.route("**/sets", lambda route: route.abort())
+    page.locator('#matches-actions [data-act="rename"]').click()
+    page.locator("#decision-value").fill("Recovered transport draft")
+    page.locator("#decision-confirm").click()
+    pw.expect(page.locator("#rename-retry")).to_be_visible()
+    page.unroute("**/sets")
+    page.locator("#rename-retry").click()
+    pw.expect(page.locator("#sets-strip")).to_contain_text("Recovered transport draft")
     page.route(
         "**/sets",
         lambda route: (
