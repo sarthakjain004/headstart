@@ -1,6 +1,6 @@
 # ADR-0373: gr8people follows the public search and keys a Board on its career host
 
-**Status:** proposed (Carrier landing pending) · **Date:** 2026-10-02 · **Relates to:** #970, ADR-0001, ADR-0111, ADR-0158, ADR-0188, [measurement](../gr8people/2026-10-02_graphql-measurement.md)
+**Status:** accepted · **Date:** 2026-10-02 · **Relates to:** #970, ADR-0001, ADR-0111, ADR-0158, ADR-0188, [measurement](../gr8people/2026-10-02_graphql-measurement.md), [Carrier freshness comparison](../gr8people/2026-10-02_carrier-workday-freshness-comparison.md)
 
 ## Context
 
@@ -24,13 +24,17 @@ can disagree, and departed public sites can retain API postings.
 - Two same-client host pairs have identical public postings. Bury the duplicate
   hosts through the shared-reqs alias ledger, regenerate it with
   gr8people_shared_clients.py, and bump DEDUP_VERSION to 12 for this first ledger.
-- Enable gr8people: 148.28 MB / 1,307 tech-filter matches = 0.113 MB per match.
-  Even with Carrier parked it is 102.95 MB / 384 = 0.268 MB, under the 2 MB bar.
+- Enable gr8people with Carrier parked: 102.95 MB / 384 tech-filter matches =
+  0.268 MB per match, under the 2 MB bar.
   These are measured uncompressed-payload proxies, not projected HF storage growth.
-- Carrier's gr8people feed hands off to a held Workday Board, but only 439 of its
-  4,162 distinct stated requisitions match Workday's current 1,047. Recommend
-  parking Carrier until a stale-feed audit. The owner has been asked; its landing
-  is unresolved, and this PR must not merge before that choice is recorded.
+- Park `gr8people:carriernoam.workgr8.com`, by the owner's decision on October 2.
+  The refreshed Workday Board lists 1,054 postings against gr8people's 4,167;
+  all 41 gr8people requisitions dated September 26–October 2 are already in
+  Workday, while 268 recent Workday requisitions are missing from gr8people.
+  All 36 gr8people-only entries dated within the last month redirect to Workday
+  and return S22 without job details; three live controls work, and one missing
+  page was confirmed in the browser. Revisit after a stale-feed audit, not from
+  a higher raw posting count alone. Carrier's held Workday Board stays active.
 
 ## Alternatives considered
 
@@ -44,8 +48,8 @@ brands, and redirect-only grouping misses both measured client twins.
 ## Consequences
 
 The committed ledger has 247 rows (57 live, 96 dead, 94 unknown), with two aliases.
-Carrier included would give 55 Scrapable Boards, 38 Hiring Boards; parked, it gives
-54 and 37. Repeat the shared-client scan after refreshing the ledger. Vanity-host
+With Carrier parked, gr8people adds 54 Scrapable Boards and 37 Hiring Boards.
+Repeat the shared-client scan after refreshing the ledger. Vanity-host
 discovery and the 94 unresolved candidates remain coverage limits. Classifier tech
 matches are not a manual role census. Post-pipeline, re-run live-index verification
 for gr8people; the current harness has zero semantic failures and a clean coverage

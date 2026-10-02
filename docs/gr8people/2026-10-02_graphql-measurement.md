@@ -3,8 +3,9 @@
 Issue #970's September 29 figures are hypotheses, not this build's census.
 Teradata now returns **168 unique postings; 116 pass HeadStart's title/department
 tech gate**. The build found 247 candidate hosts, of which 57 public Boards probe
-live, 96 dead and 94 unknown. Two same-client aliases leave 55 Scrapable Boards
-before any decision to park Carrier. All measurements below were made on October 2.
+live, 96 dead and 94 unknown. Two same-client aliases and Carrier's owner-approved
+parking leave 54 Scrapable Boards and 37 Hiring Boards. All measurements below
+were made on October 2.
 
 ## Identity and public access (Q1–2, Q8–9, Q18)
 
@@ -176,9 +177,12 @@ vendor-hosted clients' external backing ATSes. Carrier demonstrates that blind
 spot: browser Apply → Skip & Continue goes to `carrier.wd5.myworkdayjobs.com/jobs`,
 a held Workday Board. Its live 1,047-job listing shares **439** requisition ids
 with gr8people's 4,167 postings (4,162 distinct stated requisitions). The other
-gr8people records' live/dead state is unmeasured. Carrier's landing decision is
-pending the owner; recommend parking it pending a stale-feed audit. No platform-wide
-backing-Board exclusion is inferred from this one measured case.
+gr8people records' live/dead state was unmeasured in this initial count. The
+[freshness follow-up](2026-10-02_carrier-workday-freshness-comparison.md) then read
+all 1,054 current Workday details, found all 41 gr8people recent-week requisitions
+already held, and checked all 36 gr8people-only recent-month redirects. The owner
+approved parking Carrier's gr8people Board; its Workday Board remains active.
+No platform-wide backing-Board exclusion is inferred from this one case.
 
 ## Verification and reproducibility
 
