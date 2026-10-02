@@ -328,6 +328,7 @@ ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
     # (`experiment/ats-scraper-candidates/artifacts/parquet/gem.parquet`) and all 496 rows of the
     # upstream seed list resolve to `jobs.gem.com` — no counter-example found.
     "gem": _with_style("path", "jobs.gem.com"),
+    "gr8people": _with_style("host", "gr8people.com", "workgr8.com"),
     # `*.us.greenhouse.io` resolves but 301/302s to the unprefixed host and holds no ledger rows
     # of its own — an alias, so sweeping it would only re-find what `boards` already has. The EU
     # pods are a real split: 824 rows, 497 live.

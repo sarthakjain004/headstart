@@ -156,6 +156,13 @@ PATTERNS: dict[str, tuple[str, list[str]]] = {
             r"(?:boards|job-boards)(?:\.eu)?\.greenhouse\.io/([a-zA-Z0-9_-]+)",
         ],
     ),
+    "gr8people": (
+        "ats",
+        [
+            HOST + r"([a-z0-9-]+\.(?:gr8people|workgr8)\.com)",
+            r"assets\.gr8people\.com/builds/app-career-site",
+        ],
+    ),
     "lever": (
         "ats",
         [
@@ -875,7 +882,7 @@ QUERY_HOST_ATS = frozenset({"successfactors", "zwayam", "phenom", "icims"})
 # only the vanity-domain fingerprint (which captures nothing) needs the evidence host instead.
 # wp_job_openings' and spire2grow's fingerprints never capture a host: the Board is always the
 # evidence host.
-HOST_SLUG_ATS = frozenset({"zoho", "wp_job_openings", "spire2grow"})
+HOST_SLUG_ATS = frozenset({"zoho", "wp_job_openings", "spire2grow", "gr8people"})
 # ATSes whose slug is a full host inside the provider's own zone (oracle.py: "the slug is the
 # careers host"; eightfold and personio the same), so the CNAME target *is* the right answer.
 PROVIDER_HOST_ATS = frozenset({"oracle", "eightfold", "personio"})
@@ -1279,6 +1286,10 @@ def normalise_tenant(ats: str, tenant: str, evidence: str) -> str:
     """
     if not evidence:
         return tenant
+    if ats == "gr8people":
+        if tenant.lower().startswith("assets.") or "." not in tenant:
+            return (urlsplit(evidence).hostname or "").lower()
+        return tenant.lower()
     if " API " in evidence:
         return tenant
     source_host = evidence.split(" CNAME ")[0].lower() if " CNAME " in evidence else ""

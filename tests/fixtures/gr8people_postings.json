@@ -1,0 +1,116 @@
+[
+  {
+    "key": "220076",
+    "title": "Senior Manager, Software Engineering",
+    "descriptionHTML": "<p><span style=\"font-size: 12pt;\"><strong>Our Company</strong></span></p> \n<p><span style=\"font-size: 12pt;\">At Teradata, we believe that people thrive when empowered with better information. Teradata Autonomous Knowledge Platform activates enterprise intelligence by unifying data, knowledge and business context to achieve tangible outcomes. With Teradata, organizations can provide agents with full context for impact when it matters. Our solution lets businesses connect and scale on premises, in the cloud, or through a hybrid approach. Teradata delivers real business value with AI.</span></p> \n<p><span style=\"font-size: 12pt;\"><strong>What You’ll Do</strong></span></p> \n<p><span style=\"font-size: 12pt;\">Lead AI‑First Enterprise Experiences at Teradata. We are seeking a Senior Manager, Software Engineering&nbsp;to lead teams building modern, scalable, and AI‑first user experiences across Teradata’s cloud analytics platform.</span></p> \n<p><span style=\"font-size: 12pt;\">In this role, you will own the UI engineering strategy, execution, and people leadership for critical customer‑facing experiences used by data practitioners, developers, and platform operators. You will lead multiple ",
+    "structuredDataJSON": "{\"@context\": \"http://schema.org/\", \"hiringOrganization\": {\"@type\": \"Organization\", \"name\": \"Teradata\"}, \"@type\": \"JobPosting\", \"title\": \"Senior Manager, Software Engineering\", \"identifier\": \"220076\", \"datePosted\": \"2026-09-18T13:32:40.467Z\", \"jobLocation\": {\"@type\": \"Place\", \"address\": {\"@type\": \"PostalAddress\", \"addressRegion\": \"California\", \"addressLocality\": \"San Diego\", \"addressCountry\": \"United States\"}}}",
+    "workplaceType": "HYBRID",
+    "postedOn": "2026-09-18T13:32:40.467Z",
+    "positionType": {
+      "name": "Full Time"
+    },
+    "primaryPlace": {
+      "name": "San Diego, CA, USA"
+    },
+    "places": {
+      "nodes": [
+        {
+          "name": "San Diego, CA, USA"
+        },
+        {
+          "name": "Seattle, WA, USA"
+        }
+      ]
+    },
+    "jobCategory": {
+      "name": "Engineering"
+    },
+    "employmentType": null,
+    "payRangeLow": 178800,
+    "payRangeMid": 223500,
+    "payRangeHigh": 268200,
+    "payRangeType": "ANNUAL",
+    "currencyCode": "USD",
+    "salaryRange": null,
+    "applyOnExternalATS": false,
+    "hasATSLink": false,
+    "status": "OPEN",
+    "postType": "INT_EXT",
+    "number": "220076"
+  },
+  {
+    "key": "220447",
+    "title": "Manager, AI Engineering",
+    "descriptionHTML": "<ul> \n <li style=\"font-size: 12pt;\"> <p style=\"color: windowtext;\"><b><span style=\"color: #000000; font-size: 12pt;\">Our Company</span></b><span style=\"font-size: 12pt; color: #000000;\">&nbsp;</span></p> <p style=\"color: windowtext;\"><span style=\"color: #000000; font-size: 12pt;\">At Teradata, we believe that people thrive when empowered with better information.&nbsp;That’s&nbsp;why we built the most complete cloud analytics and data platform for AI. By delivering harmonized data, trusted AI, and faster innovation, we uplift and empower our customers—and&nbsp;our customers’&nbsp;customers—to make better, more confident decisions. The world’s top companies across every major industry trust Teradata to improve business performance, enrich customer experiences, and fully integrate data across the enterprise.</span><span style=\"font-size: 12pt; color: #000000;\">&nbsp;</span></p> <p style=\"color: windowtext;\"><span style=\"font-size: 12pt; color: #000000;\">&nbsp;</span></p> <p style=\"color: windowtext;\"><b><span style=\"color: #000000; font-size: 12pt;\">What&nbsp;You’ll&nbsp;Do</span></b><span style=\"font-size: 12pt; color: #000000;\">&nbsp;</span></p> <p style=\"color: windowtext;\"><span st",
+    "structuredDataJSON": "{\"@context\": \"http://schema.org/\", \"hiringOrganization\": {\"@type\": \"Organization\", \"name\": \"Teradata\"}, \"@type\": \"JobPosting\", \"title\": \"Manager, AI Engineering\", \"identifier\": \"220447\", \"datePosted\": \"2026-09-27T05:18:13.81Z\", \"jobLocation\": {\"@type\": \"Place\", \"address\": {\"@type\": \"PostalAddress\", \"addressRegion\": \"Karnataka\", \"addressLocality\": \"Bengaluru\", \"addressCountry\": \"India\"}}}",
+    "workplaceType": "HYBRID",
+    "postedOn": "2026-09-27T05:18:13.81Z",
+    "positionType": {
+      "name": "Full Time"
+    },
+    "primaryPlace": {
+      "name": "Bengaluru, Karnataka, India"
+    },
+    "places": {
+      "nodes": [
+        {
+          "name": "Bengaluru, Karnataka, India"
+        },
+        {
+          "name": "Hyderabad, Telangana, India"
+        }
+      ]
+    },
+    "jobCategory": {
+      "name": "Engineering"
+    },
+    "employmentType": null,
+    "payRangeLow": null,
+    "payRangeMid": null,
+    "payRangeHigh": null,
+    "payRangeType": null,
+    "currencyCode": null,
+    "salaryRange": null,
+    "applyOnExternalATS": false,
+    "hasATSLink": false,
+    "status": "OPEN",
+    "postType": "INT_EXT",
+    "number": "220447"
+  },
+  {
+    "key": "220646",
+    "title": "New Logo Account Executive - Healthcare & Life Sciences",
+    "descriptionHTML": "<p><span style=\"font-size: 12pt;\"><strong>Our company</strong></span></p> \n<p><span style=\"font-size: 12pt;\">At Teradata, we believe that people thrive when empowered with better information. Teradata Autonomous Knowledge Platform activates enterprise intelligence by unifying data, knowledge and business context to achieve tangible outcomes. With Teradata, organizations can provide agents with full context for impact when it matters. Our solution lets businesses connect and scale on premises, in the cloud, or through a hybrid approach. Teradata delivers real business value with AI.</span></p> \n<p><span style=\"font-size: 12pt;\"><strong>What You'll Do</strong>&nbsp;</span></p> \n<p><span style=\"font-size: 12pt;\">As a New Logo Account Executive for Healthcare and Life Sciences at Teradata, you will be responsible for identifying, developing, and closing net-new business opportunities across healthcare payer/provider and life sciences organizations. You will build strategic relationships with agency leaders and key stakeholders, uncover modernization initiatives, and position Teradata's data, analytics, and AI solutions to help agencies achieve mission-critical outcomes.&nbsp;</span></p",
+    "structuredDataJSON": "{\"@context\": \"http://schema.org/\", \"hiringOrganization\": {\"@type\": \"Organization\", \"name\": \"Teradata\"}, \"@type\": \"JobPosting\", \"title\": \"New Logo Account Executive - Healthcare & Life Sciences\", \"identifier\": \"220646\", \"datePosted\": \"2026-10-01T12:59:37.06Z\", \"jobLocation\": {\"@type\": \"Place\", \"address\": {\"@type\": \"PostalAddress\", \"addressRegion\": \"California\", \"addressLocality\": \"San Diego\", \"addressCountry\": \"United States\"}}}",
+    "workplaceType": "REMOTE",
+    "postedOn": "2026-10-01T12:59:37.06Z",
+    "positionType": {
+      "name": "Full Time"
+    },
+    "primaryPlace": {
+      "name": "California, USA"
+    },
+    "places": {
+      "nodes": [
+        {
+          "name": "California, USA"
+        }
+      ]
+    },
+    "jobCategory": {
+      "name": "Sales and Marketing"
+    },
+    "employmentType": null,
+    "payRangeLow": 212700,
+    "payRangeMid": 265800,
+    "payRangeHigh": 319000,
+    "payRangeType": "ON_TARGET_EARNINGS",
+    "currencyCode": "USD",
+    "salaryRange": null,
+    "applyOnExternalATS": false,
+    "hasATSLink": false,
+    "status": "OPEN",
+    "postType": "INT_EXT",
+    "number": "220646"
+  }
+]

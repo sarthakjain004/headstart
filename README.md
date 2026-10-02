@@ -19,7 +19,7 @@ Not from a feed employers had to opt in to. Not from a list ranked by who paid.
 
 ### It costs nothing to run. All of it.
 
-Discovery. 54 scrapers. Embeddings. Vector search. Email and Telegram alerts.
+Discovery. 55 scrapers. Embeddings. Vector search. Email and Telegram alerts.
 
 Fork it, add your tokens, and the whole pipeline is yours — running on free tiers, end to
 end. No card. No trial. Not a stripped tier of something else: the same code that serves the
@@ -33,9 +33,9 @@ Semantic search over local embeddings, with the structured filters — years, sa
 employment type — left exactly where they belong: under your control, not inferred from a
 sentence.
 
-### 35 ATSes. One shape.
+### 47 ATSes. One shape.
 
-Greenhouse, Workday, Lever, Ashby, iCIMS, Oracle, Taleo, BambooHR, Phenom, and 25 more, plus eight
+Greenhouse, Workday, Lever, Ashby, iCIMS, Oracle, Taleo (both editions), BambooHR, Phenom, and 37 more, plus eight
 companies' own career sites.
 HeadStart finds which companies host boards on which ATS, checks that each board is alive,
 and normalizes every posting into a single `Job`. You never learn an ATS's name.
@@ -88,8 +88,8 @@ unparseable input with a 400 rather than silently ignoring it.
 
 ## ATS coverage
 
-**54 scrapers**, selected from a registry by the `ats` key: `adp`, `adp_recruiting`, `amazon`, `apple`, `ashby`,
-`avature`, `bamboohr`, `breezy`, `bytedance`, `clearcompany`, `cornerstone`, `darwinbox`, `eightfold`, `freshteam`, `gem`, `google`, `greenhouse`,
+**55 scrapers**, selected from a registry by the `ats` key: `adp`, `adp_recruiting`, `amazon`, `apple`, `ashby`,
+`avature`, `bamboohr`, `breezy`, `bytedance`, `clearcompany`, `cornerstone`, `darwinbox`, `eightfold`, `freshteam`, `gem`, `google`, `gr8people`, `greenhouse`,
 `happydance`, `icims`, `jazzhr`, `jibe`, `jobvite`, `join`, `keka`, `lever`, `meta`, `mynexthire`, `oracle`, `peoplestrong`, `personio`, `phenom`,
 `pinpoint`, `pyjamahr`, `radancy`, `recruitee`, `ripplehire`, `rippling`, `sensehq`, `smartrecruiters`, `spire2grow`, `successfactors`,
 `taleo_be`, `taleo_enterprise`, `teamtailor`, `tesla`, `tiktok`, `trakstar`, `turbohire`, `uber`, `workable`,
@@ -136,8 +136,8 @@ Board no source names is served under its humanised tenant (`nvidia.wd5.myworkda
 a vendor's code (Oracle's pods, ADP's GUIDs). A name is a display value, never an identity, which
 is why `CompanyPrefs` is keyed by **board_key** and never by company name.
 
-The liveness pipeline has probed **337,454 ledger rows**: 213,082 live, 117,946 dead, 6,426 unknown
-— rows, not boards; they collapse to 206,450 Unique Boards once duplicate spellings of the same
+The liveness pipeline has probed **337,701 ledger rows**: 213,139 live, 118,042 dead, 6,520 unknown
+— rows, not boards; they collapse to 206,507 Unique Boards once duplicate spellings of the same
 board are folded together and the 4 with a `dead` row newer than their newest `live` row are dropped (`CONTEXT.md` §Counting
 Boards).
 
@@ -189,14 +189,14 @@ flowchart TB
         D1["<b>discover</b><br/>Common Crawl · Wayback<br/>careers-page fingerprint"]
         D2["<b>merge</b><br/>union + dedupe per ATS"]
         D3["<b>validate</b><br/>liveness-probe each board"]
-        D4[("<b>liveness ledger</b><br/>213,082 live rows of 337,454<br/>git-tracked, authoritative")]
+        D4[("<b>liveness ledger</b><br/>213,139 live rows of 337,701<br/>git-tracked, authoritative")]
         D1 --> D2 --> D3 --> D4
     end
 
     subgraph P["② Ingest &nbsp;·&nbsp; GitHub Actions, back-to-back &nbsp;·&nbsp; ADR-0025 / ADR-0026"]
         direction LR
         P1["<b>scrape-plan</b><br/>1 VM<br/>pick a board slice, LPT pack"]
-        P2["<b>scrape</b><br/>≤15 VMs · 75m budget<br/>53 enabled scrapers → fragments"]
+        P2["<b>scrape</b><br/>≤15 VMs · 75m budget<br/>54 enabled scrapers → fragments"]
         P3["<b>join</b><br/>1 VM<br/>union · tech-filter · descriptions<br/>ledgers · plan embed"]
         P4["<b>embed</b><br/>≤15 VMs · 180m budget<br/>nomic on CPU → fragments"]
         P5["<b>merge</b><br/>1 VM · single writer<br/>concat · meta refresh · sync · prune · trends · companies · index"]
@@ -292,19 +292,19 @@ table in lockstep with the committed ledger:
 
 | | boards | |
 | --- | ---: | --- |
-| live rows in the ledger | 213,082 | a row, not a board — 6,628 of them are duplicate spellings |
+| live rows in the ledger | 213,139 | a row, not a board — 6,628 of them are duplicate spellings |
 | − `registry.DISABLED_ATS` | −25,488 | all of it `join` |
 | − `excluded_and_parked.EXCLUDED_BOARDS` | −430 | vendor and customer test/sandbox/demo/dev boards and one historical feed, confirmed by reading their postings |
-| − alias ledger | −1,984 | one board under a second hostname or label, a career section or career site another of the same tenant already covers, an Eightfold career site its backing ATS board already serves, or a Radancy front another front already lists (ADR-0111, ADR-0182, ADR-0186, ADR-0202, ADR-0205, ADR-0222, ADR-0254, ADR-0265, ADR-0301) |
+| − alias ledger | −1,986 | one board under a second hostname or label, a career section or career site another of the same tenant already covers, an Eightfold career site its backing ATS board already serves, or a Radancy front another front already lists (ADR-0111, ADR-0182, ADR-0186, ADR-0202, ADR-0205, ADR-0222, ADR-0254, ADR-0265, ADR-0301) |
 | − case-variant dedupe | −6,625 | `company/External` and `company/external` are one board (ADR-0023) |
 | − newer `dead` row | −4 | a board is read only if no `dead` row is newer than its newest `live` one; all 4 re-probed dead (ADR-0219) |
 | − `excluded_and_parked.PARKED_BOARDS` | −356 | real boards withheld for now — six for scrape cost, two for near-duplicate spam, six Jibe clients whose every posting is on a Workday or Oracle board already held, 288 whose every posting is on an iCIMS board we scrape (ADR-0240), five employee-only Radancy fronts (ADR-0246), 31 Happydance fronts whose Backing Board is held (ADR-0264), four Phenom skins over a board already held (CLAUDE.md's Phenom landing rule), one Taleo section whose postings a held Phenom front already serves, two Cornerstone tenants whose only postings are the employer's own test copies, one Radancy front whose robots.txt disallows everything, one WP Job Openings content site whose "postings" are mostly articles (ADR-0266), three login-walled iCIMS internal portals (#810), three second hosts of a Spire2Grow workspace already read under its company's own host (ADR-0362), two TurboHire pages that mirror a SuccessFactors board already held (ADR-0363), one Greenhouse referral-only board whose postings copy its employer's public board |
-| = **Scrapable Board** | **178,195** | |
+| = **Scrapable Board** | **178,250** | |
 
 That order matters: excluding before deduping reads −430 and −6,625, deduping first reads −427,
-because three excluded boards were themselves duplicates. Both land on 178,195.
+because three excluded boards were themselves duplicates. Both land on 178,250.
 
-Of those, **122,828 are currently hiring** — the 55,367 live-but-empty boards are skipped as having
+Of those, **122,866 are currently hiring** — the 55,384 live-but-empty boards are skipped as having
 nothing to read. A run takes a bounded slice and splits it between a scored head (top boards by a
 sticky measure of tech-job yield, large enough to hold every board that yields tech) and a tail
 that rotates through everything else, the boards looked at longest ago first, so
@@ -419,7 +419,7 @@ Note the raw corpus files under `data/jobs/` carry a few fields the served table
 ## Layout
 
 - `src/headstart/` — shared library, used by both the pipeline and the curated feed:
-  `scrapers/` (54 per-ATS + `base`/`registry`, the scrape engine `harvest.py`, and
+  `scrapers/` (55 per-ATS + `base`/`registry`, the scrape engine `harvest.py`, and
   `country_codes.py`, the ISO table two scrapers read), `llm_router.py`, the one seam every LLM
   call goes through, `embedding_conventions.py`, the model and prefixes the index and the query
   share, and `log.py`.

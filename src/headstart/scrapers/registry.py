@@ -23,6 +23,7 @@ from headstart.scrapers.eightfold import EightfoldScraper
 from headstart.scrapers.freshteam import FreshteamScraper
 from headstart.scrapers.gem import GemScraper
 from headstart.scrapers.google import GoogleScraper
+from headstart.scrapers.gr8people import Gr8PeopleScraper
 from headstart.scrapers.greenhouse import GreenhouseScraper
 from headstart.scrapers.happydance import HappydanceScraper
 from headstart.scrapers.icims import ICIMSScraper
@@ -66,6 +67,7 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
     cls.ats: cls
     for cls in (
         GoogleScraper,
+        Gr8PeopleScraper,
         GreenhouseScraper,
         LeverScraper,
         AshbyScraper,

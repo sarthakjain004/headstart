@@ -35,6 +35,32 @@ def test_host_keyed_provider_patterns_keep_the_full_host_and_count_hits():
     assert found[("phenom", "careers.acme.phenompeople.com")] == 1
 
 
+def test_gr8people_keeps_vendor_hosts_and_fingerprints_a_vanity_site():
+    found = {
+        (ats, tenant)
+        for ats, _kind, tenant, _count in fp.scan(
+            "https://etrade.gr8people.com/jobs https://batesville.workgr8.com/jobs",
+            "example.com",
+        )
+    }
+    assert found == {
+        ("gr8people", "etrade.gr8people.com"),
+        ("gr8people", "batesville.workgr8.com"),
+    }
+    assert (
+        fp.normalise_tenant(
+            "gr8people", "Careers.Teradata.com", "https://careers.teradata.com/jobs"
+        )
+        == "careers.teradata.com"
+    )
+    assert (
+        fp.normalise_tenant(
+            "gr8people", "assets.gr8people.com", "https://careers.teradata.com/jobs"
+        )
+        == "careers.teradata.com"
+    )
+
+
 def test_a_mynexthire_embed_names_its_tenant_label_on_either_front():
     """careers.swiggy.com iframes `swiggy.mynexthire.com`; azentio's newer front is
     `azentio.careers.mynexthire.io`. The per-tenant API host on `prod.us1` is not a Board."""

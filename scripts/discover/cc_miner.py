@@ -94,6 +94,11 @@ ATS_PATTERNS = {
             rf"myjobs\.adp\.com/(?!public/)({ADP_RECRUITING_SLUG})(?=[/?#]|$)"
         ],
     },
+    "gr8people": {
+        "targets": ["gr8people.com", "workgr8.com"],
+        "kind": "host",
+        "patterns": [r"https?://([a-z0-9-]+\.(?:gr8people|workgr8)\.com)(?:[/?#]|$)"],
+    },
     "greenhouse": {
         "targets": [
             "boards.greenhouse.io",
