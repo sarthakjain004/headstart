@@ -20,14 +20,10 @@
 <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='logo_mark.svg') }}">
 {# The sidebar's folded state (ADR-0249), read before the stylesheet so the first paint already
    has the right width: set after load, the content column would jump sideways. #}
-<script nonce="{{ csp_nonce }}">try {
-  if (localStorage.getItem('hs.navCollapsed')) document.documentElement.dataset.nav = 'collapsed';
-  const theme = localStorage.getItem('hs.theme');
-  if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
-} catch (e) {}</script>
+{% include "appearance_state.html" %}
 {# Load in parallel, each under the renderer's boot version. CSS imports would add a
    dependency waterfall and their relative URLs would miss that version. #}
-{% for sheet in ['app-layout.css', 'app-skin.css', 'app-motion.css', 'home-layout.css', 'home-theme.css', 'resume-layout.css', 'resume-skin.css', 'resume-motion.css'] %}
+{% for sheet in ['theme-tokens.css', 'app-layout.css', 'app-skin.css', 'app-motion.css', 'home-layout.css', 'home-theme.css', 'resume-layout.css', 'resume-skin.css', 'resume-motion.css'] %}
 <link rel="stylesheet" href="{{ url_for('static', filename=sheet) }}">
 {% endfor %}
 </head><body>

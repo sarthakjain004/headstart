@@ -11,6 +11,7 @@ No HeadStart preference or conversion uplift has been measured.
 
 | Surface | Placement and purpose |
 | --- | --- |
+| Sign-in | After a visitor chooses to retain work, the sign-in action and email disclosure precede the longer source proof. Shared theme tokens and pre-paint appearance state keep it consistent with the app; authentication is unchanged. |
 | Masthead | Linked brand left, session/theme utilities right, source promise below. Account entry is secondary to discovery. |
 | Desktop navigation | Home; Find jobs: Search, Hiring now, Trends; Your workspace: Saved jobs, Saved searches, Résumé, Profile. Group headings explain how destinations relate. Sidebar folding remains available. |
 | Compact navigation | Home, Search, Saved jobs and Résumé stay visible; More discloses Hiring now, Trends, Saved searches and Profile. One registry renders both surfaces, with capability gates. Bottom placement is a tested implementation choice, not a proven preference. |
@@ -65,14 +66,15 @@ change. These modules neither relax account-route protection nor implement authe
 ## Reskin without moving the layout
 
 `base.html` loads the owning stylesheets in parallel through `url_for`, so each carries the
-Space renderer’s boot version and benefits from its cache. `style.css` and `resume.css` remain
+Space renderer’s boot version and benefits from its cache. `theme-tokens.css` and the
+shared pre-paint template cover both the application and voluntary sign-in page. `style.css` and `resume.css` remain
 compatibility entrypoints for standalone consumers; do not append overrides to either.
 
 | Owner | Properties it owns |
 | --- | --- |
-| `app-layout.css`, `resume-layout.css`, `home-layout.css` | Structure, reading order, display/hidden state, dimensions, spacing, text metrics, structural transforms, border width/style, overflow and responsive behavior. |
-| `app-skin.css`, `resume-skin.css`, `home-theme.css` | Semantic colours, backgrounds, border colours, corner shapes, shadows, outlines and decorative appearance. |
-| `app-motion.css`, `resume-motion.css` | Feedback timing and animations. Focus, requests and state do not wait for completion. |
+| `app-layout.css`, `resume-layout.css`, `home-layout.css`, `signin-layout.css` | Structure, reading order, display/hidden state, dimensions, spacing, text metrics, structural transforms, border width/style, overflow and responsive behavior. |
+| `theme-tokens.css`, `app-skin.css`, `resume-skin.css`, `home-theme.css`, `signin-skin.css` | Semantic colours, backgrounds, border colours, corner shapes, shadows, outlines and decorative appearance. |
+| `app-motion.css`, `resume-motion.css`, `signin-motion.css` | Feedback timing and animations. Focus, requests and state do not wait for completion. |
 | Résumé layout registry/export | The document's physical paper, typography, scaling, content and printing. Application skins do not own these. |
 
 Mixed border shorthands were expanded before extraction; selector specificity, conditional

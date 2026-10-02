@@ -496,6 +496,11 @@ button:is(.icon-btn,.rb-icon,.star){ width:44px; height:44px; min-width:44px; }
 .matches-extra > summary{ min-height:44px; display:flex; align-items:center; cursor:pointer; padding:8px 12px; font-size:13px; }
 .matches-date-fields{ display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:12px 0; }
 .saverow .go{ min-width:140px; }
+#sort{ display:none; }
+@media (max-width:760px){
+#sort{ display:block; min-height:44px; max-width:180px; padding:8px 12px; border-width:1px; border-style:solid; font:inherit; }
+#sort-seg{ display:none; }
+}
 .profile-head > .note:empty, .hot-head > .note:empty{ display:none; }
 @media (max-width:1279px){
 html{ scroll-padding-bottom:calc(100px + env(safe-area-inset-bottom)); }

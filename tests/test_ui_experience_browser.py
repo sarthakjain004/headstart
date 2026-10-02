@@ -95,13 +95,30 @@ def experience():
     def me():
         return jsonify(auth=True, email="fixture@example.invalid")
 
+    @app.get("/signin")
+    def signin():
+        return render_template(
+            "signin.html",
+            google_client_id="fixture",
+            njobs="1",
+            n_atses=1,
+            n_new=None,
+            new_days=7,
+            repo="https://example.invalid",
+        )
+
     @app.get("/search")
     def search():
         queries.append(request.args.to_dict())
         return (
             (jsonify(error="Fixture search unavailable"), 503)
             if fail_search[0]
-            else jsonify(jobs)
+            else jsonify(
+                [
+                    {**job, "score": job["score"] if request.args.get("q") else None}
+                    for job in jobs
+                ]
+            )
         )
 
     @app.get("/facets")
@@ -349,7 +366,7 @@ def test_all_screens_keep_their_geometry_without_the_skin(experience, width, the
       .map(el => {const r=el.getBoundingClientRect(); return [el.id, r.x, r.y, r.width, r.height];})"""
     toggle_skin = """disabled => {
       function visit(sheet) {
-        if (sheet.href?.split('?')[0].endsWith('-skin.css') || sheet.href?.split('?')[0].endsWith('home-theme.css')) {sheet.disabled=disabled; return;}
+        if (sheet.href?.split('?')[0].endsWith('-skin.css') || sheet.href?.split('?')[0].endsWith('home-theme.css') || sheet.href?.split('?')[0].endsWith('theme-tokens.css')) {sheet.disabled=disabled; return;}
         for (const rule of sheet.cssRules) if (rule.styleSheet) visit(rule.styleSheet);
       }
       [...document.styleSheets].forEach(visit);
@@ -421,4 +438,45 @@ def test_theme_choice_and_mobile_reading_focus_survive_reload(experience):
         page.locator("#results .title").first.bounding_box()["y"]
         < page.locator(".mobile-nav").bounding_box()["y"]
     )
+    page.close()
+
+
+@pytest.mark.parametrize("width", [375, 1440])
+def test_signin_uses_the_chosen_skin_and_exposes_the_action_first(experience, width):
+    """Mock only Google's rendering interface; no credential or authentication is exercised."""
+    browser, url, _, _, _ = experience
+    page = browser.new_page(viewport={"width": width, "height": 667})
+    page.add_init_script("localStorage.setItem('hs.theme', 'dark')")
+    page.route(
+        "https://accounts.google.com/gsi/client",
+        lambda route: route.fulfill(
+            content_type="application/javascript",
+            body="""
+      window.google={accounts:{id:{initialize(){},renderButton(host){
+        const button=document.createElement('button');button.textContent='Google sign-in fixture';
+        button.style.minHeight='44px';host.append(button);
+      }}}};
+    """,
+        ),
+    )
+    page.goto(url + "/signin")
+    pw.expect(page.locator("html")).to_have_attribute("data-theme", "dark")
+    button = page.get_by_role("button", name="Google sign-in fixture", exact=True)
+    pw.expect(button).to_be_visible()
+    assert button.bounding_box()["y"] + button.bounding_box()["height"] < 667
+    assert (
+        page.locator(".gate").bounding_box()["y"]
+        < page.locator(".mid").bounding_box()["y"]
+    )
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    before = page.locator(".wrap").evaluate(
+        "el => [...el.querySelectorAll('*')].map(n=>{const r=n.getBoundingClientRect();return [r.x,r.y,r.width,r.height]})"
+    )
+    page.evaluate(
+        "[...document.styleSheets].filter(s=>/signin-skin|theme-tokens/.test(s.href)).forEach(s=>s.disabled=true)"
+    )
+    after = page.locator(".wrap").evaluate(
+        "el => [...el.querySelectorAll('*')].map(n=>{const r=n.getBoundingClientRect();return [r.x,r.y,r.width,r.height]})"
+    )
+    assert before == after, "Sign-in skin changed placement"
     page.close()

@@ -58,6 +58,7 @@ globalThis.HeadStartNavigation = {
         const heading = node('panel-' + screen)?.querySelector('[data-screen-heading], h2');
         const focus = focusTarget && node(focusTarget) || heading;
         focus?.setAttribute('tabindex', '-1');
+        if (focusTarget) (focus?.closest?.('[data-focus-context]') || focus)?.scrollIntoView?.({ block: 'start' });
         focus?.focus?.({ preventScroll: true });
       }
       shown = screen; source = 'history'; focusTarget = null;

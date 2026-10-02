@@ -1,7 +1,7 @@
 # ADR-0379: Navigation follows the seeker's journey, and a skin does not own layout
 
 **Status:** accepted · **Date:** 2026-10-02 · **Amends:** ADR-0249 (navigation/tour), ADR-0247
-(compact filters) and ADR-0128 (compact résumé preview affordance).
+(compact filters), ADR-0112 (the voluntary sign-in step) and ADR-0128 (compact résumé preview affordance).
 
 The owner requested the whole site's tabs, buttons, shapes, motion and transitions be designed
 as a visitor journey, with a future reskin preserving placement. Home-only changes did not
@@ -38,4 +38,6 @@ Rejected alternatives: a new rendering framework or configurable layout language
 interfaces without improving this existing site's journey; another override stylesheet would
 leave ownership mixed and make future skins depend on the old cascade. Replacing the actual
 filter controls would duplicate state and event behavior. Authentication policy remains with
-the separately developed access change.
+the separately developed access change. Its now-voluntary sign-in page places the action
+and email disclosure before the longer source proof; shared theme tokens and pre-paint state
+keep its appearance consistent without changing the provider or credential flow.

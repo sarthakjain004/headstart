@@ -19,9 +19,7 @@
     </div>
     <span class="qmode-note" id="qmode-note" aria-live="polite"></span>
   </div>
-  {# Second stop in the tab order, because `#q` autofocuses and the ~20-control filter rail
-     sits between it and the first job link. A skip link at the top of the document would be
-     unreachable by forward tabbing for exactly that reason. #}
+  {# A keyboard route past the filter controls, immediately after the query. #}
   <a class="skip" href="#results">Skip the filters, go to results</a>
   <div class="hint">
     <span>Try:</span>
@@ -211,7 +209,7 @@
       <button class="clear" id="clear-all">Clear all filters</button>
     </aside>
   </details>
-  <div class="search-results">
+  <div class="search-results" data-focus-context>
     <div class="toolbar">
       {% if sets_on %}
       <button class="ghost" id="savebtn" aria-expanded="false" aria-controls="saverow">Save this search</button>
@@ -221,7 +219,7 @@
          hidden <select> stays the value every reader uses; syncSegmentedSelects draws the row
          from its options, so the conditional ones below appear in both or neither. #}
       <span class="note" id="sort-lbl">Sort</span>
-      <select id="sort" hidden>
+      <select id="sort" aria-labelledby="sort-lbl">
         <option value="rel">Best match</option>
         {% if has_first_seen %}<option value="seen">Newest first seen</option>{% endif %}
         <option value="posted">Newest posted</option>
