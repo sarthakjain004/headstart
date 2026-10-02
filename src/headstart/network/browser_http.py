@@ -337,13 +337,35 @@ def shutdown() -> None:
             # Cancel abandoned navigations/fetches first, so their finally blocks return tab
             # slots before Chrome goes away. Keep pydoll's own CDP reader tasks alive until
             # __aexit__ completes: its close command needs them to receive the response.
-            pending = [t for t in _calls if t is not asyncio.current_task()]
+            pending = [
+                t
+                for t in _calls
+                if t.get_loop() is loop and t is not asyncio.current_task()
+            ]
             for task in pending:
                 task.cancel()
             if pending:
                 await asyncio.gather(*pending, return_exceptions=True)
             if browser is not None:
                 await browser.__aexit__(None, None, None)
+
+        async def drain():
+            # CDP exit has completed or hit its deadline. Its cancellation cleanup and the
+            # browser's reader tasks now need a final turn on their own loop before it closes.
+            pending = [
+                t for t in asyncio.all_tasks(loop) if t is not asyncio.current_task()
+            ]
+            for task in pending:
+                if not task.cancelling():
+                    task.cancel()
+            if pending:
+                done, remaining = await asyncio.wait(pending, timeout=1)
+                await asyncio.gather(*done, return_exceptions=True)
+                if remaining:
+                    _log.info(
+                        "browser transport: %s tasks did not cancel within 1s",
+                        len(remaining),
+                    )
 
         try:
             _run(close(), timeout=15)
@@ -352,11 +374,18 @@ def shutdown() -> None:
             if browser is not None:
                 _reap(browser)
         finally:
+            try:
+                _run(drain(), timeout=2, loop=loop)
+            except Exception:  # noqa: BLE001 - preserve the harvest outcome
+                _log.info(
+                    "browser transport: draining cancelled tasks raised", exc_info=True
+                )
             loop.call_soon_threadsafe(loop.stop)
             if thread is not None:
                 thread.join(timeout=2)
             if not loop.is_running():
                 loop.close()
+            _calls.difference_update(t for t in tuple(_calls) if t.get_loop() is loop)
             _loop, _loop_thread, _gate = None, None, None
 
 

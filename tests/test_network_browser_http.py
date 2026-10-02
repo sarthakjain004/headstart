@@ -760,3 +760,55 @@ def test_delayed_old_origin_exit_on_another_thread_leaves_new_lifetime_untouched
         released.set()
         thread.join(timeout=2)
     assert not thread.is_alive()
+
+
+def test_shutdown_deadline_drains_cancelled_calls_before_reopening(monkeypatch, caplog):
+    import asyncio
+    import gc
+
+    exits = []
+    original_run = bh._run
+
+    class StalledExit(_FakeChrome):
+        async def __aexit__(self, *args):
+            try:
+                await asyncio.Event().wait()
+            finally:
+                # Cooperative cleanup needs another event-loop turn after cancellation.
+                await asyncio.sleep(0.002)
+                exits.append("cancelled exit completed")
+
+    def short_deadline(coro, timeout, **kwargs):
+        return original_run(coro, min(timeout, 0.01), **kwargs)
+
+    async def blocking(tab):
+        pass
+
+    monkeypatch.setattr(bh, "_install_blocking", blocking)
+    monkeypatch.setattr(bh, "_run", short_deadline)
+    monkeypatch.setattr(bh, "_chrome_factory", StalledExit)
+    with bh.origin("https://example.invalid/careers"):
+        pass
+    old_loop = bh._loop
+    try:
+        with caplog.at_level(logging.INFO):
+            bh.shutdown()
+        assert exits == ["cancelled exit completed"]
+        assert not bh._calls
+        assert old_loop.is_closed()
+        normal = _FakeChrome()
+        monkeypatch.setattr(bh, "_chrome_factory", lambda: normal)
+        with bh.origin("https://example.invalid/careers"):
+            pass
+        bh.shutdown()
+        assert not normal.started  # its ordinary async exit actually ran
+        assert not bh._calls
+        gc.collect()
+        assert not any(
+            "Task was destroyed" in record.getMessage()
+            or "Event loop is closed" in record.getMessage()
+            for record in caplog.records
+        )
+    finally:
+        bh._calls.clear()
+        bh.shutdown()
