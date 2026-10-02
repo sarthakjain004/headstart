@@ -21,7 +21,12 @@ from headstart.search_filters import (
     india_filter,
     india_gazetteer,
 )
-from headstart.space_mcp import company_scope, role_families, scraped_text
+from headstart.space_mcp import (
+    company_scope,
+    noun_counts,
+    role_families,
+    scraped_text,
+)
 from headstart.trends.hot_ranking import HIDDEN_BY_DEFAULT
 
 #: Every filter argument as the tools name it -> as the Space does: the query-string name
@@ -200,22 +205,27 @@ PROPERTIES: dict[str, dict[str, Any]] = {
         "description": (
             "Use this, not `keyword`, for visa sponsorship or relocation: a description "
             "that mentions sponsorship usually refuses it. offers_sponsorship: the "
-            "description offers this job visa sponsorship and nothing in it refuses it; an "
-            "offer limited to another country than the job's, or to levels above its title, "
-            "does not count. may_offer_sponsorship: those jobs, plus the ones whose offer is "
-            "hedged ('not guaranteed', 'case by case', 'may be available') or names a country "
-            "or level the job's place or title does not show; say which kind each job is "
-            "(get_job prints its stance). refuses_sponsorship: it refuses sponsorship ('now "
+            "description offers this job visa sponsorship and nothing in it refuses or hedges "
+            "it; an offer limited to another country than the job's (or a move to another "
+            "country's city), to levels above its title, or to full-time roles on an "
+            "internship, does not count. may_offer_sponsorship: those jobs, plus the ones "
+            "whose offer is hedged ('not guaranteed', 'not for every role', 'case by case', "
+            "'may be available', 'if possible', 'subject to approval', 'only if already "
+            "based in'), is a visa transfer only, or names a country or level the job's place "
+            "or title does not show; each row says which kind it is, so say it. "
+            "refuses_sponsorship: it refuses sponsorship ('now "
             "or in the future', 'Visa Sponsorship: No'), requires citizenship of this job or "
             "work authorisation already held, or offers it only to another country or level; offers_relocation: it offers "
             "relocation help. Text-derived, not a field the employer set: HeadStart's rules "
             "(headstart.jobs.work_authorization) read each sponsorship, citizenship and "
             "relocation sentence with its negation, and read an offer against the "
-            "job's place and title. On 893 hand-read descriptions (ADR-0333, ADR-0353) "
-            "precision is 0.99 for offers_sponsorship, 0.98 for refuses_sponsorship and 0.99 "
-            "for offers_relocation, each finding about 98%; 48 of 50 offers drawn from the "
-            "live index after the rules froze were right. A posting without a description "
-            "never matches."
+            "job's place, title and type. Of 50 offers_sponsorship jobs drawn from the live "
+            "index after the rules froze (ADR-0368; 25 in the US, 25 elsewhere, at most 5 a "
+            "company), read strictly, 47 (0.94) offered this job sponsorship firmly and all 50 "
+            "at least may; the 0.98 to 0.99 precision on 1,062 hand-read descriptions "
+            "(ADR-0333 to ADR-0368) is on the rules' own tuning set. Before telling a user a "
+            "job sponsors visas, read its sponsorship "
+            "sentences with get_job. A posting without a description never matches."
         ),
     },
 }
@@ -359,9 +369,7 @@ def _operators_said(arguments: dict[str, Any], left_out: int | None) -> str | No
     if kept is None:
         return None
     dropped = " and ".join(_OPERATOR_WORDS[op] for op in OPERATORS if op not in kept)
-    counted = (
-        "" if left_out is None else f": {left_out:,} job{'' if left_out == 1 else 's'}"
-    )
+    counted = "" if left_out is None else f": {noun_counts.counted(left_out, 'job')}"
     if kept == DEFAULT_OPERATORS:
         return (
             f"{dropped} left out, as the site's Hiring now tab hides them{counted} (name "

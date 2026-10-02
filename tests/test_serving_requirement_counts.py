@@ -1,7 +1,7 @@
 """What a sample of served Jobs asks for — `headstart.serving.requirement_counts` (ADR-0324,
 ADR-0332).
 
-Contracts: each requisition counted once (only the first Job that copies it), a Job whose company
+Contracts: each posting counted once (only the first Job on any of its Boards), a Job whose company
 names only its Board shown under the directory's name; skills as a share of the counted Jobs that
 carry a description, with distinct employers; minimum years in bands kept apart by source; salary
 quartiles per currency over each range's midpoint; remote, companies, countries and categories
@@ -60,8 +60,9 @@ def test_skills_are_shares_of_the_described_jobs_with_distinct_employers():
     assert counted["vocabulary_size"] == len(tech_skills.vocabulary().skills)
 
 
-def test_the_jobs_that_copy_one_requisition_count_once_the_first_read():
-    """Per country, and on two Boards of its employer (`jobs.requisition_copies`)."""
+def test_one_requisition_counts_once_the_first_read():
+    """On two Boards of its employer, or posted per country (`jobs.requisition_copies`,
+    ADR-0332, kept by ADR-0370 after ADR-0365 had counted each country's posting)."""
     jobs = [
         _job(1, title="Data Engineer (Peru)", company="Anyone AI", remote=True),
         _job(3, title="Data Engineer (Chile)", company="Anyone AI"),
@@ -173,6 +174,18 @@ def test_each_work_authorization_stance_is_counted_over_the_described_jobs():
     }
 
 
+def test_a_work_authorization_stance_is_read_against_each_jobs_type():
+    # ADR-0368: "for full-time positions" offers an internship nothing.
+    offer = "Python. We sponsor work visas for full-time positions."
+    counted = _summary(
+        [
+            _job(1, description=offer, employment_type="Full time"),
+            _job(2, description=offer, employment_type="Intern"),
+        ]
+    )
+    assert counted["work_authorization"]["offers_sponsorship"] == 1
+
+
 def test_minimum_years_are_banded_and_kept_apart_by_source():
     jobs = [
         _job(1, min_years=0, experience_source="regex"),
@@ -261,6 +274,28 @@ def test_per_company_counts_at_most_that_many_of_one_companys_postings():
     uncapped = _summary(jobs)
     assert uncapped["over_company_cap"] == 0 and uncapped["per_company"] is None
     assert "counted" not in uncapped["companies"][0]
+
+
+def test_one_companys_same_titled_postings_on_its_boards_count_once():
+    """ADR-0370: Capital One's same-titled requisitions on its Workday Board and its Radancy
+    front are one requisition's text, counted once; a search page lists them as postings in
+    pairs (ADR-0365)."""
+    front, workday = (
+        "radancy:www.capitalonecareers.com",
+        "workday:capitalone/Capital_One",
+    )
+    jobs = [
+        _job(n, id=f"{board}:{n}", title="Full-stack Engineer 4", company="Capital One")
+        for n, board in enumerate([front, workday, front, workday, workday, front])
+    ]
+    counted = requirement_counts.summarize(
+        jobs, tech_skills.vocabulary(), per_company=2
+    )
+    assert (counted["read"], counted["distinct"], counted["over_company_cap"]) == (
+        6,
+        1,
+        0,
+    )
 
 
 def test_an_empty_sample_is_an_empty_answer_not_an_error():

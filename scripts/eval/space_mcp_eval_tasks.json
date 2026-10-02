@@ -468,13 +468,19 @@
     },
     {
       "id": "t32",
-      "prompt": "Find IT Associate Software Engineer jobs in the United States. Does any one job appear twice?",
+      "prompt": "Find Principal Manufacturing Systems Engineer jobs in the United States. Does any one job appear twice?",
       "verifier": "mentions",
       "expect": {
-        "all": [["Eversource"]],
-        "tool_results_all": ["another spelling of the company"]
+        "all": [["Schwan"]],
+        "tool_results_all": ["another spelling of it"]
       },
-      "why": "Round-2 critique st05b (ADR-0323): one Eversource requisition is served from its Radancy front ('EVERSOURCE') and its Workday Board ('Eversource Energy'). search_jobs lists the second under the first as 'also #N' and says why. Data-dependent: the pair was posted 2026-09-28; retire the task when it closes."
+      "requires": {
+        "jobs": [
+          "radancy:www.schwansjobs.com:99233842560",
+          "adp_recruiting:schwans:5001217970706"
+        ]
+      },
+      "why": "Round-2 critique st05b (ADR-0323): one requisition served from two Boards under two spellings of its company is listed once, the second under the first as 'also #N', and search_jobs says why. The Eversource pair it first used closed (round-5 critique, 2026-09-30), so it now reads Schwan's: its ADP Recruiting site ('Schwan's Company') and its Radancy front ('Schwan’s Company', a curly apostrophe) carry one posting in Hopkins, Minnesota (ADR-0365). Data-dependent: `requires` retires the task while either posting is no longer served (ADR-0366); repoint it then."
     },
     {
       "id": "t33",
@@ -512,7 +518,7 @@
       "prompt": "I'm an international student finishing a computer science degree and will need a work visa. Find me three software engineering jobs in the United States that offer visa sponsorship.",
       "verifier": "sponsorship_polarity",
       "expect": {"at_least": 1, "said_ok": true},
-      "why": "Round-3 critique P0-1 (ADR-0333): a keyword search for 'sponsorship' in descriptions led with jobs refusing it (36 of 40 sampled did), and t13 passed while checking only that a description search ran. The verifier judges the answer's truth, not its arguments, and apart from the Space's own rules, so it can see their errors (round-3 review SP8): every row the search_jobs and get_job calls listed is read back from /job, and no job the answer names may be one that does not offer sponsorship. A job in the 660 descriptions a person labelled for ADR-0333 (tests/fixtures/work_authorization_labelled.jsonl) is judged by its label, offers or mixed passing; any other by a plain negation check ('no', 'not', 'without', 'refuse', 'citizenship required') within five words of a sponsorship word in the sentences /job quotes. It catches a labelled job labelled refuses or none, and an unlabelled one whose quoted sponsorship sentence negates. It cannot catch an unlabelled job whose refusal no quoted sentence states, and it fails a right answer whose job offers sponsorship in a sentence that also negates ('no matter your visa status, we sponsor'). The work_authorization offers_sponsorship filter is the way to pass; a keyword answer passes only if every job it names offers it. Round 4 (ADR-0353): a job named only on a line saying it was dropped or does not offer sponsorship passes (said_ok; an answer that wrote 'I dropped an Amgen listing … not guaranteed' had failed), and a hedged offer ('not guaranteed', 'case by case', a may_offer label, the eval's own hedge words near a sponsorship word) passes only on an answer line that says it is hedged."
+      "why": "Round-3 critique P0-1 (ADR-0333): a keyword search for 'sponsorship' in descriptions led with jobs refusing it (36 of 40 sampled did), and t13 passed while checking only that a description search ran. The verifier judges the answer's truth, not its arguments, and apart from the Space's own rules, so it can see their errors (round-3 review SP8): every row the search_jobs and get_job calls listed is read back from /job, and no job the answer names may be one that does not offer sponsorship. A job in the 660 descriptions a person labelled for ADR-0333 (tests/fixtures/work_authorization_labelled.jsonl) is judged by its label, offers or mixed passing; any other by a plain negation check ('no', 'not', 'without', 'refuse', 'citizenship required') within five words of a sponsorship word in the sentences /job quotes. It catches a labelled job labelled refuses, none or may_offer, an unlabelled one whose quoted sponsorship sentence negates, and an unlabelled hedged offer reported as firm, where the hedge is one of the eval's own phrases (_HEDGE_PHRASES: written from the may_offer labels, none carried by a description labelled a firm offer, and not imported from the Space's rules, so it catches the Space reading 'We sponsor visas, pending company approval' as firm; round-5 review SP7, ADR-0370). It cannot catch an unlabelled job whose refusal no quoted sentence states, a hedge in words its list lacks ('where feasible'), or sponsorship scoped to a move to another city; and it fails a right answer whose job offers sponsorship in a sentence that also negates ('no matter your visa status, we sponsor') or that uses a listed phrase firmly ('we guarantee sponsorship'). The work_authorization offers_sponsorship filter is the way to pass; a keyword answer passes only if every job it names offers it. Round 4 (ADR-0353): a job named only on a line saying it was dropped or does not offer sponsorship passes (said_ok; an answer that wrote 'I dropped an Amgen listing … not guaranteed' had failed), and a hedged offer ('not guaranteed', 'case by case', a may_offer label, the eval's own hedge words near a sponsorship word) passes only on an answer line that says it is hedged."
     },
     {
       "id": "t37",
@@ -535,6 +541,81 @@
         ]
       },
       "why": "Round-4 critique P2-6 (ADR-0355): a journalist's comparison took one search per country. search_jobs at detail full now says where every matching job is, by country, over the whole match. The verifier reads /facets once per country with the filters of a search_jobs call the agent made (its country and india_place replaced) and needs each total stated beside the country's name, so a figure read from the places line is held to the country filter's own count; a search per country passes too."
+    },
+    {
+      "id": "t39",
+      "prompt": "I'm a new grad with no work experience. Find me backend engineering jobs in the United States I could apply to.",
+      "verifier": "all_of",
+      "expect": {
+        "checks": [
+          {
+            "verifier": "search_args",
+            "expect": {
+              "tool": "search_jobs",
+              "must": {"max_years": {"op": "<=", "value": 2}}
+            }
+          },
+          {"verifier": "senior_caveat", "expect": {}}
+        ]
+      },
+      "why": "Round-4 review SP3 (ADR-0359, under ADR-0079): a job's served floor is the smallest its description states, so a Senior or Staff role can show 0 or 1 years off a side clause. search_jobs tags such a row when max_years is 2 or less. The verifier reads each search_jobs result at that max_years, picks the rows whose title reads Senior, Staff, Principal, Lead, Manager or Director and not Associate or Junior (its own rule, apart from the tool's tag), and fails an answer that names one without a caveat on the line naming it. It is disclosure only: a senior row presented with its caveat, or dropped, passes. Words like \"new grad\" in query are left to t11 and its kin: the first hosted runs put them there, and this task judges the caveat."
+    },
+    {
+      "id": "t40",
+      "prompt": "Is Lockheed Martin among the companies HeadStart's Hiring now tab ranks by volume this week? Does HeadStart suggest it might be a staffing agency or recruiter rather than the employer?",
+      "verifier": "employer_unflagged",
+      "expect": {"companies": ["Lockheed Martin"]},
+      "requires": {
+        "hot_row": {"lens": "volume", "company": "Lockheed Martin", "within": 20}
+      },
+      "why": "Round-5 critique R5-P1-3 (ADR-0366): the operator-unverified rule read SAP's host label `hr` in `lockheed.jobs.hr.cloud.sap` as an agency name, so hiring_now listed Lockheed Martin after every unflagged row, marked a possible agency, as it would every Board on that SAP host (82 Scrapable Boards). The verifier fails a tool result line or an answer line that calls Lockheed Martin unverified, a staffing firm, an agency or a recruiter, and an answer that leaves it out. Data-dependent: retired while Lockheed Martin is not among the volume Lens's first 20 rows on the site (it was #18 on 2026-09-30). The prompt names Lockheed rather than asking for a top 20: its closures went uncounted, so hiring_now lists it after every unflagged row, past a limit of 20, and a denial on its line (\"not flagged as a staffing agency\") passes (follow-up to ADR-0366). A call is a claim that it may be, is, or is flagged or treated as an agency, a staffing firm, a recruiter or unverified, in a clause no negation before it denies: a \"not\" of another clause (\"does not verify it, so it may be a staffing agency\") denies nothing, and a restated question or a list of tags it does not carry calls nothing (round-5 review SP8, ADR-0370, ADR-0371)."
+    },
+    {
+      "id": "t41",
+      "prompt": "Since 2026-09-25, how have openings in the roles HeadStart watches within Software Engineering changed, all of those roles together? Give me one total change.",
+      "verifier": "watched_roles_total",
+      "expect": {"category": "software-engineering", "since": "2026-09-25"},
+      "requires": {
+        "roles_joined_partway": {"category": "software-engineering", "since": "2026-09-25"}
+      },
+      "why": "Round-5 critique R5-P1-4 (ADR-0366): read_trends added the watched roles up as +12,044 while Java and Python, counted only from 0.7 days into the window, joined the end figure alone; like for like the roles counted from the start moved +593 and every role's own change summed to -3,427. The verifier reads the Space's role lines itself and passes an answer that states either like-for-like total and not the mixed one. Retired once no watched role joins the window partway."
+    },
+    {
+      "id": "t42",
+      "prompt": "I need a US employer that sponsors work visas. Find machine learning engineer jobs in the United States whose postings offer visa sponsorship, and list the first page of results with each job's company.",
+      "verifier": "page_companies",
+      "expect": {
+        "tool": "search_jobs",
+        "must": {
+          "country": "US",
+          "work_authorization": "offers_sponsorship",
+          "page": 1
+        },
+        "must_any": [
+          {"query": {"op": "contains", "value": "machine learning"}},
+          {"query": {"op": "contains", "value": "ml"}}
+        ],
+        "min_companies": 4
+      },
+      "requires": {
+        "piled_ranking": {
+          "arguments": {
+            "query": "machine learning engineer",
+            "country": "US",
+            "work_authorization": "offers_sponsorship"
+          },
+          "companies_below": 4
+        }
+      },
+      "why": "Round-5 critique R5-P1-2 (ADR-0365): the per-company cap counted a group of 'also' rows as one posting, and the copy rule folded distinct Capital One requisitions into one group, so s04's first page was ten Capital One rows. The verifier needs at least 4 companies on the first page of the call and named in the answer. Data-dependent: `requires` retires it while the Space's uncapped ranking of that query already names 4 companies on its first page, since the cap then has nothing to spread (ADR-0366's mechanism)."
+    },
+    {
+      "id": "t43",
+      "prompt": "How many tech people did Deloitte US hire this week?",
+      "verifier": "found_late_share",
+      "expect": {"companies": ["Deloitte US"], "days": 7},
+      "requires": {"found_late_burst": {"companies": ["Deloitte US"], "days": 7}},
+      "why": "Round-5 critique R5-P1-1 (ADR-0369): read_trends reported Deloitte US's first whole read of its Avature Board as hiring, 509 opened and net +495 over 7 days, while 410 of its postings first seen that week were posted over 14 days before HeadStart saw them. The verifier reads /trends for the company itself, re-derives the found-late rule from the first row's opened_fresh and opened_found_late, and needs the answer to say the postings were found late and name how many: the found-late count, or its share of opened or of the dated postings within 3 points. Any tool path that gives the split passes (ADR-0354). Retired while today's data no longer shows Deloitte US's opened mostly found late (ADR-0366's requires), and not judged if the burst goes between that check and the verdict: never failed."
     }
   ],
   "heldout_sha256": "801e7149bc71c42e7b346dcf089ea20f87d1e0035d989b3dba8ffb50fe055e4d"

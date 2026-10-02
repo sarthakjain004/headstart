@@ -943,7 +943,7 @@ jobs:
         if: needs.scrape-plan.outputs.run == 'true' && steps.corpus.outcome == 'success'
         continue-on-error: true
         timeout-minutes: 20
-        run: python -m headstart.ingest.role_trends
+        run: python -m headstart.ingest.role_trends --reference-facts data/facts
       - name: Name the companies Trends can be filtered to and Hot ranks (ADR-0185, ADR-0230)
         # Strictly after role_trends: it reads that stage's Board-delta ledger, and warns and
         # exits 0 without it. Never fatal for the same reason — a run that has already scraped,

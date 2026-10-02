@@ -230,6 +230,27 @@ def test_jibe_reads_a_single_label_client_and_nothing_deeper(miner):
     assert sorted(hits) == ["costco", "petsmart", "uhs"]
 
 
+def test_mynexthire_reads_the_label_on_either_front_and_not_the_api_host(miner):
+    """`{label}.mynexthire.com` and `{label}.careers.mynexthire.io` name the same tenant; the
+    per-tenant API host `{label}.prod.us1.mynexthire.io` and the `iqa` environment name none."""
+    spec = miner.ATS_PATTERNS["mynexthire"]
+    pats = [re.compile(p, re.IGNORECASE) for p in spec["patterns"]]
+    hits: dict[str, str] = {}
+    miner.extract_tenants(
+        spec,
+        pats,
+        [
+            "https://Swiggy.mynexthire.com/employer/jobs/careers",
+            "https://azentio.careers.mynexthire.io/jd",
+            "https://swiggy.prod.us1.mynexthire.io/d17/careers/requisition/object",
+            "https://exmac.iqa.mynexthire.com/employer/jobs",
+            "https://acme.mynexthire.com.evil.example/",
+        ],
+        hits,
+    )
+    assert sorted(hits) == ["azentio", "swiggy"]
+
+
 def test_adp_capture_keeps_cid_and_ccid_in_any_order_and_drops_the_rest(miner):
     pattern = re.compile(miner.ATS_PATTERNS["adp"]["patterns"][0], re.IGNORECASE)
     page = (

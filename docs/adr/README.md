@@ -317,6 +317,7 @@ supersedes it and note the supersession in both.
 | [0347](0347-the-india-country-tag-reads-whole-words-and-the-shapes-only-india-writes.md) | The India country tag reads whole words and the shapes only India writes | 2026-09-29 |
 | [0348](0348-a-workday-listing-item-with-no-title-and-no-link-is-not-a-job.md) | A Workday listing item with no title and no link is not a Job | 2026-09-29 |
 | [0349](0349-search-leaves-out-jobs-the-head-confidently-calls-non-tech-by-a-column-each-tick-stamps.md) | Search leaves out the Jobs the role-family head confidently calls non-tech, by a column each Trends tick stamps (amends 0057) | 2026-09-29 |
+| [0350](0350-experience-widenings-run-last-and-a-ceiling-an-education-an-age-or-a-window-is-not-a-floor.md) | Experience widenings run last, and a ceiling, an education, an age or a window is not a floor (amends 0066) | 2026-09-29 |
 | [0351](0351-hiring-now-flags-a-row-whose-opened-was-mostly-found-late.md) | Hiring now flags a row whose opened was mostly found late | 2026-09-29 |
 | [0352](0352-a-relevance-page-and-a-requirements-sample-take-a-few-postings-of-each-company.md) | A relevance page and a requirements sample take a few postings of each company | 2026-09-29 |
 | [0353](0353-a-sponsorship-offer-is-read-against-the-jobs-place-and-title-and-a-hedged-one-may-offer.md) | A sponsorship offer is read against the job's place and title, and a hedged one only may offer | 2026-09-29 |
@@ -324,6 +325,20 @@ supersedes it and note the supersession in both.
 | [0355](0355-a-search-says-where-every-matching-job-is-and-a-requirements-sample-takes-type-stance-and-pay.md) | A search says where every matching job is, and a requirements sample takes type, stance and pay | 2026-09-29 |
 | [0357](0357-the-owner-keeps-the-smallest-stated-experience-and-get-job-names-the-others.md) | The owner keeps the smallest stated experience, and get_job names the others (re-affirms 0079) | 2026-09-29 |
 | [0358](0358-a-sitemap-that-states-no-title-is-read-from-its-portals-search-pages.md) | A sitemap that states no posting's title is read from its portals' search pages (amends 0245) | 2026-09-29 |
+| [0359](0359-sponsorship-precision-is-quoted-from-a-fresh-strict-draw-and-a-hedge-holds-back-a-firm-offer.md) | Sponsorship precision is quoted from a fresh strict draw, and a hedge holds back a firm offer (amends 0353) | 2026-09-30 |
+| [0362](0362-a-spire2grow-board-is-its-career-host-and-lands-enabled.md) | A Spire2Grow Board is its career-site host, and the ATS lands enabled | 2026-09-30 |
+| [0363](0363-a-turbohire-board-is-its-career-page-label-resolved-to-its-organization.md) | A TurboHire Board is its career-page label, resolved to its organization, and lands active | 2026-09-30 |
+| [0364](0364-a-mynexthire-board-is-its-tenant-label-read-in-one-post-and-lands-enabled.md) | A MyNextHire Board is its tenant label, read in one POST, and lands enabled | 2026-09-30 |
+| [0365](0365-a-copy-is-one-posting-on-two-boards-and-every-row-counts-toward-per-company.md) | A copy is one posting on two Boards, and every row counts toward per_company (amends 0352) | 2026-09-30 |
+| [0366](0366-an-agency-name-is-read-off-a-boards-own-label-and-a-watched-roles-total-counts-one-basis.md) | An agency name is read off a Board's own label, and a watched-roles total counts one basis (amends 0335, 0233) | 2026-09-30 |
+| [0367](0367-answers-name-a-may-offers-kind-a-loose-match-a-small-sample-a-passed-end-date-and-a-near-id.md) | Answers name a may-offer's kind, a loose match, a small sample, a passed end date and a near id | 2026-09-30 |
+| [0368](0368-a-hedge-near-a-visa-word-a-type-scope-and-a-move-to-a-city-hold-back-a-firm-sponsorship-offer.md) | A hedge near a visa word, a type scope and a move to a city hold back a firm sponsorship offer (amends 0359) | 2026-09-30 |
+| [0369](0369-every-company-line-says-when-its-opened-was-mostly-found-late.md) | Every company line says when its opened was mostly found late (amends 0351) | 2026-09-30 |
+| [0370](0370-a-sample-counts-a-requisition-once-and-a-place-a-leading-word-names-is-another-place.md) | A sample counts a requisition once, and a place a leading word names is another place (amends 0365, 0325) | 2026-09-30 |
+| [0371](0371-the-eval-reads-an-agency-call-as-a-claim-a-negation-in-its-clause-does-not-deny.md) | The eval reads an agency call as a claim a negation in its clause does not deny (amends 0370) | 2026-09-30 |
+| [0372](0372-a-liveness-probe-reads-code-6-as-dead-only-when-a-public-resolver-agrees.md) | A liveness probe reads curl's code 6 as dead only when a public resolver agrees (relates to 0181, 0189) | 2026-09-30 |
+
+| [0373](0373-gr8people-follows-the-public-search-and-keys-a-board-on-its-career-host.md) | gr8people follows the public search and keys a Board on its career host | 2026-10-02 |
 
 | [0375](0375-replay-selects-whole-job-lifecycles-and-keeps-all-job-dormancy-evidence.md) | Replay selects whole Job lifecycles and keeps all-Job Dormancy evidence | 2026-10-02 |
 

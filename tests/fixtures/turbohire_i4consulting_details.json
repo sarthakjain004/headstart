@@ -1,0 +1,134 @@
+{
+ "a5383551-b14a-4340-a841-84de7b4c3083": {
+  "JobIdObfuscated": "u2cKrJlkrQ0ITzTOn_kDA%2FhGcMYx227GjCzoffgsrxIH3hQe7n17pjcEIlqITO9r",
+  "CreatedDate": "2021-09-22T06:57:24.337",
+  "UpdatedDate": "2025-05-27T16:49:14.0866667",
+  "PublishedDate": "2025-05-27T16:49:14.0866667",
+  "PublicLinkOwner": "",
+  "PublishedJobBoards": [
+   "MONSTER_US",
+   "GOOGLEJOBS",
+   "FACEBOOKJOBS",
+   "JOBSORA",
+   "POSTJOBFREE",
+   "CAREERJET",
+   "JOBRAPIDO",
+   "CAREERPAGE"
+  ],
+  "JobStatus": "Active",
+  "JobId": "a5383551-b14a-4340-a841-84de7b4c3083",
+  "Department": "Sales and Marketing",
+  "IsPublic": true,
+  "JobTitle": "Lead Affiliate Program",
+  "JobDescriptionV2": "<p>This Job entails to direct motivated traffic, handling and responding to customer inquiries, generating effective sales leads, tracking customer conversions and streamlining promotional activities.</p>",
+  "JobDescriptionVideoUrl": "",
+  "JobCode": "IHCATPL-51180",
+  "RolesAndResponsibilitiesV2": "<ul><li>Driving key details of Affiliate programs for driving customer acquisition. </li><li>Identify and recruit relevant top producing affiliates including digital marketing agencies. </li><li>Build and maintain strong relationships with key affiliates and Affiliate networks</li></ul>",
+  "EligibilityV2": "<p>MBA</p>",
+  "Location": "[{\"Address\":\"Bangalore, Karnataka, India\",\"PlaceId\":\"ChIJbU60yXAWrjsR4E9-UejD3_g\"}]",
+  "Type": "FTE",
+  "JobTypeV2": "Full Time",
+  "CTCInfo": {
+   "CurrencyCode": "INR",
+   "Type": "ANNUAL",
+   "Min": "3000000",
+   "Max": "4000000",
+   "Negotiable": false,
+   "IsHidden": true,
+   "HiddenFrom": [
+    "JobSeekers"
+   ]
+  },
+  "ClientName": "Dukaan",
+  "ShowClientName": false,
+  "NumberOfVacancy": 1,
+  "Experience": {
+   "MinExp": 4,
+   "MaxExp": 6
+  },
+  "IsDraft": false,
+  "IsJobCalibratedByUser": false,
+  "HideVacancy": false
+ },
+ "85442abc-47b3-4781-8dbc-da24ed1a949e": {
+  "JobIdObfuscated": "0Ri_x241z1sL%2F2iZs06DblaOcug3jFTlzmbnKtUAwHxMcnp_sIJgoTDtNm%2Fg06Xv",
+  "CreatedDate": "2022-05-25T10:03:28.62",
+  "UpdatedDate": "2025-05-27T16:49:14.0866667",
+  "PublishedDate": "2025-05-27T16:49:14.0866667",
+  "PublicLinkOwner": "",
+  "PublishedJobBoards": [
+   "CAREERPAGE"
+  ],
+  "JobStatus": "Active",
+  "JobId": "85442abc-47b3-4781-8dbc-da24ed1a949e",
+  "Department": "Engineering",
+  "IsPublic": true,
+  "JobTitle": "Principal Engineer",
+  "JobDescriptionV2": "<p>You will drive 0 to 1 innovation to tackle the massive gap in healthcare for hundreds of millions of women. In addition to creating large-scale impact, you will contribute towards the engineering culture from the ground up at a fast-growing early-stage start-up. </p><p><strong>Qualifications: </strong></p><p>• 2+ years of professional experience working with React Native. </p><p>• 2+ years of professional experience working with NodeJS. </p><p>• 4+ years of professional software development experience. </p><p>• Experience working with Typescript required. </p><p>• Experience working with Swift, Objective C, and Java a plus but not required. </p><p>• Ability to take extreme ownership over your work. Every day is a challenge to ensure you are performing to the expectations you and your team have agreed upon, both in regards to estimates and to the general process. </p><p>• Ability to identify with the goals of customers and dedicate yourself to delivering on the commitments you and your team make to them. </p><p>• An understanding of React Native best practices and a commitment to following them. </p><p>• Ability to create and maintain continuous integration and delivery of React Native applications. </p><p>• English skills (ability to effectively communicate via written and spoken English). </p><p><strong>Responsibilities: </strong></p><p>• Work as part of a small team to build React Native iOS / Android applications. </p><p>• Architect, build and maintain excellent React Native applications with clean code. </p><p>• Implement pixel perfect UI's that match designs. </p><p>• Implement clean, modern, smooth animations and transitions that provide an excellent user experience. </p><p>• Integrate third-party API's. </p><p>• Write unit and integration tests. </p><p>• Release applications to the Apple and Google Play stores. </p><p>• Work with native modules when required. </p><p>• Work with modern tools including Linear, Slack, GitHub, Notion, etc</p>",
+  "JobDescriptionVideoUrl": "",
+  "JobCode": "-85546",
+  "Location": "[{\"Address\":\"Remote Job\",\"PlaceId\":null}]",
+  "Type": "FTE",
+  "JobTypeV2": "Full Time",
+  "CTCInfo": {
+   "CurrencyCode": "INR",
+   "Type": "ANNUAL",
+   "Min": "2000000",
+   "Max": "3500000",
+   "Negotiable": false,
+   "IsHidden": false
+  },
+  "ClientName": "Veera Health",
+  "ShowClientName": true,
+  "NumberOfVacancy": 1,
+  "Experience": {
+   "MinExp": 3,
+   "MaxExp": 6
+  },
+  "IsDraft": false,
+  "IsJobCalibratedByUser": false,
+  "HideVacancy": false
+ },
+ "db33a48e-be32-4a0e-a241-acddd637aead": {
+  "JobIdObfuscated": "8xT6kmOzCRCy9FEtpC%2FrErQvuz7t_2bRBYjmiZHO6wv1fb6enQbTgq3pdzgaDYr5",
+  "CreatedDate": "2021-04-05T09:10:30.232",
+  "UpdatedDate": "2025-05-27T16:49:14.0866667",
+  "PublishedDate": "2025-05-27T16:49:14.0866667",
+  "PublicLinkOwner": "",
+  "PublishedJobBoards": [
+   "GOOGLEJOBS",
+   "FACEBOOKJOBS",
+   "JOBSORA",
+   "POSTJOBFREE",
+   "CAREERPAGE"
+  ],
+  "JobStatus": "Active",
+  "JobId": "db33a48e-be32-4a0e-a241-acddd637aead",
+  "Department": "Engineering",
+  "IsPublic": true,
+  "JobTitle": "Sr. UI Developer",
+  "JobDescriptionVideoUrl": "",
+  "JobCode": "IHCATPL-83767",
+  "Location": "[{\"Address\":\"Bangalore, Karnataka, India\",\"PlaceId\":\"ChIJbU60yXAWrjsR4E9-UejD3_g\"}]",
+  "Type": "FTE",
+  "JobTypeV2": "Full Time",
+  "CTCInfo": {
+   "CurrencyCode": "INR",
+   "Type": "ANNUAL",
+   "Min": "",
+   "Max": "",
+   "Negotiable": false,
+   "IsHidden": false
+  },
+  "ClientName": "Xoxoday",
+  "ShowClientName": true,
+  "NumberOfVacancy": 1,
+  "Experience": {
+   "MinExp": 3,
+   "MaxExp": 5
+  },
+  "IsDraft": false,
+  "IsJobCalibratedByUser": false,
+  "HideVacancy": false
+ }
+}

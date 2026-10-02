@@ -32,6 +32,63 @@ cl = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(cl)
 
 
+@pytest.mark.parametrize("count", [0, 168])
+def test_gr8people_public_board_and_api_count_are_both_required(monkeypatch, count):
+    from fake_fetcher import FakeResponse
+
+    monkeypatch.setattr(
+        cl, "_get", lambda *_args, **_kwargs: (200, b"assets.gr8people.com")
+    )
+    monkeypatch.setattr(
+        cl,
+        "_fetch",
+        lambda *_args, **_kwargs: FakeResponse(
+            text=json.dumps(
+                {
+                    "data": {
+                        "searchJobs": {"results": {"nodes": [], "totalCount": count}}
+                    }
+                }
+            )
+        ),
+    )
+    assert cl.p_gr8people("careers.teradata.com", "") == (cl.LIVE, count)
+
+
+def test_gr8people_public_404_is_dead_without_asking_a_retained_api(monkeypatch):
+    monkeypatch.setattr(cl, "_get", lambda *_args, **_kwargs: (404, b""))
+    monkeypatch.setattr(
+        cl,
+        "_fetch",
+        lambda *_args, **_kwargs: pytest.fail(
+            "dead public Board must not trust its API"
+        ),
+    )
+    assert cl.p_gr8people("ardene.gr8people.com", "") == (cl.DEAD, None)
+
+
+@pytest.mark.parametrize("status,body", [(200, b"marketing"), (429, b""), ("dns", b"")])
+def test_gr8people_unsettled_page_is_unknown(monkeypatch, status, body):
+    monkeypatch.setattr(cl, "_get", lambda *_args, **_kwargs: (status, body))
+    assert cl.p_gr8people("x.gr8people.com", "") == (cl.UNKNOWN, None)
+
+
+def test_gr8people_graphql_error_on_200_is_unknown(monkeypatch):
+    from fake_fetcher import FakeResponse
+
+    monkeypatch.setattr(
+        cl, "_get", lambda *_args, **_kwargs: (200, b"assets.gr8people.com")
+    )
+    monkeypatch.setattr(
+        cl,
+        "_fetch",
+        lambda *_args, **_kwargs: FakeResponse(
+            text='{"errors":[{"message":"unavailable"}]}'
+        ),
+    )
+    assert cl.p_gr8people("x.gr8people.com", "") == (cl.UNKNOWN, None)
+
+
 @pytest.fixture(autouse=True)
 def _no_spare_egress(monkeypatch):
     """No test in this file may reach the machine's real WARP daemon.
@@ -53,6 +110,26 @@ def _no_spare_egress(monkeypatch):
             rotations=Counter,
             egress_ips=Counter,
         ),
+    )
+
+
+@pytest.fixture(autouse=True)
+def _public_resolver_agrees(monkeypatch):
+    """No test in this file may reach a real public resolver.
+
+    `_is_dns` asks one before it reads curl's code 6 as a host that does not exist. "Agrees" is the
+    state every test below that raises a code 6 was written against (a healthy local resolver),
+    so stubbing it restores their subject; the tests that are about the confirmation set their own.
+    """
+    monkeypatch.setattr(cl, "_public_resolver_has_no_a_record", lambda host: True)
+
+
+def _dns_error(host="acme.example.com"):
+    """The error curl raises for a host the machine's resolver could not resolve."""
+    return cl.http.RequestsError(
+        f"Failed to perform, curl: (6) Could not resolve host: {host}. See "
+        "https://curl.se/libcurl/c/libcurl-errors.html first for more details.",
+        code=cl._DNS_ERR,
     )
 
 
@@ -164,6 +241,121 @@ def test_taleo_enterprise_liveness_calls_an_unresolvable_host_dead(monkeypatch):
     assert cl.p_taleo_enterprise(
         "danaher", "https://danaher.taleo.net/careersection/2/jobsearch.ftl"
     ) == (cl.DEAD, None)
+
+
+def test_taleo_enterprise_liveness_keeps_a_host_a_public_resolver_resolves_unknown(
+    monkeypatch,
+):
+    """The same code 6, but 1.1.1.1 and 8.8.8.8 resolve the host: the local resolver failed, not
+    the tenant. A DEAD verdict is not re-probed for 90 days, so this must stay UNKNOWN."""
+
+    def fetch(method, url, **kwargs):
+        raise _dns_error("danaher.taleo.net")
+
+    monkeypatch.setattr(cl.http, "fetch", fetch)
+    monkeypatch.setattr(cl, "_public_resolver_has_no_a_record", lambda host: False)
+    assert cl.p_taleo_enterprise(
+        "danaher", "https://danaher.taleo.net/careersection/2/jobsearch.ftl"
+    ) == (cl.UNKNOWN, None)
+
+
+def test_is_dns_asks_a_public_resolver_about_the_host_curl_names(monkeypatch):
+    asked = []
+    monkeypatch.setattr(
+        cl, "_public_resolver_has_no_a_record", lambda h: asked.append(h) or True
+    )
+    assert cl._is_dns(_dns_error("danaher.taleo.net"))
+    assert asked == [
+        "danaher.taleo.net"
+    ]  # curl's sentence-ending full stop is not the host's
+
+
+def test_is_dns_is_not_a_missing_host_when_a_public_resolver_resolves_it(monkeypatch):
+    monkeypatch.setattr(cl, "_public_resolver_has_no_a_record", lambda host: False)
+    assert not cl._is_dns(_dns_error())
+
+
+def test_is_dns_needs_curls_code_6_and_a_host_it_can_ask_about(monkeypatch):
+    asked = []
+    monkeypatch.setattr(
+        cl, "_public_resolver_has_no_a_record", lambda h: asked.append(h) or True
+    )
+    timeout = cl.http.RequestsError("Could not resolve host: acme.example.com", code=28)
+    no_host = cl.http.RequestsError(
+        "curl: (6) Could not resolve host", code=cl._DNS_ERR
+    )
+    assert not cl._is_dns(timeout)
+    assert not cl._is_dns(no_host)
+    assert asked == []
+
+
+_real_public_resolver_has_no_a_record = cl._public_resolver_has_no_a_record
+
+
+def _public_resolvers(monkeypatch, by_nameserver):
+    """`dns.resolver.Resolver` replaced by one that answers per nameserver: an exception to raise,
+    or anything else for an A answer."""
+    import dns.resolver
+
+    class Resolver:
+        def __init__(self, configure=True):
+            self.nameservers, self.lifetime = [], None
+
+        def resolve(self, host, rdtype):
+            outcome = by_nameserver[self.nameservers[0]]
+            if isinstance(outcome, dict):
+                outcome = outcome[rdtype]
+            if isinstance(outcome, Exception):
+                raise outcome
+            return [outcome]
+
+    monkeypatch.setattr(dns.resolver, "Resolver", Resolver)
+
+
+def test_a_public_resolver_says_a_host_is_absent_only_when_one_answers_it_so(
+    monkeypatch,
+):
+    import dns.exception
+    import dns.resolver
+
+    nxdomain, empty = dns.resolver.NXDOMAIN(), dns.resolver.NoAnswer()
+    no_reply = dns.exception.Timeout()
+    cases = [
+        ({"1.1.1.1": nxdomain, "8.8.8.8": no_reply}, True),
+        ({"1.1.1.1": empty, "8.8.8.8": no_reply}, True),  # an unknown Avature label
+        ({"1.1.1.1": {"A": empty, "AAAA": "2001:db8::1"}, "8.8.8.8": no_reply}, False),
+        ({"1.1.1.1": {"A": empty, "AAAA": no_reply}, "8.8.8.8": no_reply}, False),
+        (
+            {"1.1.1.1": "93.184.216.34", "8.8.8.8": nxdomain},
+            False,
+        ),  # the first answer wins
+        (
+            {"1.1.1.1": no_reply, "8.8.8.8": nxdomain},
+            True,
+        ),  # the second is asked on a timeout
+        (
+            {"1.1.1.1": no_reply, "8.8.8.8": no_reply},
+            False,
+        ),  # neither answering is no answer
+        ({"1.1.1.1": dns.resolver.NoNameservers(), "8.8.8.8": no_reply}, False),
+    ]
+    for by_nameserver, expected in cases:
+        _public_resolvers(monkeypatch, by_nameserver)
+        got = _real_public_resolver_has_no_a_record("acme.example.com")
+        assert got is expected, by_nameserver
+
+
+def test_a_host_no_public_resolver_answers_for_is_noted_unconfirmed(monkeypatch):
+    import dns.exception
+
+    _public_resolvers(
+        monkeypatch,
+        {"1.1.1.1": dns.exception.Timeout(), "8.8.8.8": dns.exception.Timeout()},
+    )
+    cl._reasons.clear()
+    assert not _real_public_resolver_has_no_a_record("acme.example.com")
+    assert cl._reasons[(getattr(cl._ctx, "ats", "?"), "dns-unconfirmed")] == 1
+    cl._reasons.clear()
 
 
 def _join_stub(page_props, jobs_rowcount=None):
@@ -952,6 +1144,163 @@ def test_pyjamahr_inconclusive_answers_stay_unknown(monkeypatch):
     assert cl.p_pyjamahr("acme", "") == (cl.UNKNOWN, None)
 
 
+# --- spire2grow: the host's workspace lookup settles dead; the count needs the workspace ------
+
+
+def _spire2grow_get(
+    lookup_status, lookup_body, count_status=200, count_body=b"", calls=None
+):
+    """`_get` keyed on path: the domain lookup, then `_count` (which needs the workspace header)."""
+
+    def _get(url, headers=None):
+        if calls is not None:
+            calls.append((url, headers))
+        if "/workspaceId?" in url:
+            return lookup_status, lookup_body
+        return count_status, count_body
+
+    return _get
+
+
+def test_spire2grow_a_tenant_host_counts_its_postings(monkeypatch):
+    """Myntra, live 2026-09-30: the lookup names the workspace, and `_count` asked with it."""
+    calls: list = []
+    monkeypatch.setattr(
+        cl,
+        "_get",
+        _spire2grow_get(
+            200, b"MYNTRA-93as3", 200, b'{"totalCount":53,"hotJobCount":7}', calls
+        ),
+    )
+    assert cl.p_spire2grow("jobs.myntra.com", "https://jobs.myntra.com") == (
+        cl.LIVE,
+        53,
+    )
+    (lookup, _), (count, headers) = calls
+    assert lookup.endswith("/workspaceId?domain=jobs.myntra.com")
+    assert count.endswith("/requisition/_count")
+    assert headers["workspaceid"] == "MYNTRA-93as3"
+
+
+def test_spire2grow_a_workspace_with_nothing_open_is_live_and_empty(monkeypatch):
+    """godigit-careers.spire2grow.com, live 2026-09-30: a workspace, zero postings."""
+    monkeypatch.setattr(
+        cl,
+        "_get",
+        _spire2grow_get(
+            200, b"GODIGIT-7ekw3", 200, b'{"totalCount":0,"hotJobCount":0}'
+        ),
+    )
+    assert cl.p_spire2grow("godigit-careers.spire2grow.com", "") == (cl.LIVE, 0)
+
+
+def test_spire2grow_an_unknown_host_is_dead(monkeypatch):
+    body = (
+        b'{"errorMessages":["No Workspace Found for the domain name :: ci-jobs.spire2grow.com"],'
+        b'"status":404}'
+    )
+    monkeypatch.setattr(cl, "_get", _spire2grow_get(404, body))
+    assert cl.p_spire2grow("ci-jobs.spire2grow.com", "") == (cl.DEAD, None)
+
+
+def test_spire2grow_inconclusive_answers_stay_unknown(monkeypatch):
+    # A 404 that is not the API's own "no workspace" answer settles nothing.
+    monkeypatch.setattr(cl, "_get", _spire2grow_get(404, b"<html>Not Found</html>"))
+    assert cl.p_spire2grow("jobs.acme.com", "") == (cl.UNKNOWN, None)
+    # The API host failing to resolve is the local resolver, never the tenant.
+    monkeypatch.setattr(cl, "_get", _spire2grow_get("dns", b""))
+    assert cl.p_spire2grow("jobs.acme.com", "") == (cl.UNKNOWN, None)
+    # A lookup that answers 410, or 200 with no workspace in it, was never measured.
+    monkeypatch.setattr(cl, "_get", _spire2grow_get(410, b""))
+    assert cl.p_spire2grow("jobs.acme.com", "") == (cl.UNKNOWN, None)
+    monkeypatch.setattr(cl, "_get", _spire2grow_get(200, b"  "))
+    assert cl.p_spire2grow("jobs.acme.com", "") == (cl.UNKNOWN, None)
+    # The count unreadable or refused after a real lookup.
+    monkeypatch.setattr(cl, "_get", _spire2grow_get(200, b"ACME-1", 503, b""))
+    assert cl.p_spire2grow("jobs.acme.com", "") == (cl.UNKNOWN, None)
+    monkeypatch.setattr(cl, "_get", _spire2grow_get(200, b"ACME-1", 404, b""))
+    assert cl.p_spire2grow("jobs.acme.com", "") == (cl.UNKNOWN, None)
+    monkeypatch.setattr(cl, "_get", _spire2grow_get(200, b"ACME-1", 200, b"<html>"))
+    assert cl.p_spire2grow("jobs.acme.com", "") == (cl.UNKNOWN, None)
+
+
+# --- turbohire: every label serves the SPA, so the organization lookup settles dead -------------
+
+
+def _turbohire_stubs(
+    monkeypatch, *, token=200, org=200, listing=(200, None), calls=None
+):
+    """`_get` for the token and organization calls, `_post` for the listing, as live 2026-09-30."""
+    org_body = (
+        b'{"OrgID": "4d757ba0-3d57-448a-b82c-238ed87ac90f", "OrgName": "Flipkart"}'
+    )
+
+    def _get(url, headers=None):
+        if calls is not None:
+            calls.append((url, dict(headers or {})))
+        if url.endswith("/api/token/noauth"):
+            return token, b'{"access_token": "tok-1", "expires_in": 3600}'
+        return org, (org_body if org == 200 else b"")
+
+    def _post(url, body, headers):
+        if calls is not None:
+            calls.append((url, dict(headers)))
+        status, payload = listing
+        return status, payload
+
+    monkeypatch.setattr(cl, "_get", _get)
+    monkeypatch.setattr(cl, "_post", _post)
+
+
+def test_turbohire_a_live_board_counts_its_listing(monkeypatch):
+    calls: list = []
+    rows = {"Total": 2, "Result": [{"JobId": "a"}, {"JobId": "b"}]}
+    _turbohire_stubs(monkeypatch, listing=(200, rows), calls=calls)
+    assert cl.p_turbohire("flipkart", "https://flipkart.turbohire.co") == (cl.LIVE, 2)
+    (_, token_h), (org_url, org_h), (list_url, list_h) = calls
+    assert token_h["Referer"] == "https://flipkart.turbohire.co/"
+    assert "Authorization" not in token_h
+    assert org_url.endswith("/api/publicorganizations?accountName=flipkart")
+    assert org_h["Authorization"] == "Bearer tok-1"
+    assert list_url.endswith(
+        "/api/careerpagev2/filteredjobs?orgId=4d757ba0-3d57-448a-b82c-238ed87ac90f&pageType=0"
+    )
+    assert list_h["Authorization"] == "Bearer tok-1"
+
+
+def test_turbohire_an_organization_with_nothing_open_is_a_live_empty_board(monkeypatch):
+    """olacareers, live 2026-09-30: `{"Total":0,"Result":[]}`."""
+    _turbohire_stubs(monkeypatch, listing=(200, {"Total": 0, "Result": []}))
+    assert cl.p_turbohire("olacareers", "https://olacareers.turbohire.co") == (
+        cl.LIVE,
+        0,
+    )
+
+
+def test_turbohire_a_label_no_organization_holds_is_dead(monkeypatch):
+    """The organization lookup's 404 with an empty body (39 of 104 pool labels)."""
+    _turbohire_stubs(monkeypatch, org=404)
+    assert cl.p_turbohire("cleartrip", "https://cleartrip.turbohire.co") == (
+        cl.DEAD,
+        None,
+    )
+
+
+def test_turbohire_inconclusive_answers_stay_unknown(monkeypatch):
+    _turbohire_stubs(monkeypatch, token=403)
+    assert cl.p_turbohire("acme", "") == (cl.UNKNOWN, None)
+    _turbohire_stubs(monkeypatch, org=503)
+    assert cl.p_turbohire("acme", "") == (cl.UNKNOWN, None)
+    _turbohire_stubs(monkeypatch, listing=(500, None))
+    assert cl.p_turbohire("acme", "") == (cl.UNKNOWN, None)
+    # One fixed API host: a failed lookup is the local resolver, never a verdict.
+    _turbohire_stubs(monkeypatch, token="dns")
+    assert cl.p_turbohire("acme", "") == (cl.UNKNOWN, None)
+    # A 200 that is not the listing envelope is not a count of zero.
+    _turbohire_stubs(monkeypatch, listing=(200, {"Message": "An error has occurred."}))
+    assert cl.p_turbohire("acme", "") == (cl.UNKNOWN, None)
+
+
 # --- adp_recruiting: the site record answers first, and its token reads the count --------------
 
 _ADP_RM = json.loads(
@@ -1104,7 +1453,7 @@ def test_breezy_a_dns_failure_is_unknown_because_every_label_resolves(monkeypatc
     """`*.breezy.hr` is a wildcard record, so curl's code 6 on a Board host is the local resolver
     failing under 432 workers — 41 Boards read live an hour earlier were written dead that way —
     not a gone tenant."""
-    dns = cl.http.RequestsError("Could not resolve host", code=cl._DNS_ERR)
+    dns = _dns_error()
     assert cl._is_dns(dns)
     monkeypatch.setattr(cl, "_fetch", _breezy_fetch(0, raises=dns))
     assert cl.p_breezy("kimmel-associates", "") == (cl.UNKNOWN, None)
@@ -1233,7 +1582,7 @@ def test_pinpoint_an_unresolvable_host_and_a_network_error_are_unknown(monkeypat
 
         return _fetch
 
-    dns = cl.http.RequestsError("no such host", code=cl._DNS_ERR)
+    dns = _dns_error()
     monkeypatch.setattr(cl, "_fetch", raising(dns))
     # UNKNOWN since 2026-09-28: *.pinpointhq.com resolves every label, so this is our resolver.
     assert cl.p_pinpoint("gone", "") == (cl.UNKNOWN, None)
@@ -1352,22 +1701,18 @@ def _jibe(monkeypatch, robots, api=None):
 def test_jibe_an_unresolvable_label_is_dead_once_public_dns_agrees(monkeypatch):
     """No A record for an unknown label (`zzzzqqq`, 101 pool labels) — but only a public
     resolver's answer counts: the macOS resolver said "no such host" for live `uhs` under load."""
-    calls = _jibe(
-        monkeypatch, cl.http.RequestsError("Could not resolve host", code=cl._DNS_ERR)
-    )
+    calls = _jibe(monkeypatch, _dns_error("att.jibeapply.com"))
     asked = []
     monkeypatch.setattr(
         cl, "_public_resolver_has_no_a_record", lambda h: asked.append(h) or True
     )
     assert cl.p_jibe("att", "https://att.jibeapply.com") == (cl.DEAD, None)
     assert calls == ["https://att.jibeapply.com/robots.txt"]
-    assert asked == ["att.jibeapply.com"]
+    assert set(asked) == {"att.jibeapply.com"}
 
 
 def test_jibe_a_local_dns_failure_public_dns_contradicts_is_unknown(monkeypatch):
-    _jibe(
-        monkeypatch, cl.http.RequestsError("Could not resolve host", code=cl._DNS_ERR)
-    )
+    _jibe(monkeypatch, _dns_error())
     monkeypatch.setattr(cl, "_public_resolver_has_no_a_record", lambda h: False)
     assert cl.p_jibe("uhs", "https://uhs.jibeapply.com") == (cl.UNKNOWN, None)
 
@@ -1581,7 +1926,7 @@ def _csod_fetch(home=200, search_status=200, calls=None):
             calls.append((method, url, kw))
         if "/home?c=" in url:
             if home == "dns":
-                raise cl.http.RequestsError("Could not resolve host", 6)
+                raise _dns_error()
             if home == 302:
                 return _CsodResponse(302, "", {"location": "/ui/error"})
             return _CsodResponse(200, _CSOD["home"])
@@ -1858,12 +2203,26 @@ def test_darwinbox_probe_asks_the_scrapers_listing_on_each_tld(monkeypatch):
 
     def fetch(method, url, **kwargs):
         asked.append(url)
-        raise CurlHTTPError("could not resolve host", 6, None)
+        raise _dns_error()
 
     monkeypatch.setattr(cl.http, "fetch", fetch)
-    assert cl.p_darwinbox("acme", "https://acme.darwinbox.com") == (cl.DEAD, None)
+    cl.p_darwinbox("acme", "https://acme.darwinbox.com")
     scraper = get_scraper("darwinbox", "acme")
     assert asked == [scraper.listing_url_on("com"), scraper.listing_url_on("in")]
+
+
+def test_darwinbox_probe_does_not_read_a_failed_lookup_as_no_tenant(monkeypatch):
+    """Both TLDs resolve every label (1.1.1.1 and 8.8.8.8 answered an invented one on each,
+    2026-09-30), so a code 6 is the local resolver failing, not a tenant that is gone. The old
+    probe counted it on each TLD and wrote the Board DEAD, for 90 days, even when a public resolver
+    would have said the host exists; here it stays UNKNOWN even if the resolver said "no record"."""
+
+    def fetch(method, url, **kwargs):
+        raise _dns_error()
+
+    monkeypatch.setattr(cl.http, "fetch", fetch)
+    monkeypatch.setattr(cl, "_public_resolver_has_no_a_record", lambda host: True)
+    assert cl.p_darwinbox("acme", "https://acme.darwinbox.com") == (cl.UNKNOWN, None)
 
 
 def _darwinbox_answers(monkeypatch, by_tld):
@@ -2264,7 +2623,7 @@ def test_avature_a_label_no_public_resolver_finds_is_dead_unprobed(monkeypatch):
 
 
 def test_avature_a_local_dns_failure_public_dns_contradicts_is_unknown(monkeypatch):
-    dns_error = cl.http.RequestsError("Could not resolve host", code=cl._DNS_ERR)
+    dns_error = _dns_error()
     _avature(monkeypatch, {"https://bloomberg.avature.net/robots.txt": dns_error})
     assert cl.p_avature("bloomberg", "") == (cl.UNKNOWN, None)
 
@@ -2749,7 +3108,7 @@ def test_p_recruitee_reads_a_dns_failure_as_unknown(monkeypatch):
     ],
 )
 def test_a_unknown_dns_on_a_shared_host_host_is_unknown(monkeypatch, ats, tenant, url):
-    dns = cl.http.RequestsError("Could not resolve host", code=cl._DNS_ERR)
+    dns = _dns_error()
 
     def _fetch(method, url, **kw):
         raise dns
@@ -2865,7 +3224,7 @@ def test_p_wp_job_openings_rows_linking_another_host_are_that_hosts_board(monkey
         _Resp(404, {}, b'{"code":"rest_no_route","data":{"status":404}}'),
         # A site no longer on WordPress answers every query with its page.
         _Resp(200, {}, b"<!doctype html><!-- Made in Framer -->"),
-        cl.http.RequestsError("Could not resolve host", code=cl._DNS_ERR),
+        _dns_error(),
     ],
 )
 def test_p_wp_job_openings_a_site_without_the_route_is_dead(monkeypatch, answer):
@@ -2914,3 +3273,76 @@ def test_p_wp_job_openings_a_refusal_is_unknown(monkeypatch, answer):
     monkeypatch.setattr(cl, "_fetch", _wpjo_fetch(answer))
     monkeypatch.setattr(cl, "_note", lambda reason: None)
     assert cl.p_wp_job_openings("woxacorp.com", "") == (cl.UNKNOWN, None)
+
+
+# --- mynexthire: one listing POST; a refusal's errorMessage settles dead --------------------------
+
+
+def _mnh_fetch(status, content=b"", calls=None, raises=None):
+    def _fetch(method, url, **kw):
+        if calls is not None:
+            calls.append((method, url, kw))
+        if raises is not None:
+            raise raises
+        return _Resp(status, content=content)
+
+    return _fetch
+
+
+def test_mynexthire_a_listing_is_live_with_its_length(monkeypatch):
+    calls: list = []
+    body = b'{"requesterTitle":"","reqDetailsBOList":[{"reqId":1},{"reqId":2}]}'
+    monkeypatch.setattr(cl, "_fetch", _mnh_fetch(200, body, calls))
+    assert cl.p_mynexthire("sharechat", "") == (cl.LIVE, 2)
+    [(method, url, kw)] = calls
+    assert method == "POST"
+    assert url == "https://sharechat.mynexthire.com/employer/careers/reqlist/get"
+    assert kw["json"] == {"source": "careers"}
+
+
+def test_mynexthire_a_null_list_is_a_live_board_hiring_nobody(monkeypatch):
+    """meesho's careers page renders "Current Openings [0]" off exactly this body."""
+    body = b'{"requesterTitle":"","reqDetailsBOList":null,"hrXmlModel":null}'
+    monkeypatch.setattr(cl, "_fetch", _mnh_fetch(200, body))
+    assert cl.p_mynexthire("meesho", "") == (cl.LIVE, 0)
+
+
+@pytest.mark.parametrize(
+    ("status", "content"),
+    [
+        (417, b'{"errorMessage":"41703001:Invalid company short name: acme"}'),
+        (
+            402,
+            (
+                b'{"errorMessage":"MyNextHire account subscription for client '
+                b'JUPITERMONEY has expired."}'
+            ),
+        ),
+    ],
+)
+def test_mynexthire_an_unknown_or_lapsed_tenant_is_dead(monkeypatch, status, content):
+    monkeypatch.setattr(cl, "_fetch", _mnh_fetch(status, content))
+    assert cl.p_mynexthire("jupitermoney", "") == (cl.DEAD, None)
+
+
+def test_mynexthire_anything_unmeasured_stays_unknown(monkeypatch):
+    monkeypatch.setattr(cl, "_note", lambda reason: None)
+    # 417 without the tenant marker is a request the endpoint refused, not a verdict.
+    monkeypatch.setattr(
+        cl, "_fetch", _mnh_fetch(417, b'{"errorMessage":"Invalid source"}')
+    )
+    assert cl.p_mynexthire("acme", "") == (cl.UNKNOWN, None)
+    monkeypatch.setattr(cl, "_fetch", _mnh_fetch(200, b"<html>maintenance</html>"))
+    assert cl.p_mynexthire("acme", "") == (cl.UNKNOWN, None)
+    monkeypatch.setattr(cl, "_fetch", _mnh_fetch(503))
+    assert cl.p_mynexthire("acme", "") == (cl.UNKNOWN, None)
+    monkeypatch.setattr(cl, "_fetch", lambda *a, **k: None)  # breaker open
+    assert cl.p_mynexthire("acme", "") == (cl.UNKNOWN, None)
+
+
+def test_mynexthire_a_dns_failure_is_unknown_because_every_label_resolves(monkeypatch):
+    """`*.mynexthire.com` is a wildcard record: an invented label resolves and answers 417."""
+    monkeypatch.setattr(cl, "_note", lambda reason: None)
+    dns = _dns_error()
+    monkeypatch.setattr(cl, "_fetch", _mnh_fetch(0, raises=dns))
+    assert cl.p_mynexthire("swiggy", "") == (cl.UNKNOWN, None)

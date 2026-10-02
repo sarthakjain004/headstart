@@ -12,7 +12,8 @@ so each served job counts once, with each entry listed. Then, at once (ADR-0275)
 - `/trends?company=<key>` over the trailing :data:`TREND_DAYS` days, split by job category (the
   default split for one company), for its tech openings now, its category mix, and the postings
   opened and closed. Those lead: the change in openings also moves when HeadStart re-counts, so
-  it follows them with its re-counted part named;
+  it follows them with its re-counted part named. Where most of what it opened was found late,
+  posted weeks before HeadStart saw it, the line says so (`trends.found_late`, ADR-0369);
 - `/companies/locations` over its Boards, for the countries its served jobs name, each with its
   top places (a place's first part, its spellings merged), by the `country` filter's own
   gazetteer (ADR-0323, ADR-0331);
@@ -36,11 +37,13 @@ from headstart.mcp_protocol.messages import ToolFailure
 from headstart.space_mcp import (
     company_scope,
     job_places,
+    noun_counts,
     scraped_text,
     search_arguments,
 )
 from headstart.space_mcp.space_client import SpaceClient, SpaceError, SpaceRoute
 from headstart.space_mcp.space_tool import SpaceTool
+from headstart.trends import found_late
 
 #: The trailing window the trend is read over.
 TREND_DAYS = 30
@@ -170,7 +173,7 @@ def _trend(payload: dict[str, Any], keys: list[str], old: dict[str, int]) -> lis
     lines = [
         f"Tech openings now: {reading.get('openings', move['latest']):,}, as Trends counts them"
         + (
-            f"; search also serves {non_tech:,} job{'' if non_tech == 1 else 's'} on its "
+            f"; search also serves {noun_counts.counted(non_tech, 'job')} on its "
             "Boards that the tech filter sets "
             "aside."
             if non_tech
@@ -178,7 +181,9 @@ def _trend(payload: dict[str, Any], keys: list[str], old: dict[str, int]) -> lis
         ),
         f"Recent hiring, {window['from'][:10]} → {window['to'][:10]}: "
         + _turnover(move, payload.get("turnover_since"), window["from"])
-        + f". Tech openings counted {move['start']:,} → {move['latest']:,} ({change:+,})"
+        + "."
+        + (f" {late}" if (late := found_late.sentence(move.get("turnover"))) else "")
+        + f" Tech openings counted {move['start']:,} → {move['latest']:,} ({change:+,})"
         + (
             f", {recounted:+,} of it re-counting by HeadStart, not hiring"
             if recounted

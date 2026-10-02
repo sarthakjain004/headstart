@@ -12601,6 +12601,13 @@ _STATED_PAGE = {
 #: internals to recover what was parametrised.
 _RESOLVE_ROWS = [
     (
+        "gr8people",
+        "careers.teradata.com",
+        "Search Careers at Teradata",
+        "Teradata",
+        "https://careers.teradata.com/jobs",
+    ),
+    (
         "ashby",
         "1password",
         "1Password Jobs",
@@ -12791,11 +12798,16 @@ _NO_BOARD_PAGE = {
     "successfactors",
     "avature",
     "taleo_be",
-    # These three read the name off a response the scrape already fetches: darwinbox's
-    # `companyinfo`, zwayam's config call and zoho's careers page — covered by their own tests.
+    # These read the name off a response the scrape already fetches: darwinbox's `companyinfo`,
+    # zwayam's config call, zoho's careers page and turbohire's organization record — covered by
+    # their own tests.
     "darwinbox",
     "zwayam",
     "zoho",
+    # mynexthire reads `clientName` off the tenant's client record in `fetch_raw`, only for a
+    # Board with postings, covered by `tests/test_mynexthire.py`.
+    "mynexthire",
+    "turbohire",
 }
 
 

@@ -250,6 +250,14 @@ def test_a_narrowed_entry_still_labels_its_own_board() -> None:
         (["jazzhr:acme"], "Acme HR Solutions", True),
         # A Board's tenant counts too, as HIKINEX's `breezy:recruiting` did.
         (["breezy:recruiting"], "Acme", True),
+        # Only the tenant's own label (ADR-0366): SAP's `hr` host and a recruiting subdomain
+        # are the vendor's and the site's, while the label before them is the company's.
+        (["successfactors:lockheed.jobs.hr.cloud.sap"], "Lockheed Martin", False),
+        (["successfactors:recruit.lg.com"], "LG", False),
+        (["successfactors:recruitment-recrutement.nrc-cnrc.gc.ca"], "NRC", False),
+        (["zwayam:recruitedge.cluster3.openings.co"], "Acme", True),
+        (["zoho:3m-consultancy.zohorecruit.com.au"], "3M", True),
+        (["successfactors:jobs.hr-path.com"], "Acme", True),
         # Only at the start of a word: none of these names says "consult" or "hr".
         (["greenhouse:cerebras"], "Cerebras Systems", False),
         (["greenhouse:shrine"], "Shrine Technologies", False),
@@ -372,6 +380,55 @@ def test_the_mcp_critiques_round_4_staffing_firms_are_labelled(
     ],
 )
 def test_round_4_entries_leave_their_parts_to_employers(
+    board: str, company: str
+) -> None:
+    assert classify(board, company) == "employer"
+
+
+@pytest.mark.parametrize(
+    ("board", "company", "operator"),
+    [
+        ("successfactors:careers.irissoftware.com", "Iris Software", "services"),
+        ("smartrecruiters:irissoftware", "IRIS Software", "services"),
+        ("lever:brillio-2", "Brillio", "services"),
+        ("phenom:careers.xoriant.com", "Xoriant", "services"),
+        ("greenhouse:encora10", "Encora", "services"),
+        ("successfactors:careers.mastek.com", "Mastek Limited", "services"),
+        ("phenom:careers.quest-global.com", "Quest Global", "services"),
+        (
+            "taleo_be:https://phf.tbe.taleo.net/phf01/ats/careers/v2/searchResults?org=COVESTIC2&cws=37",
+            "Milestone Technologies, Inc.",
+            "services",
+        ),
+        ("smartrecruiters:softwaremind", "Software Mind", "services"),
+        ("greenhouse:robotsandpencils", "Robots and Pencils", "services"),
+        ("oracle:fa-ewjt-saasfaprod1.fa.ocs.oraclecloud.com", "EXL", "services"),
+        ("zoho:elfonze.zohorecruit.in", "Elfonze Technologies Pvt Ltd", "services"),
+        ("ashby:truelogic", "Truelogic", "staffing"),
+        ("ashby:breakmark", "Breakmark", "staffing"),
+        ("zoho:bizfirst.zohorecruit.com", "BizFirst", "staffing"),
+        ("zoho:algoleap.zohorecruit.com", "Algoleap Technologies Pvt Ltd", "staffing"),
+    ],
+)
+def test_hiring_nows_top_30s_of_2026_09_30_are_labelled(
+    board: str, company: str, operator: str
+) -> None:
+    """IT services firms and agencies labelled employer in hiring_now's top 30 on each Lens,
+    each adjudicated from its live postings (MCP critique round 5, R5-P2-7)."""
+    assert classify(board, company) == operator
+
+
+@pytest.mark.parametrize(
+    ("board", "company"),
+    [
+        # The joined forms leave the ordinary word, or the other company, alone.
+        ("greenhouse:iris", "Iris"),
+        ("greenhouse:quest", "Quest"),
+        ("lever:milestone", "Milestone"),
+        ("greenhouse:mindsoftware", "Software"),
+    ],
+)
+def test_round_5_entries_leave_their_parts_to_employers(
     board: str, company: str
 ) -> None:
     assert classify(board, company) == "employer"

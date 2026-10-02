@@ -33,10 +33,11 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Any, NamedTuple
 
-from headstart.space_mcp import scraped_text
+from headstart.space_mcp import noun_counts, scraped_text
 from headstart.space_mcp.space_client import SpaceClient, SpaceRoute
 from headstart.space_mcp.space_tool import SpaceTool
 from headstart.space_mcp.turnover_span import span_sentence
+from headstart.trends import found_late
 
 #: A company name past this is cut, as search cuts one.
 COMPANY_FIELD = 60
@@ -49,11 +50,6 @@ FLAG_MARK = " · FLAG "
 #: 2026-09-29: 12 postings opened on 25 openings.
 SMALL_BASE_FLOORS = 2
 
-#: Below this many postings opened, a row is never flagged as found late: one posting moves the
-#: share too far. Box read 8 found late of 11 opened on 2026-09-29, each of the 8 first published
-#: on Greenhouse in July or August (ADR-0351).
-FOUND_LATE_MIN_OPENED = 10
-
 
 class Flag(StrEnum):
     """An artifact a row can carry, as a row names it."""
@@ -65,6 +61,7 @@ class Flag(StrEnum):
     CLOSURES_UNCOUNTED = "closures not counted"
     CLOSURES_PARTLY_UNCOUNTED = "closures counted on only some Boards"
     OPERATOR_UNVERIFIED = "operator unverified"
+    # A row says it in `found_late.clause`'s words, as every tool does (`_said`).
     FOUND_LATE = "opened mostly found late, not newly posted"
 
 
@@ -185,6 +182,8 @@ class _Listing:
     hidden: int
     #: Whether a flag moved any row from its place on the page.
     moved: bool
+    #: Flagged rows the cut left out that the site ranks above a row shown (ADR-0366).
+    flagged_cut: int
 
 
 def _change(value: int | None) -> str:
@@ -231,24 +230,6 @@ def _net_not_backed(row: dict[str, Any], pace: float) -> bool:
     return net * turnover_net < 0 and abs(net) > abs(turnover_net) * pace
 
 
-def _found_late(row: dict[str, Any]) -> bool:
-    """Whether most of the row's postings opened were found late (ADR-0351): postings posted more
-    than `hot_ranking.FOUND_LATE_DAYS` before first sight number at least half its opened, and
-    those posted since fewer than half. Both are needed, as the counts are of postings still
-    served, first seen in any run: the first alone would flag a row whose found-late postings
-    mostly never reached its opened (Accenture Federal Services, 234 found late on 38 opened, 19
-    fresh), the second alone one whose opened left no served posting at all (New York Life's
-    re-listed ids, which its closures flag already)."""
-    opened, fresh, late = (
-        row.get("opened"),
-        row.get("opened_fresh"),
-        row.get("opened_found_late"),
-    )
-    if opened is None or fresh is None or late is None:
-        return False
-    return opened >= FOUND_LATE_MIN_OPENED and 2 * fresh < opened <= 2 * late
-
-
 def _flags(
     row: dict[str, Any], lens: Lens, pace: float, min_stock: int
 ) -> tuple[Flag, ...]:
@@ -262,18 +243,18 @@ def _flags(
         Flag.CLOSURES_PARTLY_UNCOUNTED: row.get("closed") is not None
         and bool(row.get("closures_uncounted_boards")),
         Flag.OPERATOR_UNVERIFIED: bool(row.get("operator_unverified")),
-        Flag.FOUND_LATE: _found_late(row),
+        # The one rule every reader of the split uses (ADR-0351, ADR-0369).
+        Flag.FOUND_LATE: found_late.mostly_found_late(
+            row.get("opened"), row.get("opened_fresh"), row.get("opened_found_late")
+        ),
     }
     return tuple(flag for flag in lens.checks if carried[flag])
 
 
-def _said(flag: Flag, row: dict[str, Any], found_late_days: int) -> str:
+def _said(flag: Flag, row: dict[str, Any]) -> str:
     if flag is Flag.FOUND_LATE:
-        return (
-            f"{flag.value}: of its postings first seen since turnover began, "
-            f"{row['opened_found_late']:,} were posted more than {found_late_days} days before "
-            f"HeadStart saw them and {row['opened_fresh']:,} since"
-        )
+        # In the words every tool says it in (`found_late.clause`, ADR-0369).
+        return str(found_late.clause(row))
     if flag is Flag.SMALL_BASE:
         stock = row["stock"]
         return (
@@ -299,10 +280,12 @@ def _listing(hot: dict[str, Any], lens: str, limit: int, show_hidden: bool) -> _
     listed.sort(key=lambda listed_row: bool(listed_row.flags))
     shown = listed[:limit]
     moved = [r.page_place for r in shown] != list(range(1, len(shown) + 1))
-    return _Listing(shown, len(ranked) - len(rows), moved)
+    last = max((r.page_place for r in shown), default=0)
+    flagged_cut = sum(1 for r in listed[limit:] if r.flags and r.page_place < last)
+    return _Listing(shown, len(ranked) - len(rows), moved, flagged_cut)
 
 
-def _row(rank: int, listed: ListedRow, moved: bool, found_late_days: int) -> str:
+def _row(rank: int, listed: ListedRow, moved: bool) -> str:
     row = listed.row
     rate = "not counted" if row.get("rate") is None else f"{row['rate']}%"
     opened, closed = row.get("opened"), row.get("closed")
@@ -323,9 +306,7 @@ def _row(rank: int, listed: ListedRow, moved: bool, found_late_days: int) -> str
             else ""
         )
         + f" · rate {rate}"
-        + "".join(
-            f"{FLAG_MARK}{_said(flag, row, found_late_days)}" for flag in listed.flags
-        )
+        + "".join(f"{FLAG_MARK}{_said(flag, row)}" for flag in listed.flags)
     )
 
 
@@ -400,13 +381,18 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
                 else "hidden, as the tab hides them by default."
             )
         )
-    found_late_days = (hot.get("counts") or {}).get("found_late_days", 14)
     lines += [
-        _row(rank, listed, listing.moved, found_late_days)
+        _row(rank, listed, listing.moved)
         for rank, listed in enumerate(listing.rows, start=1)
     ]
     if not listing.rows:
         lines.append("No company qualified on this Lens this week.")
+    if listing.flagged_cut:
+        lines.append(
+            f"{noun_counts.counted(listing.flagged_cut, 'flagged row')} the site ranks above "
+            f"rows shown here {noun_counts.verb(listing.flagged_cut, 'is', 'are')} not shown (limit "
+            f"{arguments['limit']}); raise limit to see them."
+        )
     for flag, summary in _FLAG_SUMMARY.items():
         if carried := sum(flag in listed.flags for listed in listing.rows):
             lines.append(f"{carried} of these rows {summary}")

@@ -7,6 +7,7 @@ the same entries (ADR-0230), so a company is spelled the same on both tabs.
 from __future__ import annotations
 
 import re
+from collections import Counter
 from pathlib import Path
 from typing import Final
 
@@ -20,7 +21,12 @@ _log = log.get(__name__)
 
 
 def board_names(db: Path, table_name: str) -> dict[str, str]:
-    """``board_key -> the company name its rows carry``, or an empty map if unreadable.
+    """``board_key -> the company name most of its rows carry``, or an empty map if unreadable.
+
+    The most common name, not the first row's: `oreillyauto/oreilly` carried "O'Reilly Auto" on 37
+    rows and its slug on 1, and the first row read named it by the slug (round-4 review SP5). A
+    tie keeps the name read first. On the served table of 2026-09-30 (v380) this moves 39 of the
+    37,371 named Boards.
 
     A real name is missing on two Boards in five: 60.3% of the 34,223 Boards measured on
     2026-09-24 carry a cased company name (ADR-0114, ADR-0172), and the rest fall back to their
@@ -44,13 +50,13 @@ def board_names(db: Path, table_name: str) -> dict[str, str]:
     except Exception as exc:  # noqa: BLE001 - a missing or half-written table must not be fatal
         _log.warning(f"no company names readable from {table_name} ({exc})")
         return {}
-    names: dict[str, str] = {}
+    carried: dict[str, Counter[str]] = {}
     for job_id, company in zip(
         rows["id"].to_pylist(), rows["company"].to_pylist(), strict=True
     ):
         if company:
-            names.setdefault(job_id.rsplit(":", 1)[0], company)
-    return names
+            carried.setdefault(job_id.rsplit(":", 1)[0], Counter())[company] += 1
+    return {board: names.most_common(1)[0][0] for board, names in carried.items()}
 
 
 # The words of a site name: EXTERNAL_CAREERS, CorporateCareers, Maxis-Early-Careers.

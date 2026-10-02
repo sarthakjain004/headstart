@@ -35,6 +35,56 @@ def test_host_keyed_provider_patterns_keep_the_full_host_and_count_hits():
     assert found[("phenom", "careers.acme.phenompeople.com")] == 1
 
 
+def test_gr8people_keeps_vendor_hosts_and_fingerprints_a_vanity_site():
+    found = {
+        (ats, tenant)
+        for ats, _kind, tenant, _count in fp.scan(
+            "https://etrade.gr8people.com/jobs https://batesville.workgr8.com/jobs",
+            "example.com",
+        )
+    }
+    assert found == {
+        ("gr8people", "etrade.gr8people.com"),
+        ("gr8people", "batesville.workgr8.com"),
+    }
+    assert (
+        fp.normalise_tenant(
+            "gr8people", "Careers.Teradata.com", "https://careers.teradata.com/jobs"
+        )
+        == "careers.teradata.com"
+    )
+    assert (
+        fp.normalise_tenant(
+            "gr8people", "assets.gr8people.com", "https://careers.teradata.com/jobs"
+        )
+        == "careers.teradata.com"
+    )
+    assert (
+        fp.normalise_tenant(
+            "gr8people",
+            "lb.gr8people.com",
+            "Careers.Teradata.com CNAME lb.gr8people.com",
+        )
+        == "careers.teradata.com"
+    )
+
+
+def test_a_mynexthire_embed_names_its_tenant_label_on_either_front():
+    """careers.swiggy.com iframes `swiggy.mynexthire.com`; azentio's newer front is
+    `azentio.careers.mynexthire.io`. The per-tenant API host on `prod.us1` is not a Board."""
+    found = {
+        (ats, tenant)
+        for ats, _kind, tenant, _count in fp.scan(
+            '<iframe src="https://swiggy.mynexthire.com/employer/jobs/careers"></iframe>'
+            " https://azentio.careers.mynexthire.io/jd"
+            " https://swiggy.prod.us1.mynexthire.io/d17/careers/requisition/object",
+            "swiggy.com",
+        )
+    }
+
+    assert found == {("mynexthire", "swiggy"), ("mynexthire", "azentio")}
+
+
 def test_per_ats_shape_rules_refuse_unusable_provider_evidence():
     assert (
         fp.normalise_tenant(
@@ -644,6 +694,18 @@ def test_radancy_and_real_workdaysite_shapes():
     )
 
 
+def test_a_spire2grow_site_is_its_own_host():
+    # The Flutter shell's app title on jobs.myntra.com/home (2026-09-30); no vendor host is in
+    # the HTML, so the Board is the page's host.
+    page = '<meta name="apple-mobile-web-app-title" content="iexchange">'
+    hits = fp.scan(page, "jobs.myntra.com")
+    assert [hit[:2] for hit in hits] == [("spire2grow", "ats")]
+    assert (
+        fp.normalise_tenant("spire2grow", hits[0][2], "https://jobs.myntra.com/home")
+        == "jobs.myntra.com"
+    )
+
+
 def test_a_wp_job_openings_site_is_its_own_host():
     # The plugin's asset path on a real careers page (finac.io, 2026-09-28); the Board is the
     # page's host, whichever host served the stylesheet.
@@ -1191,6 +1253,24 @@ def test_a_pyjamahr_link_is_lower_cased_to_the_slug_the_api_answers():
     assert {(ats, tenant) for ats, _kind, tenant, _n in fp.scan(page, "8byte.ai")} == {
         ("pyjamahr", "8byte")
     }
+
+
+def test_a_turbohire_career_page_link_names_its_lower_case_label():
+    """A TurboHire Board is its career-page label (ADR-0363); the ledger holds every label
+    lower-case, and the organization lookup reads it case-insensitively (`FLIPKART` answered as
+    `flipkart`, 2026-09-30), so a capital in a link must not mint a second spelling. Cleartrip's
+    careers page links Flipkart's Board this way, under the org GUID path."""
+    page = (
+        '<a href="https://Flipkart.turbohire.co/careerpage/'
+        '4d757ba0-3d57-448a-b82c-238ed87ac90f">Jobs</a>'
+    )
+    assert {
+        (ats, tenant) for ats, _kind, tenant, _n in fp.scan(page, "cleartrip.com")
+    } == {("turbohire", "flipkart")}
+    assert (
+        fp.normalise_tenant("turbohire", "Flipkart", "https://Flipkart.turbohire.co/")
+        == "flipkart"
+    )
 
 
 def test_script_urls_resolve_relative_srcs_against_the_pages_base_href():

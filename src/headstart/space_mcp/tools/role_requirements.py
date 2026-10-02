@@ -22,6 +22,7 @@ from typing import Any
 from headstart.mcp_protocol.messages import ToolFailure
 from headstart.space_mcp import (
     company_scope,
+    noun_counts,
     role_families,
     scraped_text,
     search_arguments,
@@ -29,9 +30,6 @@ from headstart.space_mcp import (
 )
 from headstart.space_mcp.space_client import SpaceClient, SpaceRoute
 from headstart.space_mcp.space_tool import SpaceTool
-
-#: A company name past this is cut, as search cuts one.
-SHORT_FIELD = 60
 
 #: The rows the Space reads for a sample (`JobSearch.REQUIREMENTS_SAMPLE`), restated for the
 #: description, which is written before any answer; an answer states its own.
@@ -41,6 +39,10 @@ SAMPLE_SIZE = 300
 #: 8 left out a median 1.4% of the sample, binding only on the companies far above the rest
 #: (DigitalXNode 15, STAFIDE 21); 5 reshaped every sample's ordinary head.
 PER_COMPANY = 8
+
+#: Under this many postings a share says more than the sample can (ADR-0367): p3b's "Microservices
+#: 50% (1 employer)" was 2 of 4. Such a sample is given as counts, and called anecdotal.
+SMALL_SAMPLE = 30
 
 #: The Search filters this tool takes, each as `search_jobs` takes it; `max_age_days` too, so a
 #: sample leaves out what search leaves out by default (ADR-0338); and the employment type, the
@@ -120,10 +122,17 @@ def _lead(arguments: dict[str, Any], counted: dict[str, Any]) -> list[str]:
             )
         )
     ]
+    if 0 < distinct < SMALL_SAMPLE:
+        lines.append(
+            f"Only {distinct:,} distinct postings, under {SMALL_SAMPLE}: too few for shares to "
+            "describe the role, so counts are given in their place. Treat them as anecdotes, "
+            "and say so; broader filters or a broader query reach more."
+        )
     if over:
         lines.append(
             f"At most {counted['per_company']} postings of one company are counted, so one "
-            f"company's wording cannot speak for the role: {over:,} more were left out."
+            "company's wording cannot speak for the role, which left out "
+            f"{noun_counts.counted(over, 'more posting')}."
         )
     if query and not category:
         lines.append(
@@ -146,7 +155,16 @@ def _lead(arguments: dict[str, Any], counted: dict[str, Any]) -> list[str]:
 
 
 def _share(count: int, whole: int) -> str:
-    return f"{round(100 * count / whole)}%" if whole else "0%"
+    """``count`` of ``whole`` as a percentage, or as "2 of 4" under :data:`SMALL_SAMPLE`."""
+    if whole < SMALL_SAMPLE:
+        return f"{count:,} of {whole:,}"
+    return f"{round(100 * count / whole)}%"
+
+
+def _share_after(count: int, whole: int) -> str:
+    """`` (8%)`` after a count already said with its whole, and nothing under
+    :data:`SMALL_SAMPLE`, where the count is all there is to say."""
+    return "" if whole < SMALL_SAMPLE else f" ({_share(count, whole)})"
 
 
 def _skill_lines(counted: dict[str, Any]) -> list[str]:
@@ -166,7 +184,7 @@ def _skill_lines(counted: dict[str, Any]) -> list[str]:
     for skill in skills:
         grouped.setdefault(skill["kind"], []).append(
             f"{skill['skill']} {_share(skill['jobs'], described)} "
-            f"({skill['employers']:,} employer{'' if skill['employers'] == 1 else 's'})"
+            f"({noun_counts.counted(skill['employers'], 'employer')})"
         )
     lines += [
         f"  {kinds.get(kind, kind)}: {' · '.join(named)}"
@@ -182,7 +200,7 @@ def _work_authorization_line(counted: dict[str, Any]) -> str | None:
     if not held or not described:
         return None
     counted = ", ".join(
-        f"{words} in {held[stance]:,} ({_share(held[stance], described)})"
+        f"{words} in {held[stance]:,}{_share_after(held[stance], described)}"
         for stance, words in search_arguments.STANCE_WORDS.items()
         if stance in held
     )
@@ -210,7 +228,7 @@ def _salary_line(counted: dict[str, Any]) -> str:
     if not salary["stating"]:
         return f"Salary: none of the {counted['distinct']:,} states one."
     currencies = " · ".join(
-        f"{c['currency']}, {c['jobs']:,} posting{'' if c['jobs'] == 1 else 's'}: "
+        f"{c['currency']}, {noun_counts.counted(c['jobs'], 'posting')}: "
         f"{c['p25']:,} / {c['median']:,} / {c['p75']:,}"
         for c in salary["currencies"]
     )
@@ -227,9 +245,9 @@ def _company_count(company: dict[str, Any]) -> str:
     return f"{jobs:,}" if kept == jobs else f"{jobs:,} sampled, {kept:,} counted"
 
 
-def _company_line(counted: dict[str, Any]) -> list[str]:
+def _companies_lines(counted: dict[str, Any]) -> list[str]:
     named = " · ".join(
-        shown_company.tagged(c, c["board"], SHORT_FIELD)
+        shown_company.tagged(c, c["board"], scraped_text.SHORT_FIELD)
         + f" (key {scraped_text.quoted(c['board'], 300)}) {_company_count(c)}"
         for c in counted["companies"]
     )
@@ -325,12 +343,12 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
         lines.append(_experience_line(counted))
         lines.append(_salary_line(counted))
         lines.append(
-            f"Remote: {counted['remote']:,} of {counted['distinct']:,} "
-            f"({_share(counted['remote'], counted['distinct'])})."
+            f"Remote: {counted['remote']:,} of {counted['distinct']:,}"
+            f"{_share_after(counted['remote'], counted['distinct'])}."
         )
         if stances := _work_authorization_line(counted):
             lines.append(stances)
-        lines += _company_line(counted)
+        lines += _companies_lines(counted)
         lines.append(_country_line(counted))
         lines.append(
             f"Skills are matched against HeadStart's list of {counted['vocabulary_size']:,} "

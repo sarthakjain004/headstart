@@ -365,7 +365,7 @@ def test_hosts_for_falls_back_to_the_table_and_can_be_overridden():
     ]
     assert wf.hosts_for("workable", "workable.com") == [("workable.com", "sub")]
     # an ATS with no scraper yet is still sweepable by hand
-    assert wf.hosts_for("turbohire", "turbohire.co", "sub") == [("turbohire.co", "sub")]
+    assert wf.hosts_for("jobsoid", "jobsoid.com", "sub") == [("jobsoid.com", "sub")]
 
 
 @pytest.mark.parametrize(
@@ -576,6 +576,21 @@ def test_myworkdaysite_is_read_as_the_myworkdayjobs_board_it_is():
             "workdaysite",
         )
         is None
+    )
+
+
+def test_a_mynexthire_io_front_collapses_onto_its_com_label():
+    """`{label}.careers.mynexthire.io` fronts the tenant `{label}.mynexthire.com` lists (azentio,
+    conseroglobal, 2026-09-30); a label under the vendor's `iqa` environment is not a tenant."""
+    front = wf.extract(
+        "https://azentio.careers.mynexthire.io/jd", "careers.mynexthire.io", "sub"
+    )
+    board = wf.extract(
+        "https://azentio.mynexthire.com/employer/jobs/careers", "mynexthire.com", "sub"
+    )
+    assert front == board == ("azentio", "https://azentio.mynexthire.com")
+    assert (
+        wf.extract("https://exmac.iqa.mynexthire.com/", "mynexthire.com", "sub") is None
     )
 
 

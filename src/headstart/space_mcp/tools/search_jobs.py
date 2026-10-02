@@ -11,19 +11,19 @@ would total them, with each country's top cities, over the whole match rather th
 
 A row carries its posting's age, flagged past a year, and its employment type as scraped beside
 the `employment_type` values it counts as, and its company as the Company directory names it when
-the served name is only its Board's host (`shown_company`). Rows on one page that copy one
-posting — per country, or on two Boards of its employer (`requisition_copies`) — are listed under
-the first of them, with only what differs; every id and link stays. A relevance page lists at most
-`per_company` jobs of one company before every other company's and says how many more each has,
-and a company named like an agency and on no curated list is tagged "operator unverified"
-(ADR-0352).
+the served name is only its Board's host (`shown_company`). Rows on one page that are one posting
+on two Boards of its employer (`requisition_copies`) are listed under the first of them, with only
+what differs; every id and link stays. A relevance page lists at most `per_company` rows of one
+company before every other company's, besides a listed posting's copies on its other Boards, and
+says how many more each has (ADR-0365), and a company named like an agency and on no curated list
+is tagged "operator unverified" (ADR-0352).
 """
 
 from __future__ import annotations
 
 import re
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, date, datetime
+from datetime import date
 from typing import Any
 
 from headstart.boards.board_identity import board_of
@@ -32,9 +32,13 @@ from headstart.mcp_protocol.messages import ToolFailure
 from headstart.search_filters import (
     employment_type_filter,
 )
+from headstart.serving import per_company_cap
 from headstart.space_mcp import (
+    answer_date,
     company_scope,
     job_places,
+    may_offer_words,
+    noun_counts,
     role_families,
     scraped_text,
     search_arguments,
@@ -69,6 +73,12 @@ LAST_PAGE = 20
 SORT_WINDOW = 2_000
 SORT_FLOOR = 0.67
 
+#: Under this, a ranking's closest row matches nothing closely (ADR-0367). On 2026-09-30, the
+#: closest row of 22 queries naming real tech roles, 5 of them in one country, scored 0.733 to
+#: 0.871, and of 15 naming no tech role ("pastry chef", injection text) 0.611 to 0.793: 9 of those
+#: 15 score under it, and none of the 22.
+WEAK_MATCH = 0.72
+
 _ARGUMENT_OF = {
     space: argument for argument, space in search_arguments.SPACE_NAME.items()
 }
@@ -89,8 +99,10 @@ _FACET_OPTIONS_SHOWN = 12
 #: comparison of two large markets finds both; send `country` for any other one.
 COUNTRIES_SHOWN = 15
 
-#: A company or location past this is cut; a title keeps `scraped_text.FIELD_LIMIT`.
-SHORT_FIELD = 60
+#: `/facets`' value asking where every matching job is (`job_search.FACET_PLACES`, ADR-0355),
+#: restated as `get_job` restates its bounds: `job_search` loads the index runtime, which the MCP
+#: server's own install leaves out. A test holds them equal.
+FACET_PLACES = "1"
 
 #: Longer than any id: a clipped id could not be sent back as a key.
 ID_FIELD = 300
@@ -100,6 +112,19 @@ TYPE_FIELD = 30
 
 #: A posting older than this many days is flagged in its row: it may well have closed.
 STALE_DAYS = 365
+
+#: At or under this `max_years`, a senior-titled row is tagged (ADR-0359): the user is new, and
+#: the job's served floor is the smallest its description states (ADR-0079), which may be a side
+#: clause ("1+ years of Kubernetes") under a senior role's real requirement.
+SENIOR_TAG_MAX_YEARS = 2
+_SENIOR_TITLE = re.compile(
+    r"(?i)\b(?:senior|sr\.?|staff|principal|lead|manager|director)\b"
+)
+_JUNIOR_TITLE = re.compile(r"(?i)\b(?:associate|junior|jr\.?)\b")
+SENIOR_TITLE_TAG = (
+    "senior title: its stated minimum may be a side clause, not the role's requirement; "
+    "read get_job's line on the floors it states before calling it a fit"
+)
 
 #: Said in place of the client's deadline sentence when a description keyword ran past it. The
 #: description read is the slow part, not the other filters, and the Space keeps what it read
@@ -142,7 +167,7 @@ def _keyword_note(arguments: dict[str, Any]) -> str | None:
     return _RELOCATION_KEYWORD_NOTE if found else None
 
 
-def _params(
+def space_params(
     arguments: dict[str, Any], scope: company_scope.CompanyScope | None
 ) -> list[tuple[str, str]]:
     """The query string both routes are asked, in `JobSearch.parse_filters`' own names."""
@@ -229,11 +254,6 @@ def _money(row: dict[str, Any]) -> str | None:
     return None
 
 
-def _today() -> date:
-    """Today in UTC, what a posting's age is counted to; its own function so a test can pin it."""
-    return datetime.now(UTC).date()
-
-
 def _age(day: str, today: date) -> str:
     try:
         days = (today - date.fromisoformat(day[:10])).days
@@ -242,7 +262,7 @@ def _age(day: str, today: date) -> str:
     if days < 1:
         return " (today)"
     if days <= STALE_DAYS:
-        return f" ({days} day{'' if days == 1 else 's'} ago)"
+        return f" ({noun_counts.counted(days, 'day')} ago)"
     return f" ({days / 365.25:.1f} years ago: over a year old)"
 
 
@@ -265,9 +285,23 @@ def _employment_type(raw: Any, title: Any) -> str | None:
     return f"type {scraped_text.quoted(raw, TYPE_FIELD)} ({'; '.join(said)})"
 
 
-def _facts(row: dict[str, Any], today: date, experience_filtered: bool) -> list[str]:
+def _senior_for_new(row: dict[str, Any], max_years: int | None) -> bool:
+    """Whether a row is tagged for a user of at most `SENIOR_TAG_MAX_YEARS` years: its title
+    reads Senior, Staff, Principal, Lead, Manager or Director, and not Associate or Junior. A
+    disclosure only: the row is still listed (ADR-0079, ADR-0359)."""
+    title = str(row.get("title") or "")
+    return (
+        max_years is not None
+        and max_years <= SENIOR_TAG_MAX_YEARS
+        and bool(_SENIOR_TITLE.search(title))
+        and not _JUNIOR_TITLE.search(title)
+    )
+
+
+def _facts(row: dict[str, Any], today: date, max_years: int | None) -> list[str]:
     """Everything a row says after its title and company."""
-    facts = [scraped_text.quoted(row.get("location"), SHORT_FIELD)]
+    experience_filtered = max_years is not None
+    facts = [scraped_text.quoted(row.get("location"), scraped_text.SHORT_FIELD)]
     if row.get("remote"):
         facts.append("remote")
     if kind := _employment_type(row.get("employment_type"), row.get("title")):
@@ -276,6 +310,8 @@ def _facts(row: dict[str, Any], today: date, experience_filtered: bool) -> list[
         facts.append(f"{row['min_years']}+ yrs")
     elif experience_filtered:
         facts.append("experience not stated")
+    if _senior_for_new(row, max_years):
+        facts.append(SENIOR_TITLE_TAG)
     if money := _money(row):
         facts.append(money)
     posted, seen = row.get("posted_at"), row.get("first_seen")
@@ -284,9 +320,36 @@ def _facts(row: dict[str, Any], today: date, experience_filtered: bool) -> list[
     if seen:
         age = "" if posted else _age(str(seen), today)
         facts.append(f"first seen {str(seen)[:10]}{age}")
-    if row.get("past_company_cap"):
+    if sponsorship := _sponsorship(row):
+        facts.append(sponsorship)
+    if row.get(per_company_cap.PAST_COMPANY_CAP):
         facts.append("past per_company: its company's closer jobs are listed earlier")
     return facts
+
+
+def _sponsorship(row: dict[str, Any]) -> str | None:
+    """Which kind of sponsorship a `may_offer_sponsorship` row's description states (ADR-0367)."""
+    read = row.get("sponsorship")
+    if not isinstance(read, dict):
+        return None
+    if read.get("stance") == work_authorization.OFFERS_SPONSORSHIP:
+        return "sponsorship: offers"
+    return f"sponsorship: may offer ({may_offer_words.not_firm(read.get('because') or [])})"
+
+
+def _weak_match_line(
+    arguments: dict[str, Any], rows: list[dict[str, Any]]
+) -> str | None:
+    """A first page whose closest row scores under :data:`WEAK_MATCH`: nothing is close."""
+    scores = [row["score"] for row in rows if row.get("score") is not None]
+    if int(arguments["page"]) != 1 or not scores or max(scores) >= WEAK_MATCH:
+        return None
+    return (
+        f"Nothing matches closely: the closest row scores {max(scores):.2f}, under "
+        f"{WEAK_MATCH:.2f}, where rows naming the role asked for usually score. These rows "
+        "are loose matches, most likely other roles; say so rather than presenting them as "
+        "matches."
+    )
 
 
 def _score(row: dict[str, Any]) -> str:
@@ -302,7 +365,9 @@ def _where(row: dict[str, Any]) -> str:
 
 def _company(row: dict[str, Any]) -> str:
     """The row's company as shown, tagged when its operator is unverified (ADR-0352)."""
-    return shown_company.tagged(row, board_of(str(row.get("id") or "")), SHORT_FIELD)
+    return shown_company.tagged(
+        row, board_of(str(row.get("id") or "")), scraped_text.SHORT_FIELD
+    )
 
 
 def _row(number: int, row: dict[str, Any], facts: list[str]) -> str:
@@ -335,14 +400,14 @@ def _also(
 
 
 def _page_lines(
-    first: int, rows: list[dict[str, Any]], experience_filtered: bool
+    first: int, rows: list[dict[str, Any]], max_years: int | None
 ) -> tuple[list[str], bool]:
     """One page's rows numbered from ``first``, and whether any went under another: a row copying
     an earlier row's posting (`requisition_copies`) is listed under it as "also #N". Only within the
     page, so paging and the header's row numbers are the Space's."""
-    today = _today()
-    facts = [_facts(row, today, experience_filtered) for row in rows]
-    groups = requisition_copies.groups(rows)
+    today = answer_date.today()
+    facts = [_facts(row, today, max_years) for row in rows]
+    groups = requisition_copies.posting_groups(rows)
     lines = []
     for head, *others in groups:
         lines.append(_row(first + head, rows[head], facts[head]))
@@ -357,15 +422,15 @@ def _held_line(rows: list[dict[str, Any]]) -> str | None:
     (`more_from_company`, ADR-0352), and how to list them."""
     held: dict[str, tuple[int, str]] = {}
     for row in rows:
-        if more := row.get("more_from_company"):
+        if more := row.get(per_company_cap.MORE_FROM_COMPANY):
             name = str(row.get("company") or "").strip()
-            key = name or board_of(str(row.get("id") or ""))
-            held.setdefault(key.casefold(), (int(more), key))
+            said = name or board_of(str(row.get("id") or ""))
+            held.setdefault(per_company_cap.company(row), (int(more), said))
     if not held:
         return None
     said = "; ".join(
-        f"{more:,} more from {scraped_text.quoted(name, SHORT_FIELD)}: send company "
-        f"{scraped_text.quoted(name, SHORT_FIELD)}"
+        f"{more:,} more from {scraped_text.quoted(name, scraped_text.SHORT_FIELD)}: send company "
+        f"{scraped_text.quoted(name, scraped_text.SHORT_FIELD)}"
         for more, name in held.values()
     )
     return (
@@ -410,8 +475,9 @@ def _order_line(arguments: dict[str, Any], rows: list[dict[str, Any]]) -> str:
     if (per_company := _per_company(arguments)) is not None:
         return (
             f"Ordered by similarity to {ranked_by}, which orders the matches but does not "
-            f"narrow them, with at most {per_company} jobs of one company before every other "
-            "company's (per_company; 0 lists the ranking as it is)."
+            f"narrow them, with at most {per_company} rows of one company, besides a listed "
+            "posting's copy on another of its Boards, before every other company's "
+            "(per_company; 0 lists the ranking as it is)."
         )
     if query or similar_to:
         return f"Ordered by similarity to {ranked_by}, which orders the matches but does not narrow them."
@@ -518,11 +584,13 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
         scope = company_scope.for_search(
             client, company, needs_boards=bool(arguments.get("category"))
         )
-    params = _params(arguments, scope)
+    params = space_params(arguments, scope)
     full = arguments.get("detail") == "full"
     # Concise prints only the total, so it asks for nothing else (ADR-0274): under a description
     # keyword every option's count re-scans the matches, 98.7 s against 10.6 s for the page.
-    counted = [*params, ("places", "1")] if full else [*params, ("counts", "total")]
+    counted = (
+        [*params, ("places", FACET_PLACES)] if full else [*params, ("counts", "total")]
+    )
     try:
         with ThreadPoolExecutor(max_workers=2) as pool:
             rows_asked = pool.submit(client.read, SpaceRoute.SEARCH, params)
@@ -575,18 +643,19 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
             0,
             f"{_matched(total, arguments)} Showing {first:,}–{first + len(rows) - 1:,}.",
         )
+        if weak := _weak_match_line(arguments, rows):
+            lines.insert(1, weak)
         lines.append(_order_line(arguments, rows))
         lines.append(scraped_text.SCRAPED_NOTE)
-        page_lines, grouped = _page_lines(
-            first, rows, experience_filtered=arguments.get("max_years") is not None
-        )
+        page_lines, grouped = _page_lines(first, rows, arguments.get("max_years"))
         if grouped:
             lines.append(
-                "A row repeating one above it is listed under it as 'also #N', with only what "
-                "differs: the same company and title (brackets aside); the same title, first "
-                "city and countries under another spelling of the company; or the same title, "
-                "countries and stated pay under a shorter or longer name of it (ADR-0338), as "
-                "one posting on two of its Boards is."
+                "A row that is one posting on another of its company's Boards is listed under "
+                "it as 'also #N', with only what differs: the same title, brackets included, "
+                "with the same first city and countries under the company's name or another "
+                "spelling of it, or with the same countries and stated pay under a shorter or "
+                "longer name of it (ADR-0338). A different title or city, or a row on the same "
+                "Board, is another posting and its own row (ADR-0365)."
             )
         lines += page_lines
         if held := _held_line(rows):
@@ -746,10 +815,10 @@ TOOL = SpaceTool(
                 "maximum": 40,
                 "default": 3,
                 "description": (
-                    "With `query` or `similar_to` and sort relevance: at most this many jobs "
-                    "of one company before every other company's; its others follow them, "
-                    "and the answer says how many. 0 lists the ranking as it is. Not applied "
-                    "with `company`."
+                    "With `query` or `similar_to` and sort relevance: at most this many rows "
+                    "of one company, besides a listed posting's copy on another of its Boards, "
+                    "before every other company's; its others follow them, and the answer says "
+                    "how many. 0 lists the ranking as it is. Not applied with `company`."
                 ),
             },
             "limit": {

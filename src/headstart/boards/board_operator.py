@@ -34,7 +34,9 @@ the top 100 as not an employer's, and the staffing firms and job boards the tab 
 shipped flagged 86/72/61, and before that day's ten additions 59/49/42 (79/62/48 on
 2026-09-21's). On 2026-09-29's window it flags 28/23/20 (the hidden Operators 18/14/12), against 26/20/17 (16/11/8)
 before that day's entries; the MCP critique's round-4 entries of the same day name no company
-in the lens's top 100, so they leave these figures as they were. Those figures move with the list and must be
+in the lens's top 100, so they leave these figures as they were. On 2026-09-30's window (Sep 23 →
+Sep 30) it flags 31/33/29 (hidden 26/23/20), against 28/26/23 (22/20/17) before the MCP
+critique's round-5 entries, eight of which sit in the lens's top 100. Those figures move with the list and must be
 re-measured when names are added: the 45-entry draft in the research doc measured 73/52/40, and
 quoting a number that describes a list nobody shipped is exactly the kind of borrowed fact this
 repo has been caught by before. Method:
@@ -156,6 +158,29 @@ SERVICES: Final[frozenset[str]] = frozenset(
         # ABeam's Singapore consultants.
         "fusionconsulting",
         "abeamconsultingsingapore",
+        # Round 5 of the MCP critique (2026-09-30): the IT services and engineering-services
+        # firms labelled employer in hiring_now's top 30 on each Lens, each by five live
+        # postings. "Our client's most trusted technology partner" (Iris Software); "a digital
+        # technology service provider… partner of choice for… Fortune 1000 companies" (Brillio);
+        # "join our client Samsung…" (Xoriant); AWS work "tailored to client requirements"
+        # (Encora); "a global provider of… digital, and cloud services", on client sites
+        # (Mastek); "an engineering services provider" (Quest Global); "a global IT managed
+        # services firm" (Milestone Technologies); client-coded titles and "projects with leading
+        # global clients" (Software Mind); "an applied AI engineering firm… for our clients"
+        # (Robots and Pencils); client proofs of concept, an analytics BPO like Genpact and WNS
+        # (EXL); client SAP support at "All PWC Locations" (Elfonze). Joined forms where a part
+        # is a word: "irissoftware", "questglobal", "softwaremind", "milestonetechnologiesinc".
+        "irissoftware",
+        "brillio",
+        "xoriant",
+        "encora",
+        "mastek",
+        "questglobal",
+        "milestonetechnologiesinc",
+        "softwaremind",
+        "robotsandpencils",
+        "exl",
+        "elfonze",
     }
 )
 
@@ -355,6 +380,21 @@ STAFFING: Final[frozenset[str]] = frozenset(
         "hrbaires",
         "globaldevgroup",
         "talproindia",
+        # Round 5 of the MCP critique (2026-09-30), from the same top 30s, each by its live
+        # postings: "a leading provider of nearshore staff augmentation services… Our client
+        # is…" (Truelogic); "We're partnering with a company that…" for an unnamed client's CTO
+        # (Breakmark); "BizFirst is assisting our client with recruiting" (BizFirst); and end
+        # clients' requisitions passed through (Algoleap): Deloitte's own text in 3 of its 196
+        # postings, DHL's "Specific Remarks/Requirement by customer", demand codes in titles
+        # ("(D239)") with "only Immediate joiners", and client-voiced posts ("map it to our
+        # ecosystem"), each label re-read on 5 or more postings on 2026-09-30 (ADR-0370); its
+        # own site calls it a product engineering firm, so it is the least settled of the four.
+        # Zorba Consulting India stays off the list, as ADR-0335 left it: its
+        # postings ("we are looking for a Lead-level resource") still do not settle it.
+        "truelogic",
+        "breakmark",
+        "bizfirst",
+        "algoleap",
     }
 )
 
@@ -404,6 +444,40 @@ _AGENCY_NAME = re.compile(
     r"(?<![a-z0-9])(?:consult\w*|staffing|recruit\w*|hr|manpower|placements?|talents?"
     r"|international)(?![a-z0-9])"
 )
+
+#: Host suffixes an ATS vendor serves many tenants under, each recurring across at least 27
+#: Scrapable Boards' tenants on 2026-09-30 (ADR-0366). The labels before one are the tenant's
+#: own; the suffix is the vendor's, and SAP's `hr` in `lockheed.jobs.hr.cloud.sap` flagged all
+#: 82 of its Boards as agencies.
+_VENDOR_HOST = re.compile(
+    r"\.(?:jobs\.hr\.cloud\.sap|zohorecruit\.[a-z.]+|icims\.com|oraclecloud\.com"
+    r"|(?:cluster\d+\.)?openings\.co|taleo\.net|eightfold\.ai|jobs2web\.com"
+    r"|myworkdayjobs\.com|successfactors\.(?:com|eu))$"
+)
+
+#: Second-level labels a country registry sells under (`isuzu.co.jp`, `nrc-cnrc.gc.ca`), so the
+#: registrable label is the one before them.
+_REGISTRY_LABELS = frozenset(
+    {"co", "com", "org", "net", "gov", "gc", "ac", "edu", "or", "ne", "go"}
+)
+
+
+def _own_label(host_or_slug: str) -> str:
+    """The part of a Board's tenant that its company chose (ADR-0366): a slug whole, the labels
+    before a vendor's host suffix, else a host's registrable label. `recruit.lg.com` is LG's
+    recruiting site and `lockheed.jobs.hr.cloud.sap` Lockheed's SAP one; neither says "hr" or
+    "recruit" of the company, while `hr-path.com` and `3m-consultancy.zohorecruit.com` do."""
+    host = host_or_slug.lower()
+    if "." not in host:
+        return host
+    vendor = _VENDOR_HOST.search(host)
+    if vendor:
+        return host[: vendor.start()]
+    labels = host.split(".")
+    if len(labels) > 2 and labels[-2] in _REGISTRY_LABELS:
+        return labels[-3]
+    return labels[-2]
+
 
 _SPLIT = re.compile(r"[^a-z0-9]+")
 _TRAILING_DIGITS = re.compile(r"\d+$")
@@ -472,8 +546,9 @@ def company_operator(boards: Iterable[str], name: str) -> Operator:
 
 
 def unverified(boards: Iterable[str], name: str) -> bool:
-    """Whether a company is an employer only by default and its name, or a Board's tenant, reads
-    like an agency's (``_AGENCY_NAME``): nobody has read its postings, and its name says someone
+    """Whether a company is an employer only by default and its name, or a Board's own label
+    (:func:`_own_label`), reads like an agency's (``_AGENCY_NAME``): nobody has read its
+    postings, and its name says someone
     should (ADR-0335). Vrinda International ranked third on the Hiring now tab as an employer
     while posting clinical psychologists in Oman. A company on any list here, as an Operator, an
     exception or a verified employer, is not unverified."""
@@ -483,5 +558,5 @@ def unverified(boards: Iterable[str], name: str) -> bool:
     forms = _forms(name).union(*(_forms(tenant(board)) for board in boards))
     if forms & (EXCEPTIONS | VERIFIED_EMPLOYERS):
         return False
-    texts = [name.lower(), *(tenant(board).lower() for board in boards)]
+    texts = [name.lower(), *(_own_label(tenant(board)) for board in boards)]
     return any(_AGENCY_NAME.search(text) for text in texts)

@@ -13,7 +13,7 @@ from __future__ import annotations
 from typing import Any
 
 from headstart.mcp_protocol.messages import ToolFailure
-from headstart.space_mcp import company_scope, scraped_text
+from headstart.space_mcp import company_scope, noun_counts, scraped_text
 from headstart.space_mcp.space_client import SpaceClient
 from headstart.space_mcp.space_tool import SpaceTool
 
@@ -52,7 +52,7 @@ def _candidate(number: int, company: company_scope.DirectoryCompany) -> str:
     count = len(company.board_keys)
     return (
         f"{number:>2}. {scraped_text.quoted(company.label, COMPANY_FIELD)} · key {company.key} · {matched} · "
-        f"{company.tech_openings()} · {count} Board{'' if count == 1 else 's'} "
+        f"{company.tech_openings()} · {noun_counts.counted(count, 'Board')} "
         f"({boards}) on {', '.join(company.atses) or 'an ATS'}"
     )
 
@@ -74,7 +74,7 @@ def answer(client: SpaceClient, arguments: dict[str, Any]) -> str:
         )
         return "\n".join(lines)
     lines.append(
-        f"{len(found)} directory compan{'y' if len(found) == 1 else 'ies'} for "
+        f"{noun_counts.counted(len(found), 'directory company', 'directory companies')} for "
         f"{scraped_text.quoted(name)}, best match first:"
     )
     lines.append(scraped_text.SCRAPED_NOTE)

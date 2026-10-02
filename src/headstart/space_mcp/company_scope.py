@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from headstart.mcp_protocol.messages import ToolFailure
-from headstart.space_mcp import scraped_text
+from headstart.space_mcp import noun_counts, scraped_text
 from headstart.space_mcp.space_client import (
     InvalidRequest,
     SpaceClient,
@@ -71,19 +71,19 @@ class DirectoryCompany:
     def described(self) -> str:
         boards = len(self.board_keys)
         return (
-            f"{scraped_text.quoted(self.label)} ({self.key}, {boards} Board"
-            f"{'' if boards == 1 else 's'}, {self.tech_openings()})"
+            f"{scraped_text.quoted(self.label)} ({self.key}, "
+            f"{noun_counts.counted(boards, 'Board')}, {self.tech_openings()})"
         )
 
     def tech_openings(self) -> str:
-        return f"{self.openings:,} tech opening{'' if self.openings == 1 else 's'}"
+        return noun_counts.counted(self.openings, "tech opening")
 
     def offered(self) -> str:
         """The company as a refusal or a zero answer offers it in place of a typed name."""
         return (
             f"{scraped_text.quoted(self.label)} — key {self.key}, {', '.join(self.atses)}, "
-            f"{len(self.board_keys)} Board(s), {self.openings:,} opening"
-            f"{'' if self.openings == 1 else 's'}, "
+            f"{noun_counts.counted(len(self.board_keys), 'Board')}, "
+            f"{noun_counts.counted(self.openings, 'opening')}, "
             f"{self.match or '?'} match"
         )
 

@@ -21,7 +21,11 @@ Space's rules: by a person's label where the job has one, else by a negation che
 counts a curated staffing firm or job board it was not asked for, or more of one company's
 postings than the cap (ADR-0352). ``country_split`` reads `/facets` once per country the task
 names, with the filters of a search_jobs call the agent made, and needs each total stated
-beside that country's name (ADR-0355). ``all_of`` and ``any_of`` combine checks.
+beside that country's name (ADR-0355). ``page_companies`` needs a search page, and the answer, to
+name at least so many companies (ADR-0365). ``found_late_share`` reads `/trends` for a company
+whose postings opened were mostly found late and needs the answer to say so and name how many;
+its task is retired while the live data no longer shows that (ADR-0369). ``all_of`` and
+``any_of`` combine checks.
 A run whose server was not connected at its start is not judged: it is an error, left out of the
 summary's scores and named on a line of its own, first.
 
@@ -47,8 +51,8 @@ Run (a live run needs only the network and a signed-in ``claude``):
   python scripts/eval/space_mcp_eval.py --repeat 3
 ``HEADSTART_SPACE_URL``, when set, points both the server and the verifiers at another Space.
 ``--http`` registers the hosted Streamable HTTP endpoint (ADR-0267) in place of the stdio server,
-and runs ``claude`` with ``MCP_CONNECTION_NONBLOCKING=false`` so it waits for that server to
-connect; the verifiers still read ``HEADSTART_SPACE_URL`` or the deployed Space. ``--repeat N``
+and runs ``claude`` with ``MCP_CONNECTION_NONBLOCKING=false`` and ``MCP_CONNECT_TIMEOUT_MS``
+so it waits for that server to connect; the verifiers still read ``HEADSTART_SPACE_URL`` or the deployed Space. ``--repeat N``
 runs the set N times and tallies each task.
 """
 
@@ -80,7 +84,8 @@ from headstart.boards.board_operator import OPERATORS
 from headstart.mcp_protocol import tool_arguments
 from headstart.mcp_protocol.messages import ToolFailure
 from headstart.search_filters import country_filter
-from headstart.space_mcp import company_scope, search_arguments
+from headstart.serving import per_company_cap
+from headstart.space_mcp import answer_date, company_scope, search_arguments
 from headstart.space_mcp.server import BY_NAME, NAME, URL_VAR
 from headstart.space_mcp.server import call as call_tool
 from headstart.space_mcp.space_client import (
@@ -100,6 +105,7 @@ from headstart.space_mcp.tools import (
     role_requirements,
     search_jobs,
 )
+from headstart.trends.found_late import MIN_OPENED as FOUND_LATE_MIN_OPENED
 
 ITERATION_TASKS = _ROOT / "scripts" / "eval" / "space_mcp_eval_tasks.json"
 ARTIFACTS = _ROOT / "experiment" / "space-mcp-eval" / "artifacts"
@@ -684,16 +690,21 @@ def _days_between(start: str, end: str) -> float:
     ).total_seconds() / 86400
 
 
-def _found_late(row: dict[str, Any]) -> bool:
+def _opened_mostly_found_late(row: dict[str, Any]) -> bool:
     """Whether most of ``row``'s postings opened were found late, posted weeks before HeadStart
-    first saw them (ADR-0351): of 10 or more opened, its served postings first seen in the window
+    first saw them (ADR-0351): of `found_late.MIN_OPENED` or more opened, its served postings first seen in the window
     and posted long before are at least half, and those posted since fewer than half."""
     opened, fresh, late = (
         row.get("opened"),
         row.get("opened_fresh"),
         row.get("opened_found_late"),
     )
-    if opened is None or fresh is None or late is None or opened < 10:
+    if (
+        opened is None
+        or fresh is None
+        or late is None
+        or opened < FOUND_LATE_MIN_OPENED
+    ):
         return False
     return 2 * fresh < opened <= 2 * late
 
@@ -705,7 +716,7 @@ def _disowned(
     fields rather than borrowed from the tool, so a bug in the tool's order cannot hide here.
     Every Lens flags opened mostly found late (ADR-0351); Opened less closed flags nothing else,
     since nothing else questions its figure."""
-    if _found_late(row):
+    if _opened_mostly_found_late(row):
         return True
     if lens == "opened_less_closed":
         return False
@@ -753,9 +764,11 @@ def expected_hot_order(
     return rows[:limit]
 
 
-#: Words by which an answer says a company's postings opened were not newly posted (ADR-0351).
+#: Words by which an answer says a company's postings opened were not newly posted (ADR-0351),
+#: the tools' own "posted over 14 days before" among them (ADR-0369).
 _FOUND_LATE_SAID = re.compile(
     r"found late|posted (?:weeks|months|long|well) (?:before|earlier|ago)|posted earlier"
+    r"|posted (?:more than |over )?(?:\d+|two|three|four) (?:days|weeks) (?:before|earlier)"
     r"|older postings|not newly posted|backfill|listed again|re-?listed|re-?posted",
     re.IGNORECASE,
 )
@@ -763,19 +776,48 @@ _FOUND_LATE_SAID = re.compile(
 
 def unflagged_found_late(answer: str, rows: list[dict[str, Any]]) -> list[str]:
     """The companies among ``rows`` whose opened was mostly found late (ADR-0351) that the
-    answer names without saying so anywhere: reported as hiring this week."""
-    if _FOUND_LATE_SAID.search(answer):
-        return []
-    return [row["company"] for row in rows if _found_late(row) and _named(answer, row)]
+    answer names without saying so on a line that names them: reported as hiring this week. A
+    caveat elsewhere in the answer does not reach the row (round-4 review SP4)."""
+    lines = answer.splitlines()
+    return [
+        row["company"]
+        for row in rows
+        if _opened_mostly_found_late(row)
+        and _named(answer, row)
+        and not any(
+            _named(line, row) and _FOUND_LATE_SAID.search(line) for line in lines
+        )
+    ]
+
+
+def out_of_order(answer: str, rows: list[dict[str, Any]]) -> list[str]:
+    """The companies among ``rows``, in the order hiring_now lists them, that the answer names
+    before a row the tool lists above them (by where each is first named): a flagged row, found
+    late or otherwise disowned, presented above an unflagged one (round-4 review SP4)."""
+    named = [
+        (at, row["company"])
+        for row in rows
+        if (
+            at := _found_at(
+                answer, _names(str(row.get("company") or ""), str(row.get("key") or ""))
+            )
+        )
+        is not None
+    ]
+    return [
+        company
+        for i, (at, company) in enumerate(named)
+        if any(earlier > at for earlier, _ in named[:i])
+    ]
 
 
 def verify_hot_top(
     expect: dict[str, Any], transcript: Transcript, space: Space
 ) -> Verdict:
     """At least N-1 of the top N on the Lens named, in the order a correct hiring_now answer
-    lists them (`expected_hot_order`, at the call's own `limit`), the answer does not lead with
-    a row the tool flagged on that Lens, and it names no row listed whose opened was mostly
-    found late without saying so (ADR-0351)."""
+    lists them (`expected_hot_order`, at the call's own `limit`), none named before a row listed
+    above it, the answer does not lead with a row the tool flagged on that Lens, and it names no
+    row listed whose opened was mostly found late without saying so beside it (ADR-0351)."""
     lens = expect.get("lens") or hiring_now.DEFAULT_LENS
     top = int(expect.get("top") or 5)
     calls = _hiring_now_calls(transcript, lens)
@@ -787,8 +829,9 @@ def verify_hot_top(
     named = [row["company"] for row in rows if _named(transcript.final_answer, row)]
     headline = flagged_headline(transcript, lens)
     found_late = unflagged_found_late(transcript.final_answer, listed)
+    early = out_of_order(transcript.final_answer, rows)
     return Verdict(
-        len(named) >= need and headline is None and not found_late,
+        len(named) >= need and headline is None and not found_late and not early,
         f"names {len(named)} of the top {len(rows)} on {lens} (needs {need}): "
         f"{', '.join(r['company'] for r in rows)}"
         + (f"; leads with {headline!r}, a row hiring_now flagged" if headline else "")
@@ -797,7 +840,87 @@ def verify_hot_top(
             "was found late"
             if found_late
             else ""
+        )
+        + (
+            f"; names {', '.join(early)} above a row hiring_now lists before it"
+            if early
+            else ""
         ),
+    )
+
+
+# --- found_late_share ----------------------------------------------------------------------
+
+
+class NotJudged(Exception):
+    """A data-dependent task whose case went from the live data between its `requires` check
+    and its verdict: the run says nothing about the model, so it is not judged, never failed."""
+
+
+#: How far, in percentage points, a stated share may sit from the Space's own.
+SHARE_TOLERANCE = 3
+_NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?")
+_PERCENT = re.compile(r"(\d+(?:\.\d+)?)\s*%")
+
+
+def _found_late_turnover(
+    fact: dict[str, Any], space: Space
+) -> tuple[str, dict[str, Any]]:
+    """The companies' keys, and their first row's turnover over the trailing ``days``, read from
+    /trends by the verifier itself, so a bug in a tool cannot hide here (ADR-0369)."""
+    picks = [company_scope.for_trends(space, c) for c in fact.get("companies") or []]
+    days = int(fact.get("days") or 7)
+    since = (_now() - timedelta(days=days)).isoformat(timespec="seconds")
+    payload = space.read(
+        SpaceRoute.TRENDS, [("since", since), *(("company", p.key) for p in picks)]
+    )
+    move = ((payload.get("reading") or {}).get("total") or {}).get("move") or {}
+    return ", ".join(pick.key for pick in picks), move.get("turnover") or {}
+
+
+def _no_found_late_burst(fact: dict[str, Any], space: Space) -> str | None:
+    """Why the companies' postings opened over ``days`` are not mostly found late in today's
+    data, by the rule re-derived from /trends' own fields, or None while they are."""
+    names, turnover = _found_late_turnover(fact, space)
+    if _opened_mostly_found_late(turnover):
+        return None
+    return (
+        f"{names}'s postings opened over {fact.get('days') or 7} days are not mostly found "
+        f"late in today's data (opened {turnover.get('opened')}, found late "
+        f"{turnover.get('opened_found_late')}, fresh {turnover.get('opened_fresh')})"
+    )
+
+
+def verify_found_late_share(
+    expect: dict[str, Any], transcript: Transcript, space: Space
+) -> Verdict:
+    """For companies whose postings opened over ``days`` were mostly found late, posted weeks
+    before HeadStart first saw them (ADR-0369), the answer must say so and name how many: the
+    found-late count, or its share of opened or of the postings the counts date, within
+    SHARE_TOLERANCE points. Any tool path that gives the split passes. The task's `requires`
+    retires it while the burst is gone (`_no_found_late_burst`); a burst gone by the verdict is
+    not judged (NotJudged), never failed."""
+    if gone := _no_found_late_burst(expect, space):
+        raise NotJudged(gone)
+    names, turnover = _found_late_turnover(expect, space)
+    opened, late = turnover["opened"], turnover["opened_found_late"]
+    fresh = turnover["opened_fresh"]
+    answer = transcript.final_answer
+    said = bool(_FOUND_LATE_SAID.search(answer))
+    numbers = {float(n.replace(",", "")) for n in _NUMBER.findall(answer)}
+    shares = (100 * late / opened, 100 * late / (late + fresh))
+    percents = [float(p) for p in _PERCENT.findall(answer)]
+    named = late in numbers or any(
+        abs(p - share) <= SHARE_TOLERANCE for p in percents for share in shares
+    )
+    return Verdict(
+        said and named,
+        f"{names}: {late:,} found late and {fresh:,} fresh against {opened:,} opened "
+        f"({shares[0]:.0f}% of opened); the answer "
+        + ("says" if said else "does not say")
+        + " they were found late, and "
+        + ("names" if named else "does not name")
+        + " how many",
     )
 
 
@@ -886,7 +1009,7 @@ _HEDGED_LABEL = "may_offer"
 #: The eval's own reading of an unlabelled job, deliberately simpler than the Space's rules so it
 #: does not share their errors: a quoted sentence with a negating word within :data:`_NEAR_WORDS`
 #: words of one about sponsorship. Near, since "We support visa sponsorship … the right person
-#: and not" (coera, 2026-09-29) offers it.
+#: and not" (coera, 2026-09-29) refuses nothing; ADR-0368 reads it as hedged instead.
 _SPONSORSHIP_TOPIC = re.compile(r"(?i)\w*(?:sponsor|visa|h-?1-?b|citizen)\w*")
 _NEAR_WORDS = 5
 _NEGATED = re.compile(
@@ -905,6 +1028,47 @@ _HEDGED = re.compile(
 #: A hedge stands further from its word than a negation: "Sponsorship for this role is not
 #: guaranteed", "Sponsorship decisions are made on a case-by-case basis".
 _HEDGE_NEAR_WORDS = 8
+#: The eval's own hedges, sought anywhere in a quoted sentence about sponsorship: plain phrases
+#: written from the offers a person labelled may_offer (:data:`LABELLED_DESCRIPTIONS`), each
+#: beside the labelled wording it came from, and not from the Space's rules, which this module
+#: does not import, so the two do not share their errors (round-5 review SP7). The Space reads
+#: "We sponsor visas, pending company approval" as a firm offer; this list reads it as hedged.
+_HEDGE_PHRASES = (
+    # "we aren't able to successfully sponsor visas for every role and every candidate"
+    "every role",
+    "every candidate",
+    # "Sponsorship for this role is not guaranteed", "we can't always guarantee success"
+    "guarantee",
+    # "open to considering candidates who require visa sponsorship", "shall be considered",
+    # "may be considered on a case-by-case basis"; never a bare "consider", which 119 labelled
+    # firm offers carry ("Capital One will consider sponsoring a new qualified applicant")
+    "open to consider",
+    "shall be considered",
+    "may be considered",
+    # "(subject to eligibility and company approval)"
+    "approval",
+    # "to bring you to SF, if possible", "where possible will offer visa sponsorship"
+    "if possible",
+    "where possible",
+    # "open to sponsoring international visas where we can"
+    "where we can",
+    # "where it makes the difference between hiring the right person and not"
+    "makes the difference",
+    # "only for candidates that are already based in the UK", "you must already be in Singapore"
+    "already based",
+    "already located",
+    "already be in",
+    # "Open to visa transfers", "support transfer of visa sponsorship", "H-1B transfer
+    # sponsorship available"; never a bare "visa transfer", which a firm offer names beside a
+    # new visa ("visa transfers and new visa sponsorship are listed as available")
+    "open to visa transfer",
+    "transfer of visa",
+    "transfer sponsorship",
+    # "may be limited to certain roles", "Certain positions may be eligible"
+    "certain roles",
+    "certain positions",
+    "select positions",
+)
 #: What an answer line says of a hedged job to report it truly.
 _SAID_HEDGED = re.compile(
     r"(?i)not guaranteed|case[- ]by[- ]case|\bmay\b|\bmight\b|hedg|possib|not a firm|"
@@ -940,6 +1104,10 @@ def _not_offering(job: dict[str, Any], labels: dict[str, str]) -> str | None:
             return "hedged: labelled may_offer by hand"
         return None if label in _OFFERING_LABELS else f"labelled {label} by hand"
     for mention in (job.get("work_authorization") or {}).get("mentions") or []:
+        if _SPONSORSHIP_TOPIC.search(mention) and any(
+            phrase in mention.casefold() for phrase in _HEDGE_PHRASES
+        ):
+            return f"hedged: says {mention[:80]!r}"
         for topic in _SPONSORSHIP_TOPIC.finditer(mention):
             near = mention[: topic.start()].split()[-_NEAR_WORDS:] + [topic.group()]
             near += mention[topic.end() :].split()[:_NEAR_WORDS]
@@ -998,11 +1166,15 @@ def verify_sponsorship_polarity(
     guaranteed", "case by case", a person's ``may_offer`` label) is fine on a line that says it
     is hedged (ADR-0353). At least ``expect["at_least"]`` must be named.
 
-    It catches a named job a person labelled refusing or silent, and one whose quoted sentence
-    about sponsorship negates ("not available", "without sponsorship", "citizenship required").
-    It cannot catch an unlabelled job whose refusal no quoted sentence states, and it fails a
-    right answer whose job offers sponsorship in a sentence that also negates ("no matter your
-    visa status, we sponsor")."""
+    It catches a named job a person labelled refusing, silent or hedged, one whose quoted
+    sentence about sponsorship negates ("not available", "without sponsorship", "citizenship
+    required"), and one whose sentence carries a hedge of its own list (:data:`_HEDGE_PHRASES`)
+    reported as a firm offer, including hedges the Space's rules miss. It cannot catch an
+    unlabelled job whose refusal no quoted sentence states, nor a hedge in words its list lacks
+    ("where feasible") or a scope it cannot read (sponsorship only for a move to another city).
+    It fails a right answer whose job offers sponsorship in a sentence that also negates ("no
+    matter your visa status, we sponsor") or that uses a listed phrase firmly ("we guarantee
+    sponsorship")."""
     ids: list[str] = []
     for call in transcript.calls:
         if call.name in ("search_jobs", "get_job") and call.succeeded:
@@ -1040,6 +1212,72 @@ def verify_sponsorship_polarity(
             if named
             else ""
         ),
+    )
+
+
+# --- senior_caveat -------------------------------------------------------------------------
+
+#: A search_jobs row's title as the tool prints it: rank, an optional score, then the title.
+_SEARCH_ROW_TITLE = re.compile(
+    r'^\s*\d+\. (?:\d\.\d+ )?("(?:[^"\\]|\\.)*")', re.MULTILINE
+)
+
+#: A title above a new graduate's level, read here apart from the tool's own tag (ADR-0359).
+_SENIOR_WORD = re.compile(
+    r"(?i)\b(?:senior|sr\.?|staff|principal|lead|manager|director)\b"
+)
+_JUNIOR_WORD = re.compile(r"(?i)\b(?:associate|junior|jr\.?)\b")
+
+#: Words by which an answer says a senior-titled job may not fit a new graduate, or drops it.
+_SENIOR_CAVEAT = re.compile(
+    r"(?i)side clause|stated minimum|floors?\b|may not (?:be )?(?:a )?(?:good )?fit|"
+    r"not (?:an? )?(?:entry|junior|new[- ]grad)|too senior|senior (?:title|role|level)|"
+    r"likely (?:needs|requires|wants|expects)|probably (?:needs|requires|expects)|stretch|"
+    r"caveat|check (?:get_job|the (?:full )?(?:posting|description))|verify|"
+    r"dropped|left (?:it |them )?out|excluded|skipped|leaving out"
+)
+
+
+def senior_rows(transcript: Transcript) -> list[str]:
+    """The titles of rows search_jobs listed, at a `max_years` of 2 or less, that read Senior,
+    Staff, Principal, Lead, Manager or Director and not Associate or Junior."""
+    schema = BY_NAME["search_jobs"].input_schema
+    titles = []
+    for call in transcript.calls:
+        if call.name != "search_jobs" or not call.succeeded:
+            continue
+        years = tool_arguments.with_defaults(schema, call.arguments).get("max_years")
+        if years is None or years > 2:
+            continue
+        for quoted in _SEARCH_ROW_TITLE.findall(call.result or ""):
+            title = json.loads(quoted)
+            if _SENIOR_WORD.search(title) and not _JUNIOR_WORD.search(title):
+                titles.append(title)
+    return list(dict.fromkeys(titles))
+
+
+def verify_senior_caveat(
+    expect: dict[str, Any], transcript: Transcript, space: Space
+) -> Verdict:
+    """No senior-titled row a new graduate's search listed (:func:`senior_rows`) is named in the
+    answer without a caveat on a line that names it: its served floor is the smallest its
+    description states (ADR-0079), which may be a side clause (round-4 review SP3, ADR-0359)."""
+    lines = transcript.final_answer.splitlines()
+    bare = [
+        title
+        for title in senior_rows(transcript)
+        if _found(transcript.final_answer, title)
+        and not any(
+            _found(line, title) and _SENIOR_CAVEAT.search(line) for line in lines
+        )
+    ]
+    return Verdict(
+        not bare,
+        "presents "
+        + ", ".join(repr(t) for t in bare)
+        + " as a fit for a new graduate without a caveat"
+        if bare
+        else "names no senior-titled row without a caveat",
     )
 
 
@@ -1133,7 +1371,7 @@ def _country_total(space: Space, arguments: dict[str, Any], code: str) -> int:
     }
     params = [
         (name, value)
-        for name, value in search_jobs._params(placeless, scope)
+        for name, value in search_jobs.space_params(placeless, scope)
         if name not in ("k", "page", "sort")
     ]
     facets = space.read(
@@ -1192,6 +1430,45 @@ def verify_country_split(
             "not stated beside its name"
         )
     return Verdict(False, " | ".join(tried))
+
+
+# --- page_companies ------------------------------------------------------------------------
+
+#: A numbered row of a search_jobs page: its number, score, quoted title and quoted company. An
+#: "also #N" row is the same posting and names no company of its own.
+_PAGE_ROW = re.compile(
+    r'^\s*\d+\. (?:[\d.]+ )?"(?:[^"\\]|\\.)*" · ("(?:[^"\\]|\\.)*")', re.MULTILINE
+)
+
+
+def page_companies(result: str) -> list[str]:
+    """The companies a search_jobs page names on its numbered rows, first-seen order, each once
+    case-blind, without the tool's cut mark."""
+    names: dict[str, str] = {}
+    for quoted in _PAGE_ROW.findall(result):
+        name = json.loads(quoted).removesuffix("…").strip()
+        names.setdefault(name.casefold(), name)
+    return list(names.values())
+
+
+def verify_page_companies(
+    expect: dict[str, Any], transcript: Transcript, space: Space
+) -> Verdict:
+    """Round-5 critique R5-P1-2 (ADR-0365): the first successful search_jobs call meeting
+    ``must``/``must_any`` lists at least ``min_companies`` companies on its page, and the answer
+    names that many of them. The task's ``piled_ranking`` requirement retires it when the data
+    no longer piles one company up."""
+    call, verdict = _call_meeting_the_rules(expect, transcript)
+    if call is None:
+        return verdict
+    least = int(expect["min_companies"])
+    listed = page_companies(call.result or "")
+    named = [name for name in listed if _found(transcript.final_answer, name)]
+    return Verdict(
+        len(listed) >= least and len(named) >= least,
+        f"{verdict.detail}: the page lists {len(listed)} companies, the answer names "
+        f"{len(named)}",
+    )
 
 
 # --- mentions ------------------------------------------------------------------------------
@@ -1253,6 +1530,225 @@ def _states(answer: str, value: str) -> bool:
     )
 
 
+# --- employer_unflagged --------------------------------------------------------------------
+
+#: An agency, a staffing firm, a recruiter, or unverified. An agency's possessive is about
+#: agencies ("when a company's name reads like an agency's").
+_AGENCY_KIND = (
+    r"(?:staffing(?: (?:agency|agencies|firm|firms|company))?|agenc(?:y|ies)(?!['’]s)|"
+    r"recruit(?:ers?|ing firms?|ment firms?|ment agenc(?:y|ies))|"
+    r"(?:operator )?unverified(?: operator)?)"
+)
+#: An answer calling a company one (round-5 review SP8): it may be one ("may be a staffing
+#: agency", "possibly a recruiter"), it is one ("is an unverified operator"), or HeadStart
+#: flags or treats it as one. Explaining what a tag means ("HeadStart flags a row as `staffing`
+#: when …") and listing tags it does not carry call it nothing.
+_CALLED_AGENCY = re.compile(
+    r"\b(?:(?:may|might|could|would)(?: well)? be|possibly|perhaps|probably|likely|"
+    r"apparently|(?:seems?|appears?) to be|looks like|is|(?:flagged|treated|listed|"
+    r"label(?:l)?ed|tagged|marked|read) as|(?:treats?|lists?|labels?|tags?|marks?|reads?|"
+    r"flags?) (?:it|them|lockheed martin) as)\s+(?:(?:an?|the)\s+)?"
+    r"(?:(?:possible|potential|likely|probable)\s+)?[`\"'“‘*]*"
+    + _AGENCY_KIND
+    + r"|\bflagged\s+(?:an?\s+)?[`\"'“‘*]*(?:operator\s+)?unverified",
+    re.IGNORECASE,
+)
+_NOT_ITS_EMPLOYER = re.compile(r"\bnot (?:the|its own|an?) employer", re.IGNORECASE)
+#: A negation, which denies a call after it in its own clause: "does not suggest it might be a
+#: staffing agency", "no sign that it is a recruiter".
+_NEGATION = re.compile(r"\b(?:not|never|no|nor|none|neither)\b|n['’]t\b", re.IGNORECASE)
+#: What ends a clause, so a "not" of another clause denies nothing: "HeadStart does not verify
+#: it, so it may be a staffing agency", "is not on any curated list and may be a recruiter".
+_CLAUSE_END = re.compile(
+    r"[,;:.!?()—–]|\b(?:and|but|so|yet|while|though|although|whereas|however)\b",
+    re.IGNORECASE,
+)
+#: A question, as an answer restates the one it answers ("Does HeadStart suggest it might be
+#: a staffing agency?"): it calls the company nothing.
+_QUESTION = re.compile(r"[^.!?\n]*\?")
+
+
+def _calls_an_agency(line: str) -> bool:
+    """Whether ``line`` calls its company not the employer, or a possible agency in a clause no
+    negation denies."""
+    if _NOT_ITS_EMPLOYER.search(line):
+        return True
+    for clause in _CLAUSE_END.split(_QUESTION.sub(" ", line)):
+        for call in _CALLED_AGENCY.finditer(clause):
+            if not _NEGATION.search(clause[: call.start()]):
+                return True
+    return False
+
+
+def verify_employer_unflagged(
+    expect: dict[str, Any], transcript: Transcript, space: Space
+) -> Verdict:
+    """Each of ``expect["companies"]`` is an employer, read from its own postings, and neither
+    the tools nor the answer may call it a possible agency: round 5's R5-P1-3 flagged Lockheed
+    Martin "operator unverified" off SAP's host label `hr` (ADR-0366). Fails a tool result line
+    naming one that carries the tag, an answer that leaves one unnamed, and an answer line
+    naming one that calls it unverified, a staffing firm, an agency, a recruiter or not the
+    employer; a clause denying it ("not flagged as a staffing agency") is no such call."""
+    results = [
+        line
+        for call in transcript.calls
+        if call.succeeded
+        for line in (call.result or "").splitlines()
+    ]
+    answer = transcript.final_answer.splitlines()
+    missing = []
+    for company in expect["companies"]:
+        tagged = [
+            line
+            for line in results
+            if _found(line, company) and _found(line, "operator unverified")
+        ]
+        if tagged:
+            missing.append(f"a tool flagged {company}: {tagged[0].strip()[:160]!r}")
+        naming = [line for line in answer if _found(line, company)]
+        if not naming:
+            missing.append(f"the answer does not name {company}")
+        elif called := [line for line in naming if _calls_an_agency(line)]:
+            missing.append(
+                f"the answer calls {company} a possible agency: {called[0]!r}"
+            )
+    return Verdict(not missing, "; ".join(missing) or "named, and flagged by no one")
+
+
+# --- watched_roles_total -------------------------------------------------------------------
+
+#: A figure an answer states, signed or not: "+593", "−3,427", "12,044".
+_FIGURE = re.compile(r"(?<![\w.])[+−-]?\d[\d,]*(?![\d.]\d)")
+
+
+def _figures(answer: str) -> list[int]:
+    return [
+        abs(int(re.sub(r"[+−,-]", "", said)))
+        for said in _FIGURE.findall(answer)
+        if re.sub(r"[+−,-]", "", said)
+    ]
+
+
+def _near(figure: int, want: int) -> bool:
+    return abs(figure - abs(want)) <= max(5, 0.02 * abs(want))
+
+
+def _watched_roles(expect: dict[str, Any], space: Space) -> list[dict[str, Any]]:
+    """The watched roles' lines of ``expect["category"]`` since ``expect["since"]``, read from
+    the Space's own reading, not from read_trends."""
+    payload = space.read(
+        SpaceRoute.TRENDS,
+        [
+            ("since", f"{expect['since']}T00:00:00+00:00"),
+            ("family", expect["category"]),
+            ("split", "roles"),
+        ],
+    )
+    return [line["move"] for line in (payload.get("reading") or {}).get("lines") or []]
+
+
+def verify_watched_roles_total(
+    expect: dict[str, Any], transcript: Transcript, space: Space
+) -> Verdict:
+    """One total for a category's watched roles, on one basis (round 5's R5-P1-4, ADR-0366).
+    A role counted only from partway through the window adds its whole stock to the end alone,
+    so the total that mixes bases is no change at all: p5e read +12,044 where the roles counted
+    from the start moved +593 and every role's own change summed to −3,427. The answer passes
+    when it states either like-for-like figure and not the mixed one."""
+    moves = _watched_roles(expect, space)
+    if not moves:
+        return Verdict(False, "the Space read no watched roles for this category")
+    longest = max(move["span_days"] for move in moves)
+    whole = [move for move in moves if move["span_days"] == longest]
+    from_start = sum(move["latest"] - move["start"] for move in whole)
+    own_changes = sum(move["latest"] - move["start"] for move in moves)
+    mixed = sum(move["latest"] for move in moves) - sum(m["start"] for m in whole)
+    said = _figures(transcript.final_answer)
+    like = [
+        want for want in (from_start, own_changes) if any(_near(f, want) for f in said)
+    ]
+    wrong = any(_near(f, mixed) for f in said) and not any(
+        _near(abs(mixed), want) for want in (from_start, own_changes)
+    )
+    detail = (
+        f"roles counted from the start {from_start:+,}, each role's own change summed "
+        f"{own_changes:+,}, the mixed-basis total {mixed:+,}"
+    )
+    if wrong:
+        return Verdict(False, f"the answer states the mixed-basis total; {detail}")
+    if not like:
+        return Verdict(False, f"the answer states no like-for-like total; {detail}")
+    return Verdict(True, detail)
+
+
+# --- retiring a task whose fixture is gone -------------------------------------------------
+
+
+def _jobs_gone(ids: list[str], space: Space) -> str | None:
+    missing = space.read(SpaceRoute.JOB, [("id", i) for i in ids]).get("missing") or []
+    return f"postings {', '.join(missing)} are no longer served" if missing else None
+
+
+def _not_on_hot(fact: dict[str, Any], space: Space) -> str | None:
+    hot = space.read(SpaceRoute.HOT)
+    hidden = set(hot.get("hidden_by_default") or ())
+    rows = [
+        row
+        for row in (hot.get("lenses") or {}).get(fact["lens"]) or []
+        if row.get("operator") not in hidden
+    ][: fact["within"]]
+    if any(_found(str(row.get("company") or ""), fact["company"]) for row in rows):
+        return None
+    return (
+        f"{fact['company']} is not in the first {fact['within']} rows of {fact['lens']}"
+    )
+
+
+def _no_role_joined(fact: dict[str, Any], space: Space) -> str | None:
+    moves = _watched_roles(fact, space)
+    if len({move["span_days"] for move in moves}) > 1:
+        return None
+    return f"no watched role of {fact['category']} joined partway since {fact['since']}"
+
+
+def _ranking_spread_out(fact: dict[str, Any], space: Space) -> str | None:
+    """Why a per-company cap has nothing to spread, or None: the Space's own ranking of
+    ``fact["arguments"]`` (a search_jobs call's), read with no cap, already names
+    ``fact["companies_below"]`` companies or more on its first page (ADR-0365)."""
+    schema = BY_NAME["search_jobs"].input_schema
+    uncapped = tool_arguments.with_defaults(
+        schema, {**fact["arguments"], "per_company": 0}
+    )
+    rows = space.read(SpaceRoute.SEARCH, search_jobs.space_params(uncapped, None))
+    companies = {per_company_cap.company(row) for row in rows}
+    if len(companies) < fact["companies_below"]:
+        return None
+    return (
+        f"the uncapped ranking's first page already names {len(companies)} companies, so no "
+        "one company piles up"
+    )
+
+
+#: A task's ``requires``: the live facts its premise rests on, each read before the run.
+_REQUIREMENTS: dict[str, Callable[[Any, Space], str | None]] = {
+    "jobs": _jobs_gone,
+    "hot_row": _not_on_hot,
+    "roles_joined_partway": _no_role_joined,
+    "piled_ranking": _ranking_spread_out,
+    "found_late_burst": _no_found_late_burst,
+}
+
+
+def retired(task: dict[str, Any], space: Space) -> str | None:
+    """Why ``task`` cannot be judged today, or None: a fact its premise rests on (``requires``)
+    is gone from the live data, as t32's Eversource pair closed (round-5 critique R5-P2-9,
+    ADR-0366). Its run is not made, and is counted apart from the judged ones, never failed."""
+    for kind, fact in (task.get("requires") or {}).items():
+        if reason := _REQUIREMENTS[kind](fact, space):
+            return reason
+    return None
+
+
 # --- any_of --------------------------------------------------------------------------------
 
 
@@ -1299,11 +1795,16 @@ VERIFIERS: dict[str, Verifier] = {
     "title_keyword_rows": verify_title_keyword_rows,
     "sponsorship_polarity": verify_sponsorship_polarity,
     "operator_mix": verify_operator_mix,
+    "senior_caveat": verify_senior_caveat,
     "trend_sign": verify_trend_sign,
     "hot_top": verify_hot_top,
+    "found_late_share": verify_found_late_share,
     "blocking_named": verify_blocking_named,
     "mentions": verify_mentions,
     "country_split": verify_country_split,
+    "employer_unflagged": verify_employer_unflagged,
+    "watched_roles_total": verify_watched_roles_total,
+    "page_companies": verify_page_companies,
     "any_of": verify_any_of,
     "all_of": verify_all_of,
 }
@@ -1318,14 +1819,21 @@ VERIFIERS: dict[str, Verifier] = {
 RECORDED_CALLS = _ROOT / "tests" / "fixtures" / "space_mcp_eval_recorded_calls.json"
 
 
+def _now() -> datetime:
+    """The verifiers' "now", which :func:`tools_clock_at` holds with the tools'."""
+    return datetime.now(UTC)
+
+
 @contextmanager
 def tools_clock_at(when: datetime) -> Iterator[None]:
-    """Every tool's "now" held at ``when`` while inside: a window or an age is counted back
-    from it into the URLs a tool reads, which a replay must build exactly as recorded."""
+    """Every tool's "now", and the verifiers', held at ``when`` while inside: a window or an age
+    is counted back from it into the URLs a tool or a verifier reads, which a replay must build
+    exactly as recorded."""
     patched = [
+        (sys.modules[__name__], "_now", lambda: when),
         (company_profile, "_now", lambda: when),
         (read_trends, "_now", lambda: when),
-        (search_jobs, "_today", lambda: when.date()),
+        (answer_date, "today", lambda: when.date()),
     ]
     saved = [(module, name, getattr(module, name)) for module, name, _ in patched]
     for module, name, value in patched:
@@ -1440,19 +1948,20 @@ def judge(
     task: dict[str, Any], transcript: Transcript, space: Space
 ) -> tuple[str, str]:
     """The task's outcome, ``"pass" | "fail" | "error"``, and why; error is a verifier that could
-    not read the Space or resolve a company, so the task was not judged."""
+    not read the Space or resolve a company, or whose case is gone from the live data
+    (:class:`NotJudged`), so the task was not judged."""
     try:
         verdict = VERIFIERS[task["verifier"]](
             task.get("expect") or {}, transcript, space
         )
-    except (SpaceError, ToolFailure) as exc:
+    except (SpaceError, ToolFailure, NotJudged) as exc:
         return "error", f"the verifier could not judge: {exc}"
     return ("pass" if verdict.passed else "fail"), verdict.detail
 
 
 #: How long, in milliseconds, ``claude`` waits for the server to connect before a run starts.
 #: Waiting was not enough on a slow client network: 44 of 123 round-4 runs still started with
-#: the server "pending", and 0 of 15 did with this set (round-4 critique P1-4).
+#: the server "pending" (round-4 critique P1-4).
 MCP_CONNECT_TIMEOUT_MS = "60000"
 
 
@@ -1460,11 +1969,17 @@ def run_env(env: dict[str, str], http_url: str | None) -> dict[str, str]:
     """The environment ``claude`` runs in. Claude Code 2.1.212's ``-p`` does not wait for an
     HTTP server to connect: the run starts with it "pending" and no tools, and every task fails
     with 0 calls (round-2 critique, 2026-09-29). ``MCP_CONNECTION_NONBLOCKING=false`` makes it
-    wait (ADR-0325), and ``MCP_TIMEOUT`` for up to :data:`MCP_CONNECT_TIMEOUT_MS`, unless the
-    caller's environment sets its own."""
+    wait (ADR-0325), but only for ``MCP_CONNECT_TIMEOUT_MS``, 5,000 ms by default, and the
+    hosted server connects and lists its tools in about 3 to 10 s, so the start waits up to
+    :data:`MCP_CONNECT_TIMEOUT_MS` too. ``MCP_TIMEOUT`` bounds each connection attempt, not the
+    start. The caller's environment may set its own of either."""
     env = {"MCP_TIMEOUT": MCP_CONNECT_TIMEOUT_MS, **env}
     if http_url:
-        return {**env, "MCP_CONNECTION_NONBLOCKING": "false"}
+        return {
+            "MCP_CONNECT_TIMEOUT_MS": MCP_CONNECT_TIMEOUT_MS,
+            **env,
+            "MCP_CONNECTION_NONBLOCKING": "false",
+        }
     return env
 
 
@@ -1478,7 +1993,26 @@ def run_task(
 ) -> dict[str, Any]:
     """Run one task, saving its transcript as it streams, and return its result record. A run
     whose server was not connected at its start is an error, not judged: the model had no
-    tools. ``repeat`` numbers the pass this run belongs to."""
+    tools. ``repeat`` numbers the pass this run belongs to. A task whose fixture is gone
+    (:func:`retired`) is not run: its record says why, as ``retired``."""
+    unrun = {
+        "id": task["id"],
+        "repeat": repeat,
+        "verifier": task["verifier"],
+        "tool_calls": 0,
+        "largest_tool_result_chars": 0,
+        "wall_s": 0.0,
+    }
+    try:
+        gone = retired(task, space()) if task.get("requires") else None
+    except (SpaceError, ToolFailure) as exc:
+        return {
+            **unrun,
+            "verdict": "error",
+            "detail": f"its fixture went unread: {exc}",
+        }
+    if gone:
+        return {**unrun, "verdict": "retired", "detail": gone}
     stem = f"{prefix.name}_{task['id']}_r{repeat}"
     transcript_path = prefix.with_name(f"{stem}_transcript.jsonl")
     stderr_path = prefix.with_name(f"{stem}_stderr.log")
@@ -1544,9 +2078,11 @@ def summary(records: list[dict[str, Any]]) -> list[str]:
     The bars score only the runs that were judged. A run not judged (its server was not
     connected, or its verifier could not read the Space) says nothing about the model, so it is
     named on a line of its own, first, and that line is missed while any is left. With nothing
-    judged, no bar is met."""
+    judged, no bar is met. A retired task (its fixture is gone, ADR-0366) is neither: it is
+    named on a line that holds no bar, saying to replace it."""
     unjudged = [r["id"] for r in records if r["verdict"] == "error"]
-    judged = [r for r in records if r["verdict"] != "error"]
+    gone = [r["id"] for r in records if r["verdict"] == "retired"]
+    judged = [r for r in records if r["verdict"] not in ("error", "retired")]
     n = len(judged)
     correct = sum(r["verdict"] == "pass" for r in judged)
     median = statistics.median(r["tool_calls"] for r in judged) if judged else 0
@@ -1558,7 +2094,11 @@ def summary(records: list[dict[str, Any]]) -> list[str]:
         return "met" if met and judged else "MISSED"
 
     tokens = f"{LARGE_RESULT_CHARS:,}, about 10,000 tokens"
-    return [
+    retired_line = (
+        f"retired: {len(gone)} of {len(records)} ({', '.join(gone)}), their fixture gone "
+        "from the live data: replace them"
+    )
+    return ([retired_line] if gone else []) + [
         f"not judged: {len(unjudged)} of {len(records)}"
         + (f" ({', '.join(unjudged)})" if unjudged else "")
         + f" — {'MISSED' if unjudged else 'met'}",
@@ -1589,7 +2129,8 @@ def tally(passes: list[list[dict[str, Any]]]) -> list[str]:
         for record in records:
             by_task.setdefault(record["id"], []).append(record["verdict"])
     return [
-        f"{task}: {verdicts.count('pass')} of {len(verdicts) - verdicts.count('error')} "
+        f"{task}: {verdicts.count('pass')} of "
+        f"{len(verdicts) - verdicts.count('error') - verdicts.count('retired')} "
         f"judged passed ({', '.join(verdicts)})"
         for task, verdicts in by_task.items()
     ]

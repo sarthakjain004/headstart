@@ -3,6 +3,7 @@ held-out hash guard and --dry-run. Nothing here starts Claude Code or reaches th
 
 from __future__ import annotations
 
+import collections
 import hashlib
 import importlib.util
 import json
@@ -12,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+from headstart.jobs import work_authorization
 from headstart.space_mcp.space_client import InvalidRequest, SpaceRoute
 from headstart.space_mcp.tools import REGISTRY
 
@@ -398,6 +400,100 @@ def _trends_space(hiring=None, reading="default", lines=()):
 _T03 = {"companies": ["Stripe"], "category": None, "days": 14}
 
 
+# --- found_late_share ----------------------------------------------------------------------
+
+_DELOITTE = {**_STRIPE, "key": "avature:deloitteus", "label": "Deloitte US"}
+_DELOITTE_TASK = {"companies": ["Deloitte US"], "days": 7}
+
+
+def _found_late_space(fresh=112, late=410, opened=509):
+    turnover = {"opened": opened, "closed": 14, "net": opened - 14}
+    if fresh is not None:
+        turnover.update(opened_fresh=fresh, opened_found_late=late)
+    return FakeSpace(
+        {
+            SpaceRoute.COMPANIES_SUGGEST: {"companies": [_DELOITTE]},
+            SpaceRoute.TRENDS: {"reading": {"total": {"move": {"turnover": turnover}}}},
+        }
+    )
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        (
+            "Deloitte US opened 509 postings, but 410 of them were posted more than 14 days "
+            "before HeadStart first saw them, so they were found late, not new hires."
+        ),
+        "Hard to say: about 80% of the 509 postings opened were found late, not newly posted.",
+        "HeadStart found them late: 78% of the postings it dated were posted weeks before.",
+    ],
+)
+def test_found_late_share_passes_an_answer_that_names_how_many_were_found_late(
+    ev, answer
+):
+    """ADR-0369. The count, or its share of opened (80.5%) or of the dated postings (78.5%),
+    beside words that say they were found late. No tool call is needed: whichever tool gave it,
+    the answer is what is judged (ADR-0354)."""
+    space = _found_late_space()
+    verdict = ev.verify_found_late_share(
+        _DELOITTE_TASK, _transcript(ev, answer=answer), space
+    )
+    assert verdict.passed, verdict.detail
+    route, params = space.asked[-1]
+    assert route is SpaceRoute.TRENDS
+    assert [name for name, _ in params] == ["since", "company"]
+    assert ("company", "avature:deloitteus") in params
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "Deloitte US hired a net 495 tech people this week: 509 opened and 14 closed.",
+        "509 opened, but most of them were found late, not newly posted.",  # how many?
+        "410 of the 509 openings are in India.",  # the number, but not what it means
+        "About 50% were found late.",  # a share the Space does not give
+    ],
+)
+def test_found_late_share_fails_an_answer_that_reports_the_burst_as_hiring(ev, answer):
+    verdict = ev.verify_found_late_share(
+        _DELOITTE_TASK, _transcript(ev, answer=answer), _found_late_space()
+    )
+    assert not verdict.passed, verdict.detail
+
+
+@pytest.mark.parametrize(
+    "space",
+    [
+        _found_late_space(fresh=400, late=100),  # the burst is over
+        _found_late_space(fresh=None),  # a Space that gives no split
+        _found_late_space(fresh=3, late=5, opened=8),  # too few opened to judge
+    ],
+)
+def test_found_late_share_retires_once_the_live_data_shows_no_burst(ev, space):
+    """A data-dependent task retires itself (ADR-0366's `requires`), and a burst gone between
+    that check and the verdict is not judged: never failed on data that moved."""
+    task = {
+        "verifier": "found_late_share",
+        "expect": _DELOITTE_TASK,
+        "requires": {"found_late_burst": _DELOITTE_TASK},
+    }
+    assert "not mostly found late" in ev.retired(task, space)
+    answer = "Deloitte US opened 509 postings and closed 14 this week."
+    outcome, detail = ev.judge(task, _transcript(ev, answer=answer), space)
+    assert outcome == "error", detail
+    assert "not mostly found late" in detail
+    assert ev.retired(task, _found_late_space()) is None
+
+
+def test_the_deloitte_task_rests_on_its_burst(ev):
+    """t43's premise is read before its run, and its verifier is the one named."""
+    tasks = json.loads(ev.ITERATION_TASKS.read_text())["tasks"]
+    (t43,) = [t for t in tasks if t["id"] == "t43"]
+    assert t43["verifier"] == "found_late_share"
+    assert t43["requires"] == {"found_late_burst": t43["expect"]}
+
+
 def test_trend_sign_compares_the_spaces_own_sign_with_the_answer(ev):
     space = _trends_space(hiring=11)
     answer = "Stripe is hiring **more** than two weeks ago: hiring +11, not less."
@@ -639,12 +735,17 @@ def test_hot_top_fails_an_answer_that_leads_with_a_row_hiring_now_flagged(ev):
         "Acme Robotics, Borealis Data, Cobalt Payments and Dune Analytics lead."
     )
     unflagged_first = (
-        "Borealis Data leads, then Cobalt Payments and Dune Analytics; Acme Robotics ranks "
-        "first on the site, but that is re-counting."
+        "Borealis Data leads, then Cobalt Payments, Dune Analytics and Ember Health; Acme "
+        "Robotics ranks first on the site, but that is re-counting."
+    )
+    space = _hot_space()
+    # /hot's own figures for the re-counting hiring_now flagged, so the order it lists agrees.
+    space.answers[SpaceRoute.HOT]["lenses"]["expansion"][0].update(
+        stock=958, net=442, opened=23, closed=33
     )
 
-    led = ev.verify_hot_top(expect, _hot_answer(ev, in_site_order), _hot_space())
-    passed = ev.verify_hot_top(expect, _hot_answer(ev, unflagged_first), _hot_space())
+    led = ev.verify_hot_top(expect, _hot_answer(ev, in_site_order), space)
+    passed = ev.verify_hot_top(expect, _hot_answer(ev, unflagged_first), space)
 
     assert not led.passed and "leads with 'Acme Robotics'" in led.detail
     assert passed.passed, passed.detail
@@ -746,7 +847,16 @@ def test_hot_top_fails_an_answer_that_reports_a_found_late_row_as_hiring(ev):
         space,
     )
     left_out = ev.verify_hot_top(expect, _transcript(ev, answer=f"{top} lead."), space)
+    said_elsewhere = ev.verify_hot_top(
+        expect,
+        _transcript(
+            ev,
+            answer=f"Some rows were found late.\n{top} lead.\nStarbucks opened 50.",
+        ),
+        space,
+    )
 
+    assert not said_elsewhere.passed  # the caveat must sit beside the row it is about
     assert not reported.passed
     assert "reports Starbucks as hiring" in reported.detail
     assert said.passed, said.detail
@@ -918,8 +1028,8 @@ def test_sponsorship_polarity_fails_an_answer_naming_a_job_that_refuses(ev):
         ("Visa sponsorship is available for this position.", True),
         (
             (
-                "We support visa sponsorship and relocation within Europe, where it makes "
-                "the difference between hiring the right person and not."
+                "We sponsor visas for engineers relocating to Berlin, and the team there does "
+                "not work weekends."
             ),
             True,
         ),
@@ -1028,11 +1138,74 @@ def test_sponsorship_polarity_passes_a_hedged_offer_only_when_the_answer_says_so
         "Sponsorship for this role is not guaranteed.",
         "Visa sponsorship may be available for select positions.",
         "Sponsorship decisions are made on a case-by-case basis.",
+        # The hedges ADR-0359 added, anywhere in the sentence (ADR-0368).
+        "However, we aren't able to successfully sponsor visas for every role and every candidate.",
+        (
+            "While we can't guarantee success for every candidate or role, we're committed to "
+            "working through the visa process together."
+        ),
+        (
+            "We are open to considering candidates who require visa sponsorship (subject to "
+            "eligibility and company approval)."
+        ),
+        "Visa sponsorship: H-1B transfer sponsorship available.",
+        # And those ADR-0368 added.
+        (
+            "We support visa sponsorship and relocation within Europe, where it makes the "
+            "difference between hiring the right person and not."
+        ),
+        "Visa sponsorship and relocation stipend to bring you to SF, if possible",
+        "Visa sponsorship shall be considered for the right skill sets",
+        "We're open to sponsoring international visas where we can.",
+        "Visa support is provided if required (only if already based in the United Kingdom).",
     ],
 )
 def test_sponsorship_polarity_reads_a_hedge_before_a_negation(ev, mention):
     job = {"id": "lever:acme:1", "work_authorization": {"mentions": [mention]}}
     assert ev._not_offering(job, {}).startswith("hedged")
+
+
+def test_sponsorship_polarity_catches_a_hedge_the_spaces_rules_read_as_firm(ev):
+    """Round-5 review SP7: the eval's hedges are its own, so it sees an error of the Space's."""
+    mention = "We sponsor visas, pending company approval."
+    held = work_authorization.stances(mention, title="Software Engineer")
+    assert held == {work_authorization.OFFERS_SPONSORSHIP}, "the Space's rules err here"
+    job = {"id": "lever:acme:1", "work_authorization": {"mentions": [mention]}}
+    assert ev._not_offering(job, {}).startswith("hedged")
+
+
+def test_sponsorship_polaritys_hedges_are_its_own_and_no_labelled_firm_offer_says_one(
+    ev,
+):
+    """Written from the may_offer labels, not imported from the Space's rules (SP7): no
+    description a person labelled a firm offer has a sponsorship sentence carrying one."""
+    source = Path(ev.__file__).read_text(encoding="utf-8")
+    assert "work_authorization import" not in source
+    assert "import work_authorization" not in source
+    lines = ev.LABELLED_DESCRIPTIONS.read_text(encoding="utf-8").splitlines()
+    carrying = collections.Counter()
+    for row in map(json.loads, filter(None, lines)):
+        sentences = re.split(r"(?<=[.!?])\s+|\n", (row.get("text") or "").casefold())
+        if any(
+            ev._SPONSORSHIP_TOPIC.search(s) and any(p in s for p in ev._HEDGE_PHRASES)
+            for s in sentences
+        ):
+            carrying[row["sponsorship"]] += 1
+    assert carrying["offers"] == 0, carrying
+    assert carrying["may_offer"] >= 40, carrying
+
+
+@pytest.mark.parametrize(
+    "mention",
+    [
+        "We sponsor new H-1B visas and H-1B transfers.",
+        "Visa sponsorship and transfers are supported.",
+        "We sponsor visas for every engineer we hire.",
+    ],
+)
+def test_sponsorship_polarity_reads_a_new_visa_or_a_firm_offer_as_offering(ev, mention):
+    job = {"id": "lever:acme:1", "work_authorization": {"mentions": [mention]}}
+    assert ev._not_offering(job, {}) is None
 
 
 def test_sponsorship_polarity_fails_an_answer_naming_no_job(ev):
@@ -1207,6 +1380,83 @@ def test_operator_mix_needs_a_sample_that_lists_its_companies(ev):
     assert not none.passed and "no successful role_requirements" in none.detail
     unlisted = [("role_requirements", {"query": "x"}, "No postings to count.", False)]
     assert not ev.verify_operator_mix({}, _transcript(ev, unlisted, "..."), None).passed
+
+
+# --- page_companies ------------------------------------------------------------------------
+
+_T42 = {
+    "tool": "search_jobs",
+    "must": {"country": "US", "work_authorization": "offers_sponsorship", "page": 1},
+    "must_any": [{"query": {"op": "contains", "value": "machine learning"}}],
+    "min_companies": 4,
+}
+_T42_ARGS = {
+    "query": "machine learning engineer",
+    "country": "US",
+    "work_authorization": "offers_sponsorship",
+}
+
+
+def _page(*companies):
+    """A search_jobs page with one numbered row per company, each with an 'also' row under it."""
+    lines = []
+    for n, company in enumerate(companies):
+        lines += [
+            (
+                f' {2 * n + 1}. 0.80 "Machine Learning Engineer" · {json.dumps(company)} · '
+                '"McLean, VA"'
+            ),
+            f'    id "workday:x/y:{n}"',
+            f'    also #{2 * n + 2}: 0.80 "McLean, Virginia, United States"',
+        ]
+    return "\n".join(lines) + "\n"
+
+
+def _ranked(*companies):
+    return FakeSpace(
+        {SpaceRoute.SEARCH: [{"id": "x:y:1", "company": c} for c in companies]}
+    )
+
+
+def test_page_companies_reads_each_numbered_rows_company_once(ev):
+    page = _page("Capital One", "capital one", "Preference Model", "A Very Long Compa…")
+    page += ' 9. 0.70 "ML Engineer" · "Toast" (operator unverified) · "Boston"\n'
+    assert ev.page_companies(page) == [
+        "Capital One",
+        "Preference Model",
+        "A Very Long Compa",
+        "Toast",
+    ]
+
+
+def test_page_companies_needs_them_on_the_page_and_named_in_the_answer(ev):
+    """Round-5 critique R5-P1-2 (ADR-0365): s04's first page was ten Capital One rows."""
+    four = ("Capital One", "Preference Model", "EvolutionIQ", "Poesis")
+
+    def verdict(page, answer, arguments=_T42_ARGS):
+        calls = [("search_jobs", arguments, page, False)]
+        return ev.verify_page_companies(_T42, _transcript(ev, calls, answer), None)
+
+    right = verdict(_page(*four), "Capital One, Preference Model, EvolutionIQ, Poesis.")
+    assert right.passed and "lists 4 companies, the answer names 4" in right.detail
+    assert not verdict(_page("Capital One"), "All ten are Capital One.").passed
+    assert not verdict(_page(*four), "Capital One and Preference Model.").passed
+    unsponsored = {**_T42_ARGS, "work_authorization": None}
+    assert not verdict(_page(*four), "...", unsponsored).passed
+
+
+def test_a_page_companies_task_is_retired_while_the_ranking_no_longer_piles_up(ev):
+    task = {
+        "requires": {"piled_ranking": {"arguments": _T42_ARGS, "companies_below": 4}}
+    }
+    piled = _ranked(*["Capital One"] * 9, "Toast")
+    assert ev.retired(task, piled) is None
+    # The uncapped ranking is read with no per-company cap, at the task's own filters.
+    (route, params), *_ = piled.asked
+    assert route == SpaceRoute.SEARCH and "per_company" not in dict(params)
+    assert ("work_authorization", "offers_sponsorship") in params
+    varied = _ranked("Capital One", "Toast", "Poesis", "EvolutionIQ", "Toast")
+    assert "already names 4 companies" in ev.retired(task, varied)
 
 
 # --- mentions ------------------------------------------------------------------------------
@@ -1498,12 +1748,21 @@ def test_an_http_run_waits_for_the_server_and_one_left_pending_is_not_judged(
     assert claude.envs[-1] == {
         "HOME": "/x",
         "MCP_TIMEOUT": "60000",
+        "MCP_CONNECT_TIMEOUT_MS": "60000",
         "MCP_CONNECTION_NONBLOCKING": "false",
     }
     # Round-4 critique P1-4: a slow network left 44 of 123 runs pending; every run waits up to
     # 60 s for its server, unless the caller set its own wait.
     assert ev.run_env({"HOME": "/x"}, None) == {"HOME": "/x", "MCP_TIMEOUT": "60000"}
     assert ev.run_env({"MCP_TIMEOUT": "5000"}, None) == {"MCP_TIMEOUT": "5000"}
+    # A blocking start waits only MCP_CONNECT_TIMEOUT_MS (5,000 ms by default), not
+    # MCP_TIMEOUT: 3 of 3 hosted starts were pending with only MCP_TIMEOUT set, 0 of 4 with
+    # both (2026-09-30). The caller's own value wins.
+    assert ev.run_env({"MCP_CONNECT_TIMEOUT_MS": "9000"}, url) == {
+        "MCP_TIMEOUT": "60000",
+        "MCP_CONNECT_TIMEOUT_MS": "9000",
+        "MCP_CONNECTION_NONBLOCKING": "false",
+    }
 
 
 def _record(task_id, verdict):
@@ -1874,7 +2133,14 @@ def test_the_recording_covers_every_task_whose_verifier_reads_tool_results(ev):
     def reads_results(task):
         checks = (task.get("expect") or {}).get("checks") or [task]
         return any(
-            c["verifier"] in ("blocking_named", "title_keyword_rows", "operator_mix")
+            c["verifier"]
+            in (
+                "blocking_named",
+                "title_keyword_rows",
+                "operator_mix",
+                "senior_caveat",
+                "page_companies",
+            )
             or {"tool_results_all", "answer_carries", "answer_any"}
             & set(c.get("expect") or {})
             for c in checks
@@ -1884,3 +2150,272 @@ def test_the_recording_covers_every_task_whose_verifier_reads_tool_results(ev):
     recorded = {task_id for task_id, _, _ in _RECORDED_RUNS}
     wanted = {t["id"] for t in tasks if reads_results(t)}
     assert wanted <= recorded, wanted - recorded
+
+
+def test_hot_top_fails_an_answer_that_lists_a_found_late_row_above_an_unflagged_one(ev):
+    """Round-4 review SP4: the tool lists a found-late row after every unflagged one, and an
+    answer that presents it higher fails even when it says it was found late."""
+    space = _hot_space()
+    rows = space.answers[SpaceRoute.HOT]["lenses"]["expansion"]
+    rows[0].update(
+        company="Starbucks", opened=50, opened_fresh=22, opened_found_late=28
+    )
+    expect = {"lens": "expansion", "top": 6}
+    rest = "Borealis Data\n3. Cobalt Payments\n4. Dune Analytics\n5. Ember Health\n6. Fjord"
+    above = ev.verify_hot_top(
+        expect,
+        _transcript(
+            ev, answer=f"1. Starbucks (opened mostly found late)\n2. {rest} Security"
+        ),
+        space,
+    )
+    below = ev.verify_hot_top(
+        expect,
+        _transcript(
+            ev, answer=f"1. {rest} Security\n6. Starbucks (opened mostly found late)"
+        ),
+        space,
+    )
+    assert not above.passed
+    assert "names Starbucks above a row hiring_now lists before it" in above.detail
+    assert below.passed, below.detail
+
+
+# --- senior_caveat -------------------------------------------------------------------------
+
+_NEW_GRAD_PAGE = (
+    "12 jobs match these filters; the query only ranks them and does not narrow this count. "
+    "Showing 1–3.\n"
+    ' 1. 0.71 "Senior Backend Engineer" · "Acme" · "Austin, TX" · 1+ yrs · senior title: its '
+    "stated minimum may be a side clause\n"
+    '    id "greenhouse:acme:1" · "https://example.com/1"\n'
+    ' 2. 0.70 "Backend Engineer I" · "Borealis" · "Remote, US" · 0+ yrs\n'
+    '    id "greenhouse:borealis:2" · "https://example.com/2"\n'
+    ' 3. 0.69 "Associate Engineering Manager" · "Cobalt" · "NYC" · 0+ yrs\n'
+    '    id "greenhouse:cobalt:3" · "https://example.com/3"\n'
+)
+
+
+def _new_grad(ev, answer, arguments=None):
+    if arguments is None:
+        arguments = {"query": "backend engineer", "max_years": 0}
+    calls = [("search_jobs", arguments, _NEW_GRAD_PAGE, False)]
+    return ev.verify_senior_caveat({}, _transcript(ev, calls, answer), None)
+
+
+def test_senior_caveat_fails_a_senior_row_offered_to_a_new_grad_without_a_caveat(ev):
+    """Round-4 review SP3 (ADR-0359, under ADR-0079)."""
+    bare = "1. Senior Backend Engineer at Acme\n2. Backend Engineer I at Borealis"
+    said = (
+        "1. Senior Backend Engineer at Acme: a senior title, so its stated minimum may be a "
+        "side clause; check the full posting\n2. Backend Engineer I at Borealis"
+    )
+    dropped = (
+        "Backend Engineer I at Borealis. I left out Senior Backend Engineer at Acme."
+    )
+    assert not _new_grad(ev, bare).passed
+    assert "'Senior Backend Engineer'" in _new_grad(ev, bare).detail
+    assert _new_grad(ev, said).passed
+    assert _new_grad(ev, dropped).passed
+    # "Associate" reads as entry level, and a search for experienced users is not judged.
+    assert _new_grad(ev, "Associate Engineering Manager at Cobalt.").passed
+    assert _new_grad(ev, bare, {"query": "backend engineer", "max_years": 5}).passed
+
+
+def test_senior_rows_reads_titles_the_eval_judges_itself(ev):
+    calls = [("search_jobs", {"max_years": 1}, _NEW_GRAD_PAGE, False)]
+    assert ev.senior_rows(_transcript(ev, calls)) == ["Senior Backend Engineer"]
+
+
+# --- round 5: retired tasks, employer_unflagged, watched_roles_total (ADR-0366) ------------
+
+_LOCKHEED_ROW = (
+    '18. site #18 · "Lockheed Martin" · key successfactors:lockheed.jobs.hr.cloud.sap · '
+    "employer · 1,201 open now · net +40 · opened 90 · closed 50 · rate 7%"
+)
+
+
+def _lockheed(ev, row, answer):
+    calls = [("hiring_now", {"lens": "volume", "limit": 20}, row, False)]
+    return ev.verify_employer_unflagged(
+        {"companies": ["Lockheed Martin"]}, _transcript(ev, calls, answer), None
+    )
+
+
+def test_employer_unflagged_fails_a_tool_or_an_answer_calling_the_employer_an_agency(
+    ev,
+):
+    """t40: SAP's host label `hr` flagged Lockheed Martin operator unverified (R5-P1-3)."""
+    listed = (
+        "18. Lockheed Martin, 1,201 open now.\nNone of the 20 reads like an agency."
+    )
+    assert _lockheed(ev, _LOCKHEED_ROW, listed).passed
+    flagged = _LOCKHEED_ROW + " · FLAG operator unverified"
+    assert "a tool flagged Lockheed Martin" in _lockheed(ev, flagged, listed).detail
+    doubted = "18. Lockheed Martin: possibly a staffing agency, unverified."
+    assert "calls Lockheed Martin a possible agency" in (
+        _lockheed(ev, _LOCKHEED_ROW, doubted).detail
+    )
+    assert not _lockheed(ev, _LOCKHEED_ROW, "Twenty companies, none an agency.").passed
+    # A denial on its line is the right answer, not a call (the prompt asks exactly this).
+    denied = (
+        "Yes, Lockheed Martin is #18 by volume. HeadStart does not flag it as a staffing "
+        "agency or recruiter; it is the employer."
+    )
+    assert _lockheed(ev, _LOCKHEED_ROW, denied).passed
+    for denied in (
+        "Lockheed Martin is not a staffing agency.",
+        "Lockheed Martin (#18): not an agency or recruiter, a real employer.",
+        "Lockheed Martin carries no staffing flag.",
+        "There is no sign that Lockheed Martin... no sign that it is a recruiter.",
+        "Lockheed Martin: HeadStart does not suggest it might be a staffing agency.",
+        # The hosted t40 answers of 2026-09-30, both right: a restated question, a list of
+        # operators denied, and what the flag means.
+        (
+            "**Does HeadStart suggest it might be a staffing agency or recruiter?** No. "
+            "HeadStart labels its operator as **employer** — the company itself posting its "
+            'own jobs. There\'s no "services," "staffing," or "aggregator" tag, and no '
+            '"operator unverified" flag (which is what HeadStart raises when a company\'s '
+            "name reads like an agency's). So HeadStart treats Lockheed Martin "
+            "straightforwardly as the employer, not a recruiter or staffing firm."
+        ),
+        (
+            "**Does HeadStart suggest it might be a staffing agency or recruiter?** No. "
+            "Lockheed Martin's operator label is **employer**. There's no \"operator "
+            "unverified\" flag and it's not tagged services, staffing, or aggregator. So "
+            "HeadStart treats it straightforwardly as the employer, not as a staffing firm or "
+            "recruiter posting on someone else's behalf."
+        ),
+        (
+            "**Does HeadStart suggest it might be a staffing agency or recruiter?** No. Its "
+            "operator label is **employer** — HeadStart reads Lockheed Martin as the company "
+            "posting its own jobs, not a services firm, staffing agency, or job-board "
+            'aggregator. There\'s no "operator unverified" flag on the row either.'
+        ),
+        (
+            "**Staffing agency or recruiter?** No. HeadStart labels Lockheed Martin's operator "
+            'as **employer**. There\'s no "staffing," "services," "aggregator," or "operator '
+            'unverified" flag on the row, so the tool is not suggesting it might be an agency '
+            "or recruiter front."
+        ),
+        (
+            "- Lockheed Martin's operator label is **employer** — the company posting its own "
+            "roles. HeadStart flags a row as `services`, `staffing`, or `aggregator` when it "
+            'thinks someone other than the employer is posting, and it flags "operator '
+            "unverified\" when a name reads like an agency's. **None of those apply here.**"
+        ),
+        (
+            "**Operator:** Lockheed Martin's row is labeled **employer** — not `services` (an "
+            "IT-services firm), `staffing` (an agency), or `aggregator` (a job board). There's "
+            'also **no "operator unverified" flag**.'
+        ),
+    ):
+        assert _lockheed(ev, _LOCKHEED_ROW, denied).passed, denied
+    for called in (
+        "Lockheed Martin is listed, not flagged; it may be a staffing agency.",
+        "Lockheed Martin is not the employer of these postings.",
+        # Round-5 review SP8: a "not" that denies something else is no denial of agency.
+        "Lockheed Martin: HeadStart does not verify it, so it may be a staffing agency.",
+        "Lockheed Martin is not on any curated list and may be a recruiter.",
+        "Lockheed Martin is flagged operator unverified.",
+        "HeadStart treats Lockheed Martin as a staffing firm.",
+    ):
+        assert not _lockheed(ev, _LOCKHEED_ROW, called).passed, called
+
+
+def _role_move(start, latest, span_days):
+    return {"move": {"start": start, "latest": latest, "span_days": span_days}}
+
+
+#: p5e's watched Software Engineering roles: Java and Python counted for the last 4.8 days.
+_P5E_ROLES = {
+    SpaceRoute.TRENDS: {
+        "reading": {
+            "lines": [
+                _role_move(11_557, 7_468, 4.8),
+                _role_move(12_307, 13_018, 5.5),
+                _role_move(7_646, 7_394, 5.5),
+                _role_move(2_738, 2_872, 5.5),
+                _role_move(3_914, 3_983, 4.8),
+            ]
+        }
+    }
+}
+_T41 = {"category": "software-engineering", "since": "2026-09-25"}
+
+
+def _roles_total(ev, answer, space=None):
+    return ev.verify_watched_roles_total(
+        _T41, _transcript(ev, answer=answer), space or FakeSpace(_P5E_ROLES)
+    )
+
+
+def test_watched_roles_total_passes_a_like_for_like_total_and_fails_the_mixed_one(ev):
+    """t41: +12,044 added Java's and Python's stock to the end alone (R5-P1-4); +593 is the
+    roles counted from the start, and -3,427 every role's own change summed."""
+    assert _roles_total(ev, "Together they moved +593 openings.").passed
+    assert _roles_total(ev, "Summing each role's own change: −3,427.").passed
+    mixed = _roles_total(ev, "They rose from 22,691 to 34,735, +12,044 (+53%).")
+    assert not mixed.passed and "mixed-basis total +12,044" in mixed.detail
+    assert not _roles_total(ev, "They moved a lot.").passed
+    space = FakeSpace(_P5E_ROLES)
+    _roles_total(ev, "+593", space)
+    assert space.asked == [
+        (
+            SpaceRoute.TRENDS,
+            [
+                ("since", "2026-09-25T00:00:00+00:00"),
+                ("family", "software-engineering"),
+                ("split", "roles"),
+            ],
+        )
+    ]
+
+
+def test_a_task_whose_fixture_is_gone_is_retired_not_run_and_not_judged(ev, tmp_path):
+    """R5-P2-9: t32's Eversource pair closed and the task failed 0/3 for it."""
+    t32 = {
+        "id": "t32",
+        "prompt": "p",
+        "verifier": "mentions",
+        "expect": {"all": ["Eversource"]},
+        "requires": {"jobs": ["radancy:a:1", "workday:b:2"]},
+    }
+    closed = FakeSpace({SpaceRoute.JOB: {"jobs": [], "missing": ["radancy:a:1"]}})
+    assert ev.retired(t32, closed) == "postings radancy:a:1 are no longer served"
+    served = FakeSpace({SpaceRoute.JOB: {"jobs": [{}, {}], "missing": []}})
+    assert ev.retired(t32, served) is None
+    record = ev.run_task(t32, {}, tmp_path / "run", lambda: closed)
+    assert (record["verdict"], record["tool_calls"]) == ("retired", 0)
+    lines = ev.summary([_record("t01", "pass"), {**_record("t32", "retired")}])
+    assert lines[0].startswith("retired: 1 of 2 (t32)")
+    assert "not judged: 0 of 2 — met" in lines
+    assert "correct: 1 of 1 judged" in lines[2]
+    assert ev.tally([[_record("t32", "retired")]]) == [
+        "t32: 0 of 0 judged passed (retired)"
+    ]
+
+
+def test_the_hot_row_and_joined_role_fixtures_read_the_live_facts(ev):
+    t40 = {
+        "requires": {"hot_row": {"lens": "volume", "company": "Lockheed", "within": 2}}
+    }
+    hot = {
+        "hidden_by_default": ["staffing"],
+        "lenses": {
+            "volume": [
+                {"company": "Randstad", "operator": "staffing"},
+                {"company": "Amazon", "operator": "employer"},
+                {"company": "Lockheed Martin", "operator": "employer"},
+            ]
+        },
+    }
+    assert ev.retired(t40, FakeSpace({SpaceRoute.HOT: hot})) is None
+    hot["lenses"]["volume"].insert(1, {"company": "Deloitte", "operator": "employer"})
+    assert "not in the first 2 rows" in ev.retired(
+        t40, FakeSpace({SpaceRoute.HOT: hot})
+    )
+    t41 = {"requires": {"roles_joined_partway": _T41}}
+    assert ev.retired(t41, FakeSpace(_P5E_ROLES)) is None
+    level = {SpaceRoute.TRENDS: {"reading": {"lines": [_role_move(1, 2, 5.5)] * 2}}}
+    assert "no watched role" in ev.retired(t41, FakeSpace(level))

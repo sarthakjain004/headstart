@@ -1,0 +1,46 @@
+name: validate-trend-reference
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  HF_HUB_DISABLE_XET: "1"
+  UV_VERSION: "0.12.11"
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - run: |
+          pip install "uv==$UV_VERSION"
+          uv pip install --system -e ".[dev]" "numpy"
+      - name: Fetch one immutable dataset revision
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          python -u - <<'PY'
+          from huggingface_hub import HfApi, snapshot_download
+          revision = HfApi().repo_info('imPoseidon/headstart-index', repo_type='dataset').sha
+          print('Pinned reference revision:', revision, flush=True)
+          snapshot_download('imPoseidon/headstart-index', repo_type='dataset', revision=revision,
+              local_dir='.', max_workers=4, allow_patterns=[
+                  'data/facts/trend_reference/*', 'data/facts/reference_rules/*',
+                  'data/state/reference_state.parquet', 'data/state/role_trend_board_deltas/*'])
+          PY
+      - name: Validate observed tech stock placements and count groups
+        run: python -u scripts/eval/validate_trend_reference.py
+      - name: Keep validation evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: trend-reference-validation
+          path: data/reference-validation.json
+          retention-days: 30

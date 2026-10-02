@@ -41,6 +41,7 @@ Run: python -m headstart.ingest.role_trends
 from __future__ import annotations
 
 import argparse
+from dataclasses import asdict
 from datetime import timedelta
 from pathlib import Path
 
@@ -308,6 +309,7 @@ def main() -> int:
     ap.add_argument("--board-ledger", type=Path, default=_BOARD_LEDGER)
     ap.add_argument("--assignments", type=Path, default=_ASSIGNMENTS)
     ap.add_argument("--reassignments", type=Path, default=_REASSIGNMENTS)
+    ap.add_argument("--reference-facts", type=Path)
     # sync's evictions not yet booked, and this run's Unauthoritative Boards (ADR-0227)
     ap.add_argument("--eviction-queue", type=Path, default=EVICTION_QUEUE_PATH)
     ap.add_argument(
@@ -496,6 +498,43 @@ def main() -> int:
             exc_info=True,
         )
         return 1
+    if args.reference_facts is not None:
+        from headstart.ingest import trend_reference
+
+        checkpoint_path = args.state / trend_reference.STATE
+        checkpoint_before = None
+        checkpoint_saved = False
+        try:
+            checkpoint_before = (
+                checkpoint_path.read_bytes() if checkpoint_path.exists() else None
+            )
+            checkpoint_saved = True
+            rules = trend_reference.freeze_rules(REPO_ROOT, args.reference_facts)
+            reference = trend_reference.capture(
+                table,
+                placed,
+                args.reference_facts,
+                ts,
+                asdict(methodology) | {"rules_fingerprint": rules},
+                state_dir=args.state,
+                row_parts=dict(zip(ids, row_logits, strict=True)),
+                title_cache=cache,
+            )
+            _log.info(f"Trends reference recorded -> {reference}")
+            inherited = trend_reference.inherit_listed(
+                args.reference_facts, reference, live
+            )
+            _log.info(
+                f"Reference baseline inherited {inherited} ids into absence tracking"
+            )
+        except Exception:  # noqa: BLE001 - diagnostics must not stop index publication
+            if checkpoint_saved and checkpoint_before is None:
+                checkpoint_path.unlink(missing_ok=True)
+            elif checkpoint_saved:
+                restore = checkpoint_path.with_suffix(".restore.tmp")
+                restore.write_bytes(checkpoint_before)
+                restore.replace(checkpoint_path)
+            _log.warning("Trends reference missing for this tick", exc_info=True)
     stock_top = sorted(
         ((k, c) for k, c in counts.items() if k[0] == "stock"), key=lambda kv: -kv[1]
     )[:5]

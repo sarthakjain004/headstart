@@ -39,6 +39,7 @@ class WorkAuthorizationRows:
     def __init__(self, table: Any) -> None:
         self._table = table
         self._clauses: dict[str, str] = {}
+        self._may_offer_because: dict[str, tuple[str, ...]] = {}
         self._ready = threading.Event()
         self._failed = False
         self._started = False
@@ -73,39 +74,58 @@ class WorkAuthorizationRows:
         that offer sponsorship too (ADR-0353)."""
         return self._clauses.get(stance, ids_in_clause([]))
 
+    def sponsorship(self, job_id: str) -> dict[str, Any]:
+        """The sponsorship stance of a Job the ``may_offer_sponsorship`` filter keeps, and why a
+        possible offer is not a firm one (ADR-0367): read with the stances, so a page tags its
+        rows at no cost. Only once :meth:`wait` has said the read finished."""
+        because = self._may_offer_because.get(job_id)
+        if because is None:
+            return {"stance": work_authorization.OFFERS_SPONSORSHIP, "because": []}
+        return {
+            "stance": work_authorization.MAY_OFFER_SPONSORSHIP,
+            "because": list(because),
+        }
+
     def _read(self) -> None:
         ids: dict[str, list[str]] = {s: [] for s in work_authorization.STANCES}
+        may_offer_because: dict[str, tuple[str, ...]] = {}
         read = 0
         try:
             reader = (
                 self._table.search()
                 .where(f"regexp_like(description, '{work_authorization.PREFILTER}')")
-                .select(["id", "title", "location", "description"])
+                .select(["id", "title", "location", "employment_type", "description"])
                 .to_batches(batch_size=READ_BATCH_ROWS)
             )
             for batch in reader:
-                for job_id, title, location, text in zip(
+                for job_id, title, location, employment_type, text in zip(
                     batch.column("id").to_pylist(),
                     batch.column("title").to_pylist(),
                     batch.column("location").to_pylist(),
+                    batch.column("employment_type").to_pylist(),
                     batch.column("description").to_pylist(),
                     strict=True,
                 ):
                     read += 1
-                    for stance in work_authorization.stances(text, title, location):
+                    held = work_authorization.reading(
+                        text,
+                        title=title,
+                        location=location,
+                        employment_type=employment_type,
+                    )
+                    for stance in work_authorization.filtered_stances(held.stances):
                         ids[stance].append(job_id)
+                    if held.may_offer_because:
+                        may_offer_because[job_id] = held.may_offer_because
         except Exception:  # noqa: BLE001 — a failed read is said, and refused per request
             _log.exception(
                 "work authorization stances unread after %d descriptions", read
             )
             ids = {s: [] for s in work_authorization.STANCES}
+            may_offer_because = {}
             self._failed = True
-        # The filter's may_offer_sponsorship keeps every job that at least may offer it: the
-        # hedged and unmatched-scope offers, and the firm ones (ADR-0353).
-        ids[work_authorization.MAY_OFFER_SPONSORSHIP] += ids[
-            work_authorization.OFFERS_SPONSORSHIP
-        ]
         self._clauses = {stance: ids_in_clause(found) for stance, found in ids.items()}
+        self._may_offer_because = may_offer_because
         _log.info(
             "work authorization stances read from %d descriptions: %s",
             read,

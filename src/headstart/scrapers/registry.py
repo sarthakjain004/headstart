@@ -23,6 +23,7 @@ from headstart.scrapers.eightfold import EightfoldScraper
 from headstart.scrapers.freshteam import FreshteamScraper
 from headstart.scrapers.gem import GemScraper
 from headstart.scrapers.google import GoogleScraper
+from headstart.scrapers.gr8people import Gr8PeopleScraper
 from headstart.scrapers.greenhouse import GreenhouseScraper
 from headstart.scrapers.happydance import HappydanceScraper
 from headstart.scrapers.icims import ICIMSScraper
@@ -33,6 +34,7 @@ from headstart.scrapers.join import JoinScraper
 from headstart.scrapers.keka import KekaScraper
 from headstart.scrapers.lever import LeverScraper
 from headstart.scrapers.meta import MetaScraper
+from headstart.scrapers.mynexthire import MyNextHireScraper
 from headstart.scrapers.oracle import OracleScraper
 from headstart.scrapers.peoplestrong import PeopleStrongScraper
 from headstart.scrapers.personio import PersonioScraper
@@ -45,6 +47,7 @@ from headstart.scrapers.ripplehire import RippleHireScraper
 from headstart.scrapers.rippling import RipplingScraper
 from headstart.scrapers.sensehq import SenseHQScraper
 from headstart.scrapers.smartrecruiters import SmartRecruitersScraper
+from headstart.scrapers.spire2grow import Spire2GrowScraper
 from headstart.scrapers.successfactors import SuccessFactorsScraper
 from headstart.scrapers.taleo_be import TaleoBEScraper
 from headstart.scrapers.taleo_enterprise import TaleoEnterpriseScraper
@@ -52,6 +55,7 @@ from headstart.scrapers.teamtailor import TeamtailorScraper
 from headstart.scrapers.tesla import TeslaScraper
 from headstart.scrapers.tiktok import TikTokScraper
 from headstart.scrapers.trakstar import TrakstarScraper
+from headstart.scrapers.turbohire import TurboHireScraper
 from headstart.scrapers.uber import UberScraper
 from headstart.scrapers.workable import WorkableScraper
 from headstart.scrapers.workday import WorkdayScraper
@@ -63,6 +67,7 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
     cls.ats: cls
     for cls in (
         GoogleScraper,
+        Gr8PeopleScraper,
         GreenhouseScraper,
         LeverScraper,
         AshbyScraper,
@@ -72,11 +77,13 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
         WpJobOpeningsScraper,
         WorkableScraper,
         SmartRecruitersScraper,
+        Spire2GrowScraper,
         RecruiteeScraper,
         OracleScraper,
         SenseHQScraper,
         KekaScraper,
         TrakstarScraper,
+        TurboHireScraper,
         RippleHireScraper,
         DarwinboxScraper,
         TeamtailorScraper,
@@ -111,6 +118,7 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
         AppleScraper,
         UberScraper,
         MetaScraper,
+        MyNextHireScraper,
         TikTokScraper,
         GemScraper,
     )

@@ -19,6 +19,11 @@ began counting it on 2026-09-25, so over a longer window it cannot say whether h
 (ADR-0321). A company breakdown has no first row, and it read "OpenAI: 9 opened, 5 closed" over 14
 days with no word that they were 3.4 days'. A counting change is named by short tags, glossed
 once, and a line of a category HeadStart has since retired names the category that took it over.
+
+A picked company's first row, and each company's line under the company breakdown, says when most
+of its opened was found late rather than newly posted (`trends.found_late`, ADR-0369): Deloitte
+US read "509 opened, net +495" over the first week its Avature Board was read whole, while 410 of
+its postings first seen then were posted over 14 days before.
 """
 
 from __future__ import annotations
@@ -29,10 +34,11 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from headstart.mcp_protocol.messages import ToolFailure
-from headstart.space_mcp import company_scope, role_families, scraped_text
+from headstart.space_mcp import company_scope, noun_counts, role_families, scraped_text
 from headstart.space_mcp.space_client import SpaceClient, SpaceRoute
 from headstart.space_mcp.space_tool import SpaceTool
 from headstart.space_mcp.turnover_span import span_sentence
+from headstart.trends import found_late
 from headstart.trends.netting import (
     GROWTH_RESCALED_WHEN,
     METHODOLOGY_WORDS,
@@ -340,6 +346,8 @@ def _line(
     their split."""
     split = _Split.of(move)
     said = [_turnover(move)] if move.get("turnover") else []
+    if late := found_late.clause(move.get("turnover")):
+        said.append(late)
     said.append(
         f"{what} {move['start']:,} → {move['latest']:,} ({_signed(split.change)}"
         f"{_span(move, window_days)})"
@@ -431,7 +439,7 @@ def _rest_contains(
             + ", ".join(changes.number(label) for label in changes.unsized)
             + ")"
         )
-    return held[0] if len(held) == 1 else ", ".join(held[:-1]) + " and " + held[-1]
+    return noun_counts.listed(held)
 
 
 def _turnover_lead(payload: dict[str, Any], window: dict[str, str]) -> list[str]:
@@ -519,6 +527,8 @@ def _total(
         )
     elif turnover := _turnover(move):
         out.append(f"{who}hiring, as postings opened and closed: {turnover}.")
+        if late := found_late.sentence(move.get("turnover")):
+            out.append(late)
     else:
         out.append(f"{who}opened and closed are not counted in this view.")
     if not new:
@@ -598,9 +608,13 @@ def _roles_head(payload: dict[str, Any], category: str, label: str) -> list[str]
     if not total:
         return []
     change = _signed(total["latest"] - total["start"])
+    lines = payload["reading"].get("lines") or []
+    # The Space adds up only the roles counted from the first row's run (ADR-0366); a role
+    # counted for less of the window joined partway, and its stock is no change.
+    joined = [line for line in lines if line["move"]["span_days"] < total["span_days"]]
     # Said from the lines themselves: since ADR-0270 and ADR-0304 a role's line has its counting
     # changes and Boards found sized, which this once denied.
-    moves = [line["move"] for line in payload["reading"].get("lines") or []]
+    moves = [line["move"] for line in lines]
     turnover = (
         "Opened and closed are given per watched role"
         if any(move.get("turnover") for move in moves)
@@ -611,11 +625,19 @@ def _roles_head(payload: dict[str, Any], category: str, label: str) -> list[str]
         if any(move.get("not_hiring_total") for move in moves)
         else "HeadStart sizes no re-counting on them"
     )
+    counted = "counted from the window's start, " if joined else ""
     roles = (
-        f"Watched roles within {label}, added together (not the whole category): listed "
-        f"{total['start']:,} → {total['latest']:,} ({change}). {turnover}, and {sized}, so "
-        "each role's change in openings listed mixes hiring with re-counting."
+        f"Watched roles within {label}, {counted}added together (not the whole category): "
+        f"listed {total['start']:,} → {total['latest']:,} ({change}). {turnover}, and "
+        f"{sized}, so each role's change in openings listed mixes hiring with re-counting."
     )
+    if joined:
+        names = [str(line.get("label")) for line in joined]
+        roles += (
+            f" {noun_counts.listed(names)} {noun_counts.verb(len(names), 'is', 'are')} left "
+            "out of that total: counted "
+            "only from partway through the window, their start is no like-for-like base."
+        )
     return [roles]
 
 
@@ -799,8 +821,9 @@ TOOL = SpaceTool(
         "(and their net), never the change in openings listed: that change also holds "
         "re-counting (Boards found or dropped, duplicates removed, HeadStart's own counting "
         "changes), and the answer says how much of it turnover and sized steps explain and "
-        "how much HeadStart could not size. Report the opened/closed net as hiring; never "
-        "call the change in openings listed hiring. Whole index by default, or one job "
+        "how much HeadStart could not size. Report the opened/closed net as hiring, but where "
+        "the answer says most of a company's opened was found, not newly posted, say that "
+        "instead; never call the change in openings listed hiring. Whole index by default, or one job "
         "category, or up to 10 named companies. A company is a directory company: a key such "
         "as 'greenhouse:stripe', or its exact name (read as the site's Trends picker reads "
         "it). Tell the user which directory company each name was read as, with its key and "
@@ -876,8 +899,8 @@ TOOL = SpaceTool(
     },
     when_to_use=(
         "Use read_trends for how hiring is changing overall, in a category or at named "
-        "companies; report postings opened and closed as hiring; say which directory company "
-        "each name was read as."
+        "companies; report opened and closed as hiring unless found late; say which "
+        "directory company each name was read as."
     ),
     answer=answer,
     max_chars=20_000,

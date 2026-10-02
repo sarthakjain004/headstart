@@ -14,6 +14,7 @@ this module imports ``fx`` and the Search-filter modules the same way everywhere
 
 from __future__ import annotations
 
+import difflib
 import time
 from bisect import bisect_left
 from collections import OrderedDict
@@ -25,9 +26,10 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from headstart import log
+from headstart.boards.board_identity import board_of
 from headstart.boards.board_operator import OPERATORS
 from headstart.embedding_conventions import encode_query
-from headstart.jobs import work_authorization
+from headstart.jobs import stated_end_date, work_authorization
 from headstart.search_filters import (
     confident_non_tech_filter,
     country_filter,
@@ -184,6 +186,15 @@ JOB_DETAIL_COLUMNS = (
 
 #: The most Jobs one read by id may name (ADR-0277).
 MAX_JOB_IDS = 5
+
+#: How alike a served id's posting part must be to a missing id's, as `difflib` rates them, to be
+#: offered in its place (ADR-0367): one character added to a 36-character UUID rates 0.986, the
+#: typo eval t35 made; two unrelated UUIDs rate about 0.5.
+CLOSEST_ID_CUTOFF = 0.9
+
+#: The most ids of one Board a missing id is compared with: Amazon's Board, the largest, held
+#: 9,651 rows on 2026-09-29.
+CLOSEST_ID_SCAN = 20_000
 
 #: The longest a Job id may be in a read by id or in ``like=``. The longest served id was 180
 #: characters on 2026-09-29 (a Workday slug); the bound keeps a crafted id out of a where-clause.
@@ -1039,13 +1050,23 @@ def _job_row(row: Mapping[str, Any]) -> dict[str, Any]:
     result["description_chars"] = len(description)
     result["description_cut"] = len(description) > JOB_DESCRIPTION_LIMIT
     # Read from the whole description, not the cut one: a visa sentence often closes it.
-    held = work_authorization.stances(
-        description, row.get("title"), row.get("location")
+    held = work_authorization.reading(
+        description,
+        title=row.get("title"),
+        location=row.get("location"),
+        employment_type=row.get("employment_type"),
     )
     result["work_authorization"] = {
-        "stances": [s for s in work_authorization.STANCES if s in held],
+        "stances": [s for s in work_authorization.STANCES if s in held.stances],
+        # Why a possible offer is not a firm one (ADR-0367).
+        "may_offer_because": list(held.may_offer_because),
         "mentions": work_authorization.mentions(description),
     }
+    # The latest day the whole description says the posting or its applications end (ADR-0367).
+    end = stated_end_date.latest(description)
+    result["stated_end_date"] = (
+        {"day": end.day.isoformat(), "said": end.said} if end else None
+    )
     return result
 
 
@@ -1831,6 +1852,8 @@ class JobSearch:
             ordering.append({"column_name": "id", "ascending": True})
             search = search.order_by(ordering)
 
+        # The page as served, when a branch builds it itself; else each of `rows` is built.
+        served: list[dict[str, Any]] | None = None
         if sort and ranked:
             # Sorting a *ranked* result set, issue #275. The comment above is the constraint:
             # an `order_by` on the vector branch does not tie-break similarity, it replaces
@@ -1878,7 +1901,7 @@ class JobSearch:
             spread = per_company_cap.spread(
                 [_result_row(r, ranked) for r in window], per_company
             )
-            rows = spread[offset : offset + k]
+            served = spread[offset : offset + k]
             path = "ranked-spread"
         elif sort_currency:
             rows = self._salary_browse(table, where, sort_currency, k, offset)
@@ -1897,8 +1920,12 @@ class JobSearch:
             path = "ranked" if ranked else "browse"
 
         result = (
-            rows if path == "ranked-spread" else [_result_row(r, ranked) for r in rows]
+            served if served is not None else [_result_row(r, ranked) for r in rows]
         )
+        if filters.work_authorization == work_authorization.MAY_OFFER_SPONSORSHIP:
+            # Each row says which kind it is, so a reader need not read every job (ADR-0367).
+            for row in result:
+                row["sponsorship"] = self.work_authorization.sponsorship(row["id"])
         elapsed_ms = (time.monotonic() - started) * 1000
         if elapsed_ms > SLOW_SEARCH_MS:
             # Shapes only: the query text is the user's and is never logged (ADR-0032). The path
@@ -2024,6 +2051,33 @@ class JobSearch:
             .to_list()
         )
         return {row["id"]: _job_row(row) for row in rows}
+
+    def closest_ids(self, missing: Sequence[str]) -> dict[str, dict[str, Any]]:
+        """For each of ``missing``, the served Job on the Board its id names whose id is most
+        like it, with its title, where one rates at least :data:`CLOSEST_ID_CUTOFF` (ADR-0367):
+        a mistyped id's own posting. Only the posting part is compared, since every id on the
+        Board shares the rest."""
+        found: dict[str, dict[str, Any]] = {}
+        for job_id in missing:
+            board = board_of(job_id)
+            clause = board_clause([board], exclude=False)
+            if not clause or not job_id.startswith(board + ":"):
+                continue
+            rows = (
+                self._table.search()
+                .where(clause)
+                .select(["id", "title"])
+                .limit(CLOSEST_ID_SCAN)
+                .to_list()
+            )
+            by_native = {r["id"][len(board) + 1 :]: r for r in rows}
+            near = difflib.get_close_matches(
+                job_id[len(board) + 1 :], by_native, n=1, cutoff=CLOSEST_ID_CUTOFF
+            )
+            if near:
+                row = by_native[near[0]]
+                found[job_id] = {"id": row["id"], "title": row.get("title")}
+        return found
 
     def _stored_vector(self, job_id: str) -> Any:
         """``job_id``'s own stored vector, which ``like=`` ranks by; ``ValueError`` when the

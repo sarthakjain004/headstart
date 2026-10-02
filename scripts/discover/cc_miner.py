@@ -94,6 +94,11 @@ ATS_PATTERNS = {
             rf"myjobs\.adp\.com/(?!public/)({ADP_RECRUITING_SLUG})(?=[/?#]|$)"
         ],
     },
+    "gr8people": {
+        "targets": ["gr8people.com", "workgr8.com"],
+        "kind": "host",
+        "patterns": [r"https?://([a-z0-9-]+\.(?:gr8people|workgr8)\.com)(?:[/?#]|$)"],
+    },
     "greenhouse": {
         "targets": [
             "boards.greenhouse.io",
@@ -286,6 +291,15 @@ ATS_PATTERNS = {
         "kind": "label",
         "patterns": [r"([a-z0-9][a-z0-9-]*)\.keka\.com"],
     },
+    "mynexthire": {
+        # `{slug}.careers.mynexthire.io` is the same tenant's newer front (wayback_feeder's
+        # `_CANONICAL_HOST`); the negative lookahead refuses `{slug}.prod.us1.mynexthire.io`.
+        "targets": ["mynexthire.com", "careers.mynexthire.io"],
+        "kind": "label",
+        "patterns": [
+            r"(?://|%2f)([a-z0-9][a-z0-9-]*)\.(?:careers\.mynexthire\.io|mynexthire\.com)(?![a-z0-9.-])"
+        ],
+    },
     "recruitee": {
         "targets": ["recruitee.com"],
         "kind": "label",
@@ -310,6 +324,14 @@ ATS_PATTERNS = {
         "targets": ["hire.trakstar.com"],
         "kind": "label",
         "patterns": [r"([a-z0-9][a-z0-9-]*)\.hire\.trakstar\.com"],
+    },
+    "turbohire": {
+        # Every career page is `{label}.turbohire.co`, the label `turbohire.py` resolves to its
+        # org. The zone is a wildcard that also carries the vendor's own hosts (`www`, `app`,
+        # `api`, `meet`), which the prober reads as no organization.
+        "targets": ["turbohire.co"],
+        "kind": "label",
+        "patterns": [r"([a-z0-9][a-z0-9-]*)\.turbohire\.co(?![a-z])"],
     },
     "zoho": {
         "targets": [

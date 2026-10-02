@@ -70,6 +70,21 @@ SIGNAL = "subset-reqs"
 #: ledger rows are compared, so a twin section the linked host has no row for
 #: (`percepta.taleo.net/careersection/10000`) is still scraped from the twin.
 TWIN_HOSTS = {
+    # Seven pairs a DNS-sieve landing of 2026-09-29 exposed (ADR-0307's amendment of 2026-09-30 has their
+    # evidence), each read through the scraper's own listing walk: the
+    # two sections list the same ids, and the same `contestNo` and title on every shared id (46 of 46, 8 of 8,
+    # 100 of 100, 6 of 6, 104 of 104, 2 of 2, 697 of 697). The linked host is `vontier` (the Phenom front
+    # careers.vontier.com applies through vontier.taleo.net/careersection/external/jobapply.ftl), `mlgw` (mlgw.com
+    # links mlgw.taleo.net/careersection/ext), `ttec` (ADR-0307) and `tgh` (tgh.org/careers links
+    # tgh.taleo.net/careersection/ex); for `westpac`, `golder` and `atkcareers` no careers page was read linking
+    # either host, so the lower name stands.
+    "aa246.taleo.net": "vontier.taleo.net",
+    "aa333.taleo.net": "mlgw.taleo.net",
+    "kearney.taleo.net": "atkcareers.taleo.net",
+    "tas-tgh.taleo.net": "tgh.taleo.net",
+    "teletech.taleo.net": "ttec.taleo.net",
+    "westpacnz.taleo.net": "westpac.taleo.net",
+    "wsp.taleo.net": "golder.taleo.net",
     "careerglobalhc.taleo.net": "hyundaicapital.taleo.net",
     "daimler.taleo.net": "tas-daimler.taleo.net",
     "elsewedyelectric.taleo.net": "aa010.taleo.net",

@@ -156,6 +156,13 @@ PATTERNS: dict[str, tuple[str, list[str]]] = {
             r"(?:boards|job-boards)(?:\.eu)?\.greenhouse\.io/([a-zA-Z0-9_-]+)",
         ],
     ),
+    "gr8people": (
+        "ats",
+        [
+            HOST + r"([a-z0-9-]+\.(?:gr8people|workgr8)\.com)",
+            r"assets\.gr8people\.com/builds/app-career-site",
+        ],
+    ),
     "lever": (
         "ats",
         [
@@ -225,6 +232,10 @@ PATTERNS: dict[str, tuple[str, list[str]]] = {
             r"(?:careers|jobs)\.smartrecruiters\.com/([a-zA-Z0-9_-]+)",
         ],
     ),
+    # A Spire2Grow career site is a Flutter app on the customer's own host that names no vendor
+    # host in its HTML; its shell's app title is the tell, on 3 of 3 tenant hosts (2026-09-30).
+    # Captures nothing: the Board is the page's own host (HOST_SLUG_ATS).
+    "spire2grow": ("ats", [r'apple-mobile-web-app-title"\s+content="iexchange"']),
     "recruitee": ("ats", [SUB + r"recruitee\.com", SUB + r"ainterviews\.com"]),
     "oracle": (
         "ats",
@@ -235,6 +246,9 @@ PATTERNS: dict[str, tuple[str, list[str]]] = {
     ),
     "sensehq": ("ats", [SUB + r"sensehq\.com"]),
     "keka": ("ats", [SUB + r"keka\.com"]),
+    # A careers page embeds `{label}.mynexthire.com/employer/jobs/careers` in an iframe
+    # (careers.swiggy.com); `{label}.careers.mynexthire.io` is the same tenant's newer front.
+    "mynexthire": ("ats", [SUB + r"mynexthire\.com", SUB + r"careers\.mynexthire\.io"]),
     "trakstar": ("ats", [SUB + r"hire\.trakstar\.com", SUB + r"recruiterbox\.com"]),
     "ripplehire": ("ats", [SUB + r"ripplehire\.com"]),
     "darwinbox": ("ats", [SUB + r"darwinbox\.(?:in|com|co|us|eu|sa|id)"]),
@@ -614,12 +628,14 @@ PROVIDER_DOMAINS = {
     "workable": {"workable.com"},
     "darwinbox": {"darwinbox.in", "darwinbox.com"},
     "keka": {"keka.com"},
+    "mynexthire": {"mynexthire.com", "mynexthire.io", "smaclify.com"},
     "qandle": {"qandle.com"},
     "ripplehire": {"ripplehire.com"},
     "turbohire": {"turbohire.co"},
     "smartrecruiters": {"smartrecruiters.com"},
     "teamtailor": {"teamtailor.com"},
     "freshteam": {"freshteam.com", "freshworks.com"},
+    "gr8people": {"gr8people.com", "workgr8.com"},
     "trakstar": {"trakstar.com"},
     "sensehq": {"sensehq.com"},
     "rippling": {"rippling.com"},
@@ -664,6 +680,8 @@ CNAME_ZONES = {
     "zwayam.com": "zwayam",
     "openings.co": "zwayam",
     "greenhouse.io": "greenhouse",
+    "gr8people.com": "gr8people",
+    "workgr8.com": "gr8people",
     "lever.co": "lever",
     "ashbyhq.com": "ashby",
     "zohorecruit.com": "zoho",
@@ -865,8 +883,9 @@ SLUG_PROBES = {
 QUERY_HOST_ATS = frozenset({"successfactors", "zwayam", "phenom", "icims"})
 # zoho's slug is a full host as well, but a matched `*.zohorecruit.*` host is already correct —
 # only the vanity-domain fingerprint (which captures nothing) needs the evidence host instead.
-# wp_job_openings' fingerprint never captures a host: its Board is always the evidence host.
-HOST_SLUG_ATS = frozenset({"zoho", "wp_job_openings"})
+# wp_job_openings' and spire2grow's fingerprints never capture a host: the Board is always the
+# evidence host.
+HOST_SLUG_ATS = frozenset({"zoho", "wp_job_openings", "spire2grow", "gr8people"})
 # ATSes whose slug is a full host inside the provider's own zone (oracle.py: "the slug is the
 # careers host"; eightfold and personio the same), so the CNAME target *is* the right answer.
 PROVIDER_HOST_ATS = frozenset({"oracle", "eightfold", "personio"})
@@ -900,7 +919,7 @@ CNAME_LABEL_ATS = frozenset(
 
 # Bump when a probe gains a materially new signal.  Resume skips only a row from this exact
 # channel set, and never suppresses an unreachable result.
-CHANNELS = "apply-url+cname-chain+http+robots+sitemap+jsbundle+slugprobe:v5"
+CHANNELS = "apply-url+cname-chain+http+robots+sitemap+jsbundle+slugprobe:v6"
 if _DNS is None:
     CHANNELS += ":no-dns"
 CHANNELS += ":psl-v1"
@@ -1270,6 +1289,12 @@ def normalise_tenant(ats: str, tenant: str, evidence: str) -> str:
     """
     if not evidence:
         return tenant
+    if ats == "gr8people":
+        if " CNAME " in evidence:
+            return evidence.split(" CNAME ")[0].lower()
+        if tenant.lower().startswith("assets.") or "." not in tenant:
+            return (urlsplit(evidence).hostname or "").lower()
+        return tenant.lower()
     if " API " in evidence:
         return tenant
     source_host = evidence.split(" CNAME ")[0].lower() if " CNAME " in evidence else ""
@@ -1312,6 +1337,10 @@ def normalise_tenant(ats: str, tenant: str, evidence: str) -> str:
         return tenant if tenant.startswith("http") else ""
     if ats == "pyjamahr":
         return tenant if "." not in tenant and not tenant.startswith("http") else ""
+    if ats == "turbohire":
+        # The Board is the lower-case career-page label (ADR-0363): hostnames are
+        # case-insensitive, and the ledger holds every label lower-cased.
+        return tenant.lower()
     if ats == "teamtailor" and tenant in TEAMTAILOR_INFRA:
         return ""
     return tenant

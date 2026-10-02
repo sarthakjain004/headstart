@@ -5,7 +5,7 @@ Reads the candidate pool (a dir of {ats}.csv) and classifies each board into one
 so a transient blip never gets mistaken for a dead board:
 
   LIVE     -> 200 with a parseable job list
-  DEAD     -> definitive: 404/410, or DNS doesn't resolve (curl code 6)
+  DEAD     -> definitive: 404/410, or DNS doesn't resolve (curl code 6 *and* a public resolver agrees)
   UNKNOWN  -> couldn't tell: timeout, reset, 5xx, 429, parse-fail  -> re-probed next pass
 
 Verdicts land in the liveness ledger (ADR-0012), one CSV per ATS at
@@ -112,6 +112,12 @@ from headstart.scrapers.lever import (
 from headstart.scrapers.lever import (
     GLOBAL_API_HOST as _LEVER_GLOBAL_API_HOST,
 )
+from headstart.scrapers.mynexthire import (  # the request and the dead rule, single source
+    LISTING_BODY as _MYNEXTHIRE_LISTING_BODY,
+)
+from headstart.scrapers.mynexthire import (
+    departed as _mynexthire_departed,
+)
 from headstart.scrapers.oracle import (  # the pod-host spelling, single source
     is_pod_host,
 )
@@ -174,7 +180,7 @@ except ImportError:
 
 UA = "HeadStart-liveness/0.1 (careers-board liveness check)"
 TIMEOUT = 12  # reassigned per pass by the runner
-_DNS_ERR = 6  # curl CURLE_COULDNT_RESOLVE_HOST -> host doesn't exist -> DEAD
+_DNS_ERR = 6  # curl CURLE_COULDNT_RESOLVE_HOST -> DEAD only once a public resolver agrees (_is_dns)
 # One attempt per probe: the multi-pass retry below IS the retry mechanism, so http.fetch's own
 # 3-attempt backoff would just tie a worker up in sleep() instead of probing the next board. A
 # transient failure becomes UNKNOWN here and gets a more patient re-probe on the next pass.
@@ -1148,8 +1154,28 @@ _TALEO_JOB = re.compile(r"viewRequisition[^\"\s>]*\brid=(\d+)", re.IGNORECASE)
 _TALEO_GONE = "attempted to reach a url that no longer exists"
 
 
+#: The host curl names in its code-6 message: "…curl: (6) Could not resolve host: danaher.taleo.net. See …".
+_UNRESOLVED_HOST = re.compile(r"Could not resolve host: (\S+)")
+
+
 def _is_dns(exc):
-    return getattr(exc, "code", None) == _DNS_ERR
+    """True when `exc` is curl's code 6 **and** a public resolver agrees the host has no address.
+
+    Code 6 alone is the machine's own resolver failing to answer, which is not the same as the host
+    not existing: a router's resolver that stalls under the prober's workers reads every probe as
+    "could not resolve", and a verdict of DEAD is not re-probed for 90 days, so real tenants would
+    leave the scrape list silently (four agents hit this on 2026-09-29/30). Only a public resolver's
+    "no such host" settles it; a public resolver that resolves the host, or that does not answer,
+    leaves the probe unsettled, which is UNKNOWN and re-probed on the next pass. A message that
+    names no host cannot be confirmed either.
+    """
+    if getattr(exc, "code", None) != _DNS_ERR:
+        return False
+    named = _UNRESOLVED_HOST.search(str(exc))
+    if named is None:
+        _note("dns-unconfirmed")
+        return False
+    return _public_resolver_has_no_a_record(named.group(1).rstrip("."))
 
 
 def _get(url, headers=None):
@@ -1724,6 +1750,50 @@ def p_breezy(t, u):
     return LIVE, len(rows)
 
 
+def p_mynexthire(t, u):
+    """One POST of the Board's listing, the scraper's own request, whose status and body settle
+    it (``docs/mynexthire/2026-09-30_reqlist-measurement.md``).
+
+    A ``reqDetailsBOList`` is a live Board, its length the count. A tenant with no Board is told
+    by the refusal's ``errorMessage`` (`mynexthire.departed`, which the scraper reads too): an
+    unknown label answers 417 "Invalid company short name" (3 of 3) and a lapsed customer 402
+    "… subscription … has expired." (2 of 2). A 417 that says anything else is a refused request,
+    not a verdict. ``*.mynexthire.com`` is a wildcard record, so a DNS failure is the resolver:
+    UNKNOWN. No rate limit was found (up to 134 req/s across 7 tenants, zero refusals), so no
+    gate is seeded.
+    """
+    scraper = _scraper_for_row("mynexthire", t, u)
+    try:
+        r = _fetch(
+            "POST",
+            scraper.url(),
+            json=_MYNEXTHIRE_LISTING_BODY,
+            headers={"User-Agent": UA, "Accept": "application/json"},
+        )
+    except http.RequestsError as e:
+        _note("dns" if _is_dns(e) else _net_reason(e))
+        return UNKNOWN, None
+    if r is None:  # breaker open -> transient
+        _note("breaker-open")
+        return UNKNOWN, None
+    try:
+        body = json.loads(r.content)
+    except ValueError:
+        body = None
+    if _mynexthire_departed(r.status_code, body):
+        return DEAD, None
+    if r.status_code != 200:
+        _note(f"http-{r.status_code}")
+        return UNKNOWN, None
+    # A Board with nothing open states the list as null (meesho, whose careers page renders
+    # "Current Openings [0]"); only a body without the key is unreadable.
+    rows = body.get("reqDetailsBOList", False) if isinstance(body, dict) else False
+    if not isinstance(rows, list | None):
+        _note("body-unparseable")
+        return UNKNOWN, None
+    return LIVE, len(rows or [])
+
+
 def p_clearcompany(t, u):
     # ClearCompany's public Board is HRM Direct, and its whole-account feed `xml.php` settles the
     # verdict in one request (measured 2026-09-23, docs/clearcompany/): 404 for an unknown or
@@ -1906,8 +1976,10 @@ def p_darwinbox(t, u):
                 attempts=_ATTEMPTS,
             )
         except http.RequestsError as e:
-            if _is_dns(e):
-                no_tenant += 1
+            # `*.darwinbox.in` and `*.darwinbox.com` both answer every label (1.1.1.1 and 8.8.8.8
+            # resolved an invented one on each, 2026-09-30), so a failed lookup is the local
+            # resolver, never an absent tenant: only the body's own "no tenant" text proves that.
+            _note(_net_reason(e))
             continue
         if r.status_code == 200:
             try:
@@ -1985,6 +2057,84 @@ def p_smartrecruiters(t, u):
     if served is None:
         return UNKNOWN, None  # couldn't tell -> re-probe rather than guess
     return (LIVE, 0) if served else (DEAD, None)
+
+
+def p_gr8people(t, u):
+    # The API retains Ardene's 22 postings although all public Board/job pages 404
+    # (2026-10-02). Establish the public Board before trusting its API count.
+    from headstart.scrapers.gr8people import (
+        search_body,
+        search_results,
+        uses_google_search,
+    )
+
+    scraper = _scraper_for_row("gr8people", t, u)
+    status, body = _get(scraper.board_page())
+    if status in (404, 410):
+        return DEAD, None
+    if status != 200 or b"assets.gr8people.com" not in body:
+        _note("body-unparseable" if status == 200 else "board-unreachable")
+        return UNKNOWN, None
+    try:
+        response = _fetch(
+            "POST",
+            scraper.url(),
+            json=search_body(first=1, google=uses_google_search(body.decode("utf-8"))),
+            headers={"User-Agent": UA},
+        )
+        if response is None or response.status_code != 200:
+            _note("api-unreachable")
+            return UNKNOWN, None
+        result = search_results(response.json())
+    except (ValueError, http.RequestsError):
+        _note("body-unparseable")
+        return UNKNOWN, None
+    return LIVE, result["totalCount"]
+
+
+def p_spire2grow(t, u):
+    # The Board is a career-site host. Its workspace lookup is the dead-versus-live question: an
+    # unknown host answers 404 "No Workspace Found for the domain name" (24 of 24 non-tenant hosts
+    # measured 2026-09-30, the vendor's UAT hosts among them), a tenant answers 200 with its
+    # workspace id. The count then needs that id as a header; an unknown workspace would read 0
+    # there, so a zero is trusted only after the lookup found one (`godigit-careers` is live and
+    # empty). `_count`, not the scraper's `_search`: the search is metered at about two calls a
+    # minute per server (spire2grow.py) and the count is not (600 calls at 167 req/s, zero 429s).
+    # io.spire2grow.com is one fixed host, so a DNS failure is the resolver's, never a verdict.
+    scraper = _scraper_for_row("spire2grow", t, u)
+    status, body = _get(scraper.url())
+    if status == "dns":
+        return _unknown_dns_on_a_shared_host()
+    if status == 404:
+        if b"No Workspace Found" in body:
+            return DEAD, None
+        _note("body-unparseable")
+        return UNKNOWN, None
+    if status != 200:
+        # `_get` already notes every status but 404 and 410; a 410 was never measured here.
+        if status == 410:
+            _note("http-410")
+        return UNKNOWN, None
+    if not body.strip():
+        _note("body-unparseable")
+        return UNKNOWN, None
+    workspace = body.decode("utf-8", "replace").strip()
+    status, body = _get(
+        "https://io.spire2grow.com/ies/v1/p/requisition/_count",
+        headers={"workspaceid": workspace, "language": "en"},
+    )
+    if status != 200:
+        if status in (404, 410):  # `_get` notes every other status
+            _note(f"http-{status}")
+        return UNKNOWN, None
+    try:
+        n = json.loads(body).get("totalCount")
+    except Exception:  # noqa: BLE001
+        n = None
+    if not isinstance(n, int):
+        _note("body-unparseable")
+        return UNKNOWN, None
+    return LIVE, n
 
 
 def _teamtailor_ids(body):
@@ -2349,7 +2499,8 @@ def _public_resolver_has_no_a_record(hostname):
     """True when a public resolver — the first of 1.1.1.1 and 8.8.8.8 that answers at all — says
     `hostname` has no A record: an unknown Jibe or Avature label answers NOERROR with an empty
     answer, not NXDOMAIN, on both alike. Neither answering is not an answer: False, so the Board stays
-    UNKNOWN."""
+    UNKNOWN. `_is_dns` asks it of every host curl could not resolve, so it is also what keeps a
+    failing local resolver from writing a live tenant dead."""
     import dns.exception
     import dns.resolver
 
@@ -2359,8 +2510,17 @@ def _public_resolver_has_no_a_record(hostname):
         try:
             resolver.resolve(hostname, "A")
             return False
-        except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer):
+        except dns.resolver.NXDOMAIN:
             return True
+        except dns.resolver.NoAnswer:
+            # No IPv4 address does not rule out an IPv6-only host.
+            try:
+                resolver.resolve(hostname, "AAAA")
+                return False
+            except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer):
+                return True
+            except (dns.resolver.NoNameservers, dns.exception.Timeout):
+                continue
         except (dns.resolver.NoNameservers, dns.exception.Timeout):
             continue
     _note("dns-unconfirmed")
@@ -2879,6 +3039,68 @@ def p_trakstar(t, u):
     return LIVE, n
 
 
+_TURBOHIRE_API = "https://api.turbohire.co"
+
+
+def p_turbohire(t, u):
+    # The scraper's own three calls, cheapest settling first. Every `*.turbohire.co` label serves
+    # the career-page SPA with a 200, so the page cannot tell dead from empty; the organization
+    # lookup can: `publicorganizations?accountName={label}` answers 404 with an empty body for a
+    # label no organization holds (39 of 104 pool labels, 2026-09-30, and an invented one) and
+    # 200 with the org for all 65 others, whose career pages all name the org in `<title>` where
+    # the dead ones render the vendor's generic "TurboHire". A live org's listing states `Total`,
+    # which equalled the rows served on 65 of 65. No rate limit: 480 listing POSTs at up to 64 in
+    # flight across Boards ran at 45.7 req/s with zero non-200s, so no gate is seeded.
+    board = _scraper_for_row("turbohire", t, u)
+    headers = {
+        "User-Agent": UA,
+        "Accept": "application/json",
+        "Referer": board.career_page(),
+    }
+    status, body = _get(f"{_TURBOHIRE_API}/api/token/noauth", headers)
+    if status == "dns":
+        return _unknown_dns_on_a_shared_host()
+    if status in (404, 410):  # `_get` leaves these un-noted: they settle other probes
+        _note(f"http-{status}")
+    if status != 200:
+        return UNKNOWN, None
+    try:
+        headers["Authorization"] = f"Bearer {json.loads(body)['access_token']}"
+    except (ValueError, KeyError, TypeError):
+        _note("body-unparseable")
+        return UNKNOWN, None
+    status, body = _get(board.url(), headers)
+    if status == 404:
+        return DEAD, None
+    if status == "dns":
+        return _unknown_dns_on_a_shared_host()
+    if status == 410:
+        _note("http-410")
+    if status != 200:
+        return UNKNOWN, None
+    try:
+        org_id = json.loads(body)["OrgID"]
+    except (ValueError, KeyError, TypeError):
+        _note("body-unparseable")
+        return UNKNOWN, None
+    status, listing = _post(
+        f"{_TURBOHIRE_API}/api/careerpagev2/filteredjobs?orgId={org_id}&pageType=0",
+        {},
+        headers,
+    )
+    if status == "dns":
+        return _unknown_dns_on_a_shared_host()
+    # `_post` leaves these un-noted, because they settle `p_workday`.
+    if status in (404, 410, 422):
+        _note(f"http-{status}")
+    if status != 200:
+        return UNKNOWN, None
+    if not isinstance(listing, dict) or "Result" not in listing:
+        _note("body-unparseable")
+        return UNKNOWN, None
+    return LIVE, len(listing["Result"] or [])
+
+
 def p_personio(t, u):
     # The scraper's own feed, on the host its `slug_from` reads. 634 rows in this ledger carry a
     # job deep link with tracking params in `url` (cc_miner stored the raw capture), and
@@ -3307,12 +3529,15 @@ PROBES = {
     "workday": p_workday,
     "wp_job_openings": p_wp_job_openings,
     "keka": p_keka,
+    "mynexthire": p_mynexthire,
     "ripplehire": p_ripplehire,
     "darwinbox": p_darwinbox,
     "smartrecruiters": p_smartrecruiters,
+    "spire2grow": p_spire2grow,
     "teamtailor": p_teamtailor,
     "rippling": p_rippling,
     "trakstar": p_trakstar,
+    "turbohire": p_turbohire,
     "peoplestrong": p_peoplestrong,
     "personio": p_personio,
     "join": p_join,
@@ -3332,6 +3557,7 @@ PROBES = {
     "taleo_be": p_taleo_be,
     "taleo_enterprise": p_taleo_enterprise,
     "gem": p_gem,
+    "gr8people": p_gr8people,
     "happydance": p_happydance,
 }
 

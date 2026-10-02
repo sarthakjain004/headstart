@@ -22,7 +22,7 @@ from headstart.mcp_protocol.messages import ToolFailure
 from headstart.serving import job_search
 from headstart.space_mcp import server
 from headstart.space_mcp import space_client as sc
-from headstart.space_mcp.tools import company_profile, get_job, read_trends
+from headstart.space_mcp.tools import company_profile, get_job, read_trends, search_jobs
 
 #: A day after the fixture history's last tick (`test_space_app._T3`, 2026-08-13), so a window
 #: counted back from "now" means the same ticks whatever day the suite runs.
@@ -40,8 +40,9 @@ def companies_app(trends_app, monkeypatch, tmp_path):  # noqa: F811 — the impo
     monkeypatch.setattr(read_trends, "_now", lambda: _FIXTURE_NOW)
     monkeypatch.setattr(company_profile, "_now", lambda: _FIXTURE_NOW)
     history = space_tests._company_history(trends_app, monkeypatch, tmp_path)
-    company_boards, hot = trends_app._derive_from_history(history)
+    company_boards, first_seen, hot = trends_app._derive_from_history(history)
     monkeypatch.setattr(trends_app, "_COMPANY_BOARDS", company_boards)
+    monkeypatch.setattr(trends_app, "_FIRST_SEEN", first_seen)
     monkeypatch.setattr(trends_app, "_HOT", hot)
     return trends_app
 
@@ -423,6 +424,10 @@ def test_get_job_restates_the_spaces_own_bounds():
     assert get_job.SPACE_DESCRIPTION_LIMIT == job_search.JOB_DESCRIPTION_LIMIT
 
 
+def test_search_jobs_restates_the_spaces_places_value():
+    assert search_jobs.FACET_PLACES == job_search.FACET_PLACES
+
+
 def test_get_job_reads_a_posting_and_names_the_missing_at_the_app(
     companies_app, monkeypatch
 ):
@@ -494,7 +499,7 @@ def test_a_search_whose_company_matched_nothing_offers_the_directory_companies(
     text = server.call(_client(companies_app), "search_jobs", {"company": "Hp"})
     assert 'no company name contains "Hp"' in text
     assert (
-        '"Hpe" — key workday:hpe/a, workday, 2 Board(s), 13 openings, prefix match'
+        '"Hpe" — key workday:hpe/a, workday, 2 Boards, 13 openings, prefix match'
         in text
     )
 
@@ -543,7 +548,9 @@ def test_requirements_reach_the_app_as_a_role_and_its_filters(companies_app, par
         "postings, of 1 "
     )
     assert "as a share of the 1 sampled postings with a description" in text
-    assert "Remote: 2 of 2 (100%)." in text
+    assert "Remote: 2 of 2." in text
+    # Two postings are anecdotes: counts, not shares (ADR-0367).
+    assert "Only 2 distinct postings, under 30" in text
 
 
 def test_a_requirements_category_without_role_assignments_is_the_deployments_state(

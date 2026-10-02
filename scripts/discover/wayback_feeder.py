@@ -70,6 +70,10 @@ _CANONICAL_HOST = {
     # and recruiterbox itself. The scraper never learned the new name either — `trakstar.py:104`
     # still carries `_FEED_NS = {"job": "https://recruiterbox.com/rss/job/"}`.
     "recruiterbox.com": "hire.trakstar.com",
+    # MyNextHire's newer career front `{slug}.careers.mynexthire.io` fronts the same tenant as
+    # `{slug}.mynexthire.com`, whose `/employer/careers/reqlist/get` the scraper reads: azentio
+    # and conseroglobal, both seen on the front, list there (2026-09-30).
+    "careers.mynexthire.io": "mynexthire.com",
 }
 # `en`, `en-US`, `pt-BR` — a Workday board archived under a locale prefix.
 _LOCALE = re.compile(r"[a-z]{2}(-[A-Za-z]{2})?")
@@ -324,6 +328,7 @@ ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
     # (`experiment/ats-scraper-candidates/artifacts/parquet/gem.parquet`) and all 496 rows of the
     # upstream seed list resolve to `jobs.gem.com` — no counter-example found.
     "gem": _with_style("path", "jobs.gem.com"),
+    "gr8people": _with_style("host", "gr8people.com", "workgr8.com"),
     # `*.us.greenhouse.io` resolves but 301/302s to the unprefixed host and holds no ledger rows
     # of its own — an alias, so sweeping it would only re-find what `boards` already has. The EU
     # pods are a real split: 824 rows, 497 live.
@@ -363,6 +368,7 @@ ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
     "lever": _with_style(
         "path", "jobs.lever.co", "jobs.eu.lever.co"
     ),  # EU: 154 rows, 92 live
+    "mynexthire": _with_style("sub", "mynexthire.com", "careers.mynexthire.io"),
     # `host` style: `oracle.py` builds `https://{slug}/hcmRestApi/...`, so the slug IS the whole
     # board host (`airborneo-iacatj.fa.ocs.oraclecloud.com`), as for iCIMS and Eightfold.
     #
@@ -441,6 +447,8 @@ ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
     # `hire.trakstar.com`'s 20 — the larger half of this provider's archive. Alias, so
     # `_CANONICAL_HOST` rewrites it and the two spellings collapse.
     "trakstar": _with_style("sub", "hire.trakstar.com", "recruiterbox.com"),
+    # One host: every career page is `{label}.turbohire.co`, the label `turbohire.py` keys on.
+    "turbohire": _with_style("sub", "turbohire.co"),
     # Two shapes at once: 15,238 ledger rows are `apply.workable.com/{slug}`, 1,623 are
     # `{slug}.workable.com`. Sweeping only the first leaves those 1,623 unreachable. The `sub`
     # half has a dense apex that sorts ahead of the slugs in urlkey order, so its page 1 is all
@@ -477,7 +485,7 @@ ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
 #   greythr, qandle, beehive, taleo, HirePro, iSmartRecruit, Recruit CRM, Ceipal — verified dead
 #             ends (CLAUDE.md's build list); the retired PowerShell feeder still swept
 #             qandle and beehive.
-# An ATS with no scraper yet (turbohire, jobsoid, …) can still be swept ad hoc:
+# An ATS with no scraper yet (jobsoid, …) can still be swept ad hoc:
 # `--domain HOST --style sub` bypasses this table.
 
 

@@ -80,7 +80,7 @@ from headstart.serving import (
 from headstart.space_mcp import server as space_mcp_server
 from headstart.space_mcp import space_client
 from headstart.space_mcp.tools import search_jobs as space_mcp_search_jobs
-from headstart.trends import hot_ranking, line_reading, trend_history
+from headstart.trends import found_late, hot_ranking, line_reading, trend_history
 
 DATASET = os.environ.get("HF_DATASET", "imPoseidon/headstart-index")
 _STATE = Path("/app/state")
@@ -219,9 +219,10 @@ _ANSWERS_VERSION = f"{time.time_ns():x}"
 
 def _first_seen_since(stamp: str | None) -> list[tuple[str, str, str | None]] | None:
     """The served postings first seen after ``stamp``, as ``(id, first_seen, posted_at)``, which
-    the Hot ranking dates its rows' jobs Opened by (ADR-0351); None with no stamp or no
-    `first_seen` column, or where the read fails, so the rows say their postings went unread
-    rather than the tab going dark. About 92,000 rows since 2026-09-25, three short columns."""
+    the Hot ranking and `/trends`' company lines date their jobs Opened by (ADR-0351, ADR-0369);
+    None with no stamp or no `first_seen` column, or where the read fails, so the rows say their
+    postings went unread rather than the tab going dark. 86,570 rows since turnover began
+    (2026-09-25) on 2026-09-30, three short columns; at most the whole served table."""
     if not stamp or not _searcher.capabilities.has_first_seen:
         return None
     where = f"first_seen > '{stamp}'"
@@ -249,7 +250,32 @@ def _first_seen_since(stamp: str | None) -> list[tuple[str, str, str | None]] | 
     )
 
 
-def _rank_hot(history: trend_history.TrendHistory) -> dict:
+def _first_seen_postings(
+    history: trend_history.TrendHistory,
+) -> found_late.FirstSeenPostings | None:
+    """The served postings first seen since turnover began, counted per Board of the Company
+    directory and first-seen stamp (ADR-0369): read once at boot, so the Hot ranking and every
+    `/trends` company line count found-late postings from one set. None where they went unread,
+    and each figure read from them is then left out."""
+    rows = _first_seen_since(history.turnover_since)
+    if rows is None:
+        return None
+    boards = [
+        board for entry in history.companies.values() for board in entry["boards"]
+    ]
+    try:
+        return found_late.FirstSeenPostings(rows, boards)
+    except Exception as exc:  # noqa: BLE001 - unread postings leave their figures out only
+        print(
+            f"first-seen postings uncounted ({type(exc).__name__}: {exc})", flush=True
+        )
+        return None
+
+
+def _rank_hot(
+    history: trend_history.TrendHistory,
+    postings: found_late.FirstSeenPostings | None,
+) -> dict:
     """The Hot tab's ranking (``headstart.trends.hot_ranking``, ADR-0230), or ``{}`` to keep it
     dark.
 
@@ -265,11 +291,7 @@ def _rank_hot(history: trend_history.TrendHistory) -> dict:
         return {}
     started = time.monotonic()
     try:
-        ranked = hot_ranking.rank(
-            history,
-            companies,
-            _first_seen_since(history.trailing_week()["turnover_from"]),
-        )
+        ranked = hot_ranking.rank(history, companies, postings)
     except Exception as exc:  # noqa: BLE001 - a ranking failure darkens Hot only
         print(f"hot ranking failed ({type(exc).__name__}: {exc})", flush=True)
         return {}
@@ -283,10 +305,11 @@ def _rank_hot(history: trend_history.TrendHistory) -> dict:
 
 def _derive_from_history(
     history: trend_history.TrendHistory,
-) -> tuple[dict[str, tuple[str, ...]], dict]:
-    """What boot derives from the Trends history, as ``(company_boards, hot)``: each Board's
-    company as every Board of its Company directory entry, keyed case-blind as the follow and
-    hide lists compare Boards (Follow and Hide act on a whole company, ADR-0230), and the Hot
+) -> tuple[dict[str, tuple[str, ...]], found_late.FirstSeenPostings | None, dict]:
+    """What boot derives from the Trends history, as ``(company_boards, first_seen, hot)``: each
+    Board's company as every Board of its Company directory entry, keyed case-blind as the
+    follow and hide lists compare Boards (Follow and Hide act on a whole company, ADR-0230), the
+    served postings first seen since turnover began (``_first_seen_postings``), and the Hot
     ranking (``_rank_hot``). The one derivation, so a history installed after import (a test's)
     rebuilds the same globals boot built."""
     company_boards = {
@@ -294,10 +317,11 @@ def _derive_from_history(
         for entry in history.companies.values()
         for board in entry["boards"]
     }
-    return company_boards, _rank_hot(history)
+    first_seen = _first_seen_postings(history) if history.companies else None
+    return company_boards, first_seen, _rank_hot(history, first_seen)
 
 
-_COMPANY_BOARDS, _HOT = _derive_from_history(_HISTORY)
+_COMPANY_BOARDS, _FIRST_SEEN, _HOT = _derive_from_history(_HISTORY)
 
 
 def _operator_boards(
@@ -790,7 +814,17 @@ def _keep_static_for_the_boot(response):
 # 21: `places=1` on /facets, where every matching job is by country and city, and
 # /companies/locations reads every place's country, so it no longer sends `places_unread`
 # (ADR-0355).
-_AGENT_API_VERSION = 21
+# 22: /trends' tracked-roles first row adds up only the roles counted from its first run, and
+# /hot's `operator_unverified` reads a Board's own label, not its vendor's host (ADR-0366).
+# 23: /search under `may_offer_sponsorship` tags each row's `sponsorship` stance and why a possible
+# offer is not firm; /job carries `may_offer_because`, `stated_end_date` and `closest` (ADR-0367).
+# 24: /search's `per_company` counts every row, a posting's copy on another Board kept beside it,
+# and a copy is one posting on two Boards, so /requirements counts per-country rows apart (ADR-0365).
+# 25: /trends' company lines' turnover carries `opened_fresh` and `opened_found_late`, counted as
+# /hot's are, where companies are picked (ADR-0369).
+# 26: /requirements counts one requisition posted per country once again, and a first place a
+# word that begins a place's name leads ("New York") is not the place it holds ("York") (ADR-0370).
+_AGENT_API_VERSION = 26
 
 
 @app.after_request
@@ -944,7 +978,8 @@ def read_jobs():
     search field plus the description (cut at ``description_limit``), department, the raw stated
     experience and ``unconfirmed`` — whether the latest scrape of its Board missed it, or null
     where this deployment does not know. An id the table does not hold is listed in ``missing``,
-    not refused: why one may be (`job_absence.WHY_NOT_SERVED`) is an answer."""
+    not refused: why one may be (`job_absence.WHY_NOT_SERVED`) is an answer, and ``closest``
+    names the served id on its Board most like it, where one is close (ADR-0367)."""
     ids = list(
         dict.fromkeys(i.strip() for i in request.args.getlist("id") if i.strip())
     )
@@ -952,6 +987,7 @@ def read_jobs():
         found = _searcher.jobs_by_id(ids)
     except ValueError as exc:
         return jsonify(error="invalid request", detail=str(exc)), 400
+    missing = [i for i in ids if i not in found]
     ticks = _HISTORY.ticks
     return jsonify(
         {
@@ -963,7 +999,9 @@ def read_jobs():
                 for i in ids
                 if i in found
             ],
-            "missing": [i for i in ids if i not in found],
+            "missing": missing,
+            # A missing id's likeliest mistyping: the id on its Board most like it (ADR-0367).
+            "closest": _searcher.closest_ids(missing) if missing else {},
             "description_limit": job_search.JOB_DESCRIPTION_LIMIT,
             "newest_tick": ticks[-1] if ticks else None,
         }
@@ -1706,6 +1744,11 @@ def _trends_payload(answer: dict, question: trend_history.TrendQuestion) -> dict
             flush=True,
         )
         return line_reading.unread_trends_payload(answer, error)
+    try:
+        # Each company line's opened, split by when its postings were posted (ADR-0369).
+        found_late.attach(payload, question, _FIRST_SEEN)
+    except Exception as exc:  # noqa: BLE001 - a split that fails costs only the split
+        print(f"found-late split failed for {question}: {exc!r}", flush=True)
     if not reading.reconciles:
         print(
             f"trends reading does not reconcile for {question}: "
