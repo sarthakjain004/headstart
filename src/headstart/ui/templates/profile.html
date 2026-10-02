@@ -1,24 +1,7 @@
 <section class="profile">
   <div class="profile-head">
-    <h2>Your profile</h2>
+    <div><p class="page-eyebrow">Your workspace</p><h2>Your search profile</h2><p class="page-intro">Set preferences once, then use them to start a search.</p></div>
     <span class="note" id="profile-msg" role="status"></span>
-  </div>
-
-  <div class="profile-card">
-    <p class="note">Paste your résumé and one AI read fills the profile below — only the
-      extraction is kept, never the document, and contact details are never part of it.
-      Everything stays editable by hand.</p>
-    <p class="note disclose"><b>Where the text goes:</b> reading it means sending what you paste
-      to a language model — the one thing here that is handed to anyone outside HeadStart.
-      Filling the fields in by hand skips that entirely. Either way the saved profile is stored
-      against your account, like your saved searches and starred jobs; the
-      <a href="{{ repo }}/blob/main/PRIVACY.md" target="_blank" rel="noopener">privacy policy</a>
-      lists everything kept.</p>
-    <textarea id="presume" rows="6" placeholder="Paste the text of your résumé"></textarea>
-    <div class="row">
-      <button class="ghost" id="pparse">Read my résumé</button>
-      <span class="note" id="pparses"></span>
-    </div>
   </div>
 
   <div class="profile-card">
@@ -55,8 +38,25 @@
     <div class="row">
       <button class="go" id="psave">Save profile</button>
       <button class="ghost" id="papply" title="Fill the Search tab from this profile">Search with this profile</button>
-      <span class="spacer"></span>
-      <button class="ghost danger" id="pdelete" title="Clears the stored career data">Delete profile</button>
+
     </div>
   </div>
+  <details class="profile-card profile-import"><summary>Fill from a résumé <span class="note">Optional AI read</span></summary>
+    <p class="note">Paste your résumé and one AI read fills the profile below — only the
+      extraction is kept, never the document, and contact details are never part of it.
+      Everything stays editable by hand.</p>
+    <p class="note disclose"><b>Where the text goes:</b> reading it means sending what you paste
+      to a language model — the one thing here that is handed to anyone outside HeadStart.
+      Filling the fields in by hand skips that entirely. Either way the saved profile is stored
+      against your account, like your saved searches and starred jobs; the
+      <a href="{{ repo }}/blob/main/PRIVACY.md" target="_blank" rel="noopener">privacy policy</a>
+      lists everything kept.</p>
+    <label class="query-label" for="presume">Résumé text to read</label>
+    <textarea id="presume" rows="6" placeholder="Paste the text of your résumé"></textarea>
+    <div class="row">
+      <button class="ghost" id="pparse">Read my résumé</button>
+      <span class="note" id="pparses"></span>
+    </div>
+  </details>
+  <details class="profile-manage"><summary>Manage profile data</summary><p class="note">Clear your stored profile when you no longer need it.</p><button class="ghost danger" id="pdelete">Delete profile</button></details>
 </section>

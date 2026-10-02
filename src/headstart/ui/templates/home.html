@@ -7,84 +7,71 @@
    Vocabulary: CONTEXT.md reserves "listing", "posting" and "opening" for the raw record an ATS
    returns. The thing a user sees is a Job, so this page says "job". #}
 
-{# The product video (issue #755). To ship it, put the file in static/ and name it here: the
-   <video> then takes the sketch's place inside the same 16:9 frame, so nothing else moves. #}
-{% set intro_video = none %}
-
+{# The search form keeps its existing app.js hand-off. Examples submit that same form;
+   this page owns neither a second query format nor a second results renderer. #}
 <div class="home">
-
-  <section class="home-hero">
-    <div>
-      <p class="home-eyebrow">For everyone in tech</p>
-      <h2 class="home-title">Get a head start on your next tech job.</h2>
-      <p class="home-lede">HeadStart reads jobs directly from the career sites companies hire
-        through, keeps the tech roles, and lets you search them by describing the job you want
-        in your own words.</p>
-      {# The search box on the first screen, not only a link to one: the words go to the Search
-         tab and run there (app.js), so Home keeps no results of its own. #}
+  <section class="home-hero" aria-labelledby="home-title">
+    <div class="home-intro">
+      <p class="home-eyebrow">Your next move starts here</p>
+      <h2 class="home-title" id="home-title">Find your next tech job at the source.</h2>
+      <p class="home-lede">Search jobs read directly from company career sites.
+        Describe the role you want, narrow it to what matters, and apply on the company’s own site.</p>
       <form class="home-search" id="home-search" role="search">
-        <input id="home-q" type="text" aria-label="Search tech jobs"
-               placeholder="Describe the role you want" autocomplete="off">
-        <button type="submit" class="btn-primary">Search</button>
+        <label for="home-q">What kind of role are you looking for?</label>
+        <div class="home-search-row">
+          <input id="home-q" type="text" placeholder="e.g. backend engineer, distributed systems"
+                 aria-describedby="home-search-help" autocomplete="off">
+          <button type="submit" class="btn-primary">Find jobs</button>
+        </div>
+        <p class="home-search-help" id="home-search-help">Describe the role here. Set location,
+          experience and salary with filters after you search.</p>
+        <div class="home-examples" aria-label="Example searches">
+          <span>Try a search</span>
+          <button type="button" data-home-query="backend engineer, distributed systems">Backend engineering</button>
+          <button type="button" data-home-query="ML infrastructure, PyTorch">ML infrastructure</button>
+          <button type="button" data-home-query="frontend engineer, design systems">Frontend engineering</button>
+        </div>
       </form>
-      <div class="home-actions">
-        <a class="ghost home-secondary" href="#search">Browse all jobs</a>
-        <button type="button" class="ghost home-secondary" data-tour-start>Take a tour</button>
-      </div>
-      <p class="home-facts"><span><b>{{ njobs }}</b> tech jobs{% if atses %} from
-        <b>{{ atses|length }}</b> hiring platforms{% endif %}</span>
-        <span>refreshed every couple of hours</span></p>
+      <a class="home-browse" href="#search">Or browse all jobs <span aria-hidden="true">→</span></a>
     </div>
+    <section class="home-proof" aria-label="Why search with HeadStart">
+      <div><b>{{ njobs }}</b><span>tech jobs{% if atses %} from {{ atses|length }} hiring platforms{% endif %}</span></div>
+      <div><b>Direct from career sites</b><span>Every job links back to the company</span></div>
+      <div><b>No paid placement</b><span>Search by relevance, without sponsored positions</span></div>
+    </section>
 
-    <figure class="home-video">
-      {% if intro_video %}
-      <video controls muted preload="metadata" playsinline
-             src="{{ url_for('static', filename=intro_video) }}"></video>
-      {% else %}
-      {# A sketch of the Search tab, not a screenshot: it cannot go stale when the real tab
-         changes, and it says what the product does before anyone has pressed play. #}
-      <div class="home-sketch" aria-hidden="true">
-        <div class="sketch-search">backend engineer at a climate startup</div>
-        <div class="sketch-row"><span class="sketch-lines"><i></i><i></i></span><span class="sketch-pay">$150k–190k</span><span class="sketch-match">92%</span></div>
-        <div class="sketch-row"><span class="sketch-lines"><i></i><i></i></span><span class="sketch-pay">$140k–175k</span><span class="sketch-match">88%</span></div>
-        <div class="sketch-row"><span class="sketch-lines"><i></i><i></i></span><span class="sketch-pay"></span><span class="sketch-match">84%</span></div>
-      </div>
-      <figcaption>A short video walkthrough is on its way.</figcaption>
-      {% endif %}
+    <figure class="home-preview">
+      <p class="home-preview-label">From an idea to your next application</p>
+      <div class="home-demo-query"><span>Describe your next role</span><b>“backend engineer at a climate startup”</b></div>
+      <ol class="home-demo-steps">
+        <li><b>Discover relevant jobs</b><span>Search by meaning, or match words in the title.</span></li>
+        <li><b>Make the search yours</b><span>Filter by location, experience, remote work and pay.</span></li>
+        <li><b>Go straight to the company</b><span>Read the full job and apply on its career site.</span></li>
+      </ol>
+      <figcaption>An example workflow. Search results depend on the jobs available.</figcaption>
     </figure>
   </section>
 
   <section class="home-sec" aria-labelledby="home-can-do">
-    <h3 id="home-can-do">What you can do here</h3>
+    <h3 id="home-can-do">More ways to move your search forward</h3>
     <div class="home-cards">
-      <a class="home-card" href="#search">
-        <b>Search by meaning</b>
-        <span>Describe the role — “backend engineer at a climate startup” — and results come
-          back by how close they are to what you mean. Or switch to “Words in the job title” to
-          keep only titles holding every word.</span>
-      </a>
-      <a class="home-card" href="#search">
-        <b>Narrow with filters</b>
-        <span>Experience, salary, remote, location and how recent. Filters narrow the list; by
-          meaning, the search box only decides the order.</span>
-      </a>
       {% if saved_on and sets_on %}
       <a class="home-card" href="#saved">
         <b>Save jobs and searches</b>
-        <span>Star a job to keep it. Save a search, and Matches re-runs it against the newest
+        <span>Save a job to keep it. Save a search, and Matches re-runs it against the newest
           jobs every time you come back.</span>
       </a>
       {% endif %}
       {% if hot_on %}
       <a class="home-card" href="#hot">
-        <b>See who is hiring</b>
-        <span>Hiring now shows which companies are adding the most tech roles right now.</span>
+        <b>Explore companies hiring now</b>
+        <span>Compare hiring activity at companies HeadStart tracks, then explore their jobs.</span>
       </a>
       {% endif %}
       {% if trends_on %}
       <a class="home-card" href="#trends">
         <b>Follow the trends</b>
-        <span>See which kinds of tech roles are growing or shrinking over time.</span>
+        <span>Explore changes in the tech jobs HeadStart tracks over time.</span>
       </a>
       {% endif %}
       <a class="home-card" href="#resume">
@@ -96,7 +83,8 @@
   </section>
 
   <section class="home-sec" aria-labelledby="home-how">
-    <h3 id="home-how">How it works</h3>
+    <div class="home-section-head"><h3 id="home-how">A direct route to your next job</h3>
+      <button type="button" class="ghost home-secondary" data-tour-start>See how search works</button></div>
     <ol class="home-steps">
       <li><b>We read company career sites.</b> Every job comes from the careers site a company
         runs itself — not copied from another job board, and never paid to be placed. Some of
@@ -105,7 +93,7 @@
         for now. The check leans towards keeping a borderline role, so a few non-tech jobs slip
         through rather than a tech one going missing.</li>
       <li><b>You apply at the source.</b> Each result opens the job on the company's own
-        careers page, where it is always current and you apply directly.</li>
+        careers page, where you can check whether it is still open and apply directly.</li>
     </ol>
   </section>
 
@@ -128,11 +116,12 @@
   </section>
 
   <section class="home-end">
-    <p>Ready? Describe the job you want.</p>
+    <div><p>Your next role is worth a closer look.</p><span>Start with a search. Apply directly at the source.</span></div>
     <div class="home-actions">
-      <a class="btn-primary" href="#search">Search jobs</a>
-      <button type="button" class="ghost home-secondary" data-tour-start>Take a tour</button>
+      <a class="btn-primary" href="#search">Find jobs</a>
     </div>
   </section>
 
 </div>
+
+<script defer src="{{ url_for('static', filename='home.js') }}"></script>

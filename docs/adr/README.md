@@ -342,6 +342,7 @@ supersedes it and note the supersession in both.
 | [0376](0376-a-harvest-closes-browser-transport-before-interpreter-exit.md) | Harvest closes browser transport before executor shutdown; abandoned workers retain their original lifetime | 2026-10-02 |
 | [0377](0377-avature-dual-egress-is-opt-in-and-paced-by-the-actual-route.md) | Opt-in Avature dual egress shares actual-route caps across retries and fallback | 2026-10-02 |
 | [0378](0378-trends-separates-first-counted-coverage-from-observed-activity.md) | Separate fixed first-counted coverage, entrant backlog/activity and all-known inventory; read quality remains unknown | 2026-10-02 |
+| [0379](0379-navigation-follows-the-seekers-journey-and-a-skin-does-not-own-layout.md) | Navigation follows the seeker's journey, and a skin does not own layout (amends 0249, 0247, 0128) | 2026-10-02 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*

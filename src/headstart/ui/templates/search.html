@@ -1,7 +1,9 @@
+<div class="page-head"><div><p class="page-eyebrow">Find your next role</p><h2>Search tech jobs</h2><p class="page-intro">Describe the role. Use filters for where, experience and pay.</p></div></div>
 <section class="hero">
+  <label class="query-label" for="q">What kind of role are you looking for?</label>
   <div class="searchbar">
     <div class="field">
-      <input id="q" type="text" autofocus aria-label="Describe the role you want"
+      <input id="q" type="text" aria-label="Describe the role you want"
              placeholder="Describe the role you want — e.g. backend engineer at a climate startup">
     </div>
     <button class="go" id="search-go">Search</button>
@@ -50,11 +52,11 @@
 {% endif %}
 
 
-<main class="search-layout">
-  {# Always shown, never behind a Filters button (issue #755: opening the panel and shutting it
-     again was two clicks per change). A column beside the results on a wide screen, so the rows
-     still start at the top of the page; one sideways-scrolling row above them on a narrow one
-     (ADR-0247). Each field's caveat shows only while that field has keyboard or typing focus. #}
+<div class="search-layout">
+  <div class="quick-filters" id="quick-filters" aria-label="Common filters"></div>
+  <details class="search-filters" id="search-filters" open><summary>Filters <span class="note">Location, experience, pay and more</span></summary>
+  {# A visible desktop filter column; a labelled phone disclosure. Values and active chips
+     remain the same controls at every width. Caveats follow keyboard focus. #}
     <aside class="rail" id="rail">
       {# The Keyword filter (ADR-0104): a deterministic where-clause, not a Query — it narrows, the
          Query ranks. The options are rendered from headstart.search_filters.compiler.keyword_scope_options(), never
@@ -62,21 +64,26 @@
          needs the description column is DISABLED (not hidden, unlike the first-seen control) until
          that column exists: the option and the reason it is off stay visible. #}
       <div class="set">
-        <h2>Keywords</h2>
-        <div class="f"><label for="kw">Must contain</label>
-          <input id="kw" type="text" placeholder="e.g. kubernetes terraform" aria-describedby="kwnote">
-          <span class="tip">Every word (up to five) must start a word — "java" also finds
-            JavaScript, "ai" doesn't find Retail. Put a phrase in quotes to keep it together.</span></div>
-        {# A select of three is two clicks; its options as one row of radios is one. The hidden
-           select stays the value everything reads (see syncSegmentedSelects). #}
-        <div class="f"><span class="flabel" id="kwin-lbl">Look in</span>
-          <select id="kwin" hidden>
-            {% for value, label, needs_description in keyword_scopes %}
-            <option value="{{ value }}"{% if value == keyword_default_scope %} selected{% endif %}{% if needs_description and not has_description %} disabled{% endif %}>{{ label }}</option>
-            {% endfor %}
-          </select>
-          <div class="segmented" id="kwin-seg" role="radiogroup" aria-labelledby="kwin-lbl"></div>
-          <span class="tip" id="kwnote" role="status"></span></div>
+        <h2>Where</h2>
+        <div class="f"><label for="country">Country</label>
+          <span class="tip" id="country-tip">Matches every way a job names the country: its name,
+            its states or provinces, its cities and its codes, so "Austin, TX" is in the United
+            States and "München" is in Germany.</span>
+          <select id="country" aria-describedby="country-tip"><option value="">Anywhere</option>
+            {% for value, label in country_opts %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+          </select></div>
+        <div class="f"><label for="india">India — city or region</label>
+          <span class="tip" id="india-tip">Picking an Indian city also matches its neighbourhoods and other
+            spellings. Location below matches any place in the world, just without that. Jobs from
+            every country are included either way.</span>
+          <select id="india" aria-describedby="india-tip"><option value="">Anywhere</option>
+            <option value="india">All India</option>
+            {% for value, label in india_opts %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+          </select></div>
+        <div class="f"><label for="location">Location</label>
+          <input id="location" type="text" placeholder="e.g. Berlin"></div>
+        <div class="f"><label for="company">Company</label>
+          <input id="company" type="text" placeholder="e.g. Binance"></div>
       </div>
 
       <div class="set">
@@ -101,8 +108,6 @@
             left out unless you tick this.<span id="nontech-hidden"></span></span></div>
       </div>
 
-      {# Pay is its own group, not the tail of Role: a currency, two bounds, a slider, its scale
-         and a caveat, the tallest field in the bar. #}
       <div class="set">
         <h2>Pay</h2>
         <label class="sw"><input type="checkbox" id="hassalary"> Shows salary</label>
@@ -151,26 +156,21 @@
       </div>
 
       <div class="set">
-        <h2>Where</h2>
-        <div class="f"><label for="country">Country</label>
-          <span class="tip" id="country-tip">Matches every way a job names the country: its name,
-            its states or provinces, its cities and its codes, so "Austin, TX" is in the United
-            States and "München" is in Germany.</span>
-          <select id="country" aria-describedby="country-tip"><option value="">Anywhere</option>
-            {% for value, label in country_opts %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
-          </select></div>
-        <div class="f"><label for="india">India — city or region</label>
-          <span class="tip" id="india-tip">Picking an Indian city also matches its neighbourhoods and other
-            spellings. Location below matches any place in the world, just without that. Jobs from
-            every country are included either way.</span>
-          <select id="india" aria-describedby="india-tip"><option value="">Anywhere</option>
-            <option value="india">All India</option>
-            {% for value, label in india_opts %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
-          </select></div>
-        <div class="f"><label for="location">Location</label>
-          <input id="location" type="text" placeholder="e.g. Berlin"></div>
-        <div class="f"><label for="company">Company</label>
-          <input id="company" type="text" placeholder="e.g. Binance"></div>
+        <h2>Keywords</h2>
+        <div class="f"><label for="kw">Must contain</label>
+          <input id="kw" type="text" placeholder="e.g. kubernetes terraform" aria-describedby="kwnote">
+          <span class="tip">Every word (up to five) must start a word — "java" also finds
+            JavaScript, "ai" doesn't find Retail. Put a phrase in quotes to keep it together.</span></div>
+        {# A select of three is two clicks; its options as one row of radios is one. The hidden
+           select stays the value everything reads (see syncSegmentedSelects). #}
+        <div class="f"><span class="flabel" id="kwin-lbl">Look in</span>
+          <select id="kwin" hidden>
+            {% for value, label, needs_description in keyword_scopes %}
+            <option value="{{ value }}"{% if value == keyword_default_scope %} selected{% endif %}{% if needs_description and not has_description %} disabled{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+          <div class="segmented" id="kwin-seg" role="radiogroup" aria-labelledby="kwin-lbl"></div>
+          <span class="tip" id="kwnote" role="status"></span></div>
       </div>
 
       {# Account state, not a filter: it reads the follow list live, so it is never written into
@@ -210,10 +210,11 @@
 
       <button class="clear" id="clear-all">Clear all filters</button>
     </aside>
+  </details>
   <div class="search-results">
     <div class="toolbar">
       {% if sets_on %}
-      <button class="ghost" id="savebtn">Save this search</button>
+      <button class="ghost" id="savebtn" aria-expanded="false" aria-controls="saverow">Save this search</button>
       {% endif %}
       <span class="spacer"></span>
       {# Sort as a one-click row of options, not a <select> to open first (issue #755). The
@@ -232,8 +233,10 @@
     </div>
     {% if sets_on %}
     <div class="row saverow" id="saverow" style="display:none">
+      <label class="sr" for="savename">Saved search name</label>
       <input id="savename" type="text" placeholder="Name this search — e.g. backend roles" maxlength="60">
-      <button class="ghost" id="savego">Save</button>
+      <button class="go" id="savego">Save search</button>
+      <button class="ghost" id="savecancel">Cancel</button>
       <span class="note" id="savemsg" role="status"></span>
       <span class="note">Keyword filters and numeric salary brackets aren't saved yet.</span>
     </div>
@@ -243,6 +246,7 @@
        they were ~300px of prose between the buttons, and whichever control fell off the end
        wrapped alone onto a second line. Here they also sit directly above the rows they
        describe. #}
+    <p id="save-success" class="action-feedback" hidden>Search saved. <a href="#matches">View saved searches →</a></p>
     <div class="status">
       <span class="n" id="n"></span>
       <span class="note sortnote" id="sortnote" role="status"></span>
@@ -261,4 +265,4 @@
     <div id="results" tabindex="-1" aria-live="polite"></div>
     <div class="pager" id="pager"></div>
   </div>
-</main>
+</div>

@@ -88,6 +88,7 @@ function loadApp(fetchImpl, cfg = {}) {
     // Recorded, not printed: app.js reports every failed request, and the stub fetches fail most
     // of the page-load ones on purpose.
     console: { log: console.log, warn: (...a) => logged.push(a), error: (...a) => logged.push(a) },
+    matchMedia: () => ({ matches: false }),
     CFG: {}, URLSearchParams, Date, Math, isNaN, setTimeout, clearTimeout,
     // loadTrends cancels its own previous request, so app.js does not evaluate without this.
     // Node's real one, not a stub: the abort tests below need a signal that genuinely fires.
@@ -100,7 +101,7 @@ function loadApp(fetchImpl, cfg = {}) {
     },
   };
   ctx.globalThis = ctx;
-  const src = fs.readFileSync(APP_JS, 'utf8')
+  const src = fs.readFileSync(path.join(path.dirname(APP_JS), 'navigation.js'), 'utf8') + '\n' + fs.readFileSync(APP_JS, 'utf8')
     + '\n;globalThis.__t = { draw: drawTrends, load: loadTrends, click: trendClick, split: () => trendSplit,'
     + ' chartMax: CHART_MAX,'
     + ' niceAxis: niceAxis, niceBounds: niceBounds, fmtAxis: fmtAxis, deltaText: deltaText, seriesValues: seriesValues,'

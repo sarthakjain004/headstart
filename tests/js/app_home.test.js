@@ -71,7 +71,7 @@ function loadApp(hash) {
     setTimeout, clearTimeout,
   };
   ctx.globalThis = ctx;
-  vm.runInNewContext(fs.readFileSync(APP_JS, 'utf8'), ctx);
+  vm.runInNewContext(fs.readFileSync(path.join(path.dirname(APP_JS), 'navigation.js'), 'utf8') + '\n' + fs.readFileSync(APP_JS, 'utf8'), ctx);
   return { ctx, panels, nodes, requested };
 }
 

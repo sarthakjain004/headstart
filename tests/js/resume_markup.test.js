@@ -13,7 +13,7 @@ const path = require('node:path');
 
 const UI = path.join(__dirname, '..', '..', 'src', 'headstart', 'ui');
 const TEMPLATE = path.join(UI, 'templates', 'resume.html');
-const CSS = path.join(UI, 'static', 'resume.css');
+const CSS = path.join(UI, 'static', 'resume-layout.css');
 
 /** The class names on every `<div>` still open where `needle` appears, outermost first — the
  *  element carrying the needle excluded, since nothing contains itself.
@@ -146,7 +146,7 @@ test('the bar is still the positioned ancestor the popovers are written against'
 
 test('the print rules bring the hidden workspace back, or Ctrl+P prints a blank page', () => {
   const css = fs.readFileSync(CSS, 'utf8');
-  const block = /@media print \{([\s\S]*?)\n\}/.exec(css);
+  const block = /@media print\s*\{([\s\S]*?)\n\}/.exec(css);
   assert.ok(block, 'the @media print block is gone');
   assert.match(block[1], /\.rb-work\[hidden\]\s*\{[^}]*display:\s*block\s*!important/,
     'the Preview workspace stays hidden in print, so printing from Edit gets a blank sheet');

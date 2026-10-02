@@ -1,0 +1,42 @@
+/* Feedback timing and animations. State, focus and data updates never wait for motion. */
+:root{ --step:.18s cubic-bezier(.2,.7,.3,1); }
+body{ transition:background .3s ease, color .3s ease; }
+.icon-btn{ transition:transform var(--step), border-color var(--step), color var(--step); }
+.nav-item{ transition:color var(--step), border-color var(--step); }
+.field input{ transition:border-color var(--step), box-shadow var(--step); }
+.go{ transition:transform var(--step), box-shadow var(--step), filter var(--step); }
+.chip{ transition:border-color var(--step), color var(--step), transform var(--step); }
+.feature{ transition:border-color var(--step); }
+textarea{ transition:border-color var(--step); }
+.ghost{ transition:border-color var(--step), transform var(--step); }
+.f select,.f input{ transition:border-color var(--step); }
+.sw input{ transition:background var(--step); }
+.sw input::after{ transition:transform var(--step); }
+.clear{ transition:border-color var(--step), color var(--step); }
+.seg-opt span{ transition:border-color var(--step), color var(--step), background var(--step); }
+.card{ transition:border-color var(--step), background var(--step); }
+.shim{ animation:shim 1.2s linear infinite; }
+@keyframes shim{ from{ background-position:200% 0; } to{ background-position:-200% 0; } }
+.set-chip{ transition:border-color var(--step); }
+.set-chip button{ transition:color var(--step), background var(--step); }
+.star{ transition:color var(--step), transform var(--step); }
+.trends-verdict.loading, .trends-kpi.loading, .trends-note.loading, .chart-note.loading{ transition:opacity .2s ease; }
+.trends-grid{ transition:opacity .2s ease; }
+.trends-legend .row{ transition:background var(--step); }
+@media (prefers-reduced-motion: reduce){
+*,*::before,*::after{ animation-duration:.001ms !important; animation-iteration-count:1 !important; transition-duration:.001ms !important; }
+}
+.hot-lenses .lens{ transition:border-color var(--step), background var(--step); }
+@media (prefers-reduced-motion:reduce){
+.hot-row{ animation:none; }
+}
+.org .see-trend{ transition:border-color var(--step), color var(--step); }
+@media screen and (min-width:1280px){
+.nav-item{ transition:color var(--step), background var(--step); }
+}
+.nav-toggle{ transition:color var(--step), border-color var(--step); }
+.nav-toggle-ico{ transition:transform var(--step); }
+.btn-primary{ transition:transform var(--step), filter var(--step); }
+.tour-spot{ transition:top .22s ease, left .22s ease, width .22s ease, height .22s ease; }
+@keyframes screen-enter{ from{ opacity:.7; } to{ opacity:1; } }
+.panel{ animation:screen-enter .16s ease-out; }
