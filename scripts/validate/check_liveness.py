@@ -2477,8 +2477,17 @@ def _public_resolver_has_no_a_record(hostname):
         try:
             resolver.resolve(hostname, "A")
             return False
-        except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer):
+        except dns.resolver.NXDOMAIN:
             return True
+        except dns.resolver.NoAnswer:
+            # No IPv4 address does not rule out an IPv6-only host.
+            try:
+                resolver.resolve(hostname, "AAAA")
+                return False
+            except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer):
+                return True
+            except (dns.resolver.NoNameservers, dns.exception.Timeout):
+                continue
         except (dns.resolver.NoNameservers, dns.exception.Timeout):
             continue
     _note("dns-unconfirmed")

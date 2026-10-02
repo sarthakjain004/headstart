@@ -246,6 +246,8 @@ def _public_resolvers(monkeypatch, by_nameserver):
 
         def resolve(self, host, rdtype):
             outcome = by_nameserver[self.nameservers[0]]
+            if isinstance(outcome, dict):
+                outcome = outcome[rdtype]
             if isinstance(outcome, Exception):
                 raise outcome
             return [outcome]
@@ -264,6 +266,8 @@ def test_a_public_resolver_says_a_host_is_absent_only_when_one_answers_it_so(
     cases = [
         ({"1.1.1.1": nxdomain, "8.8.8.8": no_reply}, True),
         ({"1.1.1.1": empty, "8.8.8.8": no_reply}, True),  # an unknown Avature label
+        ({"1.1.1.1": {"A": empty, "AAAA": "2001:db8::1"}, "8.8.8.8": no_reply}, False),
+        ({"1.1.1.1": {"A": empty, "AAAA": no_reply}, "8.8.8.8": no_reply}, False),
         (
             {"1.1.1.1": "93.184.216.34", "8.8.8.8": nxdomain},
             False,
