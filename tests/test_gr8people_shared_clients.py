@@ -18,7 +18,7 @@ validator = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(validator)
 
 
-def run_validator(monkeypatch, tmp_path, rows_by_host, totals):
+def run_validator(monkeypatch, tmp_path, rows_by_host, totals, clients=None):
     ledger = tmp_path / "data/validate/liveness"
     aliases = tmp_path / "data/validate/aliases"
     ledger.mkdir(parents=True)
@@ -37,7 +37,13 @@ def run_validator(monkeypatch, tmp_path, rows_by_host, totals):
 
     def route(method, url, _kwargs):
         if method == "GET":
-            return FakeResponse(text=page)
+            host = url.split("/")[2]
+            return FakeResponse(
+                text=page.replace(
+                    '"clientId":"1"',
+                    '"clientId":"' + (clients or {}).get(host, "1") + '"',
+                )
+            )
         host = url.split("/")[2]
         return FakeResponse(
             text=json.dumps(
@@ -92,4 +98,20 @@ def test_a_diverged_pair_reports_directional_differences_before_unburying(
     validator.main()
     output = capsys.readouterr().out
     assert "diverged b.workgr8.com / a.workgr8.com: 1 / 1" in output
+    assert len(alias_path.read_text().splitlines()) == 1
+
+
+def test_a_split_client_group_reports_the_previous_alias_removal(
+    monkeypatch, tmp_path, capsys
+):
+    rows = json.loads((ROOT / "tests/fixtures/gr8people_postings.json").read_text())
+    alias_path, _ = run_validator(
+        monkeypatch,
+        tmp_path,
+        {"a.workgr8.com": rows, "b.workgr8.com": rows},
+        {"a.workgr8.com": 3, "b.workgr8.com": 3},
+        clients={"a.workgr8.com": "1", "b.workgr8.com": "2"},
+    )
+    validator.main()
+    assert "removed alias b.workgr8.com -> a.workgr8.com" in capsys.readouterr().out
     assert len(alias_path.read_text().splitlines()) == 1

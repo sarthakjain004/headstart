@@ -81,11 +81,18 @@ def main() -> None:
                     f"diverged {host} / {canonical}: {len(id_sets[host] - id_sets[canonical])} / {len(id_sets[canonical] - id_sets[host])} ids unique to each; removing any previous alias",
                     flush=True,
                 )
+    alias_path = alias_ledger.path_for(liveness_ledger.dir_for(ROOT), "gr8people")
+    previous = alias_ledger.load(alias_path)
+    selected = {alias.duplicate: alias.canonical for alias in aliases}
+    for duplicate, canonical in sorted(previous.items()):
+        if selected.get(duplicate) != canonical:
+            print(
+                f"removed alias {duplicate} -> {canonical}: not selected by this scan",
+                flush=True,
+            )
     print(f"{len(aliases)} aliases", flush=True)
     if args.apply:
-        alias_ledger.write(
-            alias_ledger.path_for(liveness_ledger.dir_for(ROOT), "gr8people"), aliases
-        )
+        alias_ledger.write(alias_path, aliases)
 
 
 if __name__ == "__main__":
