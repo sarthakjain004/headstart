@@ -286,3 +286,61 @@ def test_the_english_gate_judges_each_version_on_its_own_title(tmp_path):
     )
 
     assert served == {A1: [(RUNS[0], RUNS[1])]}
+
+
+def test_selected_wide_replay_matches_full_with_non_tech_dormancy_and_backing_dedup(
+    tmp_path,
+):
+    import pyarrow as pa
+
+    from headstart.ingest import restate_count
+    from headstart.ingest.index_plan import duplicate_ranks
+
+    front, backing = "eightfold:jobs.acme.com", "workday:acme/external"
+    front_id, backing_id = front + ":123", backing + ":R123"
+    facts = tmp_path / "facts"
+    jobs = [
+        (front, _dated(front_id, "2020-01-01") | {"requisition": "R123"}),
+        (backing, _dated(backing_id, "2020-01-01") | {"requisition": "R123"}),
+        (front, _dated(front + ":cashier", "2026-09-01", "Cashier")),
+        (backing, _dated(backing + ":cashier", None, "Cashier")),
+    ]
+    for stamp in DAYS[:2]:
+        _record(facts, stamp, jobs, {front, backing})
+    reads = rr.board_reads(facts)
+    full = rr.job_versions(facts)
+    is_tech = lambda title, department: title != "Cashier"
+    selected = rr.job_versions(facts, wanted=rr.eligible_ids(facts, is_tech))
+    narrow = rr.job_versions(facts, columns=["id", "kind", "posted_at"])
+    periods = rs.dormant_periods(narrow, reads, {})
+    assert periods == rs.dormant_periods(full, reads, {}) == {}
+    results = []
+    for versions in (full, selected):
+        served = rs.clip_dormant(
+            rs.served_intervals(
+                versions, reads, is_tech=is_tech, live={}, keep_set=None
+            ),
+            periods,
+        )
+        ranks = duplicate_ranks(
+            served["id"].to_pylist(),
+            {front, backing},
+            requisitions={front_id: "R123", backing_id: "R123"},
+            backing={"jobs.acme.com": (backing,)},
+        )
+        folded = rs.fold_duplicates(served, ranks)
+        assert folded["id"].to_pylist() == [backing_id]
+        folded = folded.append_column(
+            "family", pa.array(["software-engineering"])
+        ).append_column("band", pa.array(["mid"]))
+        results.append(
+            list(
+                restate_count.tick_counts(
+                    folded,
+                    DAYS[:2],
+                    rr.first_reads(reads),
+                    lambda row: (row["family"], row["band"]),
+                )
+            )
+        )
+    assert results[0] == results[1]

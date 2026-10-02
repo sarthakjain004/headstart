@@ -172,3 +172,34 @@ def test_a_boards_first_read_is_its_first_that_did_not_fail():
         "greenhouse:acme": "2026-09-02",
         "lever:beta": "2026-09-01",
     }
+
+
+def test_selected_ids_preserve_all_events_and_match_full_replay(tmp_path):
+    import pyarrow as pa
+    import pyarrow.compute as pc
+
+    facts, _ = _history(tmp_path)
+    full = rr.job_versions(facts)
+    selected = rr.job_versions(facts, wanted={A1, A2})
+    expected = full.filter(pc.is_in(full["id"], value_set=pa.array([A1, A2])))
+    assert selected.equals(expected)
+    narrow = rr.job_versions(facts, columns=["id", "kind", "posted_at"])
+    assert narrow.equals(full.select(["id", "posted_at", *rr.VERSION_COLUMNS]))
+
+
+def test_candidate_scan_includes_id_that_changes_into_and_out_of_tech(tmp_path):
+    facts = tmp_path / "facts"
+    for stamp, title in zip(RUNS[:3], ["Cashier", "Backend Engineer", "Cashier"]):
+        _record(facts, stamp, [(BOARD_A, _job(A1, title))], {BOARD_A})
+    wanted = rr.eligible_ids(
+        facts, lambda title, department: title == "Backend Engineer"
+    )
+    assert wanted == {A1}
+    assert rr.job_versions(facts, wanted=wanted).equals(rr.job_versions(facts))
+
+
+def test_empty_selection_keeps_schema(tmp_path):
+    facts, _ = _history(tmp_path)
+    selected = rr.job_versions(facts, wanted=set())
+    assert selected.num_rows == 0
+    assert selected.schema == rr.job_versions(facts).schema

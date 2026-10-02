@@ -10,6 +10,10 @@ name: restate-trends
 on:
   workflow_dispatch:
     inputs:
+      dataset_revision:
+        description: "Immutable dataset revision for a measured replay (empty pins current head)."
+        required: false
+        default: ""
       encode_budget_seconds:
         description: "Time to spend encoding titles the classifier cache lacks."
         required: false
@@ -48,9 +52,8 @@ jobs:
       - name: Fetch the facts, the live history and the stores the rules read
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: |
-          python -m headstart.ingest.state_fetch 'data/facts/*' 'data/state/*' \
-            'data/descriptions/*' 'data/lancedb/*'
+          DATASET_REVISION: ${{ inputs.dataset_revision }}
+        run: python -u scripts/eval/fetch_restatement_inputs.py
       - name: Restate
         env:
           ENCODE_BUDGET_SECONDS: ${{ inputs.encode_budget_seconds }}
@@ -62,5 +65,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: restated-trends
-          path: data/restated
+          path: |
+            data/restated
+            data/restate-diagnostics
           retention-days: 7

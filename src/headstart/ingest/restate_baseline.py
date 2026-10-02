@@ -45,24 +45,33 @@ def seed_versions(versions, baseline: dict, stamp: str, future_facts):
     """
     import pyarrow as pa
 
-    rows = versions.to_pylist()
+    schema = versions.schema.append(pa.field("baseline_incumbent", pa.bool_()))
     out = []
+    batches = []
+
+    def append(row):
+        out.append(row)
+        if len(out) == 8192:
+            batches.append(pa.Table.from_pylist(out, schema=schema))
+            out.clear()
+
     inherited_end = {}
     for fact in sorted(future_facts, key=lambda r: r["run"]):
         if fact["run"] > stamp and fact["id"] in baseline:
             inherited_end.setdefault(fact["id"], (fact["run"], fact["kind"]))
-    for row in rows:
-        start, end = row["valid_from"], row["valid_to"]
-        if end is not None and end <= stamp:
-            continue
-        if start <= stamp:
-            if row["id"] in baseline:
-                inherited_end.setdefault(row["id"], (end, row["ended_as"]))
+    for batch in versions.to_batches(max_chunksize=8192):
+        for row in batch.to_pylist():
+            start, end = row["valid_from"], row["valid_to"]
+            if end is not None and end <= stamp:
                 continue
-            row = row | {"valid_from": stamp}
-        elif row["id"] in baseline and row["id"] not in inherited_end:
-            inherited_end[row["id"]] = (start, "changed")
-        out.append(row | {"baseline_incumbent": False})
+            if start <= stamp:
+                if row["id"] in baseline:
+                    inherited_end.setdefault(row["id"], (end, row["ended_as"]))
+                    continue
+                row = row | {"valid_from": stamp}
+            elif row["id"] in baseline and row["id"] not in inherited_end:
+                inherited_end[row["id"]] = (start, "changed")
+            append(row | {"baseline_incumbent": False})
     for job_id, source in baseline.items():
         end, ended_as = inherited_end.get(job_id, (None, None))
         row = {name: source.get(name) for name in versions.schema.names}
@@ -74,7 +83,8 @@ def seed_versions(versions, baseline: dict, stamp: str, future_facts):
             ended_as=ended_as,
             baseline_incumbent=True,
         )
-        out.append(row)
-    return pa.Table.from_pylist(
-        out, schema=versions.schema.append(pa.field("baseline_incumbent", pa.bool_()))
-    ).sort_by([("id", "ascending"), ("valid_from", "ascending")])
+        append(row)
+    batches.append(pa.Table.from_pylist(out, schema=schema))
+    return pa.concat_tables(batches).sort_by(
+        [("id", "ascending"), ("valid_from", "ascending")]
+    )

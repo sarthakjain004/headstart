@@ -32,10 +32,32 @@ def placements(
     descriptions: Mapping[str, str],
     *,
     version_sources: Mapping | None = None,
+    batch_size: int = 4096,
 ):
     """``served`` with a ``family`` column (None where the head places the Job outside tech) and a
     ``band`` column. ``vectors`` maps an id to its description vector, ``descriptions`` to its
     text."""
+    import pyarrow as pa
+
+    batches = [
+        _placement_batch(
+            pa.Table.from_batches([batch]),
+            head,
+            cache,
+            vectors,
+            descriptions,
+            version_sources,
+        )
+        for batch in served.to_batches(max_chunksize=batch_size)
+    ]
+    if not batches:
+        return served.append_column("family", pa.nulls(0, pa.string())).append_column(
+            "band", pa.nulls(0, pa.string())
+        )
+    return pa.concat_tables(batches)
+
+
+def _placement_batch(served, head, cache, vectors, descriptions, version_sources):
     import numpy as np
     import pyarrow as pa
 

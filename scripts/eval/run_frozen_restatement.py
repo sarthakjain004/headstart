@@ -10,6 +10,7 @@ from __future__ import annotations
 import inspect
 import json
 import os
+import resource
 import shutil
 import subprocess
 import sys
@@ -37,6 +38,9 @@ def main():
         )
     metadata = pq.read_schema(baseline).metadata
     fingerprint = json.loads(metadata[b"methodology"])["rules_fingerprint"]
+    diagnostics = root / "data/restate-diagnostics"
+    diagnostics.mkdir(parents=True, exist_ok=True)
+    started = time.monotonic()
     archive = facts / "reference_rules" / f"{fingerprint}.zip"
     with tempfile.TemporaryDirectory(prefix="frozen-trends-rules-") as tmp:
         frozen = Path(tmp)
@@ -90,6 +94,7 @@ def main():
         )
         process = subprocess.Popen(command, cwd=frozen, env=env)
         peak_mb = 0
+        samples = (diagnostics / "resources.jsonl").open("w")
         while process.poll() is None:
             status = Path(f"/proc/{process.pid}/status")
             if status.exists():
@@ -99,7 +104,20 @@ def main():
                     if ":" in line
                 )
                 resident_mb = int(fields.get("VmRSS", "0 kB").split()[0]) // 1024
-                peak_mb = max(peak_mb, resident_mb)
+                peak_mb = max(
+                    peak_mb, int(fields.get("VmHWM", "0 kB").split()[0]) // 1024
+                )
+                samples.write(
+                    json.dumps(
+                        {
+                            "elapsed_seconds": time.monotonic() - started,
+                            "rss_mb": resident_mb,
+                            "peak_mb": peak_mb,
+                        }
+                    )
+                    + "\n"
+                )
+                samples.flush()
                 print(
                     f"Replay resources: rss={resident_mb} MB peak={peak_mb} MB",
                     flush=True,
@@ -107,15 +125,42 @@ def main():
                 if resident_mb > 12 * 1024:
                     process.kill()
                     process.wait()
+                    (diagnostics / "summary.json").write_text(
+                        json.dumps(
+                            {
+                                "peak_mb": peak_mb,
+                                "exit": process.returncode,
+                                "watchdog_killed": True,
+                            }
+                        )
+                    )
                     raise MemoryError(
                         f"replay exceeded 12 GB resident memory; peak={peak_mb} MB"
                     )
             time.sleep(5)
+        samples.close()
+        peak_mb = max(
+            peak_mb, resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss // 1024
+        )
+        (diagnostics / "summary.json").write_text(
+            json.dumps(
+                {
+                    "peak_mb": peak_mb,
+                    "exit": process.returncode,
+                    "watchdog_killed": False,
+                    "elapsed_seconds": time.monotonic() - started,
+                    "rules_fingerprint": fingerprint,
+                    "baseline": baseline.name,
+                    "memory_target_mb": 10 * 1024,
+                },
+                indent=2,
+            )
+        )
         print(
             f"Replay exit={process.returncode}; peak resident memory={peak_mb} MB",
             flush=True,
         )
-        return process.returncode
+        return process.returncode or int(peak_mb >= 10 * 1024)
 
 
 if __name__ == "__main__":

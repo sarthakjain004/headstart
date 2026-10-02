@@ -151,17 +151,31 @@ def dormant_periods(
 ) -> dict[str, list[DormantPeriod]]:
     """``{case-folded Board: [its Dormant periods]}`` under today's rule, judged at each
     authoritative read over every version listed on the Board then."""
+    import pyarrow.compute as pc
+
+    # Dormancy is Board-local. Partition this narrow all-Job input, including non-tech;
+    # served intervals remain global for cross-ATS duplicate folding afterwards.
+    ats_keys = pc.unique(
+        pc.list_element(pc.split_pattern(versions["id"], pattern=":"), 0)
+    ).to_pylist()
+    periods = {}
+    for ats in ats_keys:
+        subset = versions.filter(pc.starts_with(versions["id"], ats + ":"))
+        periods.update(_dormant_periods(subset, reads, live))
+    return periods
+
+
+def _dormant_periods(versions, reads, live):
     reads_of = _in_scope_reads(reads)
     by_board: dict[str, list[tuple[str, str | None, str, object]]] = {}
-    for job_id, vfrom, vto, posted in zip(
-        versions["id"].to_pylist(),
-        versions["valid_from"].to_pylist(),
-        versions["valid_to"].to_pylist(),
-        versions["posted_at"].to_pylist(),
-        strict=True,
-    ):
-        board = lower_key(resolve_board(job_id, live))
-        by_board.setdefault(board, []).append((vfrom, vto, job_id, posted))
+    for batch in versions.select(
+        ["id", "valid_from", "valid_to", "posted_at"]
+    ).to_batches(max_chunksize=8192):
+        for row in batch.to_pylist():
+            board = lower_key(resolve_board(row["id"], live))
+            by_board.setdefault(board, []).append(
+                (row["valid_from"], row["valid_to"], row["id"], row["posted_at"])
+            )
 
     periods: dict[str, list[DormantPeriod]] = {}
     for board, listed in by_board.items():

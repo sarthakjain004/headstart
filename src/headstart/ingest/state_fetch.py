@@ -500,7 +500,13 @@ def _fetch_ranged(url: str, dest: Path, size: int, headers: dict[str, str]) -> N
 
 
 def _download(
-    repo: str, siblings: list[Any], wanted: set[str], token: str | None, root: Path
+    repo: str,
+    siblings: list[Any],
+    wanted: set[str],
+    token: str | None,
+    root: Path,
+    *,
+    revision: str | None = None,
 ) -> None:
     """Fetch every ``wanted`` file under ``root`` — the download-side twin of
     ``scripts/fetch/pull_lancedb.py``, folded in here so ``join``/``merge``'s big pulls
@@ -515,6 +521,10 @@ def _download(
 
     from huggingface_hub import hf_hub_url
 
+    def url(path):
+        options = {} if revision is None else {"revision": revision}
+        return hf_hub_url(repo, path, repo_type="dataset", **options)
+
     sizes = {s.rfilename: (getattr(s, "size", None) or 0) for s in siblings}
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     small = [p for p in wanted if sizes.get(p, 0) < _BIG_FILE_BYTES]
@@ -523,9 +533,7 @@ def _download(
     def fetch_small(path: str) -> None:
         dest = root / path
         dest.parent.mkdir(parents=True, exist_ok=True)
-        _fetch_whole(
-            hf_hub_url(repo, path, repo_type="dataset"), dest, sizes[path], headers
-        )
+        _fetch_whole(url(path), dest, sizes[path], headers)
 
     _inner_retries.clear()
     step = max(1, len(small) // 10)  # about ten progress lines, however many files
@@ -543,9 +551,7 @@ def _download(
     for path in big:
         dest = root / path
         dest.parent.mkdir(parents=True, exist_ok=True)
-        _fetch_ranged(
-            hf_hub_url(repo, path, repo_type="dataset"), dest, sizes[path], headers
-        )
+        _fetch_ranged(url(path), dest, sizes[path], headers)
     if _inner_retries:
         classes = ", ".join(
             f"{k} {n}" for k, n in Counter(_inner_retries).most_common()

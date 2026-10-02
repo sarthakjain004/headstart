@@ -159,3 +159,40 @@ def test_the_band_reads_the_derived_years(tmp_path, row, description, band):
     )
 
     assert placed[job_id][1] == band
+
+
+def test_placement_batches_equal_whole_matrix_with_version_sources(
+    tmp_path, monkeypatch
+):
+    head = _head(tmp_path)
+    served = _served(
+        *[
+            {
+                "id": f"greenhouse:acme:{i}",
+                "title": "Backend Engineer",
+                "valid_from": "2026-10-02",
+            }
+            for i in range(7)
+        ]
+    )
+    sources = {
+        ("greenhouse:acme:2", "2026-10-02"): (
+            np.array([0, 1], np.float16),
+            "Requires 3 years of experience.",
+        )
+    }
+    expected = rp.placements(served, head, _cache(), {}, {}, version_sources=sources)
+    sizes = []
+    original = head.row_logits
+
+    def bounded(matrix):
+        sizes.append(len(matrix))
+        assert len(matrix) <= 2
+        return original(matrix)
+
+    monkeypatch.setattr(head, "row_logits", bounded)
+    actual = rp.placements(
+        served, head, _cache(), {}, {}, version_sources=sources, batch_size=2
+    )
+    assert actual.equals(expected)
+    assert sizes == [2, 2, 2, 1]

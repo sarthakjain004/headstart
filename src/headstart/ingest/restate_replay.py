@@ -26,22 +26,44 @@ from headstart.ingest import job_facts
 VERSION_COLUMNS = ("valid_from", "valid_to", "ended_as")
 
 
-def _stamped(directory: Path):
+def _stamped(directory: Path, *, wanted=None, columns=None):
     """Every fact file under ``directory``, oldest first, each with a ``run`` column holding the
     stamp its metadata names."""
     import pyarrow as pa
+    import pyarrow.compute as pc
     import pyarrow.parquet as pq
 
-    tables = []
-    for path in directory.glob("*.parquet"):
-        table = pq.read_table(path)
-        stamp = table.schema.metadata[b"stamp"].decode()
-        tables.append(
-            table.replace_schema_metadata(None).append_column(
-                "run", pa.array([stamp] * table.num_rows, pa.string())
+    paths = sorted(
+        directory.glob("*.parquet"), key=lambda p: pq.read_schema(p).metadata[b"stamp"]
+    )
+    selected = None if wanted is None else pa.array(sorted(wanted), pa.string())
+    for path in paths:
+        file = pq.ParquetFile(path)
+        stamp = file.schema_arrow.metadata[b"stamp"].decode()
+        for batch in file.iter_batches(batch_size=8192, columns=columns):
+            table = pa.Table.from_batches([batch]).replace_schema_metadata(None)
+            if selected is not None:
+                table = table.filter(pc.is_in(table["id"], value_set=selected))
+            yield table.append_column(
+                "run", pa.repeat(pa.scalar(stamp), table.num_rows)
             )
-        )
-    return sorted(tables, key=lambda t: t["run"][0].as_py() if t.num_rows else "")
+
+
+def eligible_ids(facts_dir: Path, is_tech) -> set[str]:
+    """IDs ever admitted by today's gate. Later rejected edits and absences still replay."""
+    import pyarrow.parquet as pq
+
+    wanted = set()
+    for path in sorted((facts_dir / job_facts.JOB_FACTS).glob("*.parquet")):
+        for batch in pq.ParquetFile(path).iter_batches(
+            batch_size=8192, columns=["id", "title", "department", "kind"]
+        ):
+            for row in batch.to_pylist():
+                if row["kind"] in {"listed", "changed"} and is_tech(
+                    row["title"], row["department"]
+                ):
+                    wanted.add(row["id"])
+    return wanted
 
 
 def runs(facts_dir: Path) -> list[str]:
@@ -65,36 +87,39 @@ def board_reads(facts_dir: Path):
     return pa.concat_tables(tables).sort_by([("run", "ascending")])
 
 
-def job_versions(facts_dir: Path):
+def job_versions(facts_dir: Path, *, wanted=None, columns=None):
     """Every Job version the facts under ``facts_dir`` describe, sorted by id then
     ``valid_from``: each ``listed`` or ``changed`` fact's raw fields, with the run it was recorded
     in as ``valid_from`` and the run and kind of the same Job's next fact as ``valid_to`` and
     ``ended_as``. None when there are no facts."""
-    import numpy as np
     import pyarrow as pa
     import pyarrow.compute as pc
 
-    tables = [t for t in _stamped(facts_dir / job_facts.JOB_FACTS) if t.num_rows]
+    tables = list(
+        _stamped(facts_dir / job_facts.JOB_FACTS, wanted=wanted, columns=columns)
+    )
     if not tables:
         return None
     facts = pa.concat_tables(tables).sort_by(
         [("id", "ascending"), ("run", "ascending")]
     )
+    del tables
 
-    ids = facts["id"].to_numpy(zero_copy_only=False)
-    run = facts["run"].to_numpy(zero_copy_only=False)
-    kind = facts["kind"].to_numpy(zero_copy_only=False)
-    # The same Job's next fact, when there is one: it ends the version this fact began.
-    followed = np.zeros(len(ids), dtype=bool)
-    followed[:-1] = ids[1:] == ids[:-1]
-    next_run = np.full(len(ids), None, dtype=object)
-    next_kind = np.full(len(ids), None, dtype=object)
-    next_run[:-1] = np.where(followed[:-1], run[1:], None)
-    next_kind[:-1] = np.where(followed[:-1], kind[1:], None)
+    def following(name):
+        return pa.chunked_array(
+            [
+                *facts[name].slice(1).chunks,
+                pa.nulls(min(1, len(facts)), facts[name].type),
+            ]
+        )
+
+    followed = pc.equal(facts["id"], following("id"))
+    next_run = pc.if_else(followed, following("run"), None)
+    next_kind = pc.if_else(followed, following("kind"), None)
 
     opens = pc.is_in(facts["kind"], value_set=pa.array(["listed", "changed"]))
-    versions = facts.append_column("valid_to", pa.array(next_run, pa.string()))
-    versions = versions.append_column("ended_as", pa.array(next_kind, pa.string()))
+    versions = facts.append_column("valid_to", next_run)
+    versions = versions.append_column("ended_as", next_kind)
     versions = versions.filter(opens).rename_columns(
         ["valid_from" if name == "run" else name for name in versions.column_names]
     )
