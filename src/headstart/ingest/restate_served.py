@@ -227,19 +227,35 @@ def clip_dormant(served, periods: Mapping[str, list[DormantPeriod]]):
     )
 
 
-def english_only(served, descriptions: Mapping[str, str], is_english: EnglishTest):
+def english_only(
+    served,
+    descriptions: Mapping[str, str],
+    is_english: EnglishTest,
+    *,
+    version_sources=None,
+):
     """``served`` less the versions today's English gate holds out of the index, each judged on
     its title and its Job's stored description, as ``embed_plan`` judges a Job."""
     import pyarrow as pa
 
-    judged: dict[tuple[str, str], bool] = {}
+    version_sources = version_sources or {}
+    judged = {}
     keep = []
-    for job_id, title in zip(
-        served["id"].to_pylist(), served["title"].to_pylist(), strict=True
+    starts = (
+        served["valid_from"].to_pylist()
+        if "valid_from" in served.schema.names
+        else [None] * served.num_rows
+    )
+    for job_id, title, start in zip(
+        served["id"].to_pylist(), served["title"].to_pylist(), starts, strict=True
     ):
-        key = (job_id, title or "")
+        text = (
+            version_sources.get((job_id, start), (None, descriptions.get(job_id)))[1]
+            or ""
+        )
+        key = (job_id, title or "", text)
         if key not in judged:
-            judged[key] = is_english(title or "", descriptions.get(job_id) or "")
+            judged[key] = is_english(title or "", text)
         keep.append(judged[key])
     return served.filter(pa.array(keep, pa.bool_()))
 
@@ -299,6 +315,15 @@ def _fold(members: list[dict], ranks) -> list[dict]:
             return ranks[row["id"]][1], row["served_from"]
 
         best = min(present, key=rank)
+        if holder is None:
+            inherited = [
+                row
+                for row in present
+                if row.get("baseline_incumbent")
+                and row["served_from"] == row["valid_from"]
+            ]
+            if inherited:
+                best = min(inherited, key=rank)
         incumbent = [row for row in present if holder and row["id"] == holder["id"]]
         # The rank's first two keys are the copy's class (index_plan.duplicate_ranks).
         if incumbent and ranks[best["id"]][1][:2] >= ranks[holder["id"]][1][:2]:

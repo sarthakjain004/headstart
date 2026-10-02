@@ -80,6 +80,29 @@ def _place(tmp_path, served, vectors=None, descriptions=None):
     return {row["id"]: rp.place_of(row) for row in placed.to_pylist()}
 
 
+def test_baseline_uses_its_own_vector_and_description_instead_of_latest_inputs(
+    tmp_path,
+):
+    job_id = "greenhouse:acme:1"
+    served = _served(
+        {"id": job_id, "title": "Backend Engineer", "valid_from": "2026-10-02"}
+    )
+    placed = rp.placements(
+        served,
+        _head(tmp_path),
+        _cache(),
+        {job_id: np.array([0, 1], np.float32)},
+        {job_id: "Requires 8 years of experience."},
+        version_sources={
+            (job_id, "2026-10-02"): (
+                np.zeros(2, np.float16),
+                "Requires 3 years of experience.",
+            )
+        },
+    )
+    assert rp.place_of(placed.to_pylist()[0]) == ("software-engineering", "mid")
+
+
 def test_the_family_reads_the_title_and_the_description_vector(tmp_path):
     served = _served(
         {"id": "greenhouse:acme:1", "title": "Backend Engineer"},

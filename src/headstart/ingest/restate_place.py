@@ -30,6 +30,8 @@ def placements(
     cache: role_family_classifier.Cache,
     vectors: Mapping[str, object],
     descriptions: Mapping[str, str],
+    *,
+    version_sources: Mapping | None = None,
 ):
     """``served`` with a ``family`` column (None where the head places the Job outside tech) and a
     ``band`` column. ``vectors`` maps an id to its description vector, ``descriptions`` to its
@@ -38,12 +40,19 @@ def placements(
     import pyarrow as pa
 
     rows = served.to_pylist()
+    version_sources = version_sources or {}
     width = head.row_vector_dim
     missing = np.zeros(width, dtype=np.float32)
     matrix = (
         np.stack(
             [
-                np.asarray(vectors.get(row["id"], missing), dtype=np.float32)
+                np.asarray(
+                    version_sources.get(
+                        (row["id"], row.get("valid_from")),
+                        (vectors.get(row["id"], missing), None),
+                    )[0],
+                    dtype=np.float32,
+                )
                 for row in rows
             ]
         )
@@ -57,7 +66,14 @@ def placements(
     bands = []
     for row in rows:
         derived = derived_meta.derive(
-            row | {"ats": ats_of(row["id"]), "description": descriptions.get(row["id"])}
+            row
+            | {
+                "ats": ats_of(row["id"]),
+                "description": version_sources.get(
+                    (row["id"], row.get("valid_from")),
+                    (None, descriptions.get(row["id"])),
+                )[1],
+            }
         )
         bands.append(
             role_taxonomy.band(

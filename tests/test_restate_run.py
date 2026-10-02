@@ -160,3 +160,63 @@ def test_no_facts_is_nothing_to_restate(tmp_path, monkeypatch):
 
     assert restate_run.main() == 0
     assert not (tmp_path / "out").exists()
+
+
+def test_complete_baseline_keeps_a_served_job_absent_from_all_scrapes(
+    tmp_path, monkeypatch
+):
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    facts = tmp_path / "facts"
+    for stamp in RUNS[:2]:
+        _record(facts, stamp, [(f"{BOARD}:1", "Backend Engineer")])
+    families, head, cache = _config(tmp_path)
+    baseline_stamp = "2026-09-01T00:30:00+00:00"
+    baseline = tmp_path / "baseline.parquet"
+    text = "You will design and maintain software services for our customers. Requires 3 years of software engineering experience."
+    rows = [
+        {
+            "id": f"{BOARD}:{n}",
+            "kind": "present",
+            "title": "Backend Engineer",
+            "department": "Engineering",
+            "description": text,
+            "vector": [0.0, 0.0],
+            "reference_board": BOARD,
+        }
+        for n in (1, 2)
+    ]
+    pq.write_table(
+        pa.Table.from_pylist(rows).replace_schema_metadata(
+            {b"baseline": b"true", b"ts": baseline_stamp.encode()}
+        ),
+        baseline,
+    )
+    args = [
+        "restate",
+        "--facts",
+        str(facts),
+        "--baseline",
+        str(baseline),
+        "--ledger",
+        str(tmp_path / "absent-ledger"),
+        "--board-failures",
+        str(tmp_path / "absent-failures"),
+        "--classifier",
+        str(head),
+        "--families",
+        str(families),
+        "--title-cache",
+        str(cache),
+        "--descriptions",
+        str(tmp_path / "absent-descriptions"),
+        "--db",
+        str(tmp_path / "absent-db"),
+        "--out",
+        str(tmp_path / "restated"),
+    ]
+    monkeypatch.setattr(sys, "argv", args)
+    assert restate_run.main() == 0
+    _, levels = trend_history.board_levels(tmp_path / "restated")
+    assert sum(n for k, n in levels.items() if k[1] == "stock") == 2

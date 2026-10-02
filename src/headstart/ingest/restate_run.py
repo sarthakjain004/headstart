@@ -26,12 +26,15 @@ import argparse
 import shutil
 from pathlib import Path
 
+import numpy as np
+
 from headstart import log
 from headstart.boards import eightfold_backing
 from headstart.ingest import (
     REPO_ROOT,
     board_failures,
     job_facts,
+    restate_baseline,
     restate_count,
     restate_place,
     restate_replay,
@@ -100,6 +103,11 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--facts", type=Path, default=job_facts.FACTS_DIR)
     ap.add_argument(
+        "--baseline",
+        type=Path,
+        help="complete served reference baseline; exact replay begins here",
+    )
+    ap.add_argument(
         "--ledger", type=Path, default=REPO_ROOT / "data" / "validate" / "liveness"
     )
     ap.add_argument(
@@ -139,6 +147,44 @@ def main() -> int:
         _log.info(f"no Job facts under {args.facts} yet — nothing to restate")
         return 0
     reads = restate_replay.board_reads(args.facts)
+    baseline_sources = {}
+    if args.baseline is not None:
+        import pyarrow.parquet as pq
+
+        baseline = pq.read_table(args.baseline)
+        metadata = baseline.schema.metadata or {}
+        if metadata.get(b"baseline") != b"true":
+            raise ValueError("--baseline must name a complete reference baseline")
+        baseline_stamp = metadata[b"ts"].decode()
+        inputs = baseline.select(
+            [
+                name
+                for name in baseline.schema.names
+                if name not in {"vector", "row_logits", "title_logits"}
+            ]
+        ).to_pylist()
+        inherited = {r["id"]: r for r in inputs if r["kind"] == "present"}
+        for batch in baseline.select(["id", "vector", "description"]).to_batches(
+            max_chunksize=4096
+        ):
+            for row in batch.to_pylist():
+                baseline_sources[(row["id"], baseline_stamp)] = (
+                    np.asarray(row["vector"], dtype=np.float16),
+                    row["description"],
+                )
+        future = []
+        for path in sorted((args.facts / job_facts.JOB_FACTS).glob("*.parquet")):
+            stamp = pq.read_schema(path).metadata[b"stamp"].decode()
+            if stamp > baseline_stamp:
+                future.extend(
+                    r | {"run": stamp}
+                    for r in pq.read_table(path, columns=["id", "kind"]).to_pylist()
+                )
+        versions = restate_baseline.seed_versions(
+            versions, inherited, baseline_stamp, future
+        )
+        runs = [baseline_stamp] + [r for r in runs if r > baseline_stamp]
+        _log.info(f"exact starting coverage from reference baseline {baseline_stamp}")
     _log.info(f"{versions.num_rows} Job versions over {len(runs)} runs")
 
     ledger_boards = live_keep_set(args.ledger)
@@ -153,7 +199,9 @@ def main() -> int:
         served, restate_served.dormant_periods(versions, reads, live)
     )
     descriptions = _descriptions(args.descriptions, set(served["id"].to_pylist()))
-    served = restate_served.english_only(served, descriptions, is_english)
+    served = restate_served.english_only(
+        served, descriptions, is_english, version_sources=baseline_sources
+    )
     ids = served["id"].to_pylist()
     requisitions = {
         job_id: req
@@ -193,6 +241,7 @@ def main() -> int:
         cache,
         _vectors(args.db, args.facts, wanted),
         descriptions,
+        version_sources=baseline_sources,
     )
     _log.info(f"placed {served.num_rows} served intervals in a family and band")
 
