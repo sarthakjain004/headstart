@@ -360,60 +360,62 @@ def scrape_all(
             if progress_every and done % progress_every == 0:
                 _emit_progress(done, total, len(seen_ids), len(errors), start)
     finally:
-        # Every Board is submitted up front, so `with ThreadPoolExecutor(...)` would drain the
-        # whole queue on the way out — its __exit__ is shutdown(wait=True). Fine on a clean
-        # finish, wrong on a time budget: the SIGTERM meant to end the shard would instead wait
-        # for every remaining Board, blow the step timeout, and take the runner down before
-        # anything could be reported. cancel_futures drops what has not started.
-        #
-        # A Board already running cannot be cancelled — you cannot kill a Python thread — so
-        # `wait=True` blocked on the slowest in-flight one, and a straggler could outlast the 6
-        # min of slack between the budget and the step timeout (60m and 66m then, 75m and 81m
-        # since ADR-0229), taking the runner down before anything was reported (ADR-0053,
-        # amended). Not waiting is safe because those
-        # results are discarded either way: the loop that would have written them has already
-        # exited, and `JobWriter` is written only from that loop and flushed per Board, so no
-        # straggler is mid-write when we stop waiting.
-        executor.shutdown(wait=False, cancel_futures=True)
-        # Cost the Boards that never finished, before the writer closes. Whatever is still in
-        # flight here was killed mid-fetch, and the seconds it burned are a *floor* on its true
-        # cost — the one thing a kill proves. Without this the packer never learns: a Board too
-        # big to finish writes no row, keeps its stale estimate, is packed cheap again, and kills
-        # a shard again, every run (ADR-0064).
-        #
-        # Snapshot under the lock: the abandoned threads are still running and still popping
-        # their own keys. No Board can be both here and already costed — a worker pops itself
-        # before its future completes, and `record_cost` runs only from the `as_completed` loop
-        # above, which has already exited. So everything in this snapshot needs its floor.
-        with in_flight_lock:
-            unfinished = sorted(in_flight.items())
-        if unfinished:
-            # The deferred list downstream mixes these with Boards that never started, in
-            # assignment order and capped, so the Board that ate the shard is rarely in it.
-            # Oldest start first: the longest-running Board is the likeliest culprit.
-            now = time.monotonic()
-            burned = [
-                f"{key} {now - started_at:.0f}s"
-                for key, started_at in sorted(unfinished, key=lambda kv: kv[1])
-            ]
-            _log.info(
-                f"killed mid-fetch: {len(unfinished)} board(s) — "
-                + log.named_sample(burned)
-            )
-        for key, started_at in unfinished:
-            writer.record_cost(
-                cost_key.get(key, key),
-                time.monotonic() - started_at,
-                0,
-                unfinished=True,
-            )
         try:
-            writer.close()
+            # Every Board is submitted up front, so `with ThreadPoolExecutor(...)` would drain the
+            # whole queue on the way out — its __exit__ is shutdown(wait=True). Fine on a clean
+            # finish, wrong on a time budget: the SIGTERM meant to end the shard would instead wait
+            # for every remaining Board, blow the step timeout, and take the runner down before
+            # anything could be reported. cancel_futures drops what has not started.
+            #
+            # A Board already running cannot be cancelled — you cannot kill a Python thread — so
+            # `wait=True` blocked on the slowest in-flight one, and a straggler could outlast the 6
+            # min of slack between the budget and the step timeout (60m and 66m then, 75m and 81m
+            # since ADR-0229), taking the runner down before anything was reported (ADR-0053,
+            # amended). Not waiting is safe because those
+            # results are discarded either way: the loop that would have written them has already
+            # exited, and `JobWriter` is written only from that loop and flushed per Board, so no
+            # straggler is mid-write when we stop waiting.
+            executor.shutdown(wait=False, cancel_futures=True)
+            # Cost the Boards that never finished, before the writer closes. Whatever is still in
+            # flight here was killed mid-fetch, and the seconds it burned are a *floor* on its true
+            # cost — the one thing a kill proves. Without this the packer never learns: a Board too
+            # big to finish writes no row, keeps its stale estimate, is packed cheap again, and kills
+            # a shard again, every run (ADR-0064).
+            #
+            # Snapshot under the lock: the abandoned threads are still running and still popping
+            # their own keys. No Board can be both here and already costed — a worker pops itself
+            # before its future completes, and `record_cost` runs only from the `as_completed` loop
+            # above, which has already exited. So everything in this snapshot needs its floor.
+            with in_flight_lock:
+                unfinished = sorted(in_flight.items())
+            if unfinished:
+                # The deferred list downstream mixes these with Boards that never started, in
+                # assignment order and capped, so the Board that ate the shard is rarely in it.
+                # Oldest start first: the longest-running Board is the likeliest culprit.
+                now = time.monotonic()
+                burned = [
+                    f"{key} {now - started_at:.0f}s"
+                    for key, started_at in sorted(unfinished, key=lambda kv: kv[1])
+                ]
+                _log.info(
+                    f"killed mid-fetch: {len(unfinished)} board(s) — "
+                    + log.named_sample(burned)
+                )
+            for key, started_at in unfinished:
+                writer.record_cost(
+                    cost_key.get(key, key),
+                    time.monotonic() - started_at,
+                    0,
+                    unfinished=True,
+                )
         finally:
-            # Browser CDP shutdown can resolve DNS through asyncio's thread executor. Do it
-            # while that executor is alive, rather than from Python's late atexit phase.
-            # Abandoned workers must not lazily launch another browser after this teardown.
-            browser_http.shutdown()
+            try:
+                writer.close()
+            finally:
+                # Browser CDP shutdown can resolve DNS through asyncio's thread executor. Do it
+                # while that executor is alive, rather than from Python's late atexit phase.
+                # Abandoned workers must not lazily launch another browser after this teardown.
+                browser_http.shutdown()
     return RunResult(
         errors=errors, truncated=truncated, unique=len(seen_ids), boards=done
     )

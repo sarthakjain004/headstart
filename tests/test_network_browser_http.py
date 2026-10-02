@@ -712,3 +712,51 @@ def test_worker_dispatched_before_shutdown_cannot_adopt_a_later_generation(
     assert result.boards == 1 and not result.errors
     assert len(fresh.tabs) == 2
     assert failures == ["browser transport stopped with this harvest"]
+
+
+def test_old_origin_cannot_release_a_reopened_browser_slot(fresh):
+    old = bh.origin("https://example.invalid/old")
+    old_page = old.__enter__()
+    bh.shutdown()
+    with bh.origin("https://example.invalid/new"):
+        gate = bh._gate
+        assert gate._value == bh._TAB_WIDTH - 1
+        old.__exit__(None, None, None)
+        assert gate._value == bh._TAB_WIDTH - 1
+        with pytest.raises(RuntimeError, match="lifetime"):
+            old_page.get_json("/jobs")
+
+
+def test_delayed_old_origin_exit_on_another_thread_leaves_new_lifetime_untouched(fresh):
+    from threading import Event, Thread
+
+    entered, released, finished = Event(), Event(), Event()
+    pages = []
+
+    def old_worker():
+        with bh.origin("https://example.invalid/old") as page:
+            pages.append(page)
+            entered.set()
+            assert released.wait(2)
+        finished.set()
+
+    thread = Thread(target=old_worker)
+    thread.start()
+    try:
+        assert entered.wait(2)
+        old_tab = fresh.tabs[0]
+        bh.shutdown()
+        with bh.origin("https://example.invalid/new"):
+            new_loop, new_gate = bh._loop, bh._gate
+            with pytest.raises(RuntimeError, match="closed lifetime"):
+                pages[0].get_json("/jobs")
+            assert not old_tab.calls
+            released.set()
+            assert finished.wait(2)
+            assert bh._loop is new_loop
+            assert new_gate._value == bh._TAB_WIDTH - 1
+        assert new_gate._value == bh._TAB_WIDTH
+    finally:
+        released.set()
+        thread.join(timeout=2)
+    assert not thread.is_alive()

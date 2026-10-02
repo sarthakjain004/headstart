@@ -623,3 +623,37 @@ def test_a_classified_unreadable_board_is_recorded_without_a_warning(
     assert [(r.getMessage(), r.levelno) for r in unexpected] == [
         ("x:b: unexpected KeyError", logging.WARNING)
     ]
+
+
+def test_unfinished_cost_failure_still_shuts_down_browser(monkeypatch, tmp_path):
+    from threading import Event
+
+    from headstart.network import browser_http
+
+    entered, released = Event(), Event()
+    shutdown_calls = []
+
+    class Blocked(FakeScraper):
+        def fetch(self):
+            entered.set()
+            assert released.wait(2)
+            return []
+
+    monkeypatch.setattr(harvest, "get_scraper", lambda *args, **kwargs: Blocked())
+
+    def interrupted(futures):
+        assert entered.wait(2)
+        raise KeyboardInterrupt("original interruption")
+
+    def disk_full(*args, **kwargs):
+        raise OSError("disk full during unfinished cost")
+
+    monkeypatch.setattr(harvest, "as_completed", interrupted)
+    monkeypatch.setattr(harvest.JobWriter, "record_cost", disk_full)
+    monkeypatch.setattr(browser_http, "shutdown", lambda: shutdown_calls.append(True))
+    try:
+        with pytest.raises(OSError, match="disk full during unfinished cost"):
+            harvest.scrape_all([CompanyRef("greenhouse", "blocked")], jobs_dir=tmp_path)
+    finally:
+        released.set()
+    assert shutdown_calls == [True]

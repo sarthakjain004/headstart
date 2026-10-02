@@ -171,7 +171,7 @@ _worker_state = threading.local()
 _calls: set[asyncio.Task] = set()
 
 
-def _run(coro, timeout: float):
+def _run(coro, timeout: float, *, loop=None):
     """Run a coroutine on the browser loop from any thread, cancelling it if we give up.
 
     ``Future.result(timeout)`` abandons the *caller*; it does not stop the coroutine. Without the
@@ -180,7 +180,7 @@ def _run(coro, timeout: float):
     deadlocks. Cancelling delivers ``CancelledError`` into the coroutine, whose own
     ``except BaseException`` hands the slot back.
     """
-    loop = _loop
+    loop = _loop if loop is None else loop
     if loop is None or loop.is_closed():
         coro.close()
         raise RuntimeError("browser transport is shut down")
@@ -207,14 +207,14 @@ def _run(coro, timeout: float):
         raise
 
 
-def _ensure_started() -> None:
+def _ensure_started():
     """The process's one Chrome, started on first use, with a launch retry."""
     global _loop, _loop_thread, _browser, _atexit_registered
     with _lock:
         if getattr(_worker_state, "generation", _generation) != _generation:
             raise RuntimeError("browser transport stopped with this harvest")
         if _browser is not None:
-            return
+            return _browser, _loop, _gate, _generation
         if _loop is None:
             _loop = asyncio.new_event_loop()
             _loop_thread = threading.Thread(
@@ -259,7 +259,7 @@ def _ensure_started() -> None:
                     f"browser transport: Chrome up in {time.monotonic() - started:.1f}s "
                     f"(attempt {attempt})"
                 )
-                return
+                return _browser, _loop, _gate, _generation
             except BrowserUnavailable:
                 raise  # an install problem: retrying is theatre
             except Exception as exc:  # noqa: BLE001 - startup is the flaky part; retry it
@@ -363,9 +363,11 @@ def shutdown() -> None:
 class _Page:
     """One warmed tab on one origin. ``post_json``/``get_json`` are the whole surface."""
 
-    def __init__(self, tab, base: str) -> None:
+    def __init__(self, tab, base: str, loop, generation: int) -> None:
         self._tab = tab
         self._base = base
+        self._loop = loop
+        self._generation = generation
 
     def post_json(self, path: str, body: dict) -> dict:
         return self._request("post", path, body)
@@ -374,6 +376,9 @@ class _Page:
         return self._request("get", path, None)
 
     def _request(self, method: str, path: str, body: dict | None) -> dict:
+        if self._generation != _generation or self._loop is not _loop:
+            raise RuntimeError("browser page belongs to a closed lifetime")
+
         async def _go():
             fn = getattr(self._tab.request, method)
             kwargs = {"json": body} if body is not None else {}
@@ -383,7 +388,7 @@ class _Page:
         # never for an HTTP answer: a retried 403 would not be a pass, it would be a lie.
         for attempt in (1, 2):
             try:
-                r = _run(_go(), timeout=_FETCH_TIMEOUT_S)
+                r = _run(_go(), timeout=_FETCH_TIMEOUT_S, loop=self._loop)
                 break
             except Exception as exc:  # client-side fault; one stated retry
                 if attempt == 2:
@@ -412,13 +417,13 @@ def origin(page_url: str):
 
     parsed = urlparse(page_url)
     base = f"{parsed.scheme}://{parsed.netloc}"
-    _ensure_started()
+    browser, loop, gate, generation = _ensure_started()
 
     async def _open():
-        await _gate.acquire()
+        await gate.acquire()
         tab = None
         try:
-            tab = await _browser.new_tab()
+            tab = await browser.new_tab()
             await _install_blocking(tab)
             await tab.go_to(page_url, timeout=_NAV_TIMEOUT_S)
             return tab
@@ -432,21 +437,22 @@ def origin(page_url: str):
                     _trace_teardown_failure(
                         "closing the tab of a failed navigation raised"
                     )
-            _gate.release()
+            gate.release()
             raise
 
     async def _close(tab):
         try:
             await tab.close()
         finally:
-            _gate.release()
+            gate.release()
 
-    tab = _run(_open(), timeout=_NAV_TIMEOUT_S + 40)
+    tab = _run(_open(), timeout=_NAV_TIMEOUT_S + 40, loop=loop)
     try:
-        yield _Page(tab, base)
+        yield _Page(tab, base, loop, generation)
     finally:
         try:
-            _run(_close(tab), timeout=15)
+            if not loop.is_closed():
+                _run(_close(tab), timeout=15, loop=loop)
         except Exception:  # noqa: BLE001 - a tab that won't close must not fail the board
             _trace_teardown_failure("closing a finished board's tab raised")
 
