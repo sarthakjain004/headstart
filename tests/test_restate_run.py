@@ -24,6 +24,14 @@ BOARD = "greenhouse:acme"
 RUNS = [f"2026-09-{d:02d}T00:00:00+00:00" for d in (1, 3, 6)]
 
 
+@pytest.fixture(autouse=True)
+def simulated_run_identity(monkeypatch):
+    # Several synthetic runs must not all inherit the enclosing CI run's identity.
+    # Tests needing committed joins provide explicit identities in their fixtures.
+    monkeypatch.delenv("GITHUB_RUN_ID", raising=False)
+    monkeypatch.delenv("GITHUB_RUN_ATTEMPT", raising=False)
+
+
 def _config(tmp_path: Path) -> tuple[Path, Path, Path]:
     families = tmp_path / "role_families.json"
     families.write_text(
