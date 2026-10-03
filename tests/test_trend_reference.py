@@ -38,6 +38,8 @@ def test_baseline_retains_a_job_not_seen_in_new_scrapes_and_quiet_ticks_are_empt
         table, placed, tmp_path / "facts", "2026-10-02T00:00:00+00:00", {}
     )
     assert pq.read_schema(first).metadata[b"baseline"] == b"true"
+    assert "max_years" not in pq.read_schema(first).names
+    assert "experience_source" not in pq.read_schema(first).names
     assert pq.read_table(first)["first_seen"].to_pylist() == ["2026-09-01"]
     second = tr.capture(
         table, placed, tmp_path / "facts", "2026-10-02T01:00:00+00:00", {}
@@ -72,6 +74,42 @@ def test_edit_and_removal_preserve_the_original_inputs(tmp_path):
         ("lever:acme:2", "removed"),
     }
     assert rows[0]["description"] == "Edited"
+
+
+@pytest.mark.parametrize("edit", [{"max_years": 6}, {"experience_source": "field"}])
+def test_null_description_keeps_provenance_and_provenance_only_edits(tmp_path, edit):
+    facts = tmp_path / "facts"
+    row = job(description=None) | {"max_years": 5, "experience_source": "regex"}
+    placed = {
+        "lever:acme:1": Placement("lever:acme", "software-engineering", "mid", "lever")
+    }
+    first = tr.capture(
+        source(tmp_path, [row]), placed, facts, "2026-10-02T00:00:00+00:00", {}
+    )
+    second = tr.capture(
+        source(tmp_path, [row | edit]),
+        placed,
+        facts,
+        "2026-10-02T01:00:00+00:00",
+        {},
+    )
+    assert pq.read_table(second).num_rows == 1
+    ticks = list(
+        tr.checkpoints(
+            facts, ["2026-10-02T00:00:00+00:00", "2026-10-02T01:00:00+00:00"]
+        )
+    )
+    original = ticks[0][1]["lever:acme:1"]
+    changed = ticks[1][1]["lever:acme:1"]
+    assert original["description"] is None
+    assert original["min_years"] == 3
+    assert original["max_years"] == 5
+    assert original["experience_source"] == "regex"
+    assert changed["description"] is None
+    assert changed["min_years"] == 3
+    assert changed["max_years"] == edit.get("max_years", 5)
+    assert changed["experience_source"] == edit.get("experience_source", "regex")
+    assert pq.read_table(first)["experience_source"].to_pylist() == ["regex"]
 
 
 def test_failed_checkpoint_does_not_advance_the_state(tmp_path, monkeypatch):
