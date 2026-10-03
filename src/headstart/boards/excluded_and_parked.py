@@ -17,6 +17,10 @@ from __future__ import annotations
 # one entry covers a Board that appears under several casings (smartrecruiters Dev2/dev2).
 EXCLUDED_BOARDS: frozenset[str] = frozenset(
     {
+        # Read 2026-10-03: Starbucks' staging front serves 53 postings, including
+        # "barista CAN ext test", "barista US ext test" and "test_testing lead".
+        # Its PCSX group is starbucks-staging.com; these are test requisitions.
+        "eightfold:starbucks-staging.eightfold.ai",
         # Ashby's turn, found late (ADR-0114) by reading board titles rather than slugs:
         # `krakensandbox` titles itself "Kraken Sandbox Jobs" and serves 3 postings,
         # content-confirmed as templates ("Basic Job Template", "Admin Assistant Testing").
@@ -1033,6 +1037,13 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
 # cannot keep its rows fresh, so serving them would be serving a snapshot that only ages.
 PARKED_BOARDS: frozenset[str] = frozenset(
     {
+        # Read 2026-10-03 after the iCIMS landing: each client's whole listing
+        # is covered by Scrapable iCIMS Boards (ADR-0240), so Jibe keeps none.
+        "jibe:chumashcareers",  # 23 of 23 postings
+        "jibe:davidsonhospitality",  # 928 of 928
+        "jibe:jointcommission",  # 1 of 1
+        "jibe:oraucareers",  # 14 of 14
+        "jibe:paveamerica",  # 2 of 2
         # New Manatal adapter, ADR-0384: the company's own /careers redirects to its
         # legacy Board (32 Jobs); this alternative advanced Board has 40 JobPosts
         # with substantial overlap and different ids. Prefer the endorsed surface

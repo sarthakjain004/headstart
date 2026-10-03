@@ -128,3 +128,42 @@ Wayback is still running; its report records completion independently for every
 namespace and known host. Candidate summaries label Wayback's additive CSV pool
 explicitly: it includes prior discoveries, so those rows cannot all be attributed
 to this run's September 17 onward window.
+
+## Landing the new probe results
+
+The completed namespace outputs and the additive Wayback candidate pool produced
+1,010 identities absent from the held ledgers. Case-folded `board_key` reconciliation
+removed four repeated candidate spellings. The five WP fingerprint hosts resolved
+to already-held hosts through their own REST APIs, leaving 1,001 identities to check.
+The standard checker handled 775; the dedicated iCIMS prober handled 226. Existing
+ledger identities were excluded from the liveness input.
+
+The landing adds **846 verdict rows across 30 ATSes**: **549 live, 235 dead and
+62 unknown**. It excludes 134 single-label iCIMS infrastructure/login hosts and
+21 conventionally non-production Boards. All four patient liveness passes completed;
+unknowns remain unknown instead of being recorded as dead. Workable's real 429
+response recovered through spare egress, and Join's 429s settled after pacing eased.
+Join remains disabled: its 139 live additions do not enter the scrape list.
+
+Tenant spellings follow the held ledgers: Workday uses host/site without a scheme,
+Personio and Zoho use labels, Oracle uses the complete pod host, and Taleo BE uses
+its org/CWS spelling. Workday URLs retain the answering pod returned by the prober.
+All existing liveness rows remain unchanged.
+
+All 12 new SuccessFactors hosts carry RMK's own `rmkcdn`/`j2w` assets. Ten were
+confirmed on a listed job page; the two empty boards were confirmed on their RMK
+landing pages. The new ADP clients have real company names, with three additional
+cache entries; 11 new Workday Hiring Boards have resolved company-name entries.
+The company-name helper could not name GDIT's employee-referral site.
+
+The live `starbucks-staging.eightfold.ai` endpoint contains 53 postings, including
+“barista CAN ext test”, “barista US ext test” and “test_testing lead”, under PCSX
+group `starbucks-staging.com`. Its live verdict is retained, but it is explicitly
+in `EXCLUDED_BOARDS`, so the test postings cannot enter the scrape. It does not
+enter the customer-front backing-pair roster.
+
+Recruitee's four-worker redirect refresh completed with no `unreachable` results.
+The Jibe/iCIMS coverage audit measured five clients whose whole postings set is
+already served by held iCIMS Boards: Chumash (23), Davidson Hospitality (928),
+Joint Commission (1), ORAU (14), and Pave America (2). They are parked under
+ADR-0240 so the overlapping Jibe listings do not repeat those postings.
