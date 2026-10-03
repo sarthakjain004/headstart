@@ -104,7 +104,8 @@ class VersionSources:
         """Attach a text observation without backdating a later vector."""
         exact = self._db.execute(
             """SELECT o.body, b.vector, o.observed
-            FROM observations o JOIN bodies b ON b.key=o.body WHERE o.id=? AND o.stamp=?""",
+            FROM observations o JOIN bodies b ON b.key=o.body
+            WHERE o.id=? AND o.stamp<=? ORDER BY o.stamp DESC LIMIT 1""",
             (job_id, stamp),
         ).fetchone()
         if exact is None:
@@ -134,7 +135,7 @@ class VersionSources:
         self._db.commit()
 
     def events(self):
-        """Only observed content changes, ordered by Job and time; score noise is not input."""
+        """Observed body/field changes by Job and time; score noise is not input."""
         previous_id, previous_inputs = None, None
         for job_id, stamp, body, observed in self._db.execute(
             "SELECT id, stamp, body, observed FROM observations ORDER BY id, stamp"

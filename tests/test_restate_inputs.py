@@ -85,6 +85,30 @@ def test_a_future_description_does_not_replace_an_earlier_version():
         assert pieces[1]["starts_as"] == "changed"
 
 
+def test_later_text_observations_preserve_already_observed_vectors():
+    import hashlib
+
+    with VersionSources(2) as sources:
+        sources.add_batch(
+            "1", [{"id": "lever:acme:1", "vector": [0.25, 0.5], "description": "Old"}]
+        )
+        sources.add_batch(
+            "4",
+            [{"id": "lever:acme:1", "vector": [0.75, 0.5], "description": "Future"}],
+        )
+        sources.add_description(
+            "2", "lever:acme:1", hashlib.sha256(b"Old").hexdigest(), "Old"
+        )
+        sources.add_description(
+            "3", "lever:acme:1", hashlib.sha256(b"Changed").hexdigest(), "Changed"
+        )
+        for stamp, expected in (("2", "Old"), ("3", "Changed")):
+            sources.bind("lever:acme:1", stamp)
+            vector, text = sources.get(("lever:acme:1", stamp))
+            assert np.array_equal(vector, [0.25, 0.5])
+            assert text == expected
+
+
 def test_experience_only_observations_are_input_changes():
     with VersionSources(2) as sources:
         for stamp, years in (("1", 3), ("2", 8)):
