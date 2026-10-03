@@ -1,8 +1,6 @@
 """Independent source-oracle fixtures; candidate output never supplies expected truth."""
 
-import hashlib
 import importlib.util
-import inspect
 import json
 import zipfile
 from collections import Counter
@@ -779,11 +777,7 @@ def test_legacy_captured_math_reuse_requires_matching_archived_weights_and_norma
     tmp_path, policy
 ):
     head = tmp_path / "head"
-    digest = hashlib.sha256()
-    for path in (head / "manifest.json", head / "head.npz"):
-        digest.update(bytes.fromhex(verifier.sha256(path)))
-    digest.update(inspect.getsource(rfc.normalise).encode())
-    current = digest.hexdigest()
+    current = policy.head.inputs_fingerprint
     archive = tmp_path / "rules.zip"
     source_path = Path(rfc.__file__)
 
@@ -1099,3 +1093,55 @@ def test_independent_turnover_books_real_listing_and_confirmed_closure(policy):
         "2026-10-03T00:00:00+00:00",
     )
     assert moves[("closed", *PLACEMENT)] == 1
+
+
+def test_native_math_fp_preserves_float32_parts_under_current_policy(policy):
+    policy.input_fingerprint = policy.head.inputs_fingerprint
+    row = source(row_logits=[0.0, 0.0])
+    expected, quality, _ = policy.transform(
+        {row["id"]: row}, policy.head.inputs_fingerprint
+    )
+    assert expected[row["id"]] == PLACEMENT
+    assert quality["captured_float32_logits"] == 1
+    assert quality["float16_classifier_approximation"] == 0
+
+
+def test_observed_seniority_fallback_is_rederived_like_current_source_policy(policy):
+    row = source(
+        description=None,
+        experience="Senior",
+        experience_source="seniority",
+        min_years=20,
+    )
+    expected, quality, _ = policy.transform({row["id"]: row}, "matching-inputs")
+    derived = verifier.derived_meta.derive(row | {"ats": "greenhouse"})
+    assert policy.years[row["id"]] == derived["min_years"]
+    assert expected[row["id"]][2] == verifier.role_taxonomy.band(
+        derived["min_years"], row["title"], None
+    )
+    assert quality["observed_min_years_without_text"] == 0
+
+
+def test_native_fp_title_cache_loading_never_mutates_pinned_evidence(
+    tmp_path, monkeypatch
+):
+    root = Path(__file__).parents[1]
+    head = rfc.Head(root / "config/role_family_classifier")
+    path = tmp_path / "title-cache.parquet"
+    cache = rfc.Cache(
+        head.version, {"backend engineer": np.ones(len(head.families), np.float32)}
+    )
+    rfc.save_cache(path, cache)
+    before = path.read_bytes()
+    monkeypatch.setattr(index_plan, "live_keep_set", lambda _: {BOARD})
+    monkeypatch.setattr(index_plan, "workday_site_jobs", lambda _: {})
+    monkeypatch.setattr(verifier.eightfold_backing, "load", lambda _: {})
+    selected = verifier.Policy(root, path, tmp_path)
+    assert selected.input_fingerprint == head.inputs_fingerprint
+    assert selected.cache.title_logits
+    assert path.read_bytes() == before
+    rfc.save_cache(path, cache, inputs_fingerprint="mismatched-mathematics")
+    before = path.read_bytes()
+    selected = verifier.Policy(root, path, tmp_path)
+    assert selected.cache.title_logits == {}
+    assert path.read_bytes() == before

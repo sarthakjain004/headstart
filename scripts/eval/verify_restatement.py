@@ -38,6 +38,7 @@ import inspect
 import itertools
 import json
 import subprocess
+import tempfile
 import zipfile
 from collections import Counter
 from datetime import datetime, timedelta
@@ -78,6 +79,7 @@ MATH_SOURCE_COLUMNS = (
     "description",
     "vector",
     "min_years",
+    "experience_source",
     "title_logits",
     "row_logits",
 )
@@ -111,7 +113,9 @@ def rules_fingerprint(root):
 
 def captured_fingerprint(method, inputs):
     """Recover old math-input identity from its pinned rule archive, without executing it."""
-    fingerprint = method.get("classifier_input_fingerprint")
+    fingerprint = method.get("classifier_inputs_fingerprint") or method.get(
+        "classifier_input_fingerprint"
+    )
     if fingerprint:
         return fingerprint
     rules = method.get("rules_fingerprint")
@@ -122,24 +126,37 @@ def captured_fingerprint(method, inputs):
         return None
     with zipfile.ZipFile(item["path"]) as archive:
         source = archive.read("src/headstart/ingest/role_family_classifier.py").decode()
-        normalise = next(
-            (
-                node
-                for node in ast.parse(source).body
-                if isinstance(node, ast.FunctionDef) and node.name == "normalise"
-            ),
-            None,
-        )
-        if normalise is None:
-            raise ValueError("pinned classifier archive lacks normalise")
-        digest = hashlib.sha256()
-        for name in (
-            "config/role_family_classifier/manifest.json",
-            "config/role_family_classifier/head.npz",
-        ):
-            digest.update(hashlib.sha256(archive.read(name)).digest())
-        digest.update((ast.get_source_segment(source, normalise) + "\n").encode())
-    return digest.hexdigest()
+
+        def mathematics(text):
+            found = {}
+            for node in ast.parse(text).body:
+                nodes = (
+                    node.body
+                    if isinstance(node, ast.ClassDef) and node.name == "Head"
+                    else [node]
+                )
+                for function in nodes:
+                    if isinstance(function, ast.FunctionDef) and function.name in {
+                        "normalise",
+                        "title_logits",
+                        "row_logits",
+                    }:
+                        if ast.get_docstring(function) is not None:
+                            del function.body[0]
+                        found[function.name] = ast.dump(
+                            function, include_attributes=False
+                        )
+            return found
+
+        if mathematics(source) != mathematics(inspect.getsource(rfc)):
+            return None
+        with tempfile.TemporaryDirectory(prefix="oracle-head-inputs-") as directory:
+            root = Path(directory)
+            for name in ("manifest.json", "head.npz"):
+                (root / name).write_bytes(
+                    archive.read(f"config/role_family_classifier/{name}")
+                )
+            return rfc.Head(root).inputs_fingerprint
 
 
 class Policy:
@@ -167,12 +184,11 @@ class Policy:
         self.head = rfc.Head(head_dir)
         families = role_taxonomy.load_families(root / "config/role_families.json")
         self.head.check_families(families)
+        self.input_fingerprint = self.head.inputs_fingerprint
+        # No fingerprint argument: production migration would rewrite pinned evidence.
         self.cache = rfc.load_cache(title_cache, self.head.version)
-        digest = hashlib.sha256()
-        for path in (head_dir / "manifest.json", head_dir / "head.npz"):
-            digest.update(bytes.fromhex(sha256(path)))
-        digest.update(inspect.getsource(rfc.normalise).encode())
-        self.input_fingerprint = digest.hexdigest()
+        if self.cache.inputs_fingerprint not in {None, self.input_fingerprint}:
+            self.cache = rfc.Cache(self.head.version, {}, self.input_fingerprint)
         self.keep = index_plan.live_keep_set(root / "data/validate/liveness")
         self.live = index_plan.boards_by_canon(self.keep)
         self.keep_set = job_facts.RunScope.of(
@@ -333,7 +349,9 @@ class Policy:
             years = derived["min_years"]
             if (
                 row.get("description") is None
+                and "min_years" in row
                 and derived["experience_source"] != "field"
+                and row.get("experience_source") != "seniority"
             ):
                 years = row.get("min_years")
                 quality["observed_min_years_without_text"] += 1
