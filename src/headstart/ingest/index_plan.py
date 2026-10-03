@@ -856,14 +856,12 @@ def _survivor_board(boards: AbstractSet[str], site_jobs: dict[str, int]) -> str:
     ``plan_prune`` collapsing existing ones can never disagree about which Board keeps it; the
     displacement in :func:`_other_site_copies` compares this ranking's first key only.
     """
-    return min(
-        boards,
-        key=lambda board: (
-            *_survivor_precedence(board),
-            -site_jobs.get(board, 0),
-            board,
-        ),
-    )
+    return min(boards, key=lambda board: _survivor_key(board, site_jobs))
+
+
+def _survivor_key(board: str, site_jobs: dict[str, int]) -> tuple:
+    """The key :func:`_survivor_board` sorts a lowercased Board on."""
+    return (*_survivor_precedence(board), -site_jobs.get(board, 0), board)
 
 
 def _survivor_precedence(board: str) -> tuple[bool, bool]:
@@ -891,6 +889,40 @@ def site_is_non_public(site: str) -> bool:
     """Whether ``site`` — a lowercased Board key's site segment, or an iCIMS portal's host label,
     whose key has no ``/`` — carries a :data:`_NON_PUBLIC_SITE_TOKENS` token."""
     return any(token in site for token in _NON_PUBLIC_SITE_TOKENS)
+
+
+def duplicate_ranks(
+    job_ids: Iterable[str],
+    keep: set[str],
+    *,
+    site_jobs: dict[str, int] | None = None,
+    requisitions: Mapping[str, str] | None = None,
+    backing: Mapping[str, Iterable[str]] | None = None,
+) -> dict[str, tuple[tuple[str, str], tuple]]:
+    """``{id: (its duplicate group, its rank in it)}`` for every id on a live Board, under
+    :func:`plan_prune`'s rules: of any members of a group present together, the lowest rank is
+    the one ``plan_prune`` keeps. Its Board is :func:`_survivor_board`'s pick, and within that
+    Board it is the id carrying the live casing, then the smallest id. The rank's first two keys
+    are its class (:func:`_survivor_precedence`), all a displacement compares. A Restatement
+    folds a group's copies into one Job over time with it (ADR-0330)."""
+    live = boards_by_canon(keep)
+    job_ids = list(job_ids)
+    copies = _backing_copies(job_ids, live, requisitions or {}, backing or {})
+    ranks: dict[str, tuple[tuple[str, str], tuple]] = {}
+    for job_id in job_ids:
+        placed = _placement(job_id, live, copies)
+        if placed is None:
+            continue
+        group, canon = placed
+        ranks[job_id] = (
+            group,
+            (
+                *_survivor_key(canon, site_jobs or {}),
+                not job_id.startswith(live[canon] + ":"),
+                job_id,
+            ),
+        )
+    return ranks
 
 
 #: Which rule took a duplicate row out, as :func:`plan_prune` names it and the dedup

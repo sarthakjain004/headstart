@@ -33,9 +33,13 @@ Trends series.
 
 from __future__ import annotations
 
+import ast
 import functools
+import hashlib
+import inspect
 import json
 import re
+import textwrap
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -97,6 +101,7 @@ class Head:
         self.model: str = manifest["model"]
         self.model_revision: str = manifest["model_revision"]
         self.row_vector_model: str = manifest["row_vector"]["model"]
+        self.row_vector_revision: str | None = manifest["row_vector"].get("revision")
         self.row_vector_dim: int = manifest["row_vector"]["dim"]
         self.families: list[str] = manifest["families"]
         self.cutoff: float = manifest["cutoff"]
@@ -122,6 +127,51 @@ class Head:
             raise ValueError(
                 f"{directory}: '{UNCLASSIFIED}' is what the cutoff produces, never a trained class"
             )
+
+    @property
+    def inputs_fingerprint(self) -> str:
+        """SHA-256 of logit mathematics, excluding cutoff and placement policy.
+
+        Hash loaded weights as little-endian float32 in C order, with their shapes,
+        embedding identities/widths and the canonical ASTs of title_logits,
+        row_logits and normalise (without docstrings or source positions).
+        A row revision absent from the manifest
+        stays unknown (None); never infer it from the caller's current embedder.
+        """
+        inputs = {
+            "title_model": self.model,
+            "title_revision": self.model_revision,
+            "title_dim": self._title_weights.shape[1],
+            "row_model": self.row_vector_model,
+            "row_revision": self.row_vector_revision,
+            "row_dim": self.row_vector_dim,
+        }
+        for name, values in (
+            ("title_weights", self._title_weights),
+            ("row_weights", self._row_weights),
+            ("bias", self._bias),
+        ):
+            inputs[name] = {
+                "shape": values.shape,
+                "sha256": hashlib.sha256(values.astype("<f4").tobytes()).hexdigest(),
+            }
+        for name, function in (
+            ("title_logits", self.title_logits),
+            ("row_logits", self.row_logits),
+            ("normalise", normalise),
+        ):
+            node = ast.parse(textwrap.dedent(inspect.getsource(function))).body[0]
+            if ast.get_docstring(node) is not None:
+                del node.body[0]
+            # Python 3.14's ast.dump omits empty lists; 3.12's includes them.
+            for child in ast.walk(node):
+                for field, value in ast.iter_fields(child):
+                    if isinstance(value, list) and not value:
+                        delattr(child, field)
+            inputs[name] = ast.dump(node, include_attributes=False)
+        return hashlib.sha256(
+            json.dumps(inputs, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
 
     def title_logits(self, title_vectors: np.ndarray) -> np.ndarray:
         """The title part of each row's logits: what the cache keeps per title."""
@@ -221,17 +271,24 @@ def served_vector_batches(table):
 @dataclass
 class Cache:
     """``normalised title -> the head's title logits`` (one per family), valid for one head
-    version. Mutable: :func:`fill` adds to it."""
+    version and, when known, mathematical input fingerprint. Mutable: :func:`fill` adds to it."""
 
     version: int
     title_logits: dict[str, np.ndarray]
+    inputs_fingerprint: str | None = None
 
 
-def load_cache(path: Path, version: int) -> Cache:
+def load_cache(
+    path: Path, version: int, inputs_fingerprint: str | None = None
+) -> Cache:
     """The cache for ``version``, or an empty one when the file is absent, unreadable or written
     under another head. A cache from another head holds another head's logits, so it is
-    discarded rather than trusted."""
-    empty = Cache(version, {})
+    discarded rather than trusted. A requested mathematical fingerprint also guards
+    against changed weights at the same version. Matching-version legacy caches are
+    adopted and tagged once under the explicit unchanged-weights/encoder assumption.
+    Callers without a fingerprint keep the version-only contract.
+    """
+    empty = Cache(version, {}, inputs_fingerprint)
     if not path.exists():
         return empty
     try:
@@ -244,23 +301,68 @@ def load_cache(path: Path, version: int) -> Cache:
                 f"title cache {path} is for head {stamped!r}, not {version}: starting empty"
             )
             return empty
+        tagged = (table.schema.metadata or {}).get(b"inputs_fingerprint")
+        stored_inputs = tagged.decode() if tagged else None
+        if (
+            inputs_fingerprint is not None
+            and stored_inputs is not None
+            and stored_inputs != inputs_fingerprint
+        ):
+            _log.info(
+                f"title cache {path} has different mathematical inputs: starting empty"
+            )
+            return empty
         logits = table["logits"].combine_chunks()
         width = logits.type.list_size
         matrix = logits.flatten().to_numpy().reshape(-1, width)
-        return Cache(
-            version, dict(zip(table["title"].to_pylist(), matrix, strict=True))
+        cache = Cache(
+            version,
+            dict(zip(table["title"].to_pylist(), matrix, strict=True)),
+            inputs_fingerprint if inputs_fingerprint is not None else stored_inputs,
         )
     except Exception as exc:  # noqa: BLE001 - a corrupt cache is rebuilt, never fatal
         _log.warning(
             f"title cache {path} unreadable ({type(exc).__name__}: {exc}): starting empty"
         )
         return empty
+    if inputs_fingerprint is not None and stored_inputs is None:
+        _log.info(
+            f"adopting legacy title cache {path} at head version {version}; "
+            "assuming weights and encoder unchanged under the matching version contract; "
+            f"tagging inputs_fingerprint={inputs_fingerprint}"
+        )
+        try:
+            save_cache(path, cache)
+        except (OSError, ValueError) as exc:
+            # A failed metadata migration must not force a legacy cold re-encode.
+            _log.warning(
+                f"legacy title cache tag not persisted: {exc}; retaining loaded logits"
+            )
+    return cache
 
 
-def save_cache(path: Path, cache: Cache) -> None:
+def save_cache(
+    path: Path, cache: Cache, *, inputs_fingerprint: str | None = None
+) -> None:
     import pyarrow as pa
     import pyarrow.parquet as pq
 
+    if (
+        inputs_fingerprint is not None
+        and cache.inputs_fingerprint is not None
+        and inputs_fingerprint != cache.inputs_fingerprint
+    ):
+        raise ValueError(
+            "cannot retag cached logits with different mathematical inputs"
+        )
+    fingerprint = (
+        inputs_fingerprint
+        if inputs_fingerprint is not None
+        else cache.inputs_fingerprint
+    )
+    metadata = {b"head_version": str(cache.version).encode()}
+    if fingerprint is not None:
+        metadata[b"inputs_fingerprint"] = fingerprint.encode()
     titles = sorted(cache.title_logits)
     matrix = np.array([cache.title_logits[t] for t in titles], dtype=np.float32)
     width = matrix.shape[1] if titles else 0
@@ -269,7 +371,7 @@ def save_cache(path: Path, cache: Cache) -> None:
             "title": titles,
             "logits": pa.FixedSizeListArray.from_arrays(matrix.reshape(-1), width),
         },
-        metadata={b"head_version": str(cache.version).encode()},
+        metadata=metadata,
     )
     path.parent.mkdir(parents=True, exist_ok=True)
     staged = path.with_suffix(path.suffix + ".tmp")

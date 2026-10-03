@@ -92,6 +92,8 @@ def index():
             "answers_version": None,
             # No trends history either, so the date presets measure back from the clock.
             "trends_newest_tick": None,
+            "trends_legacy_newest_tick": None,
+            "trends_history": None,
         },
         # The privacy-policy links point into the public repo. Hardcoded here rather than
         # imported: this file is the local dev renderer and shares no config with the Space.

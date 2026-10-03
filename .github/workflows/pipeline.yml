@@ -644,7 +644,7 @@ jobs:
         # Both directions: persist what this run fetched, and repair corpus rows the scrape left
         # empty. Must run BEFORE embed_plan — it is what stops a Job whose detail fetch failed
         # from being embedded title-only, which is permanent once it lands.
-        run: python -m headstart.ingest.update_descriptions
+        run: python -m headstart.ingest.update_descriptions --facts-dir data/facts
       - name: Update board priority ledger
         run: python -m headstart.ingest.update_ledgers priority
       - name: Update board cost ledger (measured scrape seconds — ADR-0027)

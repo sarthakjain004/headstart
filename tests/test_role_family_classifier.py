@@ -13,6 +13,7 @@ stubbed, so no test downloads JobBERT.
 from __future__ import annotations
 
 import json
+import runpy
 
 import pytest
 
@@ -150,6 +151,99 @@ def test_the_head_decides_and_abstains_below_its_cutoff(tmp_path):
     assert decided[1][0] == rfc.UNCLASSIFIED
 
 
+@pytest.mark.parametrize(
+    "edit",
+    [
+        "title_weights",
+        "row_weights",
+        "bias",
+        "model",
+        "model_revision",
+        "title_dim",
+        "row_model",
+        "row_revision",
+        "row_dim",
+        "cutoff",
+        "version",
+        "families",
+    ],
+)
+def test_inputs_fingerprint_tracks_logit_inputs_not_placement_policy(tmp_path, edit):
+    head = _head(tmp_path)
+    directory = tmp_path / "head"
+    original = head.inputs_fingerprint
+    assert len(original) == 64
+    assert int(original, 16) >= 0
+    assert rfc.Head(directory).inputs_fingerprint == original
+    manifest = json.loads((directory / "manifest.json").read_text())
+    with np.load(directory / "head.npz") as archive:
+        weights = {name: archive[name].copy() for name in archive.files}
+    if edit in weights:
+        weights[edit].flat[0] += 1.0
+    elif edit == "title_dim":
+        weights["title_weights"] = np.pad(weights["title_weights"], ((0, 0), (0, 1)))
+    elif edit == "row_dim":
+        weights["row_weights"] = np.pad(weights["row_weights"], ((0, 0), (0, 1)))
+        manifest["row_vector"]["dim"] = 3
+    elif edit == "row_model":
+        manifest["row_vector"]["model"] = "another-embedder"
+    elif edit == "row_revision":
+        manifest["row_vector"]["revision"] = "another-revision"
+    elif edit in {"model", "model_revision"}:
+        manifest[edit] = "another"
+    elif edit == "families":
+        manifest["families"] = list(reversed(manifest["families"]))
+    else:
+        manifest[edit] += 1
+    np.savez(directory / "head.npz", **weights)
+    (directory / "manifest.json").write_text(json.dumps(manifest))
+    changed = rfc.Head(directory).inputs_fingerprint
+    if edit in {"cutoff", "version", "families"}:
+        assert changed == original
+    else:
+        assert changed != original
+
+
+@pytest.mark.parametrize(
+    "edit", ["title_logits", "row_logits", "normalise", "documentation"]
+)
+def test_inputs_fingerprint_tracks_math_code_not_docstrings_or_formatting(
+    tmp_path, edit
+):
+    from pathlib import Path
+
+    original = _head(tmp_path).inputs_fingerprint
+    code = Path(rfc.__file__).read_text()
+    if edit == "title_logits":
+        code = code.replace(
+            "return title_vectors @ self._title_weights.T",
+            "return title_vectors @ self._title_weights.T + 1",
+        )
+    elif edit == "row_logits":
+        code = code.replace(
+            "return row_vectors @ self._row_weights.T + self._bias",
+            "return row_vectors @ self._row_weights.T - self._bias",
+        )
+    elif edit == "normalise":
+        code = code.replace(
+            '(title or "").lower().split()', '(title or "").upper().split()'
+        )
+    else:
+        code = code.replace(
+            "The title part of each row's logits: what the cache keeps per title.",
+            "Different documentation.",
+        )
+        code = code.replace(
+            "return title_vectors @ self._title_weights.T",
+            "return (title_vectors    @    self._title_weights.T)  # new formatting",
+        )
+    assert code != Path(rfc.__file__).read_text()
+    variant = tmp_path / "classifier_variant.py"
+    variant.write_text(code)
+    changed = runpy.run_path(str(variant))["Head"](tmp_path / "head").inputs_fingerprint
+    assert (changed == original) == (edit == "documentation")
+
+
 def test_the_row_part_moves_a_row_its_title_alone_would_misfile(tmp_path):
     """ADR-0224: the same software title, with a description that reads as non-tech."""
     head = _head(tmp_path)
@@ -190,6 +284,113 @@ def test_an_unreadable_cache_starts_empty(tmp_path):
     path = tmp_path / "cache.parquet"
     path.write_bytes(b"not parquet")
     assert rfc.load_cache(path, 7).title_logits == {}
+
+
+def test_tagged_cache_rejects_changed_weights_at_the_same_human_version(tmp_path):
+    head = _head(tmp_path)
+    path = tmp_path / "cache.parquet"
+    logits = np.array([0.5, -1.25, 3.0], np.float32)
+    rfc.save_cache(
+        path, rfc.Cache(head.version, {"qa engineer": logits}, head.inputs_fingerprint)
+    )
+    directory = tmp_path / "head"
+    with np.load(directory / "head.npz") as archive:
+        weights = {name: archive[name].copy() for name in archive.files}
+    weights["title_weights"][0, 0] += 1
+    np.savez(directory / "head.npz", **weights)
+    changed = rfc.Head(directory)
+    assert changed.version == head.version
+    assert changed.inputs_fingerprint != head.inputs_fingerprint
+    loaded = rfc.load_cache(path, changed.version, changed.inputs_fingerprint)
+    assert loaded.title_logits == {}
+    assert loaded.inputs_fingerprint == changed.inputs_fingerprint
+
+
+def test_legacy_cache_adopts_matching_version_once_and_logs_assumption(
+    tmp_path, caplog
+):
+    import pyarrow.parquet as pq
+
+    head = _head(tmp_path)
+    path = tmp_path / "cache.parquet"
+    logits = np.array([0.5, -1.25, 3.0], np.float32)
+    rfc.save_cache(path, rfc.Cache(head.version, {"qa engineer": logits}))
+    assert b"inputs_fingerprint" not in pq.read_schema(path).metadata
+    with caplog.at_level("INFO"):
+        loaded = rfc.load_cache(path, head.version, head.inputs_fingerprint)
+    assert loaded.inputs_fingerprint == head.inputs_fingerprint
+    assert loaded.title_logits["qa engineer"].tobytes() == logits.tobytes()
+    assert "adopting legacy title cache" in caplog.text
+    assert "assuming weights and encoder unchanged" in caplog.text
+    assert (
+        pq.read_schema(path).metadata[b"inputs_fingerprint"].decode()
+        == head.inputs_fingerprint
+    )
+    caplog.clear()
+    with caplog.at_level("INFO"):
+        again = rfc.load_cache(path, head.version, head.inputs_fingerprint)
+    assert again.title_logits["qa engineer"].tobytes() == logits.tobytes()
+    assert "adopting legacy" not in caplog.text
+    # Old callers can still read and re-save a tagged cache losslessly.
+    legacy_call = rfc.load_cache(path, head.version)
+    rfc.save_cache(path, legacy_call)
+    assert (
+        pq.read_schema(path).metadata[b"inputs_fingerprint"].decode()
+        == head.inputs_fingerprint
+    )
+    assert (
+        rfc.load_cache(path, head.version).title_logits["qa engineer"].tobytes()
+        == logits.tobytes()
+    )
+
+
+def test_legacy_cache_version_mismatch_is_not_adopted(tmp_path, caplog):
+    head = _head(tmp_path)
+    path = tmp_path / "cache.parquet"
+    rfc.save_cache(
+        path, rfc.Cache(head.version, {"qa engineer": np.zeros(3, np.float32)})
+    )
+    with caplog.at_level("INFO"):
+        loaded = rfc.load_cache(path, head.version + 1, head.inputs_fingerprint)
+    assert loaded.title_logits == {}
+    assert "adopting legacy" not in caplog.text
+
+
+def test_save_preserves_explicit_identity_and_refuses_retagging_known_logits(tmp_path):
+    head = _head(tmp_path)
+    path = tmp_path / "cache.parquet"
+    logits = np.array([0.5, -1.25, 3.0], np.float32)
+    rfc.save_cache(
+        path,
+        rfc.Cache(head.version, {"qa engineer": logits}),
+        inputs_fingerprint=head.inputs_fingerprint,
+    )
+    loaded = rfc.load_cache(path, head.version)
+    before = path.read_bytes()
+    with pytest.raises(ValueError, match="cannot retag"):
+        rfc.save_cache(path, loaded, inputs_fingerprint="different-math")
+    assert path.read_bytes() == before
+    assert loaded.inputs_fingerprint == head.inputs_fingerprint
+    assert loaded.title_logits["qa engineer"].tobytes() == logits.tobytes()
+
+
+def test_failed_legacy_tag_write_keeps_loaded_logits(tmp_path, monkeypatch, caplog):
+    from pathlib import Path
+
+    head = _head(tmp_path)
+    path = tmp_path / "cache.parquet"
+    logits = np.array([0.5, -1.25, 3.0], np.float32)
+    rfc.save_cache(path, rfc.Cache(head.version, {"qa engineer": logits}))
+    before = path.read_bytes()
+
+    def fail_replace(self, target):
+        raise OSError("read-only cache")
+
+    monkeypatch.setattr(Path, "replace", fail_replace)
+    loaded = rfc.load_cache(path, head.version, head.inputs_fingerprint)
+    assert loaded.title_logits["qa engineer"].tobytes() == logits.tobytes()
+    assert path.read_bytes() == before
+    assert "tag not persisted" in caplog.text
 
 
 def test_fill_encodes_only_missing_titles_and_saves_each_chunk(tmp_path, monkeypatch):

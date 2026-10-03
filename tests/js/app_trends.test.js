@@ -345,6 +345,32 @@ test('a Trends answer is asked for under the boot, and every view a click away i
   clicks.forEach(url => assert.ok(ahead.has(url), url));
 });
 
+test('explicit legacy history changes the request, shared link and preset baseline', async () => {
+  const app = versionedApp();
+  app.ctx.window.CFG.trends_legacy_newest_tick = '2026-10-03T00:00:00+00:00';
+  app.nodes['trends-legacy-history'].checked = true;
+  app.t.rangeSet('7');
+  await app.t.load(null);
+  const query = new URLSearchParams(app.asked[0].url.split('?')[1]);
+  assert.strictEqual(query.get('history'), 'legacy');
+  assert.strictEqual(query.get('since'), '2026-09-26T00:00:00.000Z');
+  assert.match(app.t.hash(), /history=legacy/);
+  app.ctx.location.hash = '#trends?history=legacy&coverage=all';
+  app.nodes['trends-legacy-history'].checked = false;
+  app.t.readHash();
+  assert.strictEqual(app.nodes['trends-legacy-history'].checked, true);
+});
+
+test('verified history provenance is visible without claiming current rules', async () => {
+  const app = loadApp(url => String(url).startsWith('/trends') ? Promise.resolve({ ok: true, json: () => Promise.resolve({
+    ...fixture(), history: { kind: 'restated', last_covered_tick: '2026-10-02T00:00:00+00:00',
+      rules_code_sha: 'abcdef123456', limitations: ['Some historical sources are unavailable.'] },
+  }) }) : Promise.resolve({ ok: false }));
+  await app.t.load(null);
+  assert.match(app.nodes['trends-history-note'].textContent, /Verified replay through 2026-10-02; rules at abcdef12/);
+  assert.match(app.nodes['trends-history-note'].title, /historical sources/);
+});
+
 test('a narrowed view asks only for its other Measure, once the reader stays', async () => {
   // The Space works each of its neighbours out afresh, so only the likeliest is asked for.
   const { t, nodes, asked, timers, run } = versionedApp();

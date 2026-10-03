@@ -1844,6 +1844,7 @@ function readTrendHash(){
   }
   // Values compare case-blind, as company keys do: `by=TOTAL&unit=COUNT` was ignored.
   const lower = k => (q.get(k) || '').toLowerCase();
+  if (el('trends-legacy-history')) el('trends-legacy-history').checked = lower('history') === 'legacy';
   topSplit.chosen = keys.length && ['families', 'total', 'company'].includes(lower('by')) ? lower('by') : 'auto';
   trendSplit = ['roles', 'company'].includes(lower('split')) ? lower('split') : 'bands';
   unitWanted = null;
@@ -1887,6 +1888,7 @@ const pickedKeys = () => new Set(trendPicks.map(p => p.key.toLowerCase()));
 // measure, window and coverage. A drill is a history entry of its own, so Back leaves it.
 function trendHash(){
   const q = new URLSearchParams();
+  if (el('trends-legacy-history')?.checked) q.set('history', 'legacy');
   trendPicks.forEach(p => q.append('company', p.key));
   if (trendPicks.length && topSplit.chosen !== 'auto') q.set('by', topSplit.chosen);
   if (trendDrill){
@@ -2435,7 +2437,8 @@ function trendRange(days = trendDays){
 // (ADR-0269), so every click on it asks for one URL all boot and the browser keeps its answer.
 // Measured back from each click's moment, it was a new URL every time, asked for afresh.
 function presetSince(days){
-  const newest = CFG.trends_newest_tick ? Date.parse(CFG.trends_newest_tick) : Date.now();
+  const tick = el('trends-legacy-history')?.checked ? CFG.trends_legacy_newest_tick : CFG.trends_newest_tick;
+  const newest = tick ? Date.parse(tick) : Date.now();
   return new Date(newest - Number(days) * 864e5).toISOString();
 }
 
@@ -2495,6 +2498,7 @@ function toggleAtsPopover(force){
 function trendsQuery(family, metric, picks = trendPicks, split = trendSplit, coverage = trendCoverage, days = trendDays,
   ats = trendAtsSelected()){
   const q = new URLSearchParams();
+  if (el('trends-legacy-history')?.checked) q.set('history', 'legacy');
   picks.forEach(p => q.append('company', p.key));
   if (family) { q.set('family', family); q.set('split', split); }
   else if (topSplitNow() === 'company') q.set('split', 'company');
@@ -2684,6 +2688,13 @@ async function loadTrends(family){
   if (family && payload.family) family = payload.family;
   const drilled = (family || null) !== trendDrill;
   trendRaw = payload; trendDrill = family || null;
+  const provenance = payload.history;
+  if (el('trends-history-note')) {
+    el('trends-history-note').textContent = provenance?.kind === 'restated'
+      ? `Verified replay through ${provenance.last_covered_tick.slice(0, 10)}; rules at ${provenance.rules_code_sha.slice(0, 8)}`
+      : 'Earlier history — not recomputed';
+    el('trends-history-note').title = (provenance?.limitations || []).join(' ');
+  }
   trendData = trendView(payload, trendDrill);
   drawPicks(); applyUnitLocks(); writeTrendHash(drilled || push);
   drawTrends();
@@ -2694,6 +2705,7 @@ async function loadTrends(family){
 // left the refused picks' chart and sentence standing under the note that refused them.
 function clearTrendsView(){
   trendData = null; trendRaw = null;
+  if (el('trends-history-note')) el('trends-history-note').textContent = '';
   if (el('trends-cohort-status')) el('trends-cohort-status').textContent = '';
   if (el('trends-coverage-brief')) el('trends-coverage-brief').hidden = true;
   ['trends-chart', 'trends-legend', 'trends-verdict', 'trends-kpi', 'trends-coverage-summary', 'trends-table', 'trends-full-table',
@@ -4160,6 +4172,7 @@ trendSeg('trends-metric', 'metric', v => {
   loadTrends(trendDrill);
 });
 trendSeg('trends-coverage', 'coverage', v => { trendCoverage = v; loadTrends(trendDrill); });
+if (el('trends-legacy-history')) el('trends-legacy-history').addEventListener('change', () => loadTrends(trendDrill));
 trendSeg('trends-unit', 'unit', v => pickUnit(v));
 // The reader's own choice clears any unit a lock was holding for them.
 function pickUnit(v){ unitWanted = null; trendUnit = v; applyUnitLocks(); writeTrendHash(); drawTrends(); }
@@ -4370,8 +4383,11 @@ async function suggestCompanies(q){
   if (coReq) coReq.abort();
   const req = coReq = new AbortController();
   let found = null, missing = false, r;
+  const query = { q };
+  if (el('trends-legacy-history')?.checked) query.history = 'legacy';
+  else if (CFG.trends_history?.kind === 'restated') query.history = 'preferred';
   try {
-    r = await fetch(versioned('/companies/suggest', { q }), { signal: req.signal });
+    r = await fetch(versioned('/companies/suggest', query), { signal: req.signal });
     if (r.ok) found = (await r.json()).companies || [];
     else { missing = r.status === 503 || r.status === 404; logFail('GET', '/companies/suggest', r.status); }
   } catch(e){ logFail('GET', '/companies/suggest', r ? r.status : 0, e); /* reported below, unless a newer query replaced this one */ }

@@ -1,6 +1,6 @@
 # ADR-0330: Trends are recomputed from recorded Job facts whenever a rule changes
 
-**Status:** accepted; steps 1–2 built · **Date:** 2026-09-29 · **Amends:**
+**Status:** accepted; steps 1–2 built, step 3 built and awaiting its check against real facts · **Date:** 2026-09-29 · **Amends:**
 [ADR-0230](0230-trends-keeps-one-board-delta-history-and-decides-rules-when-reading-it.md) (it
 rejected storing each Job's history), [ADR-0292](0292-the-description-store-is-not-reaped-until-a-last-listed-signal-exists.md)
 (the description store's future reaper) · **Relates to:**
@@ -79,17 +79,41 @@ whenever a rule changes, so a rule change moves the whole history and draws no s
    rather than deletes.
 3. **Restate.** A pure function of (facts, rules) rebuilds each tick's per-Board counts. It is
    validated first by reproducing today's `role_trends` history under today's rules on the ticks
-   both cover.
+   both cover. Built as `restate_run` over four steps, each its own module:
+   - **Job versions** (`restate_replay`): one row per stretch of a Job's listing with fixed raw
+     fields. The versions open at a run are exactly that run's Listed set, tested at every run.
+   - **Served intervals** (`restate_served`): today's rules apply to the whole past alike. A
+     Board outside today's keep-set, a version today's tech filter rejects, and one today's
+     English gate reads as not English (judged on the description the store holds now, since
+     the facts keep no text), never count.
+     Dormant Boards are judged at each authoritative read over every listed Job, as
+     `scrape_join` judges them; a Job already counting leaves at the Board's next authoritative
+     read, as `index sync` evicts it after the grace period. Duplicate groups fold into one Job
+     over time, counting the copy the index serves: the incumbent while it stands, unless a copy
+     of a better class arrives, as `index sync` admits them (`index_plan.duplicate_ranks`,
+     tested against `plan_prune`). The one timing rule kept from the pipeline is the grace period (ADR-0083): a
+     Job counts until its Board's next authoritative read. Without it every closure would land
+     one run early against `role_trends`.
+   - **Placement** (`restate_place`): the family as `role_trends` decides it. A Job with no
+     vector at all is decided from its title alone. The band comes from the `min_years`
+     `derived_meta.derive` finds, so a derivations change reaches the past.
+   - **Counting** (`restate_count`): each tick's levels, and turnover from how each interval
+     began and ended. A found Board's backlog, a Dormant Board posting again, a handover between
+     duplicate copies and a move between families are Recounted. Closures are unlistings and
+     Dormancy (ADR-0250). Stock moves exactly by its turnover at every tick.
+
+   Watched roles are restated as current title-rule overlays on tech placements.
 4. **Serve the restated history.** A workflow reruns the restatement whenever the rules'
    fingerprint moves, and the Space reads its output. The fingerprint is a hash of the rule code,
    config, classifier weights and alias ledgers, computed rather than bumped by hand. Netting and
    counting-change markers remain only where a restatement cannot reach.
-5. **Coverage.** A restatement cannot see Jobs no scrape saw. A found Board's backlog is placed at
-   each Job's `posted_at` on the ATSes where that date is reliable (measured 2026-09-29 on the
-   served table: 90% or more of postings within 2 days of first sight on Workday, SuccessFactors,
-   Oracle, Ashby, SmartRecruiters, iCIMS and Workable). Elsewhere it is left out as it is today.
-   A removed Board is removed from the past too. A percentage or a direction defaults to Boards
-   tracked from the start.
+5. **Coverage.** A restatement cannot see Jobs no scrape saw. The original posting-date
+   backdating recommendation is superseded by
+   [ADR-0378](0378-trends-separates-first-counted-coverage-from-observed-activity.md):
+   no stock is backfilled from posting dates. A later observation does not establish the
+   earlier listing state or its historical rule inputs. A found Board's initial backlog is
+   coverage/Recounted, separate from later observed activity. A removed Board is removed
+   from the past too. A percentage or a direction defaults to Boards tracked from the start.
 6. **History before step 1** cannot be fully recomputed. It is spliced onto the restated series at
    their overlap and labelled approximate, and may be seeded from the full-row snapshots kept on
    the owner's machine.
@@ -115,6 +139,35 @@ Historical edits keep their own input versions. This supplements pre-filter Job
 facts; it does not invent raw fields absent from the served table. Half precision
 remains approximate near classifier decision boundaries.
 
+Reference change detection keys row scores by their mathematical inputs, not
+float32 BLAS roundoff: `classifier_inputs_fingerprint` in reference Methodology
+is the head's SHA-256 over its loaded title/row weights and bias (shapes and
+little-endian float32 C-order bytes), title embedding model/revision/width and
+row embedding model/revision/width. An unstated row-model revision stays null;
+the fingerprint also includes canonical ASTs of `Head.title_logits`,
+`Head.row_logits` and `normalise`, excluding docstrings and source positions.
+Cutoff, family labels, version labels, postprocessing and Board coverage are
+excluded. The digest still reads source fields (including served experience
+provenance), original full-precision vectors, title logits and observed placement.
+Full float32 row logits remain captured for validation; callers without this
+fingerprint retain the legacy score-sensitive digest. Existing checkpoints are
+not rewritten; the first fingerprinted capture may record a one-time transition.
+Each present checkpoint row also keeps `vector_fingerprint`, a SHA-256 of its
+original little-endian float32 C-order vector bytes, with field metadata tracing
+the source to `vector`; removals carry null. It participates in the raw-input
+digest and distinguishes float32 changes whose archived float16 vectors collide,
+without storing another full-precision vector. An old baseline's missing head
+fingerprint can only be reconstructed from archived configuration after its three
+math-code ASTs are verified against today's; otherwise its identity stays unknown.
+The title-logit cache carries this input fingerprint as well: `role_trends`
+rejects a tagged mathematical mismatch even at the same human head version.
+An untagged cache matching that version is adopted and persisted once, explicitly
+logging the migration assumption that weights and encoder are unchanged under
+the existing version contract; it is not cold-re-encoded during this migration.
+Version-only callers remain compatible and saves retain known fingerprints.
+Known cached logits cannot be saved under a different fingerprint. The current
+`normalise` reads no module regexes or constants; its literals are in the AST.
+
 Reference checkpoints also retain served `max_years` and `experience_source` where
 available, alongside `min_years`. A missing description does not establish that
 the stored experience was title-derived; its recorded source distinguishes those
@@ -131,6 +184,12 @@ validation of the affected window.
 Median total gaps cannot prove correctness. Compare per-id membership and placement,
 then each Board/family/band at every tick under identical preserved rules. Separately
 measure intentional differences caused by restating with changed rules.
+
+Duplicate membership uses the raw requisitions of versions present at each
+served-interval boundary, never an id-to-requisition map spanning the whole
+history. A later observation cannot remove a baseline Job retroactively. Copies
+released from suppression are Recounted, not Opened: their listings did not begin
+when the duplicate relation changed.
 
 The first validator certifies observed **tech stock placements** only. It uses
 preserved full-precision title/row logits to avoid float16 boundary drift, resolves
@@ -175,6 +234,19 @@ their starting provenance. Failed seeding must not advance the reference parent.
   shared shortfall check (`mark_truncated_unless_negligible`) cannot stand in for it: detail-pass
   callers pass the length of our own listing, and most call it only on a shortfall. Each scraper
   reporting its listing's total is a follow-up.
+- **A Restatement matched `role_trends` on its first real data** (2026-09-30, 23 runs of facts):
+  a median gap of 0.49% in tech stock, after the English gate was added (7.5% without it). The
+  rest is Jobs the live table served from before the facts began, on Boards no run since has
+  listed in full: unread, truncated at an API's offset cap, or failing every read. Step 6
+  splices that history in; waiting does not close it. The Restate step took 96 minutes.
+- **Where a Restatement knowingly differs from `role_trends`:**
+  - the English gate reads the description the store holds now, not the text a Job carried
+    when it was embedded, because the facts keep no text;
+  - a Job whose change moves it out of tech, and a handover between duplicate copies, are
+    Recounted when they happen. `role_trends` books a Closed after the grace period and an
+    Opened when the other copy is scraped again, because it cannot tell them from hiring;
+  - watched roles and the `unscoped` markers `role_trends` writes for Unauthoritative Boards
+    are not restated yet. Step 4 adds what the Space reads.
 - **Fragments accumulate** at two files a run per directory. HF's 10,000-files-per-directory
   limit is years away. A monthly fold, like the description store's, comes before it.
 

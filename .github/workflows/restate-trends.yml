@@ -3,11 +3,6 @@
 # Actions artifact, and nothing it writes reaches the dataset or the Space until step 4 decides
 # how the Space reads it.
 #
-# Until #934 merges, the engine lives on its branch: dispatch with
-# `gh workflow run restate-trends --ref restate-trends-from-job-facts`. This file is on main only
-# because GitHub dispatches a workflow whose file is on the default branch; dispatched from main
-# before then, the job fails at the Restate step, after the fetch.
-#
 # Titles encoded within the budget land only in the runner's copy of the title cache, which is
 # never published, so each dispatch pays for them again.
 name: restate-trends
@@ -15,6 +10,15 @@ name: restate-trends
 on:
   workflow_dispatch:
     inputs:
+      mode:
+        description: "Frozen reproduction or independently verified current-rules dry run."
+        type: choice
+        options: [frozen, current]
+        default: frozen
+      dataset_revision:
+        description: "Immutable dataset revision for a measured replay (empty pins current head)."
+        required: false
+        default: ""
       encode_budget_seconds:
         description: "Time to spend encoding titles the classifier cache lacks."
         required: false
@@ -33,9 +37,10 @@ env:
 jobs:
   restate:
     runs-on: ubuntu-24.04
-    # A hang detector, not a measured bound: the ~5 GB fetch, the encode budget (30 min by
-    # default) and the Restatement itself. Tighten it once a run has measured them.
-    timeout-minutes: 120
+    # A hang detector. Measured 2026-09-30 over 23 runs of facts: 2 min fetch, 96 min Restate
+    # (English gate 33, placement and counting 62), with 2 titles to encode. The Restatement
+    # grows with the facts, so this leaves room for weeks of them plus the 30-min encode budget.
+    timeout-minutes: 240
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -50,21 +55,46 @@ jobs:
           path: ~/.cache/huggingface/hub
           key: hf-model-jobbert-v2-a480476925ab
       - name: Fetch the facts, the live history and the stores the rules read
+        if: ${{ inputs.mode != 'current' }}
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          DATASET_REVISION: ${{ inputs.dataset_revision }}
+        run: python -u scripts/eval/fetch_restatement_inputs.py
+      - name: Pin current-rules code and immutable inputs
+        if: ${{ inputs.mode == 'current' }}
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          DATASET_REVISION: ${{ inputs.dataset_revision }}
         run: |
-          python -m headstart.ingest.state_fetch 'data/facts/*' 'data/state/*' \
-            'data/descriptions/*' 'data/lancedb/*'
+          python -u scripts/eval/prepare_restatement_runner.py
+          echo "HEADSTART_RESTATE_CODE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          python -u -m headstart.ingest.restate_publish fetch --revision "$DATASET_REVISION"
       - name: Restate
-        run: >-
-          python -m headstart.ingest.restate_run
-          --encode-budget-seconds "${{ inputs.encode_budget_seconds }}"
+        if: ${{ inputs.mode != 'current' }}
+        id: replay
+        env:
+          ENCODE_BUDGET_SECONDS: ${{ inputs.encode_budget_seconds }}
+        run: python -u scripts/eval/run_frozen_restatement.py
+      - name: Replay current rules without publication
+        if: ${{ inputs.mode == 'current' }}
+        env:
+          ENCODE_BUDGET_SECONDS: ${{ inputs.encode_budget_seconds }}
+        run: |
+          mkdir -p data/restate-diagnostics
+          /usr/bin/time -v -o data/restate-diagnostics/current-runtime.txt python -u -m headstart.ingest.restate_run --out data/restated --encode-budget-seconds "$ENCODE_BUDGET_SECONDS"
+          python -u -m headstart.ingest.restate_publish prepare
+          python -u scripts/eval/verify_restatement.py --facts data/facts --state data/state --candidate data/restated --metadata data/restated/replay.json --report data/restated/validation.json
+          python -u -m headstart.ingest.restate_publish package
       - name: Compare with the live history
+        if: ${{ always() && steps.replay.outputs.completed == 'true' }}
         run: python scripts/eval/compare_restated_trends.py --live data/state --restated data/restated
       - name: Keep the Restatement
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: restated-trends
-          path: data/restated
+          path: |
+            data/restated
+            data/restate-diagnostics
+            data/restated-publication
           retention-days: 7

@@ -383,7 +383,9 @@ def main() -> int:
     rows = table.search().select(columns).limit(n).to_arrow()
 
     titles = rows["title"].to_pylist()
-    cache = role_family_classifier.load_cache(args.title_cache, head.version)
+    cache = role_family_classifier.load_cache(
+        args.title_cache, head.version, head.inputs_fingerprint
+    )
     try:
         added = role_family_classifier.fill(
             cache,
@@ -515,7 +517,11 @@ def main() -> int:
                 placed,
                 args.reference_facts,
                 ts,
-                asdict(methodology) | {"rules_fingerprint": rules},
+                asdict(methodology)
+                | {
+                    "rules_fingerprint": rules,
+                    "classifier_inputs_fingerprint": head.inputs_fingerprint,
+                },
                 state_dir=args.state,
                 row_parts=dict(zip(ids, row_logits, strict=True)),
                 title_cache=cache,

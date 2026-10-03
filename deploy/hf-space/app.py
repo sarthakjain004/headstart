@@ -80,7 +80,13 @@ from headstart.serving import (
 from headstart.space_mcp import server as space_mcp_server
 from headstart.space_mcp import space_client
 from headstart.space_mcp.tools import search_jobs as space_mcp_search_jobs
-from headstart.trends import found_late, hot_ranking, line_reading, trend_history
+from headstart.trends import (
+    found_late,
+    hot_ranking,
+    line_reading,
+    restated_history,
+    trend_history,
+)
 
 DATASET = os.environ.get("HF_DATASET", "imPoseidon/headstart-index")
 _STATE = Path("/app/state")
@@ -203,6 +209,16 @@ _UNCONFIRMED: frozenset[str] | None = (
 # more than one run stale.
 _CONFIG = Path(__file__).parent / "config"  # copied in beside this app (ADR-0153)
 _HISTORY = trend_history.TrendHistory.load(_STATE / "data" / "state", _CONFIG)
+# Fresh pipeline history remains the owner of Hiring now and Search company hand-offs.
+# Only historical Trends selects the slower, independently verified replay prefix.
+try:
+    restated_history.pull(DATASET, _STATE, os.environ.get("HF_TOKEN"))
+    _HISTORIES = restated_history.load(_STATE, _CONFIG, _HISTORY)
+except Exception as exc:  # noqa: BLE001 - a replay outage must not take down Search
+    _HISTORIES = restated_history.Selection(
+        _HISTORY, reason=f"{type(exc).__name__}: {exc}"
+    )
+    print(f"restated history pull unavailable: {_HISTORIES.reason}", flush=True)
 # Search's category hand-off reads the same taxonomy: each watched role's title patterns, and each
 # retired family's successor, so a Trends category hands Search the Jobs its line counts.
 _WATCH = trend_history.watched_roles(_CONFIG / "role_watchlist.json")
@@ -686,8 +702,14 @@ def _limit_each_caller():
     found = _request_limit()
     if found is None or request.environ.get(space_client.IN_PROCESS_READ):
         return None
-    if request.path == "/trends" and _trends_kept(_trends_question(request.args)):
-        return None
+    if request.path == "/trends":
+        try:
+            if _trends_kept(
+                _trends_question(request.args), _history_for_request(request.args)
+            ):
+                return None
+        except (ValueError, trend_history.TrendsUnavailable):
+            pass  # the route returns its ordinary 400/503
     limit, requests = found
     if _AUTH_ON and session.get("email"):
         caller, who = "account:" + session["email"], "Account"
@@ -1659,12 +1681,21 @@ def trends():
     deployment without the ledger yet, or without the company directory a pick needs, is a 503.
     """
     try:
-        body, gzipped = _served_trends(_HISTORY, _trends_question(request.args))
+        body, gzipped = _served_trends(
+            _history_for_request(request.args), _trends_question(request.args)
+        )
     except trend_history.TrendsUnavailable as exc:
         return jsonify(error=str(exc)), 503
     except ValueError as exc:
         return jsonify(error=str(exc)), 400
     return _answer_response(body, gzipped)
+
+
+def _history_for_request(args) -> trend_history.TrendHistory:
+    name = args.get("history", "preferred")
+    if name == "legacy" or (name == "preferred" and _HISTORIES.restated is None):
+        return _HISTORY
+    return _HISTORIES.choose(name)
 
 
 def _trends_question(args) -> trend_history.TrendQuestion:
@@ -1682,9 +1713,10 @@ def _trends_question(args) -> trend_history.TrendQuestion:
     )
 
 
-def _trends_kept(question: trend_history.TrendQuestion) -> bool:
+def _trends_kept(question: trend_history.TrendQuestion, history=None) -> bool:
     """Whether ``question``'s answer is already worked out and kept this boot."""
-    return (_HISTORY, _HISTORY.answer_key(question)) in _TRENDS_ANSWERED
+    history = history or _HISTORIES.restated or _HISTORY
+    return (history, history.answer_key(question)) in _TRENDS_ANSWERED
 
 
 # Each /trends body this boot has answered, least recently asked for first, and the one lock
@@ -1725,9 +1757,12 @@ def _served_trends(
         return kept
     with _TRENDS_ANSWERING:
         if key not in _TRENDS_ANSWERED:
-            body = _json_body(
-                _trends_payload(history.unnetted_answer(question), question)
-            )
+            if history is _HISTORIES.restated:
+                answer = _HISTORIES.answer(history, question)
+            else:
+                answer = history.unnetted_answer(question)
+                answer["history"] = _HISTORIES.provenance(history)
+            body = _json_body(_trends_payload(answer, question))
             _TRENDS_ANSWERED[key] = (body, _gzip(body))
             if len(_TRENDS_ANSWERED) > _TRENDS_KEPT:
                 _TRENDS_ANSWERED.popitem(last=False)
@@ -1741,6 +1776,7 @@ def _trends_payload(answer: dict, question: trend_history.TrendQuestion) -> dict
     same, saying so, and logged; one that cannot be read at all is served as null with why,
     logged with its traceback. Either way the page draws the lines and says its figures do not
     fully reconcile, rather than the tab failing."""
+    answer.setdefault("history", _HISTORIES.provenance(_HISTORY))
     try:
         payload, reading = line_reading.trends_payload(answer)
     except Exception as exc:  # noqa: BLE001 - a reading that fails costs its figures only
@@ -1751,8 +1787,9 @@ def _trends_payload(answer: dict, question: trend_history.TrendQuestion) -> dict
         )
         return line_reading.unread_trends_payload(answer, error)
     try:
-        # Each company line's opened, split by when its postings were posted (ADR-0369).
-        found_late.attach(payload, question, _FIRST_SEEN)
+        # These dates describe the live pipeline history, never an older restated prefix.
+        if answer["history"]["kind"] == "legacy":
+            found_late.attach(payload, question, _FIRST_SEEN)
     except Exception as exc:  # noqa: BLE001 - a split that fails costs only the split
         print(f"found-late split failed for {question}: {exc!r}", flush=True)
     if not reading.reconciles:
@@ -1870,7 +1907,15 @@ def suggest_companies():
     typed name (``match``, ADR-0253). ``?limit=`` defaults to 8, at most 20. A suggestion is
     only a candidate: nothing here resolves a typed name to a company.
     """
-    if not _HISTORY.companies:
+    try:
+        history = (
+            _history_for_request(request.args)
+            if "history" in request.args
+            else _HISTORY
+        )
+    except (ValueError, trend_history.TrendsUnavailable) as exc:
+        return jsonify(error=str(exc)), 400
+    if not history.companies:
         return jsonify(error="no company directory on this deployment yet"), 503
     try:
         limit = max(1, min(int(request.args.get("limit", 8)), 20))
@@ -1878,7 +1923,7 @@ def suggest_companies():
         return jsonify(error="limit must be an integer"), 400
     return _answer_response(
         _json_body(
-            {"companies": _HISTORY.suggest_companies(request.args.get("q", ""), limit)}
+            {"companies": history.suggest_companies(request.args.get("q", ""), limit)}
         )
     )
 
@@ -2267,7 +2312,11 @@ def index():
             # keep their answers until the next boot (ADR-0251).
             "answers_version": _ANSWERS_VERSION,
             # What the Trends tab's date presets are measured back from (ADR-0269).
-            "trends_newest_tick": _HISTORY.ticks[-1] if _HISTORY.ticks else None,
+            "trends_newest_tick": (_HISTORIES.restated or _HISTORY).ticks[-1]
+            if (_HISTORIES.restated or _HISTORY).ticks
+            else None,
+            "trends_legacy_newest_tick": _HISTORY.ticks[-1] if _HISTORY.ticks else None,
+            "trends_history": _HISTORIES.provenance(_HISTORIES.restated or _HISTORY),
         },
         njobs=f"{_searcher.n_served():,}",
         atses=capabilities.atses,
@@ -2298,7 +2347,7 @@ def index():
         posted_opts=facets.POSTED_OPTIONS,
         repo=_REPO,  # links into the public repository, the privacy policy among them
         resume_sync_on=account_on,
-        trends_on=bool(_HISTORY.ticks),
+        trends_on=bool((_HISTORIES.restated or _HISTORY).ticks),
         hot_on=bool(_HOT),
         signin_on=_AUTH_ON and not session.get("email"),
         alerts_on=_ALERTS_ON and bool(session.get("email")),

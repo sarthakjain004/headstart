@@ -15,6 +15,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from headstart.ingest import description_facts as df
 from headstart.ingest import held_refetch
 from headstart.ingest import update_descriptions as ud
 
@@ -49,6 +50,271 @@ def test_a_fetched_description_is_persisted(tmp_path):
     assert ud.read_store(tmp_path / "store" / "eightfold") == {
         "eightfold:acme:1": "We are hiring."
     }
+
+
+def test_history_archives_only_replacements_and_survives_compaction(tmp_path):
+    import pyarrow.parquet as pq
+
+    jobs = tmp_path / "tech" / "eightfold.jsonl"
+    store = tmp_path / "store" / "eightfold"
+    facts = tmp_path / "facts"
+    for stamp, text in enumerate(("Old.", "Old.", "New.", "Old.")):
+        _corpus(jobs, [_job("eightfold:acme:1", text)])
+        ud.reconcile(jobs, store, facts_dir=facts, observed_at=str(stamp))
+    ud.compact(store)
+    current = ud.read_store(store)
+    assert (
+        df.read_description(
+            facts, current, "eightfold:acme:1", df.description_hash("New.")
+        )
+        == "New."
+    )
+    assert (
+        df.read_description(
+            facts, current, "eightfold:acme:1", df.description_hash("Old.")
+        )
+        == "Old."
+    )
+    assert (
+        sum(
+            pq.read_table(p).num_rows
+            for p in (facts / "description_facts").rglob("*.parquet")
+        )
+        == 3
+    )
+    assert (
+        sum(
+            pq.read_table(p).num_rows
+            for p in (facts / "description_archive").rglob("*.parquet")
+        )
+        == 2
+    )
+
+
+@pytest.mark.parametrize("blank", [None, "", "  "])
+def test_textless_fetch_does_not_record_a_historical_deletion(tmp_path, blank):
+    jobs = tmp_path / "tech" / "eightfold.jsonl"
+    store = tmp_path / "store" / "eightfold"
+    facts = tmp_path / "facts"
+    _corpus(jobs, [_job("eightfold:acme:1", "Held.")])
+    ud.reconcile(jobs, store, facts_dir=facts, observed_at="first")
+    before = {p: p.read_bytes() for p in facts.rglob("*.parquet")}
+    _corpus(jobs, [_job("eightfold:acme:1", blank), _job("eightfold:acme:2", blank)])
+    done = ud.reconcile(jobs, store, facts_dir=facts, observed_at="second")
+    assert (done.filled, done.learned, done.unrecorded) == (1, 0, 1)
+    assert ud._ats_held_ids(store) == {"eightfold:acme:1"}
+    assert {p: p.read_bytes() for p in facts.rglob("*.parquet")} == before
+
+
+def test_archive_failure_preserves_store_corpus_and_change_ledger(
+    tmp_path, monkeypatch
+):
+    import pyarrow.parquet as pq
+
+    jobs = tmp_path / "tech" / "eightfold.jsonl"
+    store = tmp_path / "store" / "eightfold"
+    _corpus(jobs, [_job("eightfold:acme:1", "Held.")])
+    ud.reconcile(jobs, store)
+    _corpus(jobs, [_job("eightfold:acme:1", "Changed.")])
+    original = jobs.read_bytes()
+    changes = {}
+
+    def fail(*args, **kwargs):
+        raise OSError("archive failed")
+
+    monkeypatch.setattr(pq, "write_table", fail)
+    with pytest.raises(OSError, match="archive failed"):
+        ud.reconcile(
+            jobs, store, changes, facts_dir=tmp_path / "facts", observed_at="now"
+        )
+    assert ud.read_store(store) == {"eightfold:acme:1": "Held."}
+    assert jobs.read_bytes() == original
+    assert changes == {}
+    assert not jobs.with_suffix(".jsonl.tmp").exists()
+
+
+def test_fact_failure_after_archive_does_not_publish_replacement(tmp_path, monkeypatch):
+    jobs = tmp_path / "tech" / "eightfold.jsonl"
+    store = tmp_path / "store" / "eightfold"
+    facts = tmp_path / "facts"
+    _corpus(jobs, [_job("eightfold:acme:1", "Held.")])
+    ud.reconcile(jobs, store)
+    _corpus(jobs, [_job("eightfold:acme:1", "Changed.")])
+    write = df._write_immutable
+
+    def fail_facts(directory, records):
+        if directory.parent.name == "description_facts":
+            raise OSError("fact failed")
+        write(directory, records)
+
+    monkeypatch.setattr(df, "_write_immutable", fail_facts)
+    with pytest.raises(OSError, match="fact failed"):
+        ud.reconcile(jobs, store, facts_dir=facts, observed_at="now")
+    assert ud.read_store(store) == {"eightfold:acme:1": "Held."}
+    assert (
+        df.read_description(facts, {}, "eightfold:acme:1", df.description_hash("Held."))
+        == "Held."
+    )
+    assert (
+        df.read_description(
+            facts, {}, "eightfold:acme:1", df.description_hash("Changed.")
+        )
+        is None
+    )
+
+
+def test_failed_store_fragment_never_exposes_partial_replacement(tmp_path, monkeypatch):
+    jobs = tmp_path / "tech" / "eightfold.jsonl"
+    store = tmp_path / "store" / "eightfold"
+    facts = tmp_path / "facts"
+    _corpus(jobs, [_job("eightfold:acme:1", "Held.")])
+    ud.reconcile(jobs, store)
+    _corpus(jobs, [_job("eightfold:acme:1", "Changed.")])
+    before = jobs.read_bytes()
+    gzip_open = gzip.open
+
+    def fail_fragment(path, mode, **kwargs):
+        if mode == "wt":
+            path.write_bytes(b"partial")
+            raise OSError("fragment failed")
+        return gzip_open(path, mode, **kwargs)
+
+    monkeypatch.setattr(gzip, "open", fail_fragment)
+    with pytest.raises(OSError, match="fragment failed"):
+        ud.reconcile(jobs, store, facts_dir=facts, observed_at="now")
+    assert ud.read_store(store) == {"eightfold:acme:1": "Held."}
+    assert jobs.read_bytes() == before
+    assert len(list(store.glob("*.jsonl.gz"))) == 1
+    assert list(store.glob("*.tmp")) == []
+    assert (
+        df.read_description(facts, {}, "eightfold:acme:1", df.description_hash("Held."))
+        == "Held."
+    )
+
+
+def test_missing_and_degraded_text_write_no_history(tmp_path):
+    jobs = tmp_path / "tech" / "eightfold.jsonl"
+    store = tmp_path / "store" / "eightfold"
+    facts = tmp_path / "facts"
+    _corpus(jobs, [_job("eightfold:acme:1", "It’s held.")])
+    ud.reconcile(jobs, store)
+    missing = _job("eightfold:acme:1")
+    missing.pop("description")
+    for row in (missing, _job("eightfold:acme:1", "It?s held.")):
+        _corpus(jobs, [row])
+        ud.reconcile(jobs, store, facts_dir=facts, observed_at="now")
+        assert _rows(jobs)[0]["description"] == "It’s held."
+    assert not facts.exists()
+
+
+def test_legacy_null_is_unknown_until_real_text_arrives(tmp_path):
+    jobs = tmp_path / "tech" / "eightfold.jsonl"
+    store = tmp_path / "store" / "eightfold"
+    facts = tmp_path / "facts"
+    ud._write_fragment(store, [{"id": "eightfold:acme:1", "description": None}])
+    assert ud._ats_held_ids(store) == set()
+    _corpus(jobs, [_job("eightfold:acme:1", "Arrived.")])
+    done = ud.reconcile(jobs, store, facts_dir=facts, observed_at="now")
+    assert (done.learned, done.replaced) == (1, 0)
+    assert not (facts / "description_archive").exists()
+
+
+def test_main_records_only_tech_corpus_with_facts_option(tmp_path, monkeypatch):
+    import pyarrow.parquet as pq
+
+    _corpus(tmp_path / "tech" / "eightfold.jsonl", [_job("eightfold:acme:1", "Tech.")])
+    _corpus(
+        tmp_path / "raw" / "eightfold.jsonl", [_job("eightfold:acme:2", "Non-tech.")]
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "update_descriptions",
+            "--jobs",
+            str(tmp_path / "tech"),
+            "--store",
+            str(tmp_path / "store"),
+            "--facts-dir",
+            str(tmp_path / "facts"),
+            "--prior-meta",
+            str(tmp_path / "absent.jsonl"),
+            "--held-details",
+            str(tmp_path / "held.gz"),
+            "--pending-rederive",
+            str(tmp_path / "pending.txt"),
+            "--changes",
+            str(tmp_path / "changes.gz"),
+            "--checked",
+            str(tmp_path / "checked.gz"),
+            "--refetch-due",
+            str(tmp_path / "due.txt"),
+        ],
+    )
+    assert ud.main() == 0
+    (path,) = (tmp_path / "facts" / "description_facts").rglob("*.parquet")
+    rows = pq.read_table(path).to_pylist()
+    assert [r["id"] for r in rows] == ["eightfold:acme:1"]
+    assert rows[0]["description_hash"] == df.description_hash("Tech.")
+    assert rows[0]["observed_at"]
+
+
+def test_seed_cli_observes_existing_store_now_without_rewriting_it(
+    tmp_path, monkeypatch
+):
+    store = tmp_path / "store" / "eightfold"
+    facts = tmp_path / "facts"
+    ud._write_fragment(
+        store,
+        [
+            {"id": "eightfold:acme:1", "description": "Held."},
+            {"id": "eightfold:acme:2", "description": None},
+            {"id": "eightfold:acme:3", "description": "  "},
+        ],
+    )
+    before = {p: p.read_bytes() for p in store.iterdir()}
+    monkeypatch.setattr(held_refetch, "now", lambda: _AT)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "update_descriptions",
+            "--seed-existing",
+            "--store",
+            str(store.parent),
+            "--facts-dir",
+            str(facts),
+            "--seed-batch-size",
+            "1",
+        ],
+    )
+    assert ud.main() == 0
+    assert {p: p.read_bytes() for p in store.iterdir()} == before
+    rows = list(df.iter_observations(facts))
+    assert len(rows) == 1
+    assert rows[0]["observed_at"] == _AT.isoformat(timespec="seconds")
+    assert rows[0]["description_hash"] == df.description_hash("Held.")
+    assert not (facts / "description_archive").exists()
+    assert ud.main() == 0
+    assert list(df.iter_observations(facts)) == rows
+    jobs = tmp_path / "tech" / "eightfold.jsonl"
+    _corpus(jobs, [_job("eightfold:acme:1", None)])
+    assert ud.reconcile(jobs, store, facts_dir=facts, observed_at="later").learned == 0
+    assert list(df.iter_observations(facts)) == rows
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        [],
+        ["--facts-dir", "unused", "--seed-batch-size", "0"],
+        ["--facts-dir", "unused", "--compact"],
+    ],
+)
+def test_seed_cli_rejects_invalid_options(monkeypatch, extra):
+    monkeypatch.setattr(sys, "argv", ["update_descriptions", "--seed-existing", *extra])
+    with pytest.raises(SystemExit):
+        ud.main()
 
 
 def test_a_failed_fetch_is_repaired_from_the_store(tmp_path):
