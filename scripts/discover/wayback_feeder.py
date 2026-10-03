@@ -258,6 +258,7 @@ ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
     # career-site URL's `?c=` corp on 564/564 upstream seed URLs. `csod.com` also hosts the
     # vendor's LMS on the same labels, so a sweep over-collects corps with no career site —
     # `p_cornerstone` settles those, the pool is candidate-grade.
+    "comeet": _with_style("path", "comeet.com", "comeet.co"),
     "cornerstone": _with_style("sub", "csod.com"),
     "darwinbox": _with_style("sub", "darwinbox.in", "darwinbox.com"),
     # `host` style: this ATS's slug is the whole board host, not the label — `eightfold.py`
@@ -312,6 +313,7 @@ ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
     # rows and zero on it, and an 18-tenant sample found 16 already known and the other 2 dead.
     # It was added once because the alias machinery made it a one-word change; that is not a
     # reason, and the measurement is the reason it is out.
+    "jobscore": _with_style("path", "careers.jobscore.com"),
     "keka": _with_style("sub", "keka.com"),
     "lever": _with_style(
         "path", "jobs.lever.co", "jobs.eu.lever.co"
@@ -368,6 +370,7 @@ ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
     # `pyjamahr.py` keys the API with. The vendor's own cross-tenant jobs sitemap
     # (`scripts/discover/mine_pyjamahr.py`) is the primary roster; this sweep adds the tenants
     # whose postings are not in it — 77 of 757 on 2026-09-22, 3 of them hiring.
+    "polymer": _with_style("path", "jobs.polymer.co"),
     "pyjamahr": _with_style("path", "jobs.pyjamahr.com"),
     "recruitee": _with_style("sub", "recruitee.com"),
     "recruiterflow": _with_style("path", "recruiterflow.com"),
@@ -549,6 +552,20 @@ def extract(url: str, host: str, style: Style) -> tuple[str, str] | None:
         return board, board
 
     if style == "path":
+        if host in {"comeet.com", "comeet.co"}:
+            match = re.match(
+                r"jobs/([A-Za-z0-9_.-]+/[A-Fa-f0-9]+\.[A-Fa-f0-9]+)(?:/|$)", path
+            )
+            if seen_host.removeprefix("www.") != host or not match:
+                return None
+            slug = match[1].lower()
+            return slug, f"https://www.comeet.com/jobs/{slug}"
+        if host == "careers.jobscore.com":
+            match = re.match(r"(?:careers|jobs)/([A-Za-z0-9_-]+)(?:/|$)", path)
+            if seen_host != host or not match:
+                return None
+            slug = match[1].lower()
+            return slug, f"https://{host}/careers/{slug}"
         if seen_host != host or not path:
             return None
         if host == "join.com":

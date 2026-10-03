@@ -203,6 +203,15 @@ registry, ADR directory and glossary; its searchable-job badge reads the live se
   surface before landing overlapping versions.** They publish different Job/JobPost identities;
   title similarity is not a safe alias rule (ADR-0384).
 
+- **Comeet keeps one current public label per company UID.** Run
+  `scripts/validate/comeet_canonical_boards.py --apply` after discovery merges and every
+  liveness refresh. The UID is the Board key; renamed labels can publish the same jobs without
+  redirecting. A later dead old label would otherwise shadow the live canonical label. The
+  normalizer rewrites only UIDs whose canonical public page was successfully read (ADR-0386).
+- **JobScore lands the feed's canonical `company_code` only.** Old labels can still return
+  another account label's whole feed (`citylightandpower` → `clpinc`). The probe excludes
+  those aliases. Honor its hourly per-Board feed-poll guidance (ADR-0385).
+
 ### To build, by evidence
 
 Evidence for Hireology is in `docs/discovery/2026-09-23_indeed-sweep-landing.md`.

@@ -1419,3 +1419,21 @@ def test_an_ashby_slug_is_read_as_the_scraper_says_a_link_writes_it(link, slug):
         if ats == "ashby"
     }
     assert found == ({slug} if slug else set())
+
+
+def test_comeet_and_polymer_fingerprints_are_scrapable_board_coordinates():
+    found = {
+        (ats, tenant)
+        for ats, _kind, tenant, _n in fp.scan(
+            "https://www.comeet.co/jobs/nsure/A7.007 https://jobs.polymer.co/cedar/38850",
+            "acme.com",
+        )
+    }
+    assert ("comeet", "nsure/a7.007") in found
+    assert ("polymer", "cedar") in found
+    assert (
+        fp.normalise_tenant(
+            "comeet", "nsure", "https://www.comeet.com/jobs/nsure/A7.007"
+        )
+        == "nsure/a7.007"
+    )

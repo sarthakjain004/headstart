@@ -164,6 +164,11 @@ ATS_PATTERNS = {
             r"apply\.workable\.com/(?:api/v1/widget/accounts/)?([a-z0-9][a-z0-9-]+)",
         ],
     },
+    "polymer": {
+        "targets": ["jobs.polymer.co"],
+        "kind": "slug",
+        "patterns": [r"jobs\.polymer\.co/([a-z0-9_-]+)(?=[/?#]|$)"],
+    },
     "pyjamahr": {
         # One shared board host, slug is the path segment (`jobs.pyjamahr.com/{slug}`), the
         # same shape as ashby/rippling. `api.pyjamahr.com` carries the slug only in a query
@@ -193,6 +198,13 @@ ATS_PATTERNS = {
             r"jobs\.gem\.com/([a-z0-9][a-z0-9-]+)",
         ],
     },
+    "jobscore": {
+        "targets": ["careers.jobscore.com"],
+        "kind": "jobscore",
+        "patterns": [
+            r"careers\.jobscore\.com/(?:careers|jobs)/([a-z0-9_-]+)(?=[/?#]|$)"
+        ],
+    },
     "join": {
         "targets": ["join.com"],
         "kind": "slug",
@@ -217,6 +229,13 @@ ATS_PATTERNS = {
         "targets": ["hrmdirect.com", "clearcompany.com"],
         "kind": "label",
         "patterns": [r"([a-z0-9][a-z0-9-]*)\.(?:hrmdirect|clearcompany)\.com"],
+    },
+    "comeet": {
+        "targets": ["comeet.com", "comeet.co"],
+        "kind": "comeet",
+        "patterns": [
+            r"comeet\.co(?:m)?/jobs/([a-z0-9_.-]+/[a-f0-9]+\.[a-f0-9]+)(?=[/?#]|$)"
+        ],
     },
     "cornerstone": {
         # `{corp}.csod.com` also serves the vendor's LMS, so the pattern keeps only URLs on the
@@ -651,6 +670,10 @@ def tenant_from(kind, match):
         board = f"https://{host.lower()}/{path}"
         return board, board
     tok = match.group(1)
+    if kind == "comeet":
+        return tok.lower(), f"https://www.comeet.com/jobs/{tok.lower()}"
+    if kind == "jobscore":
+        return tok.lower(), f"https://careers.jobscore.com/careers/{tok.lower()}"
     if kind in ("host", "oracle"):
         # Reconstruct the BOARD url rather than returning None and letting the caller store the
         # raw Common Crawl capture — that capture is usually a job deep link with tracking

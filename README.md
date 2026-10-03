@@ -106,6 +106,10 @@ JobPosts. Their identity, alias and field decisions are recorded in
 [ADR-0383](docs/adr/0383-pageup-reads-full-public-rss-and-checks-career-migrations.md) and
 [ADR-0384](docs/adr/0384-manatal-keeps-legacy-jobs-and-advanced-jobposts-distinct.md).
 
+`comeet` reads the public Spark Hire Recruit hosted page and keys jobs on the immutable
+company UID; `jobscore` reads its complete published feed; `polymer` reads its unauthenticated
+public listing and details. Their measurement notes are linked from [docs](docs/README.md).
+
 `join` is disabled because its measured German-SMB listings are almost entirely non-tech;
 the scraper and tests remain available.
 `adp` and `adp_recruiting` are two separate ADP products, ADP Workforce Now and ADP Recruiting
