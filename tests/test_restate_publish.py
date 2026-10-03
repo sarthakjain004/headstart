@@ -1,5 +1,6 @@
 """CAS and content checks with a local fake HF writer; these tests perform no remote writes."""
 
+import shutil
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -20,6 +21,90 @@ def remote(entry):
     return SimpleNamespace(
         rfilename=entry["path"], size=entry["size"], lfs={"sha256": entry["sha256"]}
     )
+
+
+def _prepare_sources(candidate: Path, root: Path) -> None:
+    for name, destination in [
+        ("company_directory.json", root / "data/state/company_directory.json"),
+        *((name, root / name) for name in artifact.CONFIG_FILES),
+    ]:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(candidate / name, destination)
+
+
+def test_prepare_augments_tick_only_metadata_atomically(
+    candidate, tmp_path, monkeypatch
+):
+    root = tmp_path / "source"
+    _prepare_sources(candidate, root)
+    for name in ("company_directory.json", *artifact.CONFIG_FILES):
+        (candidate / name).unlink()
+    placements = candidate / "placements"
+    placements.mkdir()
+    (placements / "private.parquet").write_bytes(b"private per-id placements")
+    metadata_path = candidate / "replay.json"
+    initial = artifact.read_json(metadata_path)
+    initial["files"] = [
+        e for e in initial["files"] if e["path"].startswith("role_trend_board_deltas/")
+    ]
+    initial["quality"] = {"supported_metrics": ["stock"]}
+    metadata_path.write_bytes(artifact.encoded(initial))
+    replaced = []
+    original_replace = Path.replace
+
+    def replace(source, destination):
+        if destination == metadata_path:
+            assert source == candidate / "replay.json.tmp"
+            assert artifact.read_json(metadata_path) == initial
+            replaced.append(artifact.read_json(source))
+        return original_replace(source, destination)
+
+    monkeypatch.setattr(Path, "replace", replace)
+    restate_publish.prepare(candidate, root)
+    prepared = artifact.read_json(metadata_path)
+    expected = [
+        artifact.file_entry(path, path.relative_to(candidate).as_posix())
+        for path in sorted(candidate.rglob("*"))
+        if path.is_file() and artifact.allowed(path.relative_to(candidate).as_posix())
+    ]
+    assert prepared["files"] == expected
+    assert replaced == [prepared]
+    assert {k: v for k, v in prepared.items() if k != "files"} == {
+        k: v for k, v in initial.items() if k != "files"
+    }
+    assert {e["path"] for e in prepared["files"]} == {
+        *(e["path"] for e in initial["files"]),
+        "company_directory.json",
+        *artifact.CONFIG_FILES,
+    }
+    assert not (candidate / "replay.json.tmp").exists()
+
+
+def test_prepare_failed_replace_retains_original_metadata(
+    candidate, tmp_path, monkeypatch
+):
+    root = tmp_path / "source"
+    _prepare_sources(candidate, root)
+    metadata_path = candidate / "replay.json"
+    before = metadata_path.read_bytes()
+
+    def fail_replace(*args):
+        raise OSError("fixture interrupted before rename")
+
+    monkeypatch.setattr(Path, "replace", fail_replace)
+    with pytest.raises(OSError, match="interrupted"):
+        restate_publish.prepare(candidate, root)
+    assert metadata_path.read_bytes() == before
+    assert not (candidate / "replay.json.tmp").exists()
+
+
+def test_package_requires_prepared_metadata_file_identity(candidate, tmp_path):
+    metadata_path = candidate / "replay.json"
+    metadata = artifact.read_json(metadata_path)
+    metadata["files"][0]["sha256"] = "0" * 64
+    metadata_path.write_bytes(artifact.encoded(metadata))
+    with pytest.raises(ValueError, match="prepared replay file inventory"):
+        restate_publish.package(candidate, tmp_path / "out")
 
 
 def test_immutable_inputs_allow_new_pipeline_content(packaged):
@@ -155,7 +240,12 @@ def test_workflow_is_current_rules_serialized_release_gated():
     source = path.read_text()
     assert "cancel-in-progress: false" in source
     assert "ref: main" in source
-    assert "headstart.ingest.restate_run --out data/restated" in source
+    assert (
+        "headstart.ingest.restate_run --out data/restated --encode-budget-seconds 1800"
+        in source
+    )
+    assert "HEADSTART_RESTATE_CODE_SHA=$(git rev-parse HEAD)" in source
+    assert "${{ github.sha }}" not in source
     assert "verify_restatement.py" in source
     assert "RESTATED_TRENDS_PUBLICATION_ENABLED == 'true'" in source
     assert "compare_restated_trends.py" not in source

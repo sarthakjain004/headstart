@@ -59,7 +59,7 @@ jobs:
       # The engine consumes HEADSTART_RESTATE_INPUT_REVISION/INPUT_INVENTORY/CODE_SHA and
       # writes replay.json; absence of that metadata fails packaging, never fabricates a pass.
       - name: Replay under current rules
-        run: python -u -m headstart.ingest.restate_run --out data/restated
+        run: python -u -m headstart.ingest.restate_run --out data/restated --encode-budget-seconds 1800
       - name: Prepare the small serving inventory
         run: python -u -m headstart.ingest.restate_publish prepare
       - name: Independently verify the exact candidate

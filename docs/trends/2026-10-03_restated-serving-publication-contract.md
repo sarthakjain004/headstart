@@ -164,14 +164,21 @@ Replay inputs are runner-only; only the allowlisted small package reaches Space.
 The pinned runner-only fetch is `python -m headstart.ingest.restate_publish fetch`. It writes
 `data/restated-inputs.json` with `input_revision` and path/size/SHA-256 entries (`git_blob` also
 included for non-LFS content). In Actions it exports `HEADSTART_RESTATE_INPUT_REVISION` and
-`HEADSTART_RESTATE_INPUT_INVENTORY`; checkout exports `HEADSTART_RESTATE_CODE_SHA`. The parent
+`HEADSTART_RESTATE_INPUT_INVENTORY`. Checkout uses `ref: main`, then sets
+`HEADSTART_RESTATE_CODE_SHA=$(git rev-parse HEAD)` via `GITHUB_ENV`; this is the actual fresh
+checkout's SHA, not the triggering event's `GITHUB_SHA`. The parent
 engine must consume these and write `data/restated/replay.json` with the identity fields,
 `rules_code_sha` and selected `inputs`. Mutable inputs remain pinned to that revision; only
 chosen immutable facts/reference files must retain their content at publication.
 
-After `restate_run --out data/restated`, run `restate_publish prepare`. It adds the pinned
+Replay runs with `--out data/restated --encode-budget-seconds 1800`. Then run
+`restate_publish prepare`. It adds the pinned
 Company labels and config to the candidate and checks coverage of every generation Board.
-Missing labels fail without inventing an employer. Then run the independent verifier:
+Missing labels fail without inventing an employer. After the copy and checks, prepare replaces
+`metadata.files` with the exact serving path/size/SHA-256 inventory, preserving identity,
+inputs, bounds and quality. It atomically replaces `replay.json` before verification; placements
+stay excluded. Packaging also checks that this prepared inventory still matches actual files.
+Then run the independent verifier:
 
 ```
 python scripts/eval/verify_restatement.py --facts data/facts --state data/state \

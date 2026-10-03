@@ -28,6 +28,14 @@ IMMUTABLE = tuple(
 )
 
 
+def _serving_inventory(candidate: Path) -> list[dict]:
+    return [
+        artifact.file_entry(path, path.relative_to(candidate).as_posix())
+        for path in sorted(candidate.rglob("*"))
+        if path.is_file() and artifact.allowed(path.relative_to(candidate).as_posix())
+    ]
+
+
 def prepare(candidate: Path, root: Path) -> None:
     """Add pinned serving labels/config before the independent verifier inventories output."""
     for name, source in [
@@ -38,7 +46,17 @@ def prepare(candidate: Path, root: Path) -> None:
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source, destination)
     # Check coverage now too; do not fabricate companies for missing Board keys.
-    artifact.check_history(candidate, artifact.read_json(candidate / "replay.json"))
+    metadata_path = candidate / "replay.json"
+    metadata = artifact.read_json(metadata_path)
+    artifact.check_history(candidate, metadata)
+    metadata["files"] = _serving_inventory(candidate)
+    artifact.inventory(metadata["files"], serving=True)
+    staged = metadata_path.with_suffix(".json.tmp")
+    try:
+        staged.write_bytes(artifact.encoded(metadata))
+        staged.replace(metadata_path)
+    finally:
+        staged.unlink(missing_ok=True)
     print(
         "prepared pinned labels and taxonomy for independent verification", flush=True
     )
@@ -52,11 +70,11 @@ def package(candidate: Path, destination: Path) -> tuple[Path, dict]:
     ):
         raise ValueError("replay metadata must use schema version 1")
     report = artifact.read_json(candidate / "validation.json")
-    files = [
-        artifact.file_entry(path, path.relative_to(candidate).as_posix())
-        for path in sorted(candidate.rglob("*"))
-        if path.is_file() and artifact.allowed(path.relative_to(candidate).as_posix())
-    ]
+    files = _serving_inventory(candidate)
+    if artifact.inventory(metadata["files"], serving=True) != artifact.inventory(
+        files, serving=True
+    ):
+        raise ValueError("prepared replay file inventory changed before packaging")
     manifest = {
         "schema_version": 1,
         **{

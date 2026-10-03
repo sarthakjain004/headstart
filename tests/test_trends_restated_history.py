@@ -62,6 +62,8 @@ def candidate(tmp_path):
         for p in sorted(directory.rglob("*"))
         if p.is_file() and artifact.allowed(p.relative_to(directory).as_posix())
     ]
+    metadata["files"] = files
+    (directory / "replay.json").write_bytes(artifact.encoded(metadata))
     report = {
         **metadata,
         "complete": True,
