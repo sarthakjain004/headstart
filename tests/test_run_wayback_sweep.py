@@ -37,6 +37,12 @@ def test_sweep_reports_failures_and_resumes_only_unfinished_targets(
         return ats == "jazzhr"
 
     monkeypatch.setattr(runner, "sweep", sweep)
+    page_calls = []
+    monkeypatch.setattr(
+        runner,
+        "page_sweep",
+        lambda ats, *args, **kwargs: page_calls.append(ats) or False,
+    )
     monkeypatch.setattr(runner, "fetch", lambda url: "")
     assert runner.main() == 3
     results = json.loads(report.read_text())["targets"]
@@ -51,5 +57,11 @@ def test_sweep_reports_failures_and_resumes_only_unfinished_targets(
     monkeypatch.setattr(
         runner, "sweep", lambda ats, *args, **kwargs: calls.append(ats) or True
     )
+    monkeypatch.setattr(
+        runner,
+        "page_sweep",
+        lambda ats, *args, **kwargs: page_calls.append(ats) or True,
+    )
     assert runner.main() == 0
-    assert calls == ["ashby", "jazzhr", "ashby"]
+    assert calls == ["ashby", "jazzhr"]
+    assert page_calls == ["ashby", "ashby"]

@@ -42,6 +42,7 @@ def test_wayback_429_retries_on_spare_and_honors_retry_after(monkeypatch):
 
     from headstart.network import http, spare_egress
 
+    spare_egress.reset()
     spare_egress.use_daemon(
         spare_egress.InMemoryEgressDaemon("socks5h://127.0.0.1:40000")
     )
@@ -892,3 +893,31 @@ def test_html_error_at_200_does_not_advance_resume_cursor(monkeypatch):
 
     monkeypatch.setattr(wp, "fetch", lambda url: "<html>temporary error</html>")
     assert wp.fetch_page("example.com", "saved-key", None) == (None, "saved-key")
+
+
+def test_page_fallback_keeps_capture_window_and_separate_checkpoint(
+    monkeypatch, tmp_path
+):
+    from types import SimpleNamespace
+
+    import wayback_pages as wp
+
+    monkeypatch.setattr(wp, "WB", tmp_path)
+    requests = []
+    monkeypatch.setattr(
+        wp,
+        "fetch",
+        lambda url: requests.append(url) or ("1" if "showNumPages" in url else ""),
+    )
+    assert wp.sweep(
+        "ashby",
+        "jobs.ashbyhq.com",
+        "path",
+        1,
+        SimpleNamespace(flush=lambda: None),
+        since="20260917",
+    )
+    assert all("from=20260917" in url for url in requests)
+    assert (
+        tmp_path / ".ashby_jobs.ashbyhq.com_20260917_pages_done"
+    ).read_text().split() == ["0"]

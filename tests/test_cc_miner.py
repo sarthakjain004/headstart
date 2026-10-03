@@ -64,6 +64,7 @@ def test_cdx_429_retries_on_spare_and_honors_retry_after(miner, monkeypatch):
 
     from headstart.network import http, spare_egress
 
+    spare_egress.reset()
     spare_egress.use_daemon(
         spare_egress.InMemoryEgressDaemon("socks5h://127.0.0.1:40000")
     )

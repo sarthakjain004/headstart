@@ -10,7 +10,7 @@ The unit is a **SURT key range** ``[lo, hi)``. :func:`domain_range` turns a CDX 
 target into one, so any miner keyed on host targets (``cc_miner.ATS_PATTERNS``) can use it, and
 :func:`capture_urls` returns every captured URL in that range for one crawl.
 
-When the data host answers 429 or 503 (S3's SlowDown), requests move to the spare egress
+When the data host answers 403, 429 or 503 (S3's SlowDown), requests move to the spare egress
 (``headstart.network.spare_egress``, the WARP SOCKS proxy) and rotate it on repeated refusals, with paced retries and Retry-After (the shared client's 30 s cap).
 """
 
@@ -147,7 +147,7 @@ def crawl_ids(since: str = "") -> list[str]:
 
 
 def _get(url: str, *, start: int | None = None, end: int | None = None, tries: int = 6):
-    """GET a whole file or byte range, using paced spare-egress retries on 429/503."""
+    """GET a whole file or byte range, using paced spare-egress retries on 403/429/503."""
     headers = {"User-Agent": UA}
     if start is not None:
         headers["Range"] = f"bytes={start}-{end}"
@@ -159,7 +159,7 @@ def _get(url: str, *, start: int | None = None, end: int | None = None, tries: i
             timeout=90,
             headers=headers,
             egress_group="cc-data",
-            egress_on=frozenset({429, 503}),
+            egress_on=frozenset({403, 429, 503}),
             request_pacer=_PACER,
         )
     except http.RequestsError:

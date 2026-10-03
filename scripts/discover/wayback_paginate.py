@@ -16,6 +16,7 @@ Usage:  python scripts/discover/wayback_paginate.py zoho
         python scripts/discover/wayback_paginate.py eightfold --filter 'urlkey:ai,eightfold,.*'
 """
 
+import os
 import time
 import urllib.parse
 
@@ -30,7 +31,7 @@ from wayback_feeder import (
     slug_sink,
 )
 
-PAGE = 15000  # urls per CDX page
+PAGE = int(os.environ.get("WAYBACK_PAGE_SIZE", "15000"))  # URLs per resume-key page
 SLEEP = 1.0  # politeness between pages (seconds)
 
 

@@ -14,6 +14,7 @@ from urllib.parse import urlencode
 
 from archive_targets import KNOWN_HOST_ATS, SINGLE_SOURCE_ATS, known_hosts
 from wayback_feeder import ATS_HOSTS, FetchError, fetch, slug_sink
+from wayback_pages import sweep as page_sweep
 from wayback_paginate import sweep
 
 from headstart import log
@@ -54,18 +55,33 @@ def main():
                 previous = report["targets"].get(key, {})
                 if previous.get("status") == "complete":
                     continue
-                save(key, "running", mode="namespace")
-                complete = sweep(
-                    ats,
-                    domain,
-                    style,
-                    0,
-                    None,
-                    sink,
-                    refresh=not previous,
-                    since=args.since,
+                mode = (
+                    "namespace-pages"
+                    if previous.get("status") == "incomplete"
+                    else previous.get("mode", "namespace")
                 )
-                save(key, "complete" if complete else "incomplete", mode="namespace")
+                save(key, "running", mode=mode)
+                complete = False
+                if mode != "namespace-pages":
+                    complete = sweep(
+                        ats,
+                        domain,
+                        style,
+                        0,
+                        None,
+                        sink,
+                        refresh=not previous,
+                        since=args.since,
+                    )
+                if not complete:
+                    mode = "namespace-pages"
+                    save(key, "running", mode=mode)
+                    print(
+                        f"[{ats}/{domain}] resume query incomplete -> bounded index pages",
+                        flush=True,
+                    )
+                    complete = page_sweep(ats, domain, style, 1, sink, since=args.since)
+                save(key, "complete" if complete else "incomplete", mode=mode)
 
     for ats in sorted(KNOWN_HOST_ATS):
         hosts = known_hosts(ats)

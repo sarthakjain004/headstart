@@ -67,8 +67,9 @@ Real Wayback CDX and CC data-host requests returned 200 through that route.
 The CC index API closed the proxied connection during a separate live check; the
 data-host fallback is therefore necessary even with working WARP. Deterministic
 regressions exercise 429 backoff, direct-to-spare routing, proxy refusal rotation,
-failed refreshes, sparse blocks, and sweep resumption. They do not claim that an
-actual vendor 429 was induced during this run.
+failed refreshes, sparse blocks, and sweep resumption. During the paged Wayback sweep, a real 429 moved the request stream onto WARP;
+subsequent pages completed, and further throttles rotated to fresh IPv6 addresses.
+The log records that live recovery without deliberately inducing a vendor throttle.
 
 Discovery outputs are candidate-grade. No liveness ledger or served data is
 modified by the archive sweep. Unknown candidates require scraper `board_key`
@@ -90,3 +91,10 @@ successful reads. This global scan uses DuckDB's native retry policy; its HTTP
 proxy setting rejected a SOCKS5 URL in a live metadata probe. It does not inherit
 the Python feeder's spare-egress policy. Completion is checked against the manifest,
 not the miner's process exit code.
+
+The oversized iCIMS, Workday and Oracle US2 resume queries returned 504 or timed
+out. The runner falls back to the existing bounded index-page strategy, retaining
+the capture window in requests and checkpoint filenames. An interrupted fallback
+resumes its completed page numbers rather than repeating the failed full query.
+Wayback's paged index can lag its unpaged index; that source limitation is documented
+in the [Archive's CDX server documentation](https://github.com/internetarchive/wayback/blob/master/wayback-cdx-server/README.md#pagination-api).

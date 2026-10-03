@@ -195,16 +195,18 @@ def test_known_hosts_share_sparse_blocks_and_failed_blocks_stay_incomplete(monke
     )
 
 
-def test_data_host_429_backoff_and_rotation_use_shared_client(monkeypatch):
+@pytest.mark.parametrize("wall_status", [403, 429])
+def test_data_host_429_backoff_and_rotation_use_shared_client(monkeypatch, wall_status):
     from types import SimpleNamespace
 
     from headstart.network import http, spare_egress
 
+    spare_egress.reset()
     spare_egress.use_daemon(
         spare_egress.InMemoryEgressDaemon("socks5h://127.0.0.1:40000")
     )
     calls, sleeps, rotations = [], [], []
-    outcomes = iter([429, 503, 206])
+    outcomes = iter([wall_status, 503, 206])
 
     def request(*args, **kwargs):
         calls.append(kwargs)

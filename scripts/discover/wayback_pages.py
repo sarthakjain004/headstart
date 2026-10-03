@@ -42,12 +42,15 @@ from wayback_feeder import (
 )
 
 
-def sweep(ats, domain, style, workers, sink, refresh=False):
+def sweep(ats, domain, style, workers, sink, refresh=False, since=None):
     """Harvest every CDX page for one host, appending new slugs as pages land."""
     cdx = f"https://web.archive.org/cdx/search/cdx?url={urllib.parse.quote(domain)}&matchType=domain"
+    if since:
+        cdx += "&from=" + urllib.parse.quote(since, safe="")
     base = cdx + "&fl=original&collapse=urlkey"  # showNumPages needs the clean url
 
-    state = WB / f".{ats}_{domain}_pages_done"
+    period = f"_{since}" if since else ""
+    state = WB / f".{ats}_{domain}{period}_pages_done"
     if refresh:
         state.write_text("", encoding="utf-8")
     try:
@@ -80,6 +83,12 @@ def sweep(ats, domain, style, workers, sink, refresh=False):
         def do(page):
             try:
                 text = fetch(f"{base}&page={page}")
+                if any(
+                    not line.startswith(("http://", "https://"))
+                    for line in text.splitlines()
+                    if line
+                ):
+                    raise FetchError("unreadable CDX page")
             except FetchError as err:
                 # Deliberately not recorded in `pages_done`, so a re-run retries this page. Said
                 # out loud because a silently-dropped page looks exactly like an empty one.
@@ -120,6 +129,7 @@ def sweep(ats, domain, style, workers, sink, refresh=False):
 def main():
     ap = cli(__doc__)
     ap.add_argument("--workers", type=int, default=2)
+    ap.add_argument("--since", help="earliest capture date, YYYYMMDD")
     ap.add_argument(
         "--refresh",
         action="store_true",
@@ -132,7 +142,7 @@ def main():
     adopt_legacy_state(args.ats, "pages_done")
     with slug_sink(args.ats) as sink:
         for domain, style in targets:
-            sweep(args.ats, domain, style, args.workers, sink, args.refresh)
+            sweep(args.ats, domain, style, args.workers, sink, args.refresh, args.since)
 
 
 if __name__ == "__main__":
