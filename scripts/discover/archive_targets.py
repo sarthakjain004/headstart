@@ -9,6 +9,8 @@ import csv
 from pathlib import Path
 from urllib.parse import urlsplit
 
+from wayback_feeder import ATS_HOSTS
+
 from headstart.scrapers.registry import SCRAPERS
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -17,6 +19,9 @@ SINGLE_SOURCE_ATS = frozenset(
 )
 COMPANY_DOMAIN_ATS = frozenset(
     {"phenom", "radancy", "happydance", "spire2grow", "wp_job_openings"}
+)
+KNOWN_HOST_ATS = COMPANY_DOMAIN_ATS | frozenset(
+    {"eightfold", "successfactors", "zwayam", "gr8people"}
 )
 
 
@@ -34,6 +39,14 @@ def known_hosts(ats):
                     host = urlsplit(slug if "://" in slug else "//" + slug).hostname
                 except ValueError:
                     continue
-                if host:
+                if host and "." in host:
                     hosts.add(host.lower())
-    return sorted(hosts)
+    namespaces = [host for host, _ in ATS_HOSTS.get(ats, ())]
+    return sorted(
+        host
+        for host in hosts
+        if not any(
+            host == namespace or host.endswith("." + namespace)
+            for namespace in namespaces
+        )
+    )

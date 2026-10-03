@@ -885,3 +885,10 @@ def test_resume_key_request_keeps_capture_window(monkeypatch):
     query = parse_qs(urlsplit(requests[0]).query)
     assert query["from"] == ["20260917"]
     assert query["resumeKey"] == ["old-key"]
+
+
+def test_html_error_at_200_does_not_advance_resume_cursor(monkeypatch):
+    import wayback_paginate as wp
+
+    monkeypatch.setattr(wp, "fetch", lambda url: "<html>temporary error</html>")
+    assert wp.fetch_page("example.com", "saved-key", None) == (None, "saved-key")

@@ -164,10 +164,22 @@ def test_known_hosts_share_sparse_blocks_and_failed_blocks_stay_incomplete(monke
         return SimpleNamespace(content=idx if url.endswith("cluster.idx") else body)
 
     monkeypatch.setattr(cc_data_host, "_get", get)
-    targets = {"a.example.com", "b.example.com", "absent.example.com"}
-    result = cc_data_host.capture_known_hosts("CC-MAIN-test", targets)
+    targets = {
+        "a.example.com",
+        "www.a.example.com",
+        "b.example.com",
+        "absent.example.com",
+    }
+    notified = {}
+    result = cc_data_host.capture_known_hosts(
+        "CC-MAIN-test",
+        targets,
+        on_host=lambda host, urls: notified.update({host: urls}),
+    )
+    assert notified == result
     assert result == {
         "a.example.com": [urls[0]],
+        "www.a.example.com": [urls[0]],
         "b.example.com": [urls[1]],
         "absent.example.com": [],
     }
@@ -216,3 +228,10 @@ def test_data_host_429_backoff_and_rotation_use_shared_client(monkeypatch):
     assert calls[2]["headers"]["Range"] == "bytes=10-20"
     assert sleeps == [7, 7]
     assert rotations == [True]
+
+
+def test_www_and_apex_use_the_same_surt_range():
+    assert cc_data_host.surt_host("www.example.com") == "com,example"
+    assert cc_data_host.domain_range("www.example.com") == cc_data_host.domain_range(
+        "example.com"
+    )

@@ -12,7 +12,7 @@ import time
 from pathlib import Path
 from urllib.parse import urlencode
 
-from archive_targets import COMPANY_DOMAIN_ATS, SINGLE_SOURCE_ATS, known_hosts
+from archive_targets import KNOWN_HOST_ATS, SINGLE_SOURCE_ATS, known_hosts
 from wayback_feeder import ATS_HOSTS, FetchError, fetch, slug_sink
 from wayback_paginate import sweep
 
@@ -67,7 +67,7 @@ def main():
                 )
                 save(key, "complete" if complete else "incomplete", mode="namespace")
 
-    for ats in sorted(COMPANY_DOMAIN_ATS):
+    for ats in sorted(KNOWN_HOST_ATS):
         hosts = known_hosts(ats)
         print(
             f"[{ats}] Wayback archive-presence audit: {len(hosts)} known hosts",
@@ -87,7 +87,15 @@ def main():
             except FetchError as error:
                 save(key, "incomplete", mode="known-host", error=str(error))
             else:
-                save(key, "complete", mode="known-host", has_capture=bool(body.strip()))
+                readable = not body.strip() or body.strip().startswith(
+                    ("http://", "https://")
+                )
+                save(
+                    key,
+                    "complete" if readable else "incomplete",
+                    mode="known-host",
+                    has_capture=bool(body.strip()) if readable else None,
+                )
             if number % 100 == 0:
                 print(f"[{ats}] {number}/{len(hosts)} known hosts checked", flush=True)
         time.sleep(1)

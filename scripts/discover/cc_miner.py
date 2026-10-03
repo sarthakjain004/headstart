@@ -42,7 +42,7 @@ import sys
 import urllib.parse
 
 import cc_data_host
-from archive_targets import COMPANY_DOMAIN_ATS, known_hosts
+from archive_targets import COMPANY_DOMAIN_ATS, KNOWN_HOST_ATS, known_hosts
 from wayback_feeder import ADP_HOST, ADP_PAGE_URL, ATS_HOSTS, extract
 
 from headstart import log
@@ -232,8 +232,8 @@ ATS_PATTERNS = {
         # URLs embed a second, percent-encoded eightfold host in the query (`...%2f%2fbcg.eightfold.ai`),
         # and a bare pattern would capture `2fbcg` instead of `bcg`.
         "targets": ["eightfold.ai"],
-        "kind": "label",
-        "patterns": [r"(?://|%2f)([a-z0-9][a-z0-9-]*)\.eightfold\.ai"],
+        "kind": "host",
+        "patterns": [r"(?://|%2f)([a-z0-9][a-z0-9-]*\.eightfold\.ai)"],
     },
     "icims": {
         # The scraper's slug IS the board host (`career-celanese.icims.com`), so `host` kind —
@@ -747,7 +747,11 @@ def load_existing():
     if os.path.exists(CSV):
         with open(CSV, encoding="utf-8") as f:
             for row in csv.DictReader(f):
-                tenants[row["ats"]][row["tenant"]] = row.get("url", "")
+                tenant, url = row["tenant"], row.get("url", "")
+                if row["ats"] == "eightfold" and "." not in tenant:
+                    tenant = f"{tenant}.eightfold.ai"
+                    url = f"https://{tenant}"
+                tenants[row["ats"]][tenant] = url
     done = set()
     if os.path.exists(DONE):
         with open(DONE, encoding="utf-8") as f:
@@ -790,7 +794,7 @@ def main():
     # reading shared sparse blocks once instead of issuing 25 seeks per host.
     company_hosts = {
         ats: known_hosts(ats)
-        for ats in sorted(COMPANY_DOMAIN_ATS)
+        for ats in sorted(KNOWN_HOST_ATS)
         if not only or ats == only
     }
     pending = {
@@ -800,22 +804,28 @@ def main():
         if f"{crawl}|{host}|data" not in done
     }
     if pending:
-        captures = cc_data_host.capture_known_hosts(crawl, pending)
-        for ats, hosts in company_hosts.items():
-            completed = []
-            for host in hosts:
-                if host not in pending:
+        completed = []
+
+        def save_host(host, urls):
+            for ats, hosts in company_hosts.items():
+                if host not in hosts:
                     continue
-                urls = captures[host]
                 if urls is None:
                     incomplete.append((ats, host))
-                    continue
-                if urls:
+                elif urls:
                     tenants[ats].setdefault(host, f"https://{host}")
+            if urls is not None:
                 completed.append(f"{crawl}|{host}|data")
-            if completed:
-                done.update(completed)
-                _checkpoint(completed[-1], done, tenants)
+                if len(completed) >= 50:
+                    done.update(completed)
+                    _checkpoint(completed[-1], done, tenants)
+                    completed.clear()
+
+        cc_data_host.capture_known_hosts(crawl, pending, on_host=save_host)
+        if completed:
+            done.update(completed)
+            _checkpoint(completed[-1], done, tenants)
+        for ats, hosts in company_hosts.items():
             print(f"[{ats}] known-host audit: {len(hosts)} targets", flush=True)
     with open("data/discover/cc_sweep_report.json", "w", encoding="utf-8") as report:
         json.dump(

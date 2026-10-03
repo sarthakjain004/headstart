@@ -356,3 +356,28 @@ def test_an_ashby_slug_is_read_as_the_scraper_says_a_link_writes_it(miner):
         hits,
     )
     assert sorted(hits) == ["Elveo", "Flock Safety", "ambient.ai"]
+
+
+def test_eightfold_capture_emits_only_the_full_board_host(miner):
+    spec = miner.ATS_PATTERNS["eightfold"]
+    pats = [re.compile(pattern, re.IGNORECASE) for pattern in spec["patterns"]]
+    hits = {}
+    miner.extract_tenants(
+        spec, pats, ["https://paypal.eightfold.ai/careers/job/123"], hits
+    )
+    assert hits == {"paypal.eightfold.ai": "https://paypal.eightfold.ai"}
+
+
+def test_resumed_eightfold_labels_are_reconciled_to_full_hosts(
+    miner, monkeypatch, tmp_path
+):
+    candidate = tmp_path / "candidates.csv"
+    candidate.write_text(
+        "ats,tenant,url\neightfold,paypal,https://paypal.eightfold.ai/careers/job/1\neightfold,paypal.eightfold.ai,https://paypal.eightfold.ai\n"
+    )
+    monkeypatch.setattr(miner, "CSV", str(candidate))
+    monkeypatch.setattr(miner, "DONE", str(tmp_path / "checkpoint"))
+    tenants, _ = miner.load_existing()
+    assert tenants["eightfold"] == {
+        "paypal.eightfold.ai": "https://paypal.eightfold.ai"
+    }

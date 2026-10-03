@@ -57,7 +57,11 @@ def fetch_page(domain, resume, cdx_filter, since=None):
     if len(lines) >= 2 and lines[-2] == "":  # blank line then resume key
         nxt = lines[-1].strip() or None
         lines = lines[:-2]
-    return [ln for ln in lines if ln], nxt
+    urls = [ln for ln in lines if ln]
+    if any(not url.startswith(("http://", "https://")) for url in urls):
+        print("  unreadable CDX response; leaving cursor unchanged", flush=True)
+        return None, resume
+    return urls, nxt
 
 
 def sweep(ats, domain, style, max_pages, cdx_filter, sink, refresh=False, since=None):

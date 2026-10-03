@@ -24,3 +24,12 @@ def test_every_scraper_is_swept_or_explicitly_single_source():
 def test_cc_includes_every_measured_wayback_regional_and_legacy_host():
     for ats, hosts in wayback_feeder.ATS_HOSTS.items():
         assert {host for host, _ in hosts} <= set(cc_miner.ATS_PATTERNS[ats]["targets"])
+
+
+def test_hybrid_providers_keep_their_known_host_audit_route():
+    assert {
+        "eightfold",
+        "successfactors",
+        "zwayam",
+        "gr8people",
+    } <= targets.KNOWN_HOST_ATS

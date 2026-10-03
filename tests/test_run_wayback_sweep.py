@@ -25,7 +25,7 @@ def test_sweep_reports_failures_and_resumes_only_unfinished_targets(
             "jazzhr": [("applytojob.com", "sub")],
         },
     )
-    monkeypatch.setattr(runner, "COMPANY_DOMAIN_ATS", {"phenom"})
+    monkeypatch.setattr(runner, "KNOWN_HOST_ATS", {"phenom"})
     monkeypatch.setattr(runner, "known_hosts", lambda ats: ["careers.example.com"])
     monkeypatch.setattr(runner, "slug_sink", lambda ats: nullcontext(None))
     monkeypatch.setattr(runner.time, "sleep", lambda seconds: None)

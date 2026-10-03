@@ -20,6 +20,7 @@ import gzip
 import json
 import re
 from bisect import bisect_left, bisect_right
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from headstart.network import http
@@ -34,7 +35,7 @@ WINDOW = 524288
 _PACER = http.RoutePacer(0.25)
 
 
-def capture_known_hosts(crawl_id, hosts):
+def capture_known_hosts(crawl_id, hosts, *, on_host=None):
     """Read many exact hosts in one pass over cluster.idx and each needed CDX block.
 
     The company-domain ATS audit has thousands of hosts. Binary-searching the
@@ -46,6 +47,9 @@ def capture_known_hosts(crawl_id, hosts):
     base = f"{DATA}/cc-index/collections/{crawl_id}/indexes/"
     response = _get(base + "cluster.idx")
     if response is None:
+        if on_host:
+            for host in hosts:
+                on_host(host, None)
         return dict.fromkeys(hosts)
     lines = [line for line in response.content.splitlines() if line]
     keys = [_key(line) for line in lines]
@@ -72,20 +76,24 @@ def capture_known_hosts(crawl_id, hosts):
             rows = gzip.decompress(response.content).splitlines()
         except (OSError, EOFError):
             return None
-        surts = {surt_host(host).encode(): host for host in covered}
+        surts = {}
+        for host in covered:
+            surts.setdefault(surt_host(host).encode(), []).append(host)
         hits = []
         for row in rows:
             key, _, rest = row.partition(b" ")
-            host = surts.get(key.partition(b")")[0])
-            if host is None:
+            matched_hosts = surts.get(key.partition(b")")[0])
+            if matched_hosts is None:
                 continue
             try:
-                hits.append((host, json.loads(rest.split(b" ", 1)[1])["url"]))
+                url = json.loads(rest.split(b" ", 1)[1])["url"]
+                hits.extend((host, url) for host in matched_hosts)
             except (IndexError, ValueError, KeyError):
                 return None
         return hits
 
     with ThreadPoolExecutor(WORKERS) as pool:
+        remaining = Counter(host for covered in blocks.values() for host in covered)
         futures = {
             pool.submit(read, block, covered): covered
             for block, covered in blocks.items()
@@ -99,6 +107,10 @@ def capture_known_hosts(crawl_id, hosts):
                 for host, url in hits:
                     if result[host] is not None:
                         result[host].append(url)
+            for host in futures[future]:
+                remaining[host] -= 1
+                if remaining[host] == 0 and on_host:
+                    on_host(host, result[host])
             if number % 100 == 0:
                 print(
                     f"[cc-data] {number}/{len(blocks)} known-host blocks read",
@@ -109,7 +121,8 @@ def capture_known_hosts(crawl_id, hosts):
 
 def surt_host(host: str) -> str:
     """``jobs.lever.co`` -> ``co,lever,jobs``: the host part of a SURT key."""
-    return ",".join(reversed(host.lower().strip(".").split(".")))
+    # Common Crawl canonicalizes www.example.com and example.com to the same key.
+    return ",".join(reversed(host.lower().strip(".").removeprefix("www.").split(".")))
 
 
 def domain_range(target: str) -> tuple[bytes, bytes]:
