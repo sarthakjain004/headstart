@@ -113,8 +113,8 @@ def tick_counts(
                     event(start, board, RECOUNTED_IN, group)
         elif group is not None:
             found = first_reads.get(lower_key(board), start) >= start
-            revived = row.get("starts_as") == "revived"
-            event(start, board, RECOUNTED_IN if found or revived else OPENED, group)
+            returned = row.get("starts_as") in {"revived", "superseding"}
+            event(start, board, RECOUNTED_IN if found or returned else OPENED, group)
         ends_alone = end is not None and not (after and after["served_from"] == end)
         if ends_alone and group is not None:
             metric = CLOSED if row["ended_as"] in _CLOSURES else RECOUNTED_OUT

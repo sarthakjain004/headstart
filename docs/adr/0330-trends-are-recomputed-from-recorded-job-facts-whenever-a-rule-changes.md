@@ -148,6 +148,12 @@ Median total gaps cannot prove correctness. Compare per-id membership and placem
 then each Board/family/band at every tick under identical preserved rules. Separately
 measure intentional differences caused by restating with changed rules.
 
+Duplicate membership uses the raw requisitions of versions present at each
+served-interval boundary, never an id-to-requisition map spanning the whole
+history. A later observation cannot remove a baseline Job retroactively. Copies
+released from suppression are Recounted, not Opened: their listings did not begin
+when the duplicate relation changed.
+
 The first validator certifies observed **tech stock placements** only. It uses
 preserved full-precision title/row logits to avoid float16 boundary drift, resolves
 Board identities from frozen ledgers, and reconciles stock with independently

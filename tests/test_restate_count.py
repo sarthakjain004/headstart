@@ -165,7 +165,7 @@ SITE_JOBS = {"workday:acme/external": 900, "workday:acme/campus": 40}
 
 def _folded_ticks(tmp_path: Path, steps):
     """The Workday tenant's two sites, one requisition: `index prune` keeps the External copy."""
-    from headstart.ingest.index_plan import boards_by_canon, duplicate_ranks
+    from headstart.ingest.index_plan import boards_by_canon
 
     facts = tmp_path / "facts"
     keep = {MAIN, SUB, HIDDEN}
@@ -180,8 +180,7 @@ def _folded_ticks(tmp_path: Path, steps):
         live=live,
         keep_set=None,
     )
-    ranks = duplicate_ranks(served["id"].to_pylist(), keep, site_jobs=SITE_JOBS)
-    folded = rs.fold_duplicates(served, ranks)
+    folded = rs.fold_duplicates(served, keep, site_jobs=SITE_JOBS)
     return list(rc.tick_counts(folded, rr.runs(facts), rr.first_reads(reads), _place))
 
 
@@ -197,6 +196,40 @@ def test_two_copies_of_one_requisition_count_once_on_the_site_prune_keeps(tmp_pa
     )
 
     assert _stock(ticks, 0) == {(MAIN, "stock", *SE): 1}
+
+
+def test_a_copy_released_by_requisition_changes_is_recounted_not_opened(tmp_path):
+    front = "eightfold:jobs.acme.com"
+    backing = "taleo_enterprise:https://acme.taleo.net/careersection/external"
+    front_id, backing_id = front + ":123", backing + ":42"
+    facts = tmp_path / "facts"
+    for stamp, req in zip(RUNS, (None, "R123", None), strict=False):
+        jobs = [
+            (front, _job(front_id) | {"requisition": "R123"}),
+            (backing, _job(backing_id) | {"requisition": req}),
+        ]
+        _record(facts, stamp, jobs, {front, backing})
+    reads = rr.board_reads(facts)
+    served = rs.served_intervals(
+        rr.job_versions(facts),
+        reads,
+        is_tech=lambda title, department: True,
+        live={},
+        keep_set=None,
+    )
+    folded = rs.fold_duplicates(
+        served, {front, backing}, backing={"jobs.acme.com": (backing,)}
+    )
+    ticks = list(rc.tick_counts(folded, RUNS[:3], rr.first_reads(reads), _place))
+    assert [sum(_stock(ticks, index).values()) for index in range(3)] == [2, 1, 2]
+    assert sum(_metric(ticks, 1, rc.CLOSED).values()) == 0
+    assert sum(_metric(ticks, 1, rc.RECOUNTED_OUT).values()) == 1
+    assert sum(_metric(ticks, 2, rc.OPENED).values()) == 0
+    assert sum(_metric(ticks, 2, rc.RECOUNTED_IN).values()) == 1
+    previous = {}
+    for _, levels, turnover in ticks:
+        assert rc.unbalanced(previous, levels, turnover) == []
+        previous = levels
 
 
 def test_a_copy_arriving_on_another_site_leaves_the_incumbent_in_place(tmp_path):

@@ -294,7 +294,6 @@ def test_selected_wide_replay_matches_full_with_non_tech_dormancy_and_backing_de
     import pyarrow as pa
 
     from headstart.ingest import restate_count
-    from headstart.ingest.index_plan import duplicate_ranks
 
     front, backing = "eightfold:jobs.acme.com", "workday:acme/external"
     front_id, backing_id = front + ":123", backing + ":R123"
@@ -322,13 +321,9 @@ def test_selected_wide_replay_matches_full_with_non_tech_dormancy_and_backing_de
             ),
             periods,
         )
-        ranks = duplicate_ranks(
-            served["id"].to_pylist(),
-            {front, backing},
-            requisitions={front_id: "R123", backing_id: "R123"},
-            backing={"jobs.acme.com": (backing,)},
+        folded = rs.fold_duplicates(
+            served, {front, backing}, backing={"jobs.acme.com": (backing,)}
         )
-        folded = rs.fold_duplicates(served, ranks)
         assert folded["id"].to_pylist() == [backing_id]
         folded = folded.append_column(
             "family", pa.array(["software-engineering"])

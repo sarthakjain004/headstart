@@ -37,7 +37,7 @@ from datetime import UTC, date, datetime, timedelta
 
 from headstart.boards.board_identity import lower_key
 from headstart.ingest import board_dormancy
-from headstart.ingest.index_plan import resolve_board
+from headstart.ingest.index_plan import duplicate_ranks, resolve_board
 
 #: How a version's raw fields read as tech: ``tech_filter.is_tech`` in production.
 TechTest = Callable[[str | None, str | None], bool]
@@ -288,87 +288,82 @@ def english_only(
     return served.filter(pa.array(keep, pa.bool_()))
 
 
-def fold_duplicates(served, ranks: Mapping[str, tuple[tuple[str, str], tuple]]):
-    """``served`` with each duplicate group folded into one Job over time, and a ``dedup_group``
-    naming it on every row. ``ranks`` is ``index_plan.duplicate_ranks`` over the served ids: at every
-    moment one served member counts, the one the index serves (:func:`_fold`). A cut
-    piece ends ``superseded`` and the member taking over starts ``superseding``, so the group
-    counts as one Job across the handover. An id on no live Board is a group of its own."""
+def fold_duplicates(served, keep: Collection[str], *, site_jobs=None, backing=None):
+    """Fold copies using only the versions present at each interval boundary.
+
+    Today's Board/ranking rules apply throughout, but a later version's requisition
+    cannot join an earlier version to a duplicate group. Incumbents retain their
+    Board until a better-class copy takes over, as ``index sync`` does.
+    """
     import pyarrow as pa
 
     rows = served.to_pylist()
-    groups: dict[str, list[dict]] = {}
-    for row in rows:
-        group, _ = ranks.get(row["id"], ((row["id"], ""), ()))
-        row["dedup_group"] = "#".join(group) if group[1] else group[0]
-        groups.setdefault(row["dedup_group"], []).append(row)
+    schema = served.schema
+    if "starts_as" not in schema.names:
+        schema = schema.append(pa.field("starts_as", pa.string()))
+    schema = schema.append(pa.field("dedup_group", pa.string()))
+    if not rows:
+        return pa.Table.from_pylist([], schema=schema)
 
-    out: list[dict] = []
-    for members in groups.values():
-        if len({row["id"] for row in members}) == 1:
-            out.extend(members)
-            continue
-        out.extend(_fold(members, ranks))
-    schema = served.schema.append(pa.field("dedup_group", pa.string()))
-    if not out:
-        return served.slice(0, 0).append_column("dedup_group", pa.nulls(0, pa.string()))
-    return pa.Table.from_pylist(out, schema=schema)
-
-
-def _fold(members: list[dict], ranks) -> list[dict]:
-    """One group's rows cut so that one served member counts at each moment, the one the index
-    serves: ``index sync`` refuses a copy while an incumbent stands, unless the copy is of a
-    better class (a public site before a non-public one, a backing Board before an Eightfold
-    site), and a copy on the incumbent's own Board is its other casing, which ``index prune``
-    settles by rank. With no incumbent, the best-ranked copy (``index_plan._other_site_copies``)."""
-    bounds = sorted(
-        {row["served_from"] for row in members}
-        | {row["served_to"] for row in members if row["served_to"] is not None}
-    )
-    pieces: list[list] = []  # [row, start, end]
-    holder: dict | None = None
+    starts, ends = {}, {}
+    for ordinal, row in enumerate(rows):
+        row["_ordinal"] = ordinal
+        starts.setdefault(row["served_from"], []).append(row)
+        if row["served_to"] is not None:
+            ends.setdefault(row["served_to"], []).append(row)
+    bounds = sorted(starts.keys() | ends.keys())
+    active, holders, last = {}, {}, {}
+    pieces = []  # [row, start, end, group]
+    keep = set(keep)
     for k, start in enumerate(bounds):
         end = bounds[k + 1] if k + 1 < len(bounds) else None
-        present = [
-            row
-            for row in members
-            if row["served_from"] <= start
-            and (row["served_to"] is None or row["served_to"] > start)
-        ]
-        if not present:
-            holder = None
-            continue
+        for row in ends.get(start, ()):
+            del active[row["id"]]
+        for row in starts.get(start, ()):
+            if row["id"] in active:
+                raise ValueError(f"overlapping served versions for {row['id']}")
+            active[row["id"]] = row
+        ranks = duplicate_ranks(
+            active.keys(),
+            keep,
+            site_jobs=site_jobs,
+            backing=backing,
+            requisitions={
+                job_id: row["requisition"]
+                for job_id, row in active.items()
+                if row.get("requisition")
+            },
+        )
+        groups = {}
+        for row in active.values():
+            group, _ = ranks.get(row["id"], ((row["id"], ""), ()))
+            key = "#".join(group) if group[1] else group[0]
+            groups.setdefault(key, []).append(row)
+        selected = {}
+        for group, members in groups.items():
+            best = _winner(members, ranks, holders.get(group))
+            selected[group] = best
+            prior = last.get(group)
+            if (
+                prior is not None
+                and pieces[prior][0] is best
+                and pieces[prior][2] == start
+            ):
+                pieces[prior][2] = end
+            else:
+                last[group] = len(pieces)
+                pieces.append([best, start, end, group])
+        holders = selected
 
-        def rank(row: dict) -> tuple:
-            return ranks[row["id"]][1], row["served_from"]
-
-        best = min(present, key=rank)
-        if holder is None:
-            inherited = [
-                row
-                for row in present
-                if row.get("baseline_incumbent")
-                and row["served_from"] == row["valid_from"]
-            ]
-            if inherited:
-                best = min(inherited, key=rank)
-        incumbent = [row for row in present if holder and row["id"] == holder["id"]]
-        # The rank's first two keys are the copy's class (index_plan.duplicate_ranks).
-        if incumbent and ranks[best["id"]][1][:2] >= ranks[holder["id"]][1][:2]:
-            board = lower_key(holder["board"])
-            best = min(
-                (row for row in present if lower_key(row["board"]) == board), key=rank
-            )
-        holder = best
-        if pieces and pieces[-1][0] is best and pieces[-1][2] == start:
-            pieces[-1][2] = end
-        else:
-            pieces.append([best, start, end])
+    pieces.sort(key=lambda piece: (piece[0]["_ordinal"], piece[1]))
+    for row in rows:
+        del row["_ordinal"]
     folded = []
-    for row, start, end in pieces:
+    for row, start, end, group in pieces:
         folded.append(
             row
             | {
+                "dedup_group": group,
                 "served_from": start,
                 "served_to": end,
                 "ended_as": row["ended_as"]
@@ -379,4 +374,28 @@ def _fold(members: list[dict], ranks) -> list[dict]:
                 else "superseding",
             }
         )
-    return folded
+    return pa.Table.from_pylist(folded, schema=schema)
+
+
+def _winner(members, ranks, holder):
+    """Keep an incumbent unless the best present copy has a better displacement class."""
+
+    def rank(row):
+        return ranks.get(row["id"], (None, ()))[1], row["served_from"]
+
+    best = min(members, key=rank)
+    if holder is None:
+        inherited = [
+            row
+            for row in members
+            if row.get("baseline_incumbent") and row["served_from"] == row["valid_from"]
+        ]
+        if inherited:
+            best = min(inherited, key=rank)
+    elif any(row["id"] == holder["id"] for row in members):
+        if rank(best)[0][:2] >= rank(holder)[0][:2]:
+            board = lower_key(holder["board"])
+            best = min(
+                (row for row in members if lower_key(row["board"]) == board), key=rank
+            )
+    return best

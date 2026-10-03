@@ -47,7 +47,6 @@ from headstart.ingest.doc_prep import DERIVATIONS_VERSION, is_english
 from headstart.ingest.index_plan import (
     DEDUP_VERSION,
     boards_by_canon,
-    duplicate_ranks,
     live_keep_set,
     workday_site_jobs,
 )
@@ -289,20 +288,11 @@ def _run(args, resources) -> int:
         served, descriptions, is_english, version_sources=baseline_sources
     )
     ids = served["id"].to_pylist()
-    requisitions = {
-        job_id: req
-        for job_id, req in zip(ids, served["requisition"].to_pylist(), strict=True)
-        if req
-    }
     served = restate_served.fold_duplicates(
         served,
-        duplicate_ranks(
-            ids,
-            ledger_boards,
-            site_jobs=workday_site_jobs(args.ledger),
-            requisitions=requisitions,
-            backing=eightfold_backing.load(),
-        ),
+        ledger_boards,
+        site_jobs=workday_site_jobs(args.ledger),
+        backing=eightfold_backing.load(),
     )
     _log.info(f"{served.num_rows} served intervals under today's rules")
 
@@ -330,7 +320,7 @@ def _run(args, resources) -> int:
         version_sources=baseline_sources,
     )
     _log.info(f"placed {served.num_rows} served intervals in a family and band")
-    del descriptions, baseline_sources, ids, titles, requisitions, wanted, latest_ids
+    del descriptions, baseline_sources, ids, titles, wanted, latest_ids
     gc.collect()
     pa.default_memory_pool().release_unused()
 

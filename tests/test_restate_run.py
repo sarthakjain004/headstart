@@ -162,6 +162,110 @@ def test_no_facts_is_nothing_to_restate(tmp_path, monkeypatch):
     assert not (tmp_path / "out").exists()
 
 
+def test_a_future_requisition_does_not_deduplicate_baseline_jobs(tmp_path, monkeypatch):
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    front = "eightfold:jobs.acme.com"
+    backing = "taleo_enterprise:https://acme.taleo.net/careersection/external"
+    front_id, backing_id = front + ":123", backing + ":42"
+    facts = tmp_path / "facts"
+    for stamp, req in zip(RUNS[:2], (None, "R123"), strict=True):
+        lines = jf.ScrapedLines(facts / jf.SCRAPED_LINES)
+        for board, job_id, requisition in (
+            (front, front_id, "R123"),
+            (backing, backing_id, req),
+        ):
+            lines.see(
+                board,
+                {
+                    "id": job_id,
+                    "title": "Backend Engineer",
+                    "department": "Engineering",
+                    "requisition": requisition,
+                },
+            )
+        scope = jf.RunScope(
+            authoritative=frozenset({lower_key(front), lower_key(backing)}),
+            keep_set=None,
+            live={},
+        )
+        reads = jf.board_reads(
+            [ShardReport(boards_ok=[front, backing])], lines.board_lines, scope
+        )
+        jf.record_run(lines.close(), facts, stamp, reads, scope)
+        (facts / jf.SCRAPED_LINES).unlink(missing_ok=True)
+    baseline_stamp = "2026-09-01T00:30:00+00:00"
+    baseline = tmp_path / "baseline.parquet"
+    rows = [
+        {
+            "id": job_id,
+            "kind": "present",
+            "title": "Backend Engineer",
+            "department": "Engineering",
+            "description": "You will build software services.",
+            "vector": [0.0, 0.0],
+            "reference_board": board,
+            "requisition": req,
+        }
+        for board, job_id, req in (
+            (front, front_id, "R123"),
+            (backing, backing_id, None),
+        )
+    ]
+    pq.write_table(
+        pa.Table.from_pylist(rows).replace_schema_metadata(
+            {b"baseline": b"true", b"ts": baseline_stamp.encode()}
+        ),
+        baseline,
+    )
+    families, head, cache = _config(tmp_path)
+    out = tmp_path / "restated"
+    monkeypatch.setattr(restate_run, "live_keep_set", lambda _: {front, backing})
+    monkeypatch.setattr(
+        restate_run.eightfold_backing, "load", lambda: {"jobs.acme.com": (backing,)}
+    )
+    monkeypatch.setattr(restate_run, "is_english", lambda title, text: True)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "restate",
+            "--facts",
+            str(facts),
+            "--baseline",
+            str(baseline),
+            "--ledger",
+            str(tmp_path / "absent-ledger"),
+            "--board-failures",
+            str(tmp_path / "absent-failures"),
+            "--classifier",
+            str(head),
+            "--families",
+            str(families),
+            "--title-cache",
+            str(cache),
+            "--descriptions",
+            str(tmp_path / "absent-descriptions"),
+            "--db",
+            str(tmp_path / "absent-db"),
+            "--out",
+            str(out),
+            "--encode-budget-seconds",
+            "0",
+        ],
+    )
+    assert restate_run.main() == 0
+    files = sorted((out / trend_history.DELTAS).glob("*.parquet"))
+    stock_deltas = [
+        sum(r["delta"] for r in pq.read_table(p).to_pylist() if r["metric"] == "stock")
+        for p in files
+    ]
+    assert stock_deltas == [2, -1], (
+        "later requisition knowledge must not remove a baseline job"
+    )
+
+
 @pytest.mark.parametrize("future_changed", [False, True])
 def test_complete_baseline_keeps_a_served_job_absent_from_all_scrapes(
     tmp_path, monkeypatch, future_changed
