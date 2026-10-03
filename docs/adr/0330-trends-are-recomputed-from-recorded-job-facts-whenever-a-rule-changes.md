@@ -1,6 +1,6 @@
 # ADR-0330: Trends are recomputed from recorded Job facts whenever a rule changes
 
-**Status:** accepted; steps 1–2 built · **Date:** 2026-09-29 · **Amends:**
+**Status:** accepted; steps 1–2 built, step 3 built and awaiting its check against real facts · **Date:** 2026-09-29 · **Amends:**
 [ADR-0230](0230-trends-keeps-one-board-delta-history-and-decides-rules-when-reading-it.md) (it
 rejected storing each Job's history), [ADR-0292](0292-the-description-store-is-not-reaped-until-a-last-listed-signal-exists.md)
 (the description store's future reaper) · **Relates to:**
@@ -79,7 +79,30 @@ whenever a rule changes, so a rule change moves the whole history and draws no s
    rather than deletes.
 3. **Restate.** A pure function of (facts, rules) rebuilds each tick's per-Board counts. It is
    validated first by reproducing today's `role_trends` history under today's rules on the ticks
-   both cover.
+   both cover. Built as `restate_run` over four steps, each its own module:
+   - **Job versions** (`restate_replay`): one row per stretch of a Job's listing with fixed raw
+     fields. The versions open at a run are exactly that run's Listed set, tested at every run.
+   - **Served intervals** (`restate_served`): today's rules apply to the whole past alike. A
+     Board outside today's keep-set, a version today's tech filter rejects, and one today's
+     English gate reads as not English (judged on the description the store holds now, since
+     the facts keep no text), never count.
+     Dormant Boards are judged at each authoritative read over every listed Job, as
+     `scrape_join` judges them; a Job already counting leaves at the Board's next authoritative
+     read, as `index sync` evicts it after the grace period. Duplicate groups fold into one Job
+     over time, counting the copy the index serves: the incumbent while it stands, unless a copy
+     of a better class arrives, as `index sync` admits them (`index_plan.duplicate_ranks`,
+     tested against `plan_prune`). The one timing rule kept from the pipeline is the grace period (ADR-0083): a
+     Job counts until its Board's next authoritative read. Without it every closure would land
+     one run early against `role_trends`.
+   - **Placement** (`restate_place`): the family as `role_trends` decides it. A Job with no
+     vector at all is decided from its title alone. The band comes from the `min_years`
+     `derived_meta.derive` finds, so a derivations change reaches the past.
+   - **Counting** (`restate_count`): each tick's levels, and turnover from how each interval
+     began and ended. A found Board's backlog, a Dormant Board posting again, a handover between
+     duplicate copies and a move between families are Recounted. Closures are unlistings and
+     Dormancy (ADR-0250). Stock moves exactly by its turnover at every tick.
+
+   Watched roles are not restated yet.
 4. **Serve the restated history.** A workflow reruns the restatement whenever the rules'
    fingerprint moves, and the Space reads its output. The fingerprint is a hash of the rule code,
    config, classifier weights and alias ledgers, computed rather than bumped by hand. Netting and
@@ -175,6 +198,19 @@ their starting provenance. Failed seeding must not advance the reference parent.
   shared shortfall check (`mark_truncated_unless_negligible`) cannot stand in for it: detail-pass
   callers pass the length of our own listing, and most call it only on a shortfall. Each scraper
   reporting its listing's total is a follow-up.
+- **A Restatement matched `role_trends` on its first real data** (2026-09-30, 23 runs of facts):
+  a median gap of 0.49% in tech stock, after the English gate was added (7.5% without it). The
+  rest is Jobs the live table served from before the facts began, on Boards no run since has
+  listed in full: unread, truncated at an API's offset cap, or failing every read. Step 6
+  splices that history in; waiting does not close it. The Restate step took 96 minutes.
+- **Where a Restatement knowingly differs from `role_trends`:**
+  - the English gate reads the description the store holds now, not the text a Job carried
+    when it was embedded, because the facts keep no text;
+  - a Job whose change moves it out of tech, and a handover between duplicate copies, are
+    Recounted when they happen. `role_trends` books a Closed after the grace period and an
+    Opened when the other copy is scraped again, because it cannot tell them from hiring;
+  - watched roles and the `unscoped` markers `role_trends` writes for Unauthoritative Boards
+    are not restated yet. Step 4 adds what the Space reads.
 - **Fragments accumulate** at two files a run per directory. HF's 10,000-files-per-directory
   limit is years away. A monthly fold, like the description store's, comes before it.
 
