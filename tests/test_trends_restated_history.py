@@ -57,6 +57,13 @@ def candidate(tmp_path):
         "inputs": [
             {"path": "data/facts/job_facts/one.parquet", "size": 10, "sha256": "d" * 64}
         ],
+        "quality": {
+            "company_labels": {
+                "history_boards": 1,
+                "named_boards": 1,
+                "unnamed_boards": 0,
+            }
+        },
     }
     (directory / "replay.json").write_bytes(artifact.encoded(metadata))
     files = [
@@ -72,7 +79,7 @@ def candidate(tmp_path):
         "pass": True,
         "files": files,
         "verifier": {"name": "independent-fixture-only", "code_sha": "e" * 40},
-        "quality": {"supported_metrics": ["stock"]},
+        "quality": metadata["quality"] | {"supported_metrics": ["stock"]},
         "limitations": ["Fixture only; no production validation."],
         "checks": [{"name": "fixture-membership", "pass": True}],
     }
@@ -216,16 +223,43 @@ def test_size_bound(candidate, tmp_path, monkeypatch):
         restate_publish.package(candidate, tmp_path / "out")
 
 
-def test_company_directory_coverage_is_required(candidate, tmp_path):
+def test_empty_company_directory_keeps_unnamed_boards_in_totals(candidate):
     (candidate / "company_directory.json").write_text('{"companies": []}')
-    with pytest.raises(ValueError):
+    assert artifact.check_history(
+        candidate, artifact.read_json(candidate / "replay.json")
+    ) == {"history_boards": 1, "named_boards": 0, "unnamed_boards": 1}
+    history = trend_history.TrendHistory.load(candidate, candidate / "config")
+    assert not history.companies
+    assert history.unnetted_answer(trend_history.TrendQuestion())["totals"][-1] == 7
+
+
+@pytest.mark.parametrize(
+    "entries",
+    [
+        [{"name": "Acme", "boards": ["greenhouse:acme", "greenhouse:acme"]}],
+        [{"name": "Acme", "boards": ["lever:outside"]}],
+        [{"name": " ", "boards": ["greenhouse:acme"]}],
+    ],
+)
+def test_named_directory_membership_and_labels_are_validated(candidate, entries):
+    (candidate / "company_directory.json").write_bytes(
+        artifact.encoded({"companies": entries})
+    )
+    with pytest.raises(ValueError, match="Company directory"):
         artifact.check_history(candidate, artifact.read_json(candidate / "replay.json"))
 
 
+def test_package_rejects_unverified_company_coverage(candidate, tmp_path):
+    report_path = candidate / "validation.json"
+    report = artifact.read_json(report_path)
+    report["quality"]["company_labels"]["unnamed_boards"] = 1
+    report_path.write_bytes(artifact.encoded(report))
+    with pytest.raises(ValueError, match="Company coverage"):
+        restate_publish.package(candidate, tmp_path / "out")
+
+
 @pytest.mark.parametrize("family", [NON_TECH, "software-engineering"])
-def test_prepare_requires_labels_for_tech_not_diagnostic_boards(
-    candidate, tmp_path, family
-):
+def test_prepare_names_tech_not_diagnostic_boards(candidate, tmp_path, family):
     last = "2026-10-03T00:00:00+00:00"
     trend_history.record_tick(
         candidate,
@@ -254,18 +288,20 @@ def test_prepare_requires_labels_for_tech_not_diagnostic_boards(
         destination = root / name
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(candidate / name, destination)
-    if family != NON_TECH:
-        with pytest.raises(ValueError, match="cover"):
-            artifact.check_history(candidate, metadata)
-        with pytest.raises(ValueError, match="cover"):
-            restate_publish.prepare(candidate, root)
-        return
     restate_publish.prepare(candidate, root)
     prepared = artifact.read_json(metadata_path)
     artifact.check_history(candidate, prepared)
-    assert (
-        artifact.read_json(candidate / "company_directory.json")["companies"]
-        == directory["companies"][:1]
+    named = {
+        b
+        for entry in artifact.read_json(candidate / "company_directory.json")[
+            "companies"
+        ]
+        for b in entry["boards"]
+    }
+    assert named == (
+        {"greenhouse:acme"}
+        if family == NON_TECH
+        else {"greenhouse:acme", "lever:diagnostic"}
     )
     assert prepared["last_covered_tick"] == last
     rows = pq.read_table(
@@ -273,7 +309,7 @@ def test_prepare_requires_labels_for_tech_not_diagnostic_boards(
     ).to_pylist()
     assert any(
         row["board"] == "lever:diagnostic"
-        and row["family"] == NON_TECH
+        and row["family"] == family
         and row["delta"] == 3
         for row in rows
     )

@@ -1,6 +1,7 @@
 """CAS and content checks with a local fake HF writer; these tests perform no remote writes."""
 
 import hashlib
+import runpy
 import shutil
 from pathlib import Path
 from types import SimpleNamespace
@@ -10,12 +11,15 @@ import pyarrow.parquet as pq
 import pytest
 import requests
 from huggingface_hub.errors import EntryNotFoundError, HfHubHTTPError
+from test_trends_restated_history import METHODOLOGY
 from test_trends_restated_history import candidate as _candidate
 from test_trends_restated_history import packaged as _packaged
 
+from headstart.boards.board_operator import company_operator
 from headstart.ingest import restate_publish
 from headstart.ingest.restate_baseline import committed_baseline
 from headstart.trends import restated_history as artifact
+from headstart.trends import trend_history
 
 candidate = _candidate
 packaged = _packaged
@@ -73,8 +77,11 @@ def test_prepare_augments_tick_only_metadata_atomically(
     ]
     assert prepared["files"] == expected
     assert replaced == [prepared]
-    assert {k: v for k, v in prepared.items() if k != "files"} == {
-        k: v for k, v in initial.items() if k != "files"
+    assert {k: v for k, v in prepared.items() if k not in ("files", "quality")} == {
+        k: v for k, v in initial.items() if k not in ("files", "quality")
+    }
+    assert prepared["quality"] == initial["quality"] | {
+        "company_labels": {"history_boards": 1, "named_boards": 1, "unnamed_boards": 0}
     }
     assert {e["path"] for e in prepared["files"]} == {
         *(e["path"] for e in initial["files"]),
@@ -129,7 +136,11 @@ def test_prepare_trims_company_groups_to_generation_boards(candidate, tmp_path):
     restate_publish.prepare(candidate, root)
     assert artifact.read_json(candidate / "company_directory.json") == {
         "companies": [
-            {"name": "Acme", "operator": "services", "boards": ["greenhouse:acme"]}
+            {
+                "name": "Acme",
+                "operator": company_operator(["greenhouse:acme"], "Acme"),
+                "boards": ["greenhouse:acme"],
+            }
         ]
     }
     assert artifact.read_json(labels) == original
@@ -156,6 +167,151 @@ def test_prepare_rejects_duplicate_company_board_membership(candidate, tmp_path)
     with pytest.raises(ValueError, match="Company directory"):
         restate_publish.prepare(candidate, root)
     assert (candidate / "replay.json").read_bytes() == before
+
+
+def test_prepare_rebuilds_generation_names_and_keeps_opaque_totals(candidate, tmp_path):
+    last = "2026-10-03T00:00:00+00:00"
+    trend_history.record_tick(
+        candidate,
+        last,
+        {
+            ("greenhouse:acme", "stock", "software-engineering", "mid"): 7,
+            (
+                "lever:new-humanizable-company",
+                "stock",
+                "software-engineering",
+                "mid",
+            ): 2,
+            ("breezy:1001", "stock", "software-engineering", "mid"): 3,
+        },
+        {},
+        METHODOLOGY,
+    )
+    metadata_path = candidate / "replay.json"
+    metadata = artifact.read_json(metadata_path)
+    metadata["last_covered_tick"] = last
+    metadata["quality"] = {"input_counts": {"title_only": 1}}
+    metadata_path.write_bytes(artifact.encoded(metadata))
+    root = tmp_path / "source"
+    _prepare_sources(candidate, root)
+    tick_hashes = {
+        p.name: artifact.sha256(p)
+        for p in (candidate / trend_history.DELTAS).glob("*.parquet")
+    }
+    source_hash = artifact.sha256(root / "data/state/company_directory.json")
+    restate_publish.prepare(candidate, root)
+    entries = artifact.read_json(candidate / "company_directory.json")["companies"]
+    assert {b for entry in entries for b in entry["boards"]} == {
+        "greenhouse:acme",
+        "lever:new-humanizable-company",
+    }
+    assert (
+        next(
+            e["name"]
+            for e in entries
+            if e["boards"] == ["lever:new-humanizable-company"]
+        )
+        == "NEW Humanizable Company"
+    )
+    prepared = artifact.read_json(metadata_path)
+    assert prepared["quality"] == {
+        "input_counts": {"title_only": 1},
+        "company_labels": {"history_boards": 3, "named_boards": 2, "unnamed_boards": 1},
+    }
+    assert {
+        p.name: artifact.sha256(p)
+        for p in (candidate / trend_history.DELTAS).glob("*.parquet")
+    } == tick_hashes
+    assert artifact.sha256(root / "data/state/company_directory.json") == source_hash
+    loaded = trend_history.TrendHistory.load(candidate, candidate / "config")
+    assert loaded.unnetted_answer(trend_history.TrendQuestion())["totals"][-1] == 12
+
+
+def test_prepare_all_opaque_generation_has_empty_named_directory(candidate, tmp_path):
+    for path in (candidate / trend_history.DELTAS).glob("*.parquet"):
+        table = pq.read_table(path)
+        table = table.set_column(
+            table.schema.get_field_index("board"),
+            "board",
+            pa.array(["breezy:1001"] * len(table)),
+        )
+        pq.write_table(table, path)
+    root = tmp_path / "source"
+    _prepare_sources(candidate, root)
+    hashes = {
+        p.name: artifact.sha256(p)
+        for p in (candidate / trend_history.DELTAS).glob("*.parquet")
+    }
+    restate_publish.prepare(candidate, root)
+    assert artifact.read_json(candidate / "company_directory.json") == {"companies": []}
+    assert artifact.read_json(candidate / "replay.json")["quality"][
+        "company_labels"
+    ] == {"history_boards": 1, "named_boards": 0, "unnamed_boards": 1}
+    assert {
+        p.name: artifact.sha256(p)
+        for p in (candidate / trend_history.DELTAS).glob("*.parquet")
+    } == hashes
+
+
+@pytest.mark.parametrize("opaque", [False, True])
+def test_prepared_coverage_matches_oracle_header_and_serving(
+    candidate, tmp_path, opaque
+):
+    """Synthetic report fixture checks the contract, not production replay correctness."""
+    if opaque:
+        for path in (candidate / trend_history.DELTAS).glob("*.parquet"):
+            table = pq.read_table(path)
+            table = table.set_column(
+                table.schema.get_field_index("board"),
+                "board",
+                pa.array(["breezy:1001"] * len(table)),
+            )
+            pq.write_table(table, path)
+    root = tmp_path / "source"
+    _prepare_sources(candidate, root)
+    facts = root / "data/facts"
+    source = facts / "job_facts/fixture.parquet"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"contract fixture only")
+    metadata_path = candidate / "replay.json"
+    metadata = artifact.read_json(metadata_path)
+    metadata["inputs"] = [
+        artifact.file_entry(source, "data/facts/job_facts/fixture.parquet")
+    ]
+    metadata_path.write_bytes(artifact.encoded(metadata))
+    restate_publish.prepare(candidate, root)
+    metadata = artifact.read_json(metadata_path)
+    oracle = runpy.run_path(
+        str(Path(__file__).resolve().parents[1] / "scripts/eval/verify_restatement.py")
+    )
+    labels = oracle["publication_bindings"](
+        metadata, facts, root / "data/state", candidate
+    )
+    assert metadata["quality"]["company_labels"] == labels
+    report_path = candidate / "validation.json"
+    report = artifact.read_json(report_path)
+    report.update(
+        {
+            "files": metadata["files"],
+            "inputs": metadata["inputs"],
+            "quality": {"supported_metrics": ["stock"], "company_labels": labels},
+        }
+    )
+    report_path.write_bytes(artifact.encoded(report))
+    publication = tmp_path / "publication"
+    directory, pointer = restate_publish.package(candidate, publication)
+    assert (
+        artifact.validate_generation(directory, pointer)["quality"]["company_labels"]
+        == labels
+    )
+    legacy = trend_history.TrendHistory()
+    selected = artifact.load(publication, Path("config"), legacy)
+    assert selected.restated is not None
+    answer = selected.answer(selected.restated, trend_history.TrendQuestion())
+    assert answer["totals"][-1] == 7
+    assert answer["history"]["quality"]["company_labels"]["unnamed_boards"] == int(
+        opaque
+    )
 
 
 @pytest.fixture

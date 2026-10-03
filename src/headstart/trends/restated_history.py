@@ -195,11 +195,40 @@ def validate_generation(directory: Path, pointer: dict) -> dict:
         path = directory / name
         if path.is_symlink() or file_entry(path, name) != entry:
             raise ValueError(f"artifact hash mismatch: {name}")
-    check_history(directory, manifest)
+    coverage = check_history(directory, manifest)
+    if manifest["quality"].get("company_labels") != coverage:
+        raise ValueError("verified Company coverage differs from generation")
     return manifest
 
 
-def check_history(directory: Path, metadata: dict) -> None:
+def company_label_coverage(directory: dict, boards: set[str]) -> dict:
+    entries = directory.get("companies")
+    if not isinstance(entries, list):
+        raise TypeError("invalid Company directory")
+    named = []
+    for entry in entries:
+        if (
+            not isinstance(entry, dict)
+            or not isinstance(entry.get("name"), str)
+            or not entry["name"].strip()
+            or not isinstance(entry.get("boards"), list)
+            or not entry["boards"]
+            or any(not isinstance(b, str) or not b for b in entry["boards"])
+        ):
+            raise ValueError("invalid Company directory")
+        named.extend(entry["boards"])
+    if len(named) != len(set(named)) or not set(named).issubset(boards):
+        raise ValueError(
+            "Company directory repeats Boards or names Boards outside generation"
+        )
+    return {
+        "history_boards": len(boards),
+        "named_boards": len(named),
+        "unnamed_boards": len(boards) - len(named),
+    }
+
+
+def check_history(directory: Path, metadata: dict) -> dict:
     import pyarrow as pa
     import pyarrow.parquet as pq
 
@@ -231,14 +260,7 @@ def check_history(directory: Path, metadata: dict) -> None:
     ):
         raise ValueError("history tick bounds mismatch")
     directory_json = read_json(directory / "company_directory.json")
-    if not directory_json["companies"] or any(
-        not entry.get("name") or not entry.get("boards")
-        for entry in directory_json["companies"]
-    ):
-        raise ValueError("invalid Company directory")
-    covered = {b for entry in directory_json["companies"] for b in entry["boards"]}
-    if not boards.issubset(covered):
-        raise ValueError("Company directory does not cover generation tech Boards")
+    return company_label_coverage(directory_json, boards)
 
 
 def pull(repo: str, local: Path, token: str | None = None) -> None:

@@ -39,9 +39,10 @@ def _serving_inventory(candidate: Path) -> list[dict]:
     ]
 
 
-def _trim_company_directory(candidate: Path, source: Path) -> dict:
+def _generation_company_directory(candidate: Path, source: Path) -> dict:
     import pyarrow.parquet as pq
 
+    from headstart.ingest.company_directory import companies, previous_names
     from headstart.trends.role_taxonomy import NON_TECH
     from headstart.trends.trend_history import DELTAS
 
@@ -53,24 +54,16 @@ def _trim_company_directory(candidate: Path, source: Path) -> dict:
             if row["family"] != NON_TECH
         )
     directory = artifact.read_json(source)
-    companies, named = [], []
-    for entry in directory["companies"]:
-        kept = [board for board in entry["boards"] if board in boards]
-        if kept:
-            if not isinstance(entry.get("name"), str) or not entry["name"].strip():
-                raise ValueError("Company directory lacks a name")
-            companies.append(entry | {"boards": kept})
-            named.extend(kept)
-    if len(named) != len(set(named)) or set(named) != boards:
-        raise ValueError(
-            "Company directory must cover each generation tech Board exactly once"
-        )
-    return directory | {"companies": companies}
+    source_boards = {
+        board for entry in directory["companies"] for board in entry["boards"]
+    }
+    artifact.company_label_coverage(directory, source_boards)
+    return directory | {"companies": companies(boards, previous_names(source))}
 
 
 def prepare(candidate: Path, root: Path) -> None:
     """Add pinned serving labels/config before the independent verifier inventories output."""
-    directory = _trim_company_directory(
+    directory = _generation_company_directory(
         candidate, root / "data/state/company_directory.json"
     )
     (candidate / "company_directory.json").write_bytes(artifact.encoded(directory))
@@ -78,10 +71,11 @@ def prepare(candidate: Path, root: Path) -> None:
         destination = candidate / name
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(root / name, destination)
-    # Check coverage now too; do not fabricate companies for missing Board keys.
+    # Unnamed Boards remain in the tick totals; the directory contains named groups only.
     metadata_path = candidate / "replay.json"
     metadata = artifact.read_json(metadata_path)
-    artifact.check_history(candidate, metadata)
+    coverage = artifact.check_history(candidate, metadata)
+    metadata["quality"] = metadata.get("quality", {}) | {"company_labels": coverage}
     metadata["files"] = _serving_inventory(candidate)
     artifact.inventory(metadata["files"], serving=True)
     staged = metadata_path.with_suffix(".json.tmp")
@@ -123,7 +117,12 @@ def package(candidate: Path, destination: Path) -> tuple[Path, dict]:
         "legacy_history": {"available": True, "recomputed": False, "spliced": False},
     }
     artifact.check_gate(manifest, report)
-    artifact.check_history(candidate, metadata)
+    coverage = artifact.check_history(candidate, metadata)
+    if (
+        metadata.get("quality", {}).get("company_labels") != coverage
+        or report.get("quality", {}).get("company_labels") != coverage
+    ):
+        raise ValueError("prepared/verified Company coverage differs from generation")
     generation = hashlib.sha256(artifact.encoded(manifest)).hexdigest()
     manifest["generation"] = generation
     directory = destination / artifact.ROOT / "generations" / generation

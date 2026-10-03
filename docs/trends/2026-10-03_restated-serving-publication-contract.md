@@ -66,8 +66,9 @@ data/trends/restated/generations/{generation}/config/role_watchlist.json
 Paths preserve candidate-relative names so the report's file inventory is identical after
 packaging. Optional `dedup_evictions.csv` is included only if the replay/verifier establishes
 its meaning for this generation. Never copy the live eviction ledger blindly into a restatement.
-The Company directory must be built from the generation's Boards or explicitly checked against
-them; it must not silently remove historical companies or invent counts.
+The Company directory is built from the generation's tech Boards using the established naming
+policy. It contains named groups only; legitimately unnamed Boards remain in aggregate history
+with explicit naming-coverage counts. It must not invent employers or counts.
 
 The pointer contains `schema_version`, `generation`, `manifest_sha256`, `last_covered_tick`,
 `rules_fingerprint`, and `rules_code_sha`. It references no mutable generation path.
@@ -122,6 +123,46 @@ An unsupported interface should remain explicitly unavailable rather than gain i
 New ATSes, Boards and companies are coverage differences, not failures. No exact equality with
 an older liveness ledger is required. Schema agreement alone is not independent verification.
 
+## Generation Company labels and coverage
+
+Preparation rebuilds named groups with `company_directory.companies(generation_boards,
+previous_names(pinned_directory))`. This reuses curated aliases, Tenant identity, stated-name
+checks, humanized tenants and the canonical Operator policy. It does not merge companies merely
+because their names match. Existing labels carry forward where the policy preserves them;
+new humanizable Boards can become named groups. Opaque Boards with no defensible name remain
+unnamed under ADR-0212. No LanceDB download or latest-index naming lookup is needed.
+
+The pinned source directory must have nonblank named labels, nonempty Board lists and unique
+Board membership. An explicit duplicate source remains a hard failure, even if outside the
+generation; rebuilding must not conceal corrupt input. Prepared and served named membership
+must be unique and a subset of generation tech Boards. Non-tech diagnostic rows do not require
+Company labels. An empty `companies` list is valid when no generation company can be named.
+
+Preparation writes measured coverage into `replay.json.quality.company_labels`, preserving the
+other quality fields, replay identity and input inventory:
+
+```
+history_boards: number of generation tech Boards
+named_boards: number of Boards in named generation groups
+unnamed_boards: history_boards - named_boards
+```
+
+The independent verifier already computes the same counts as
+`validation.json.quality.company_labels`. Packaging requires prepared and verified coverage
+to match the actual generation. The manifest retains verifier quality, and the serving loader
+checks its coverage counts against the downloaded tick files and labels. This measures naming
+coverage; it is not certification of employer names or grouping accuracy.
+
+Tick Parquets and their hashes remain untouched, so unnamed Boards are not dropped from counts.
+Placements remain verifier-only and outside the serving artifact. Publication still requires
+an independently complete/passing report and explicit release approval; preparation regressions
+do not constitute a production validation gate.
+
+The saved 37125686815 candidate illustrated the mismatch: 35,778 generation tech Boards versus
+33,820 named by its hash-verified pinned directory. Rebuilding under unchanged naming rules
+names 35,732 Boards in 34,944 groups, leaving 46 unnamed. These are measured saved-run results,
+not live coverage figures or a waiver of independent validation.
+
 ## Publication while pipeline runs continue
 
 Pin the input revision and exact consumed file inventory before replay. At publication, read
@@ -172,11 +213,11 @@ engine must consume these and write `data/restated/replay.json` with the identit
 chosen immutable facts/reference files must retain their content at publication.
 
 Replay runs with `--out data/restated --encode-budget-seconds 1800`. Then run
-`restate_publish prepare`. It adds the pinned
-Company labels and config to the candidate and checks coverage of every generation Board.
-Missing labels fail without inventing an employer. After the copy and checks, prepare replaces
+`restate_publish prepare`. It rebuilds generation Company labels from the pinned naming input,
+copies config, and measures named/unnamed coverage while leaving all tech Boards counted.
+After the copy and checks, prepare replaces
 `metadata.files` with the exact serving path/size/SHA-256 inventory, preserving identity,
-inputs, bounds and quality. It atomically replaces `replay.json` before verification; placements
+inputs, bounds and other quality fields. It atomically replaces `replay.json` before verification; placements
 stay excluded. Packaging also checks that this prepared inventory still matches actual files.
 Then run the independent verifier:
 
