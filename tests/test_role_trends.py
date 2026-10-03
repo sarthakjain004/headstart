@@ -1059,6 +1059,43 @@ def test_reference_methodology_names_the_heads_mathematical_inputs(
     )
     assert pq.read_table(path)["row_logits"].to_pylist() == [[0.0, 0.0, 0.0]]
     assert (tmp_path / "state" / trend_reference.STATE).exists()
+    assert (
+        pq.read_schema(tmp_path / "title_cache.parquet")
+        .metadata[b"inputs_fingerprint"]
+        .decode()
+        == metadata["classifier_inputs_fingerprint"]
+    )
+
+
+def test_changed_weights_at_same_version_refresh_the_ticks_title_logits(
+    tmp_path, monkeypatch
+):
+    _taxonomy(tmp_path / "head", tmp_path / "families.json")
+    _table(
+        tmp_path / "db",
+        [
+            {
+                "id": "greenhouse:acme:1",
+                "title": "Backend Dev",
+                "vector": [1.0, 0.0, 0.0, 0.0],
+            }
+        ],
+    )
+    monkeypatch.setenv(RUN_TS_ENV, "2026-09-25T05:00:00+00:00")
+    _run(tmp_path, monkeypatch)
+    path = tmp_path / "head/head.npz"
+    with np.load(path) as archive:
+        weights = {name: archive[name].copy() for name in archive.files}
+    weights["title_weights"][:, 0] = [0, 0, 30]
+    np.savez(path, **weights)
+    monkeypatch.setenv(RUN_TS_ENV, "2026-09-25T06:00:00+00:00")
+    _run(tmp_path, monkeypatch)
+    head = role_family_classifier.Head(tmp_path / "head")
+    assert head.version == 1
+    cache = role_family_classifier.load_cache(
+        tmp_path / "title_cache.parquet", head.version, head.inputs_fingerprint
+    )
+    assert cache.title_logits["backend dev"].tolist() == [0, 0, 30]
 
 
 def test_a_failed_snapshot_takes_the_ticks_file_back_out(tmp_path, monkeypatch):

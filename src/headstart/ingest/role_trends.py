@@ -383,7 +383,9 @@ def main() -> int:
     rows = table.search().select(columns).limit(n).to_arrow()
 
     titles = rows["title"].to_pylist()
-    cache = role_family_classifier.load_cache(args.title_cache, head.version)
+    cache = role_family_classifier.load_cache(
+        args.title_cache, head.version, head.inputs_fingerprint
+    )
     try:
         added = role_family_classifier.fill(
             cache,

@@ -158,6 +158,14 @@ digest and distinguishes float32 changes whose archived float16 vectors collide,
 without storing another full-precision vector. An old baseline's missing head
 fingerprint can only be reconstructed from archived configuration after its three
 math-code ASTs are verified against today's; otherwise its identity stays unknown.
+The title-logit cache carries this input fingerprint as well: `role_trends`
+rejects a tagged mathematical mismatch even at the same human head version.
+An untagged cache matching that version is adopted and persisted once, explicitly
+logging the migration assumption that weights and encoder are unchanged under
+the existing version contract; it is not cold-re-encoded during this migration.
+Version-only callers remain compatible and saves retain known fingerprints.
+Known cached logits cannot be saved under a different fingerprint. The current
+`normalise` reads no module regexes or constants; its literals are in the AST.
 
 Reference checkpoints also retain served `max_years` and `experience_source` where
 available, alongside `min_years`. A missing description does not establish that
