@@ -25,6 +25,8 @@ IMMUTABLE = tuple(
         "job_vectors",
         "trend_reference",
         "reference_rules",
+        "description_facts",
+        "description_archive",
     )
 )
 

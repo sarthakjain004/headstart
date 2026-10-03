@@ -306,6 +306,18 @@ def test_immutable_inputs_allow_new_pipeline_content(packaged):
             restate_publish.check_inputs(inputs, siblings)
 
 
+@pytest.mark.parametrize("directory", ["description_facts", "description_archive"])
+def test_selected_native_description_inputs_cannot_change(directory):
+    entry = {
+        "path": f"data/facts/{directory}/lever/content.parquet",
+        "size": 2,
+        "sha256": "a" * 64,
+    }
+    restate_publish.check_inputs([entry], [remote(entry)])
+    with pytest.raises(ValueError, match="hash changed"):
+        restate_publish.check_inputs([entry], [remote(entry | {"sha256": "b" * 64})])
+
+
 def test_git_blob_inputs():
     entry = {
         "path": "data/facts/reference_rules/small.zip",
