@@ -94,9 +94,7 @@ from headstart.scrapers.cornerstone import (  # the site walk + token, single so
 from headstart.scrapers.darwinbox import (  # the data-centre TLDs, single source
     TLDS as _DARWINBOX_TLDS,
 )
-from headstart.scrapers.eightfold import (  # Eightfold's own group ids, single source
-    VENDOR_GROUP_IDS as _EF_VENDOR_GROUPS,
-)
+from headstart.scrapers.eightfold import is_vendor_fallthrough
 from headstart.scrapers.happydance import (  # the job-URL shape, single source
     sitemap_rows as _happydance_sitemap_rows,
 )
@@ -2879,8 +2877,10 @@ _EF_TENANT_DOMAIN = re.compile(
 )
 
 
-def _eightfold_is_vendor_board(text):
+def _eightfold_is_vendor_board(text, board_host=""):
     """True when this sitemap is Eightfold's own board rather than the queried tenant's."""
+    if board_host.lower() == "app.eightfold.ai":
+        return False
     domains = {d.lower() for d in _EF_TENANT_DOMAIN.findall(text)}
     if not domains:
         return False  # no domain= to judge by (older sitemaps) — leave the verdict to the caller
@@ -2890,8 +2890,8 @@ def _eightfold_is_vendor_board(text):
 
 
 _EF_GROUP_ID = re.compile(r'_EF_GROUP_ID\s*=\s*"([^"]+)"')
-# `_EF_VENDOR_GROUPS` (imported): a host serving one has no tenant board of its own, whichever
-# surface you ask.
+# `is_vendor_fallthrough` also recognises the vendor's one official public Board;
+# every customer host serving its group is still gone.
 
 
 def _eightfold_pcsx(t):
@@ -2916,7 +2916,7 @@ def _eightfold_pcsx(t):
     if not m:
         return DEAD, None  # a page, but not an Eightfold board app
     group = m.group(1)
-    if group.lower() in _EF_VENDOR_GROUPS:
+    if is_vendor_fallthrough(group, t):
         return DEAD, None  # vendor fallthrough, not this company's Board
     query = urllib.parse.urlencode(
         {"domain": group, "query": "", "location": "", "start": 0}
@@ -2945,7 +2945,7 @@ _EF_JOB_LOC = re.compile(
 _EF_CONFIRM_SAMPLE = 3
 
 
-def _eightfold_confirm_live(text):
+def _eightfold_confirm_live(text, board_host=""):
     """True once one of the sitemap's own listed job URLs actually resolves.
 
     The sitemap 200ing with a plausible ``/careers/job/`` count is not proof the board still
@@ -2955,7 +2955,7 @@ def _eightfold_confirm_live(text):
     page 307s to ``careers.services.global.ntt``, i.e. the tenant isn't on Eightfold anymore. A
     live job page carries its own ``_EF_GROUP_ID`` — the same marker ``_eightfold_pcsx`` reads off
     the careers page — so a 200 that doesn't carry it, or that carries a vendor group id
-    (``_EF_VENDOR_GROUPS``, the same fallthrough ``_eightfold_pcsx`` guards against), doesn't count
+    (the same fallthrough ``_eightfold_pcsx`` guards against), doesn't count
     as confirmed either.
     """
     for job_url in _EF_JOB_LOC.findall(text)[:_EF_CONFIRM_SAMPLE]:
@@ -2963,7 +2963,7 @@ def _eightfold_confirm_live(text):
         if status != 200:
             continue
         m = _EF_GROUP_ID.search(body.decode("utf-8", "replace"))
-        if m and m.group(1).lower() not in _EF_VENDOR_GROUPS:
+        if m and not is_vendor_fallthrough(m.group(1), board_host):
             return True
     return False
 
@@ -2983,14 +2983,14 @@ def p_eightfold(t, u):
     if status != 200:
         return UNKNOWN, None
     text = body.decode("utf-8", "replace")
-    if _eightfold_is_vendor_board(text):
+    if _eightfold_is_vendor_board(text, t):
         return DEAD, None
     n = text.count("/careers/job/")
     if n:
         # The count alone isn't proof the board still resolves (see _eightfold_confirm_live) — a
         # stale sitemap 200s exactly like a live one. If none of the sample confirms, this surface
         # is as good as gone: fall through the same as a 404/410 sitemap already does.
-        if _eightfold_confirm_live(text):
+        if _eightfold_confirm_live(text, t):
             return LIVE, n
         return _eightfold_pcsx(t)
     child = re.search(
@@ -3000,10 +3000,10 @@ def p_eightfold(t, u):
         cs, cbody = _get(child.group(1))
         if cs == 200:
             ctext = cbody.decode("utf-8", "replace")
-            if _eightfold_is_vendor_board(ctext):
+            if _eightfold_is_vendor_board(ctext, t):
                 return DEAD, None
             cn = ctext.count("/careers/job/")
-            if not cn or _eightfold_confirm_live(ctext):
+            if not cn or _eightfold_confirm_live(ctext, t):
                 return LIVE, cn
             return _eightfold_pcsx(t)
     if "<urlset" in text or "<sitemapindex" in text:

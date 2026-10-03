@@ -954,6 +954,33 @@ def test_a_board_whose_sitemaps_list_no_posting_is_read_from_its_search_pages():
     assert (job.id, job.title) == ("avature:acme:524237", "Software Engineer")
 
 
+def test_folder_detail_templates_activate_search_and_read_the_postings():
+    """Bain lists a bare FolderDetail template, then real jobs only on SearchJobs.
+
+    Its page titles and pagination use the ordinary Avature layout. Reading the
+    whole scraper catches both the template gate and the posting URL parser.
+    """
+    routes = {
+        url.replace("JobDetail", "FolderDetail"): FakeResponse(
+            response.status_code,
+            response.text.replace("JobDetail", "FolderDetail"),
+            url=response.url.replace("JobDetail", "FolderDetail"),
+        )
+        for url, response in _two_pages("1 - 2 of 3 results").items()
+    }
+    routes["https://acme.avature.net/en_US/careers/sitemap.xml"] = FakeResponse(
+        200, _JOB_PORTAL_SITEMAP.replace("JobDetail", "FolderDetail")
+    )
+    scraper = _portal(routes)
+    raw = scraper.fetch_raw()
+    assert [row["id"] for row in raw] == ["524237", "524200"]
+    assert scraper.truncated is None
+    jobs = scraper.parse(raw, _SCRAPED_AT)
+    assert [job.title for job in jobs] == ["Software Engineer", "Data Engineer"]
+    assert all("/FolderDetail/" in job.url for job in jobs)
+    assert all(re.fullmatch(scraper.url_shape, job.url) for job in jobs)
+
+
 def _slugged(scraper, slugs: list[str]) -> None:
     """Answer the `careers` sitemap with one posting per slug, `…/JobDetail/{slug}/{n}`."""
     route = scraper.fake.route

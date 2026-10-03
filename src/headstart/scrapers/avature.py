@@ -111,14 +111,16 @@ _SITEMAP_LINE = re.compile(r"(?im)^Sitemap:\s*(\S+)")
 _LOC = re.compile(r"<loc>\s*([^<\s]+)\s*</loc>")
 #: A posting's URL, `…/JobDetail/{Title-Slug}/{id}`. A title with no Latin letter mints no slug:
 #: 28 of tsmc's 801 sitemap URLs are `…/JobDetail/389` ("製程整合工程師 (台南)", 2026-09-29).
-_JOB_URL = re.compile(r"/JobDetail/(?:([^/?#]+)/)?(\d+)/?$")
+# Bain uses FolderDetail for the same public posting layout; its sitemap lists the
+# template only and SearchJobs supplies the IDs (249 jobs, verified 2026-10-02).
+_JOB_URL = re.compile(r"/(?:JobDetail|FolderDetail)/(?:([^/?#]+)/)?(\d+)/?$")
 #: A URL's locale segment, right after the host: `https://jobs.ea.com/es_ES/careers/…`.
 _LOCALE = re.compile(r"https?://[^/]+/([a-z]{2})_[A-Z]{2}/")
 _ALTERNATE_HREF = re.compile(r'<xhtml:link\b[^>]*\bhref="([^"]+)"')
 #: A job portal's sitemap names the job templates as pages: Siemens's and Two Sigma's list a bare
 #: `…/JobDetail` beside 58 and 30 page URLs and no posting. A utility portal (Epic's onboarding)
 #: lists neither it nor `SearchJobs`.
-_JOB_PAGE_NAME = re.compile(r"/JobDetail/?$")
+_JOB_PAGE_NAME = re.compile(r"/(?:JobDetail|FolderDetail)/?$")
 #: One result on a search page: `<h3 class="article__header__text__title …"><a href="…">Title</a>`
 #: on Siemens, Two Sigma and a2milkkf, `<div class="list__item__text__title"><a …>` on mt, the two
 #: templates measured (2026-09-29).
@@ -295,9 +297,7 @@ class AvatureScraper(BaseScraper):
     # (:func:`listing_rows`): `{host}/[{locale}/]{portal}/JobDetail/[{Title-Slug}/]{id}`. The slug
     # is absent for a title with no Latin letter (tsmc). Host-agnostic because vanity hosts
     # serve it (jobs.bmc.com).
-    url_shape = (
-        r"https://[^/]+/(?:[a-z]{2}_[A-Z]{2}/)?[^/]+/JobDetail/(?:[^/?#]+/)?\d+$"
-    )
+    url_shape = r"https://[^/]+/(?:[a-z]{2}_[A-Z]{2}/)?[^/]+/(?:JobDetail|FolderDetail)/(?:[^/?#]+/)?\d+$"
     has_detail_pass = True
     detail_workers = _DETAIL_WORKERS
     detail_streams = _DETAIL_WORKERS
@@ -386,7 +386,10 @@ class AvatureScraper(BaseScraper):
                 continue
             if status != 200:
                 return f"{search} answered HTTP {status}"
-            if "/JobDetail/" in (response.text or ""):
+            if any(
+                path in (response.text or "")
+                for path in ("/JobDetail/", "/FolderDetail/")
+            ):
                 return f"{search} links postings"
             return f"{search} answered at {landed}, which is no login"
         return None

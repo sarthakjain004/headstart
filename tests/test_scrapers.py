@@ -2367,6 +2367,36 @@ def test_workday_job_url_drops_a_query_string_the_slug_carries():
     )
 
 
+@pytest.mark.parametrize(
+    ("host_company", "api_tenant"),
+    [("osv-chegg", "osv_chegg"), ("acme-team", "acme-team"), ("3m", "3m")],
+)
+def test_workday_api_tenant_can_differ_from_public_hostname(host_company, api_tenant):
+    """Chegg's page declares `tenant: osv_chegg`; the hostname-derived path returns 422.
+
+    Both listing and detail requests need the API tenant, while stored IDs and public
+    links retain the hostname spelling. Other hyphenated hosts must not be rewritten.
+    """
+    scraper = get_scraper(
+        "workday", f"https://{host_company}.wd5.myworkdayjobs.com/Chegg", "Chegg"
+    )
+    external = "/job/Remote-India/Senior-Software-Engineer_R7976"
+    assert scraper.url() == (
+        f"https://{host_company}.wd5.myworkdayjobs.com/wday/cxs/{api_tenant}/Chegg/jobs"
+    )
+    scraper._instance = "wd1"
+    assert scraper.listing_url_on("wd1") == (
+        f"https://{host_company}.wd1.myworkdayjobs.com/wday/cxs/{api_tenant}/Chegg/jobs"
+    )
+    assert scraper._detail_url(external) == (
+        f"https://{host_company}.wd1.myworkdayjobs.com/wday/cxs/{api_tenant}/Chegg{external}"
+    )
+    assert scraper.board_key() == f"workday:{host_company}/Chegg"
+    assert scraper.job_url(external) == (
+        f"https://{host_company}.wd1.myworkdayjobs.com/Chegg{external}"
+    )
+
+
 def test_workday_remote_falls_back_to_location():
     # remoteType is absent on ~99% of Workday listings (remote-audit LOG); the location
     # string then decides. A decisive remoteType still wins over the location string.
