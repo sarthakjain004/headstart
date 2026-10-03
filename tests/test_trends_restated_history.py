@@ -5,11 +5,13 @@ import shutil
 from pathlib import Path
 from types import SimpleNamespace
 
+import pyarrow.parquet as pq
 import pytest
 
 from headstart.ingest import restate_publish
 from headstart.trends import restated_history as artifact
 from headstart.trends import trend_history
+from headstart.trends.role_taxonomy import NON_TECH
 
 FIRST = "2026-10-01T00:00:00+00:00"
 LAST = "2026-10-02T00:00:00+00:00"
@@ -218,6 +220,63 @@ def test_company_directory_coverage_is_required(candidate, tmp_path):
     (candidate / "company_directory.json").write_text('{"companies": []}')
     with pytest.raises(ValueError):
         artifact.check_history(candidate, artifact.read_json(candidate / "replay.json"))
+
+
+@pytest.mark.parametrize("family", [NON_TECH, "software-engineering"])
+def test_prepare_requires_labels_for_tech_not_diagnostic_boards(
+    candidate, tmp_path, family
+):
+    last = "2026-10-03T00:00:00+00:00"
+    trend_history.record_tick(
+        candidate,
+        last,
+        {
+            ("greenhouse:acme", "stock", "software-engineering", "mid"): 7,
+            ("lever:diagnostic", "stock", family, "mid"): 3,
+        },
+        {},
+        METHODOLOGY,
+    )
+    metadata_path = candidate / "replay.json"
+    metadata = artifact.read_json(metadata_path)
+    metadata["last_covered_tick"] = last
+    metadata_path.write_bytes(artifact.encoded(metadata))
+    root = tmp_path / "source"
+    source_directory = root / "data/state/company_directory.json"
+    source_directory.parent.mkdir(parents=True)
+    directory = artifact.read_json(candidate / "company_directory.json")
+    if family == NON_TECH:
+        directory["companies"].append(
+            {"name": "Diagnostic company", "boards": ["lever:diagnostic"]}
+        )
+    source_directory.write_bytes(artifact.encoded(directory))
+    for name in artifact.CONFIG_FILES:
+        destination = root / name
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(candidate / name, destination)
+    if family != NON_TECH:
+        with pytest.raises(ValueError, match="cover"):
+            artifact.check_history(candidate, metadata)
+        with pytest.raises(ValueError, match="cover"):
+            restate_publish.prepare(candidate, root)
+        return
+    restate_publish.prepare(candidate, root)
+    prepared = artifact.read_json(metadata_path)
+    artifact.check_history(candidate, prepared)
+    assert (
+        artifact.read_json(candidate / "company_directory.json")["companies"]
+        == directory["companies"][:1]
+    )
+    assert prepared["last_covered_tick"] == last
+    rows = pq.read_table(
+        trend_history.tick_path(candidate / trend_history.DELTAS, last)
+    ).to_pylist()
+    assert any(
+        row["board"] == "lever:diagnostic"
+        and row["family"] == NON_TECH
+        and row["delta"] == 3
+        for row in rows
+    )
 
 
 def test_remote_pull_pins_every_download_and_excludes_raw_inputs(

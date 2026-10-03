@@ -14,6 +14,7 @@ from datetime import datetime
 from pathlib import Path, PurePosixPath
 
 from headstart.trends import trend_history
+from headstart.trends.role_taxonomy import NON_TECH
 
 ROOT = "data/trends/restated"
 CURRENT = f"{ROOT}/current.json"
@@ -213,7 +214,13 @@ def check_history(directory: Path, metadata: dict) -> None:
         ) or any(table[n].null_count for n in trend_history.TICK_COLUMNS):
             raise ValueError("invalid tick types or nulls")
         stamps.append((table.schema.metadata or {})[b"ts"].decode())
-        boards.update(table["board"].to_pylist())
+        boards.update(
+            board
+            for board, family in zip(
+                table["board"].to_pylist(), table["family"].to_pylist(), strict=True
+            )
+            if family != NON_TECH
+        )
         if not (table.schema.metadata or {}).get(b"methodology"):
             raise ValueError("tick lacks methodology")
     if stamps != sorted(set(stamps)) or not stamps:
@@ -231,7 +238,7 @@ def check_history(directory: Path, metadata: dict) -> None:
         raise ValueError("invalid Company directory")
     covered = {b for entry in directory_json["companies"] for b in entry["boards"]}
     if not boards.issubset(covered):
-        raise ValueError("Company directory does not cover generation Boards")
+        raise ValueError("Company directory does not cover generation tech Boards")
 
 
 def pull(repo: str, local: Path, token: str | None = None) -> None:
