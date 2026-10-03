@@ -412,6 +412,33 @@ _EF_SITEMAP = (
     b"<url><loc>https://acme.eightfold.ai/careers/job/2-b?domain=acme.com</loc></url>"
     b"<url><loc>https://acme.eightfold.ai/careers/job/3-c?domain=acme.com</loc></url></urlset>"
 )
+
+
+@pytest.mark.parametrize("sitemap_status", [200, 404])
+def test_eightfold_vendor_jobs_only_count_on_its_exact_official_host(
+    monkeypatch, sitemap_status
+):
+    group_page = b'<script>var _EF_GROUP_ID = "volkscience.com";</script>'
+
+    def ask(url, **kwargs):
+        if url.endswith("/careers/sitemap.xml"):
+            return sitemap_status, (
+                b"<urlset><url><loc>https://app.eightfold.ai/careers/job/1"
+                b"?domain=eightfold.ai</loc></url></urlset>"
+            )
+        if "/api/pcsx/search?" in url:
+            return 200, b'{"data":{"count":60}}'
+        return 200, group_page
+
+    monkeypatch.setattr(cl, "_get", ask)
+    assert cl.p_eightfold("app.eightfold.ai", "") == (
+        cl.LIVE,
+        1 if sitemap_status == 200 else 60,
+    )
+    assert cl.p_eightfold("accenture.eightfold.ai", "") == (cl.DEAD, None)
+    assert cl.p_eightfold("app.eightfold.ai.example.com", "") == (cl.DEAD, None)
+
+
 _EF_JOB_PAGE_LIVE = b'<script>_EF_GROUP_ID = "acme.com";</script>'
 
 

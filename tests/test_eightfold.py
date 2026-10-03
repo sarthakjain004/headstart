@@ -4,10 +4,24 @@ from __future__ import annotations
 
 import json
 
-from fake_fetcher import FakeResponse
+import pytest
+from fake_fetcher import FakeFetcher, FakeResponse
 
+from headstart.network import http
 from headstart.scrapers.base import DetailWithoutDescription
 from headstart.scrapers.eightfold import EightfoldScraper, _PcsxPosition
+
+
+@pytest.mark.parametrize("group", ["volkscience.com", "eightfold.ai"])
+def test_eightfold_can_read_its_own_official_board_without_accepting_vendor_fallthrough(
+    group,
+):
+    page = f'<script>var _EF_GROUP_ID = "{group}";</script>'
+    fetcher = FakeFetcher(lambda method, url, kwargs: FakeResponse(200, page))
+    assert EightfoldScraper("app.eightfold.ai", fetcher=fetcher)._group_id() == group
+    for host in ["accenture.eightfold.ai", "app.eightfold.ai.example.com"]:
+        with pytest.raises(http.RequestsError, match="Eightfold's own group"):
+            EightfoldScraper(host, fetcher=fetcher)._group_id()
 
 
 def test_a_position_details_200_without_a_description_is_a_gap_on_the_line():

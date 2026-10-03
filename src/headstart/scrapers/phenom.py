@@ -73,6 +73,10 @@ _DETAIL_WORKERS = 16
 #: wrong one redirects to the right one, which is how :meth:`PhenomScraper._prefix` learns it.
 _PROBE_PREFIX = ("us", "en")
 
+# Virtusa hosts its Phenom front inside the corporate site. The official page's
+# widgetApiEndpoint and public job routes share this prefix (verified 2026-10-02).
+_CAREERS_PATH_BY_HOST = {"www.virtusa.com": "/careers/job-search"}
+
 _PREFIX_RE = re.compile(r"^https?://[^/]+/([^/?#]+)/([^/?#]+)")
 
 #: The landing page's ``og:site_name`` value, whichever order the tag writes its attributes in.
@@ -111,7 +115,7 @@ class PhenomScraper(BaseScraper):
     # something else — `global` (25), `ca` (2), `amer`, `gb`, `na` — so a `us`-anchored pattern
     # would reject a third of this provider's real links. Both segments therefore stay loose.
     # The trailing title slug is omitted deliberately; see `job_url`.
-    url_shape = r"https://[^/]+/[^/]+/[^/]+/job/[^/?#]+"
+    url_shape = r"https://[^/]+(?:/careers/job-search)?/[^/]+/[^/]+/job/[^/?#]+"
     detail_workers = _DETAIL_WORKERS
     has_detail_pass = True  # per-Job fetch fills `description` (ADR-0050)
 
@@ -136,7 +140,10 @@ class PhenomScraper(BaseScraper):
         return host_of(url) or tenant.strip().lower()
 
     def url(self) -> str:
-        return f"https://{self.slug}/{self._cc}/{self._lang}/search-results"
+        return f"{self._careers_base()}/{self._cc}/{self._lang}/search-results"
+
+    def _careers_base(self) -> str:
+        return f"https://{self.slug}{_CAREERS_PATH_BY_HOST.get(self.slug, '')}"
 
     def board_page(self) -> str:
         """The careers landing page, whose ``<title>`` carries the company name — and, where its
@@ -155,7 +162,7 @@ class PhenomScraper(BaseScraper):
         ``Zelis`` on the first scrape and reverts to ``careers.zelis.com`` on every one after.
         A title is one request, on the Board itself, every run.
         """
-        return f"https://{self.slug}/{self._cc}/{self._lang}"
+        return f"{self._careers_base()}/{self._cc}/{self._lang}"
 
     def company_from_page(self, page: str | None) -> str | None:
         """The title's name, else the page's ``og:site_name``.
@@ -198,7 +205,7 @@ class PhenomScraper(BaseScraper):
         try:
             response = self._fetch(
                 "GET",
-                f"https://{self.slug}/{cc}/{lang}/search-results",
+                f"{self._careers_base()}/{cc}/{lang}/search-results",
                 headers={"User-Agent": USER_AGENT, "Accept": "text/html"},
                 timeout=30,
                 allow_redirects=True,
@@ -214,6 +221,9 @@ class PhenomScraper(BaseScraper):
             )
             return cc, lang
         landed = str(getattr(response, "url", "") or "")
+        careers_path = _CAREERS_PATH_BY_HOST.get(self.slug)
+        if careers_path:
+            landed = landed.replace(careers_path, "", 1)
         match = _PREFIX_RE.match(landed)
         if not match:
             self._log.info(
@@ -228,7 +238,7 @@ class PhenomScraper(BaseScraper):
     def widgets_url(self) -> str:
         """The tenant's one JSON endpoint. Public: the liveness probe posts its count here
         (ADR-0203)."""
-        return f"https://{self.slug}/widgets"
+        return f"{self._careers_base()}/widgets"
 
     #: The one set of headers and the one timeout both widget calls send. Declared once because
     #: the listing and the detail request post to the same endpoint, and two copies drift.
@@ -419,7 +429,7 @@ class PhenomScraper(BaseScraper):
         JSON-LD intact, and even a deliberately wrong slug resolves by id. So it is left off —
         ADR-0153 hands this method an id and nothing else, and a title is not recoverable from one.
         """
-        return f"https://{self.slug}/{self._cc}/{self._lang}/job/{native_id}"
+        return f"{self._careers_base()}/{self._cc}/{self._lang}/job/{native_id}"
 
     def parse(self, raw: Any, scraped_at: str) -> list[Job]:
         listed = raw.get("jobs") or []
