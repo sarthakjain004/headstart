@@ -138,7 +138,7 @@ to already-held hosts through their own REST APIs, leaving 1,001 identities to c
 The standard checker handled 775; the dedicated iCIMS prober handled 226. Existing
 ledger identities were excluded from the liveness input.
 
-The landing adds **846 verdict rows across 30 providers**: **549 live, 235 dead and
+The landing adds **846 verdict rows across 30 ATSes**: **549 live, 235 dead and
 62 unknown**. It excludes 134 single-label iCIMS infrastructure/login hosts and
 21 conventionally non-production Boards. All four patient liveness passes completed;
 unknowns remain unknown instead of being recorded as dead. Workable's real 429
@@ -161,3 +161,9 @@ The live `starbucks-staging.eightfold.ai` endpoint contains 53 postings, includi
 group `starbucks-staging.com`. Its live verdict is retained, but it is explicitly
 in `EXCLUDED_BOARDS`, so the test postings cannot enter the scrape. It does not
 enter the customer-front backing-pair roster.
+
+Recruitee's four-worker redirect refresh completed with no `unreachable` results.
+The Jibe/iCIMS coverage audit measured five clients whose whole postings set is
+already served by held iCIMS Boards: Chumash (23), Davidson Hospitality (928),
+Joint Commission (1), ORAU (14), and Pave America (2). They are parked under
+ADR-0240 so the overlapping Jibe listings do not repeat those postings.
