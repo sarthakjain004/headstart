@@ -10,14 +10,125 @@ from __future__ import annotations
 import ast
 import hashlib
 import inspect
+import itertools
 import json
 import sqlite3
 import tempfile
 import zipfile
 from collections import OrderedDict
 from pathlib import Path
+from typing import NamedTuple
 
 import numpy as np
+
+
+class ReferenceWindow(NamedTuple):
+    """Baseline plus committed captures, each paired with its logical raw-fact tick."""
+
+    baseline: Path
+    observations: tuple[tuple[Path, str], ...]
+    committed: bool
+
+    @property
+    def ticks(self):
+        return [stamp for _, stamp in self.observations]
+
+    @property
+    def through(self):
+        return self.ticks[-1]
+
+
+def committed_reference_window(facts, state, *, baseline=None, require_chain=False):
+    """Walk the committed parent chain, joining exact run/attempt in both raw histories.
+
+    The baseline keeps its own stamp. Orphan captures and pending raw runs are not
+    export ticks. Explicit baseline fixtures without a checkpoint retain a fallback;
+    production callers require the chain. Ambiguous joins never fall back to wall time.
+    """
+    import pyarrow.parquet as pq
+
+    from headstart.ingest import job_facts
+
+    checkpoint = state / "reference_state.parquet"
+    if not checkpoint.exists() and require_chain:
+        raise ValueError("no committed reference checkpoint")
+    paths = {}
+    for path in (facts / "trend_reference").glob("*.parquet"):
+        stamp = pq.read_schema(path).metadata[b"ts"].decode()
+        if stamp in paths:
+            raise ValueError(f"ambiguous reference stamp {stamp}")
+        paths[stamp] = path
+    if baseline is not None:
+        metadata = pq.read_schema(baseline).metadata
+        if metadata.get(b"baseline") != b"true":
+            raise ValueError("--baseline must name a complete reference baseline")
+        stamp = metadata[b"ts"].decode()
+        if stamp in paths and paths[stamp].resolve() != baseline.resolve():
+            raise ValueError(f"ambiguous requested baseline {stamp}")
+        paths[stamp] = baseline
+    if not checkpoint.exists():
+        if baseline is None:
+            return None
+        base_stamp = pq.read_schema(baseline).metadata[b"ts"].decode()
+        return ReferenceWindow(
+            baseline,
+            tuple((paths[s], s) for s in sorted(paths) if s >= base_stamp),
+            False,
+        )
+
+    raw = []
+    for directory in (job_facts.JOB_FACTS, job_facts.BOARD_READS):
+        index = {}
+        for path in (facts / directory).glob("*.parquet"):
+            metadata = pq.read_schema(path).metadata
+            key = tuple(
+                metadata.get(name, b"").decode() for name in (b"run_id", b"run_attempt")
+            )
+            index.setdefault(key, []).append(metadata[b"stamp"].decode())
+        raw.append(index)
+    chain, seen = [], set()
+    cursor = pq.read_schema(checkpoint).metadata[b"ts"].decode()
+    while cursor:
+        if cursor in seen or cursor not in paths:
+            raise ValueError("broken committed reference chain")
+        seen.add(cursor)
+        path = paths[cursor]
+        metadata = pq.read_schema(path).metadata
+        if metadata.get(b"baseline") == b"true":
+            if baseline is not None and baseline.resolve() != path.resolve():
+                raise ValueError(
+                    "requested baseline is not the committed chain's baseline"
+                )
+            baseline = path
+            chain.append((path, cursor))
+            break
+        key = tuple(
+            metadata.get(name, b"").decode() for name in (b"run_id", b"run_attempt")
+        )
+        matches = [index.get(key, []) for index in raw]
+        if (
+            not all(key)
+            or any(len(values) != 1 for values in matches)
+            or matches[0] != matches[1]
+        ):
+            raise ValueError(
+                f"ambiguous or missing logical run/attempt join {key} at {cursor}"
+            )
+        effective = matches[0][0]
+        if effective > cursor:
+            raise ValueError(f"raw facts follow their reference tick {cursor}")
+        chain.append((path, effective))
+        parent = metadata.get(b"previous_tick", b"").decode()
+        if not parent or parent >= cursor:
+            raise ValueError("broken committed reference parent")
+        cursor = parent
+    else:
+        raise ValueError("committed reference has no baseline")
+    observations = tuple(reversed(chain))
+    ticks = [stamp for _, stamp in observations]
+    if any(a >= b for a, b in itertools.pairwise(ticks)):
+        raise ValueError("committed logical ticks must advance")
+    return ReferenceWindow(baseline, observations, True)
 
 
 class VersionSources:
@@ -231,12 +342,14 @@ class VersionSources:
         self.close()
 
 
-def bind_intervals(served, sources):
+def bind_intervals(served, sources, *, through=None):
     """Split input edits without changing raw lifecycle dates or fabricating listings."""
     import pyarrow as pa
 
     events = {}
     for job_id, stamp in sources.events():
+        if through is not None and stamp > through:
+            continue
         events.setdefault(job_id, []).append(stamp)
     schema = served.schema.append(pa.field("input_from", pa.string()))
     out, batches = [], []
@@ -319,59 +432,20 @@ def recorded_fingerprint(metadata, facts):
             return classifier.Head(root).inputs_fingerprint
 
 
-def load_reference_sources(sources, facts, baseline, state):
+def load_reference_sources(
+    sources, facts, baseline, state, *, window=None, through=None
+):
     """Read committed reference observations, aligning their run IDs to raw-fact ticks."""
     import pyarrow as pa
     import pyarrow.parquet as pq
 
-    from headstart.ingest import job_facts
-
-    run_stamps = {}
-    for path in (facts / job_facts.JOB_FACTS).glob("*.parquet"):
-        metadata = pq.read_schema(path).metadata
-        if metadata.get(b"run_id"):
-            run_stamps[metadata[b"run_id"].decode()] = metadata[b"stamp"].decode()
-    paths = {
-        pq.read_schema(path).metadata[b"ts"].decode(): path
-        for path in (facts / "trend_reference").glob("*.parquet")
-    }
-    base_stamp = pq.read_schema(baseline).metadata[b"ts"].decode()
-    paths[base_stamp] = baseline
-    committed = state / "reference_state.parquet"
-    if committed.exists():
-        chain, cursor, seen = (
-            [],
-            pq.read_schema(committed).metadata[b"ts"].decode(),
-            set(),
-        )
-        while cursor:
-            if cursor in seen or cursor not in paths:
-                raise ValueError("broken committed input-observation chain")
-            seen.add(cursor)
-            path = paths[cursor]
-            chain.append(path)
-            cursor = (
-                (pq.read_schema(path).metadata or {})
-                .get(b"previous_tick", b"")
-                .decode()
-            )
-        paths = [
-            path
-            for path in reversed(chain)
-            if pq.read_schema(path).metadata[b"ts"].decode() >= base_stamp
-        ]
-    else:
-        paths = [paths[stamp] for stamp in sorted(paths) if stamp >= base_stamp]
+    window = window or committed_reference_window(facts, state, baseline=baseline)
     fingerprints = {}
-    for path in paths:
+    for path, effective in window.observations:
+        if through is not None and effective > through:
+            continue
         source = pq.ParquetFile(path)
         metadata = source.schema_arrow.metadata
-        stamp = metadata[b"ts"].decode()
-        effective = (
-            stamp
-            if stamp == base_stamp
-            else run_stamps.get(metadata.get(b"run_id", b"").decode(), stamp)
-        )
         method = metadata.get(b"methodology", b"{}")
         if method not in fingerprints:
             fingerprints[method] = recorded_fingerprint(metadata, facts)
@@ -422,7 +496,7 @@ def load_reference_sources(sources, facts, baseline, state):
         )
 
 
-def load_description_sources(sources, facts, store):
+def load_description_sources(sources, facts, store, *, through=None):
     """Resolve immutable identities one ATS at a time; missing historical bodies stay unknown."""
     import pyarrow.parquet as pq
 
@@ -437,6 +511,8 @@ def load_description_sources(sources, facts, store):
             metadata.get(b"run_attempt", b"").decode(),
         )
         if key[0]:
+            if key in run_stamps and run_stamps[key] != metadata[b"stamp"].decode():
+                raise ValueError(f"ambiguous description run/attempt join {key}")
             run_stamps[key] = metadata[b"stamp"].decode()
     for directory in sorted((facts / "description_facts").glob("*")):
         if not directory.is_dir():
@@ -450,6 +526,8 @@ def load_description_sources(sources, facts, store):
                 (observation["run_id"], observation["run_attempt"]),
                 observation["observed_at"],
             )
+            if through is not None and stamp > through:
+                continue
             text = description_facts.read_description(
                 facts, current, observation["id"], observation["description_hash"]
             )

@@ -157,6 +157,11 @@ def main() -> int:
     )
     ap.add_argument("--out", type=Path, default=_OUT, help="default: data/restated")
     ap.add_argument(
+        "--require-reference-chain",
+        action="store_true",
+        help="fail without a committed reference window (also required with a publisher inventory)",
+    )
+    ap.add_argument(
         "--encode-budget-seconds",
         type=float,
         default=0.0,
@@ -171,19 +176,31 @@ def main() -> int:
 def _run(args, resources) -> int:
     import pyarrow.parquet as pq
 
-    runs = restate_replay.runs(args.facts)
+    window = restate_inputs.committed_reference_window(
+        args.facts,
+        args.board_failures.parent,
+        baseline=args.baseline,
+        require_chain=args.require_reference_chain
+        or bool(
+            os.environ.get("HEADSTART_RESTATE_INPUT_INVENTORY")
+            or os.environ.get("HEADSTART_RESTATE_INPUT_REVISION")
+        ),
+    )
+    through = window.through if window is not None and window.committed else None
+    runs = window.ticks if through is not None else restate_replay.runs(args.facts)
+    if window is not None:
+        args.baseline = window.baseline
+        if through is None:
+            base = window.ticks[0]
+            runs = [base] + [r for r in runs if r > base]
     if not runs:
         _log.info(f"no Job facts under {args.facts} yet — nothing to restate")
         return 0
-    reads = restate_replay.board_reads(args.facts)
+    reads = restate_replay.board_reads(args.facts, through=through)
     baseline_sources = {}
     inherited = {}
     future = []
     baseline_stamp = None
-    if args.baseline is None:
-        args.baseline = restate_baseline.committed_baseline(
-            args.facts, args.board_failures.parent
-        )
     if args.baseline is not None:
         baseline_file = pq.ParquetFile(args.baseline)
         metadata = baseline_file.schema_arrow.metadata or {}
@@ -201,7 +218,7 @@ def _run(args, resources) -> int:
                     inherited[row["id"]] = row
         for path in sorted((args.facts / job_facts.JOB_FACTS).glob("*.parquet")):
             stamp = pq.read_schema(path).metadata[b"stamp"].decode()
-            if stamp > baseline_stamp:
+            if stamp > baseline_stamp and (through is None or stamp <= through):
                 for batch in pq.ParquetFile(path).iter_batches(
                     batch_size=8192, columns=["id", "kind"]
                 ):
@@ -210,7 +227,6 @@ def _run(args, resources) -> int:
                         for r in batch.to_pylist()
                         if r["id"] in inherited
                     )
-        runs = [baseline_stamp] + [r for r in runs if r > baseline_stamp]
         _log.info(f"exact starting coverage from reference baseline {baseline_stamp}")
     ledger_boards = live_keep_set(args.ledger)
     live = boards_by_canon(ledger_boards)
@@ -219,14 +235,18 @@ def _run(args, resources) -> int:
     ).keep_set
     _log.info("loading narrow all-Job versions for Dormancy")
     dormant_versions = restate_replay.job_versions(
-        args.facts, columns=["id", "kind", "posted_at", "board"]
+        args.facts, columns=["id", "kind", "posted_at", "board"], through=through
     )
-    if dormant_versions is None:
+    if dormant_versions is None and baseline_stamp is None:
         _log.info("no Job facts — nothing to restate")
         return 0
     # Dormancy depends on the actual earlier observations. Rebasing these dates
     # would revive already-Dormant Boards until their next read.
-    periods = restate_served.dormant_periods(dormant_versions, reads, live)
+    periods = (
+        {}
+        if dormant_versions is None
+        else restate_served.dormant_periods(dormant_versions, reads, live)
+    )
     del dormant_versions
     gc.collect()
     import pyarrow as pa
@@ -234,11 +254,16 @@ def _run(args, resources) -> int:
     pa.default_memory_pool().release_unused()
     _log.info("selecting IDs ever admitted by today's tech gate")
     wanted = (
-        restate_replay.eligible_ids(args.facts, tech_filter.is_tech) | inherited.keys()
+        restate_replay.eligible_ids(args.facts, tech_filter.is_tech, through=through)
+        | inherited.keys()
     )
     _log.info(f"loading wide Job versions for {len(wanted)} eligible IDs")
-    versions = restate_replay.job_versions(args.facts, wanted=wanted)
+    versions = restate_replay.job_versions(args.facts, wanted=wanted, through=through)
     if baseline_stamp is not None:
+        if versions is None:
+            versions = job_facts._schema().empty_table()
+            for name in restate_replay.VERSION_COLUMNS:
+                versions = versions.append_column(name, pa.array([], pa.string()))
         versions = restate_baseline.seed_versions(
             versions, inherited, baseline_stamp, future
         )
@@ -259,12 +284,19 @@ def _run(args, resources) -> int:
             restate_inputs.VersionSources(head.row_vector_dim)
         )
         restate_inputs.load_reference_sources(
-            baseline_sources, args.facts, args.baseline, args.board_failures.parent
+            baseline_sources,
+            args.facts,
+            args.baseline,
+            args.board_failures.parent,
+            window=window,
+            through=through,
         )
         restate_inputs.load_description_sources(
-            baseline_sources, args.facts, args.descriptions
+            baseline_sources, args.facts, args.descriptions, through=through
         )
-        served = restate_inputs.bind_intervals(served, baseline_sources)
+        served = restate_inputs.bind_intervals(
+            served, baseline_sources, through=through
+        )
     latest_ids = {
         job_id
         for job_id, start in zip(

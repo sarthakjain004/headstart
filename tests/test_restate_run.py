@@ -567,3 +567,145 @@ def test_baseline_does_not_revive_a_board_already_observed_dormant(
     assert restate_run.main() == 0
     _, levels = trend_history.board_levels(tmp_path / "restated")
     assert sum(n for key, n in levels.items() if key[1] == "stock") == 0
+
+
+def test_committed_ticks_exclude_pending_tail_and_orphans_but_intermediate_reads_close_jobs(
+    tmp_path, monkeypatch
+):
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    facts, state = tmp_path / "facts", tmp_path / "state"
+    intermediate = "2026-09-02T00:00:00+00:00"
+    baseline_stamp = "2026-09-01T00:30:00+00:00"
+    reference_stamp = "2026-09-03T01:00:00+00:00"
+    for stamp, run_id, jobs in (
+        (RUNS[0], "base", [(f"{BOARD}:1", "Backend Engineer")]),
+        (intermediate, "intermediate", []),
+        (RUNS[1], "committed", []),
+        (
+            RUNS[2],
+            "pending",
+            [(f"{BOARD}:1", "QA Lead"), (f"{BOARD}:2", "Backend Engineer")],
+        ),
+    ):
+        monkeypatch.setenv("GITHUB_RUN_ID", run_id)
+        monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "1")
+        _record(facts, stamp, jobs)
+    reference = facts / "trend_reference"
+    reference.mkdir()
+    row = {
+        "id": f"{BOARD}:1",
+        "kind": "present",
+        "reference_board": BOARD,
+        "title": "Backend Engineer",
+        "department": "Engineering",
+        "vector": [0.0, 0.0],
+        "description": "Build software services.",
+        "first_seen": RUNS[0],
+    }
+    baseline = reference / "base.parquet"
+    schema = pa.Table.from_pylist([row]).schema
+    pq.write_table(
+        pa.Table.from_pylist([row], schema=schema).replace_schema_metadata(
+            {b"ts": baseline_stamp.encode(), b"baseline": b"true"}
+        ),
+        baseline,
+    )
+    pq.write_table(
+        schema.empty_table().replace_schema_metadata(
+            {
+                b"ts": reference_stamp.encode(),
+                b"previous_tick": baseline_stamp.encode(),
+                b"run_id": b"committed",
+                b"run_attempt": b"1",
+            }
+        ),
+        reference / "committed.parquet",
+    )
+    pq.write_table(
+        pa.Table.from_pylist(
+            [row | {"title": "QA Lead", "description": "Orphan text."}], schema=schema
+        ).replace_schema_metadata(
+            {
+                b"ts": b"2026-09-02T01:00:00+00:00",
+                b"previous_tick": baseline_stamp.encode(),
+                b"run_id": b"intermediate",
+                b"run_attempt": b"1",
+            }
+        ),
+        reference / "orphan.parquet",
+    )
+    state.mkdir()
+    pq.write_table(
+        pa.table({"id": []}).replace_schema_metadata({b"ts": reference_stamp.encode()}),
+        state / "reference_state.parquet",
+    )
+    families, head, cache = _config(tmp_path)
+    out = tmp_path / "restated"
+    monkeypatch.setattr(restate_run, "is_english", lambda title, text: True)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "restate",
+            "--facts",
+            str(facts),
+            "--baseline",
+            str(baseline),
+            "--require-reference-chain",
+            "--ledger",
+            str(tmp_path / "absent-ledger"),
+            "--board-failures",
+            str(state / "board_failures.csv"),
+            "--classifier",
+            str(head),
+            "--families",
+            str(families),
+            "--title-cache",
+            str(cache),
+            "--descriptions",
+            str(tmp_path / "absent-store"),
+            "--db",
+            str(tmp_path / "absent-db"),
+            "--out",
+            str(out),
+        ],
+    )
+    assert restate_run.main() == 0
+    files = sorted((out / trend_history.DELTAS).glob("*.parquet"))
+    assert [pq.read_schema(p).metadata[b"ts"].decode() for p in files] == [
+        baseline_stamp,
+        RUNS[1],
+    ]
+    initial = pq.read_table(files[0]).to_pylist()
+    assert sum(r["delta"] for r in initial if r["metric"] == "stock") == 1
+    last = pq.read_table(files[1]).to_pylist()
+    assert sum(r["delta"] for r in last if r["metric"] == "closed") == 1
+    _, levels = trend_history.board_levels(out)
+    assert sum(n for k, n in levels.items() if k[1] == "stock") == 0
+    summary = json.loads((out / "replay.json").read_text())
+    assert summary["last_covered_tick"] == RUNS[1]
+
+
+def test_inventory_requires_committed_window_even_with_explicit_baseline(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv(
+        "HEADSTART_RESTATE_INPUT_INVENTORY", str(tmp_path / "inventory.json")
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "restate",
+            "--facts",
+            str(tmp_path / "facts"),
+            "--board-failures",
+            str(tmp_path / "state/board_failures.csv"),
+            "--baseline",
+            str(tmp_path / "base.parquet"),
+        ],
+    )
+    with pytest.raises(ValueError, match="committed reference checkpoint"):
+        restate_run.main()

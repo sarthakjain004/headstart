@@ -203,3 +203,22 @@ def test_empty_selection_keeps_schema(tmp_path):
     selected = rr.job_versions(facts, wanted=set())
     assert selected.num_rows == 0
     assert selected.schema == rr.job_versions(facts).schema
+
+
+def test_through_bounds_all_raw_loaders_before_future_eligibility(tmp_path):
+    facts = tmp_path / "facts"
+    for stamp, title in zip(
+        RUNS[:3], ["Cashier", "Cashier", "Backend Engineer"], strict=True
+    ):
+        _record(facts, stamp, [(BOARD_A, _job(A1, title))], {BOARD_A})
+    through = RUNS[1]
+    assert rr.runs(facts, through=through) == RUNS[:2]
+    assert set(rr.board_reads(facts, through=through)["run"].to_pylist()) == set(
+        RUNS[:2]
+    )
+    assert (
+        rr.eligible_ids(facts, lambda t, d: t == "Backend Engineer", through=through)
+        == set()
+    )
+    versions = rr.job_versions(facts, through=through).to_pylist()
+    assert len(versions) == 1 and versions[0]["valid_to"] is None

@@ -26,7 +26,7 @@ from headstart.ingest import job_facts
 VERSION_COLUMNS = ("valid_from", "valid_to", "ended_as", "first_seen", "starts_as")
 
 
-def _stamped(directory: Path, *, wanted=None, columns=None):
+def _stamped(directory: Path, *, wanted=None, columns=None, through=None):
     """Every fact file under ``directory``, oldest first, each with a ``run`` column holding the
     stamp its metadata names."""
     import pyarrow as pa
@@ -40,6 +40,8 @@ def _stamped(directory: Path, *, wanted=None, columns=None):
     for path in paths:
         file = pq.ParquetFile(path)
         stamp = file.schema_arrow.metadata[b"stamp"].decode()
+        if through is not None and stamp > through:
+            continue
         for batch in file.iter_batches(batch_size=8192, columns=columns):
             table = pa.Table.from_batches([batch]).replace_schema_metadata(None)
             if selected is not None:
@@ -49,12 +51,17 @@ def _stamped(directory: Path, *, wanted=None, columns=None):
             )
 
 
-def eligible_ids(facts_dir: Path, is_tech) -> set[str]:
+def eligible_ids(facts_dir: Path, is_tech, *, through=None) -> set[str]:
     """IDs ever admitted by today's gate. Later rejected edits and absences still replay."""
     import pyarrow.parquet as pq
 
     wanted = set()
     for path in sorted((facts_dir / job_facts.JOB_FACTS).glob("*.parquet")):
+        if (
+            through is not None
+            and pq.read_schema(path).metadata[b"stamp"].decode() > through
+        ):
+            continue
         for batch in pq.ParquetFile(path).iter_batches(
             batch_size=8192, columns=["id", "title", "department", "kind"]
         ):
@@ -66,28 +73,33 @@ def eligible_ids(facts_dir: Path, is_tech) -> set[str]:
     return wanted
 
 
-def runs(facts_dir: Path) -> list[str]:
+def runs(facts_dir: Path, *, through=None) -> list[str]:
     """Every run that recorded facts, oldest first: the Restatement's ticks. A run with no change
     still wrote its Board reads, so the Board reads name the runs."""
     import pyarrow.parquet as pq
 
-    return sorted(
+    stamps = sorted(
         pq.read_schema(path).metadata[b"stamp"].decode()
         for path in (facts_dir / job_facts.BOARD_READS).glob("*.parquet")
     )
+    return [s for s in stamps if through is None or s <= through]
 
 
-def board_reads(facts_dir: Path):
+def board_reads(facts_dir: Path, *, through=None):
     """Every run's Board reads in one table, with the run each belongs to."""
     import pyarrow as pa
 
-    tables = [t for t in _stamped(facts_dir / job_facts.BOARD_READS) if t.num_rows]
+    tables = [
+        t
+        for t in _stamped(facts_dir / job_facts.BOARD_READS, through=through)
+        if t.num_rows
+    ]
     if not tables:
         return None
     return pa.concat_tables(tables).sort_by([("run", "ascending")])
 
 
-def job_versions(facts_dir: Path, *, wanted=None, columns=None):
+def job_versions(facts_dir: Path, *, wanted=None, columns=None, through=None):
     """Every Job version the facts under ``facts_dir`` describe, sorted by id then
     ``valid_from``: each ``listed`` or ``changed`` fact's raw fields, with the run it was recorded
     in as ``valid_from`` and the run and kind of the same Job's next fact as ``valid_to`` and
@@ -96,7 +108,12 @@ def job_versions(facts_dir: Path, *, wanted=None, columns=None):
     import pyarrow.compute as pc
 
     tables = list(
-        _stamped(facts_dir / job_facts.JOB_FACTS, wanted=wanted, columns=columns)
+        _stamped(
+            facts_dir / job_facts.JOB_FACTS,
+            wanted=wanted,
+            columns=columns,
+            through=through,
+        )
     )
     if not tables:
         return None
