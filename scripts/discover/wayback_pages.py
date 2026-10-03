@@ -47,21 +47,23 @@ def sweep(ats, domain, style, workers, sink, refresh=False):
     cdx = f"https://web.archive.org/cdx/search/cdx?url={urllib.parse.quote(domain)}&matchType=domain"
     base = cdx + "&fl=original&collapse=urlkey"  # showNumPages needs the clean url
 
+    state = WB / f".{ats}_{domain}_pages_done"
+    if refresh:
+        state.write_text("", encoding="utf-8")
     try:
         npages_txt = fetch(cdx + "&showNumPages=true")
     except FetchError as err:
         print(f"{ats}/{domain}: SKIPPED — page count unavailable: {err}", flush=True)
-        return
+        return False
     if not npages_txt.strip().isdigit():
         print(
             f"{ats}/{domain}: SKIPPED — page count was not a number: "
             f"{npages_txt.strip()[:120]!r}",
             flush=True,
         )
-        return
+        return False
     npages = int(npages_txt.strip())
 
-    state = WB / f".{ats}_{domain}_pages_done"
     done = set()
     if state.exists() and not refresh:
         done = {int(x) for x in state.read_text().split() if x.strip().isdigit()}
@@ -112,6 +114,7 @@ def sweep(ats, domain, style, workers, sink, refresh=False):
             " re-run to retry them"
         )
     print(done_note, flush=True)
+    return counter["failed"] == 0
 
 
 def main():

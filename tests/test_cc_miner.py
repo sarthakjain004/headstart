@@ -59,6 +59,34 @@ def _site(miner, url: str) -> str | None:
     return got[0] if got else None
 
 
+def test_cdx_429_retries_on_spare_and_honors_retry_after(miner, monkeypatch):
+    from types import SimpleNamespace
+
+    from headstart.network import http, spare_egress
+
+    spare_egress.use_daemon(
+        spare_egress.InMemoryEgressDaemon("socks5h://127.0.0.1:40000")
+    )
+    calls, sleeps = [], []
+    outcomes = iter([429, 200])
+
+    def request(*args, **kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(
+            status_code=next(outcomes), text="ok", headers={"Retry-After": "7"}
+        )
+
+    monkeypatch.setattr(http, "session", lambda: SimpleNamespace(request=request))
+    monkeypatch.setattr(http.RoutePacer, "claim_delay", lambda *args: 0)
+    monkeypatch.setattr(http.time, "sleep", sleeps.append)
+    assert miner.curl("https://index.commoncrawl.org/test", attempts=2) == ("ok", True)
+    assert len(calls) == 2
+    assert not calls[0].get("proxies")
+    assert calls[1]["proxies"]["https"].startswith("socks5h://")
+    assert "cc-index" in spare_egress.walled_groups()
+    assert 7 in sleeps
+
+
 H = "https://acme.wd1.myworkdayjobs.com"
 
 

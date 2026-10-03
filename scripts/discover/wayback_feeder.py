@@ -26,19 +26,16 @@ CONTEXT.md retires the term but parks the code/data rename as a separate change.
 
 import argparse
 import csv
-import errno
 import os
 import re
 import socket
-import ssl
-import threading
-import time
-import urllib.error
 import urllib.parse
-import urllib.request
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Literal, get_args
+
+from headstart.network import http
+from headstart.scrapers.ashby import AshbyScraper
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 WB = ROOT / "data" / "wayback-ats"
@@ -177,7 +174,6 @@ FILE_SUFFIXES = (
 
 TIMEOUT = 120
 UA = "HeadStart-wayback/0.1 (ATS tenant discovery)"
-_CTX = ssl._create_unverified_context()
 # The Archive throttles rather than refuses: these come back mid-sweep and clear on their own.
 _RETRYABLE = {408, 429, 500, 502, 503, 504}
 
@@ -186,92 +182,34 @@ class FetchError(Exception):
     """A CDX request that could not be completed, carrying why it was given up on."""
 
 
-# The Archive does not answer overload with 429 — it stops accepting TCP connections, which
-# surfaces as ECONNREFUSED/ECONNRESET. That is a whole-host condition, not a per-page one, so a
-# refusal parks *every* worker until this timestamp rather than letting each retry into the same
-# closed door. Guarded by its own lock because the harvesters call `fetch` from a thread pool.
-_REFUSED = {errno.ECONNREFUSED, errno.ECONNRESET, errno.EPIPE, errno.ETIMEDOUT}
-_COOLDOWN_LOCK = threading.Lock()
-_cooldown_until = 0.0
-
-
-def _park(seconds: float) -> None:
-    """Hold every worker off the host for ``seconds`` from now."""
-    global _cooldown_until
-    with _COOLDOWN_LOCK:
-        _cooldown_until = max(_cooldown_until, time.monotonic() + seconds)
-
-
-def _wait_out_cooldown() -> None:
-    while True:
-        with _COOLDOWN_LOCK:
-            remaining = _cooldown_until - time.monotonic()
-        if remaining <= 0:
-            return
-        time.sleep(min(remaining, 5))
+_PACER = http.RoutePacer(1.1)
 
 
 def fetch(url: str, attempts: int = 6) -> str:
-    """GET ``url`` on a fresh connection, retrying what is worth retrying.
+    """GET CDX with paced retries and the rotating spare egress on 429/503.
 
-    Every attempt builds its own opener and sends ``Connection: close``, so a refused or
-    half-dead socket is never reused — a retry is a genuinely new connection, which is the only
-    thing that helps once the Archive has stopped accepting the old ones.
-
-    Three failure classes, handled differently. A **connection refusal** is the host saying "too
-    many"; it parks all workers and backs off hardest. A **429/5xx** is throttling, backed off
-    exponentially and honouring ``Retry-After``. Anything else — 400, 403, 404 — is the server's
-    final answer, raised at once rather than retried five more times.
-
-    Never returns None. The first version swallowed every exception and returned None, which
-    cost a harvest run: 18 ATSes reported "could not get page count: None" and the reason had
-    been discarded at the one point it was known.
+    Uses the shared retry policy, including Retry-After's 30 s cap. Exhausted
+    requests raise FetchError so callers leave pages/cursors uncheckpointed.
     """
-    last = ""
-    for attempt in range(1, attempts + 1):
-        _wait_out_cooldown()
-        try:
-            request = urllib.request.Request(
-                url, headers={"User-Agent": UA, "Connection": "close"}
-            )
-            opener = urllib.request.build_opener(
-                urllib.request.HTTPSHandler(context=_CTX)
-            )
-            with opener.open(request, timeout=TIMEOUT) as response:
-                return response.read().decode("utf-8", "replace")
-        except urllib.error.HTTPError as err:
-            if err.code not in _RETRYABLE:
-                raise FetchError(f"HTTP {err.code} {err.reason}") from err
-            last = f"HTTP {err.code} {err.reason}"
-            delay = _retry_after(err) or 2**attempt
-        except (urllib.error.URLError, TimeoutError, OSError) as err:
-            last = f"{type(err).__name__}: {err}"
-            if _is_refusal(err):
-                delay = min(15 * attempt, 90)
-                _park(
-                    delay
-                )  # the host is closing the door on everyone, not just this page
-            else:
-                delay = 2**attempt
-        if attempt == attempts:
-            break
-        time.sleep(min(delay, 90))
-    raise FetchError(f"{last} (gave up after {attempts} attempts)")
-
-
-def _is_refusal(err: Exception) -> bool:
-    """Whether the host refused the connection itself, rather than answering it."""
-    inner = getattr(err, "reason", err)
-    code = getattr(inner, "errno", None)
-    return code in _REFUSED
-
-
-def _retry_after(err: urllib.error.HTTPError) -> float | None:
-    raw = err.headers.get("Retry-After") if err.headers else None
     try:
-        return float(raw) if raw else None
-    except ValueError:
-        return None  # an HTTP-date; the exponential backoff is a fine substitute
+        response = http.fetch(
+            "GET",
+            url,
+            attempts=attempts,
+            timeout=TIMEOUT,
+            headers={"User-Agent": UA, "Connection": "close"},
+            egress_group="wayback",
+            egress_on=frozenset({429, 503}),
+            retry_on=frozenset(_RETRYABLE),
+            request_pacer=_PACER,
+        )
+    except http.RequestsError as err:
+        raise FetchError(f"{err} (gave up after {attempts} attempts)") from err
+    if response.status_code != 200:
+        raise FetchError(
+            f"HTTP {response.status_code} (gave up after {attempts} attempts)"
+        )
+    return response.text
 
 
 def _with_style(style: Style, *hosts: str) -> tuple[tuple[str, Style], ...]:
@@ -322,6 +260,10 @@ ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
     # and kin), which has no host namespace to enumerate.
     "eightfold": _with_style("host", "eightfold.ai"),
     "freshteam": _with_style("sub", "freshteam.com"),
+    "jazzhr": _with_style("sub", "applytojob.com"),
+    "jobvite": _with_style("path", "jobs.jobvite.com"),
+    "join": _with_style("path", "join.com"),
+    "zwayam": _with_style("host", "openings.co"),
     # `path` style, the same shape as ashby and rippling above: one fixed host
     # (`jobs.gem.com/{slug}`), the tenant is the path segment. Checked for a second/alias host
     # before committing to just the one: every one of the 3,542 sampled real postings
@@ -475,10 +417,8 @@ ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
 }
 
 # Deliberately absent, so nobody re-derives them from scratch:
-#   join    — `join.com/companies/{slug}` is a two-segment path, so `path` would harvest
-#             "companies" for every row. Also in `registry.DISABLED_ATS` (~99.99% non-tech).
-#   phenom, zwayam — no enumerable host namespace (per-tenant pods, or boards that live on
-#             customer domains). Oracle was listed here until its pods turned out to be
+#   phenom, radancy, happydance, spire2grow, wp_job_openings — boards on customer
+#             domains; the archive sweep reads their known hosts separately. Oracle was listed here until its pods turned out to be
 #             enumerable after all; it now has 17 entries above. pyjamahr was listed here too, on
 #             the belief its Boards were keyed by an opaque UUID — they are keyed by a path slug
 #             on one shared host, so it is a `path` entry above.
@@ -587,7 +527,15 @@ def extract(url: str, host: str, style: Style) -> tuple[str, str] | None:
     if style == "path":
         if seen_host != host or not path:
             return None
+        if host == "join.com":
+            if not path.startswith("companies/"):
+                return None
+            path = path[len("companies/") :]
         seg = path.split("/")[0]
+        if host == "jobs.ashbyhq.com" and re.fullmatch(AshbyScraper.slug_in_link, seg):
+            slug = AshbyScraper.slug_from_link(seg)
+            if valid(slug.replace(" ", ""), path_slug=True):
+                return slug, f"https://{host}/{urllib.parse.quote(slug, safe='._-')}"
         if seg.lower() == "embed":
             # Greenhouse's board-widget route carries the real slug in `?for=`, so the archived
             # widget URL names a Company as surely as a board URL does. Dropping the whole route
@@ -598,7 +546,8 @@ def extract(url: str, host: str, style: Style) -> tuple[str, str] | None:
             seg = urllib.parse.parse_qs(query).get("for", [""])[0]
         if not valid(seg, path_slug=True):
             return None
-        return seg, f"https://{host}/{seg}"
+        prefix = "companies/" if host == "join.com" else ""
+        return seg, f"https://{host}/{prefix}{seg}"
 
     if not seen_host.endswith("." + host):
         return None
@@ -700,6 +649,8 @@ def extract(url: str, host: str, style: Style) -> tuple[str, str] | None:
         # gave one board two dedupe keys — the exact double-count that map exists to prevent.
         label = content[: -len("." + host)]
         seen_host = f"{label}.{host}"
+    if host == "teamtailor.com" and label.endswith(".na") and valid(label[:-3]):
+        return label, f"https://{seen_host}"
     if "." in label or not valid(label):
         return None  # a deeper subdomain, or furniture — not a slug
     # `host` ATSes are keyed by the whole board host, because that is what their scraper is
@@ -735,6 +686,8 @@ def _workday_site(path: str) -> str | None:
         # sites are routinely two letters themselves (`ac`, `au`, `hc`, `da` — 83 live boards),
         # so a trailing `xx` is the board, not a language.
         if _LOCALE.fullmatch(seg) and i + 1 < len(segments):
+            if segments[i + 1].lower() in {"job", "details", "application"}:
+                return seg  # `hu/job/...` names the two-letter site, not a locale
             continue
         # Loose on purpose: real sites include `1`, `G`, `_penn-careers`, and a 70-character
         # `ccd-denver-denvergov-…`. Hostname-label rules reject all of those, and did — 21 live

@@ -137,3 +137,82 @@ def test_capture_urls_keeps_only_keys_inside_the_range(monkeypatch):
     assert cc_data_host.capture_urls("CC-MAIN-2026-39", "hrmdirect.com") == [
         "https://acme.hrmdirect.com/employment/"
     ]
+
+
+def test_known_hosts_share_sparse_blocks_and_failed_blocks_stay_incomplete(monkeypatch):
+    from types import SimpleNamespace
+
+    urls = [
+        "https://a.example.com/jobs",
+        "https://b.example.com/jobs",
+        "https://other.example.com/",
+    ]
+    body = gzip.compress(
+        b"\n".join(
+            f"{cc_data_host.surt_host(u.split('/')[2])})/ 20260901 {json.dumps({'url': u})}".encode()
+            for u in urls
+        )
+    )
+    idx = (
+        f"com,example)/ 20260901\tcdx.gz\t0\t{len(body)}\t0\n"
+        "com,z)/ 20260901\tlast.gz\t0\t100\t1\n"
+    ).encode()
+    calls = []
+
+    def get(url, **kwargs):
+        calls.append((url, kwargs))
+        return SimpleNamespace(content=idx if url.endswith("cluster.idx") else body)
+
+    monkeypatch.setattr(cc_data_host, "_get", get)
+    targets = {"a.example.com", "b.example.com", "absent.example.com"}
+    result = cc_data_host.capture_known_hosts("CC-MAIN-test", targets)
+    assert result == {
+        "a.example.com": [urls[0]],
+        "b.example.com": [urls[1]],
+        "absent.example.com": [],
+    }
+    assert len(calls) == 2  # one sparse index, one shared block
+
+    monkeypatch.setattr(
+        cc_data_host,
+        "_get",
+        lambda url, **kwargs: get(url) if url.endswith("cluster.idx") else None,
+    )
+    assert cc_data_host.capture_known_hosts("CC-MAIN-test", targets) == dict.fromkeys(
+        targets
+    )
+
+
+def test_data_host_429_backoff_and_rotation_use_shared_client(monkeypatch):
+    from types import SimpleNamespace
+
+    from headstart.network import http, spare_egress
+
+    spare_egress.use_daemon(
+        spare_egress.InMemoryEgressDaemon("socks5h://127.0.0.1:40000")
+    )
+    calls, sleeps, rotations = [], [], []
+    outcomes = iter([429, 503, 206])
+
+    def request(*args, **kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(status_code=next(outcomes), headers={"Retry-After": "7"})
+
+    monkeypatch.setattr(http, "session", lambda: SimpleNamespace(request=request))
+    monkeypatch.setattr(http.RoutePacer, "claim_delay", lambda *args: 0)
+    monkeypatch.setattr(http.time, "sleep", sleeps.append)
+    monkeypatch.setattr(
+        spare_egress, "rotate", lambda *args, **kwargs: rotations.append(True)
+    )
+    assert (
+        cc_data_host._get(
+            "https://data.commoncrawl.org/test", start=10, end=20, tries=3
+        ).status_code
+        == 206
+    )
+    assert not calls[0].get("proxies")
+    assert calls[1]["proxies"]["https"].startswith("socks5h://")
+    assert calls[2]["proxies"] == calls[1]["proxies"]
+    assert calls[2]["headers"]["Range"] == "bytes=10-20"
+    assert sleeps == [7, 7]
+    assert rotations == [True]
