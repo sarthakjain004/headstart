@@ -1,4 +1,4 @@
-# Replay selects whole Job lifecycles and keeps all-Job Dormancy evidence
+# ADR-0381: Replay selects whole Job lifecycles and keeps all-Job Dormancy evidence
 
 Accepted by the owner on 2026-10-02. The frozen replay on PR934 reached 13,731 MiB
 RSS while loading Job versions and was killed by its 12 GiB watchdog. Select IDs
