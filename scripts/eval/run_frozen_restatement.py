@@ -7,6 +7,7 @@ in the runner and never modify the live HF dataset.
 
 from __future__ import annotations
 
+import ast
 import inspect
 import json
 import os
@@ -22,9 +23,77 @@ from pathlib import Path
 
 import pyarrow.parquet as pq
 
+from headstart.ingest import role_family_classifier
 from headstart.ingest.board_dormancy import PostedDates
 from headstart.ingest.index_plan import _survivor_key, duplicate_ranks
 from headstart.ingest.restate_baseline import committed_baseline
+
+
+def install_classifier_adapters(path: Path) -> None:
+    """Append metadata/cache compatibility, never replace frozen classification math.
+
+    The fingerprint helper introspects the frozen title/row logits and normalise,
+    not today's implementations. Missing row revision stays unknown. Cache storage
+    helpers gain today's fingerprint contract; decision/encoding helpers stay frozen.
+    """
+    original = path.read_text()
+    marker = "# Frozen replay classifier metadata/cache compatibility."
+    if marker in original:
+        return
+    tree = ast.parse(original)
+    definitions = {
+        n.name: n for n in tree.body if isinstance(n, (ast.ClassDef, ast.FunctionDef))
+    }
+    head = definitions["Head"]
+    methods = {n.name: n for n in head.body if isinstance(n, ast.FunctionDef)}
+    cache = definitions["Cache"]
+    fingerprinted_cache = any(
+        isinstance(n, ast.AnnAssign)
+        and isinstance(n.target, ast.Name)
+        and n.target.id == "inputs_fingerprint"
+        for n in cache.body
+    ) and all(
+        "inputs_fingerprint"
+        in {
+            a.arg
+            for a in definitions[name].args.args + definitions[name].args.kwonlyargs
+        }
+        for name in ("load_cache", "save_cache")
+    )
+    additions = []
+    if not any(
+        isinstance(n, ast.Attribute) and n.attr == "row_vector_revision"
+        for n in ast.walk(methods["__init__"])
+    ):
+        additions.append(
+            textwrap.dedent("""\
+            _frozen_head_init = Head.__init__
+            def _head_init_with_revision(self, directory):
+                _frozen_head_init(self, directory)
+                manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
+                self.row_vector_revision = manifest["row_vector"].get("revision")
+            Head.__init__ = _head_init_with_revision
+        """)
+        )
+    if "inputs_fingerprint" not in methods:
+        additions += [
+            "import ast, hashlib, inspect, textwrap\n",
+            textwrap.dedent(
+                inspect.getsource(role_family_classifier.Head.inputs_fingerprint.fget)
+            ),
+            "Head.inputs_fingerprint = inputs_fingerprint\n",
+        ]
+    if not fingerprinted_cache:
+        additions += [
+            inspect.getsource(helper)
+            for helper in (
+                role_family_classifier.Cache,
+                role_family_classifier.load_cache,
+                role_family_classifier.save_cache,
+            )
+        ]
+    if additions:
+        path.write_text(original + "\n\n" + marker + "\n" + "\n\n".join(additions))
 
 
 def install_adapters(root: Path, frozen: Path) -> None:
@@ -46,6 +115,55 @@ def install_adapters(root: Path, frozen: Path) -> None:
                 + textwrap.dedent(inspect.getsource(PostedDates.newest))
                 + "\nPostedDates.newest = newest\n"
             )
+    install_classifier_adapters(
+        frozen / "src/headstart/ingest/role_family_classifier.py"
+    )
+
+
+def preflight_adapters(frozen: Path) -> None:
+    """Exercise actual frozen metadata/cache calls offline before a full replay."""
+    probe = """\
+        import json
+        import tempfile
+        from pathlib import Path
+        import numpy as np
+        from headstart.ingest.index_plan import duplicate_ranks
+        from headstart.ingest.board_dormancy import PostedDates
+        from headstart.ingest import role_family_classifier as classifier
+        from headstart.ingest import restate_inputs, restate_place
+        assert duplicate_ranks(['greenhouse:probe:1'], {'greenhouse:probe'})
+        PostedDates().newest('greenhouse:probe')
+        directory = Path('config/role_family_classifier')
+        head = classifier.Head(directory)
+        manifest = json.loads((directory / 'manifest.json').read_text())
+        assert head.row_vector_revision == manifest['row_vector'].get('revision')
+        fingerprint = head.inputs_fingerprint
+        assert len(fingerprint) == 64
+        row = head.row_logits(np.zeros((1, head.row_vector_dim), np.float32))
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'cache.parquet'
+            cache = classifier.load_cache(path, head.version, fingerprint)
+            assert cache.inputs_fingerprint == fingerprint
+            cache.title_logits['probe'] = np.zeros(len(head.families), np.float32)
+            classifier.save_cache(path, cache, inputs_fingerprint=fingerprint)
+            loaded = classifier.load_cache(path, head.version, fingerprint)
+            np.testing.assert_array_equal(loaded.title_logits['probe'], cache.title_logits['probe'])
+            assert not classifier.load_cache(path, head.version, 'mismatch').title_logits
+            try:
+                classifier.save_cache(path, loaded, inputs_fingerprint='mismatch')
+            except ValueError:
+                pass
+            else:
+                raise AssertionError('cache accepted different mathematical inputs')
+            effective = classifier.Cache(loaded.version, dict(loaded.title_logits), loaded.inputs_fingerprint)
+            assert len(classifier.decide_rows_scored(effective, head, ['probe'], row)) == 1
+    """
+    subprocess.run(
+        [sys.executable, "-c", textwrap.dedent(probe)],
+        cwd=frozen,
+        env=os.environ | {"PYTHONPATH": str(frozen / "src"), "HF_HUB_OFFLINE": "1"},
+        check=True,
+    )
 
 
 def main():
@@ -72,17 +190,12 @@ def main():
             z.extractall(frozen)
         install_adapters(root, frozen)
         env = os.environ | {"PYTHONPATH": str(frozen / "src")}
-        subprocess.run(
-            [
-                sys.executable,
-                "-c",
-                "from headstart.ingest.index_plan import duplicate_ranks; from headstart.ingest.board_dormancy import PostedDates; assert duplicate_ranks(['greenhouse:probe:1'], {'greenhouse:probe'}); PostedDates().newest('greenhouse:probe')",
-            ],
-            cwd=frozen,
-            env=env,
-            check=True,
-        )
+        preflight_adapters(frozen)
         print("Frozen replay adapter preflight passed", flush=True)
+        # Metadata adoption and cache fills must not mutate the current-rules cache.
+        title_cache = frozen / "replay-title-cache.parquet"
+        if (state / "role_title_families.parquet").exists():
+            shutil.copy2(state / "role_title_families.parquet", title_cache)
         command = [
             sys.executable,
             "-u",
@@ -95,7 +208,7 @@ def main():
             "--board-failures",
             str(state / "board_failures.csv"),
             "--title-cache",
-            str(state / "role_title_families.parquet"),
+            str(title_cache),
             "--db",
             str(root / "data/lancedb"),
             "--descriptions",
