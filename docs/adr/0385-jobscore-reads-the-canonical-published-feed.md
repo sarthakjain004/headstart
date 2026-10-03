@@ -21,8 +21,10 @@ Retain `opened_date`, native department/type/experience, and the full location. 
 Yes/No/Hybrid controls remote. Decode compensation as minor units: divide by 100 for the
 seven measured fractional currencies, but preserve JPY units (imgix's ¥10–20 million).
 Use the shared structured salary codec; a lone maximum provides no floor. No detail pass
-or source-side tech gate is needed. Process-wide starts are 1.5 seconds apart, and the daily
-pipeline remains below the vendor's hourly per-Board guidance.
+or source-side tech gate is needed. Process-wide starts are 1.5 seconds apart, and the planner excludes a Board until one hour after its persisted cost-ledger last look.
+The pipeline chains faster than hourly; its schedule alone is not a polling guard.
+Liveness reads the public SSR board HTML, not the feed: 197/197 facefoundri cards,
+18/18 clpinc, 3/3 pricefx, and Blueleaf's explicit empty message matched the feed census.
 
 Enable it: 12,978,552 bytes / 221 tech postings ≈ 59 KB per tech posting, versus ADR-0158's
 ~2 MB bar. Exclude seven confirmed integration/test Boards. See the
@@ -40,3 +42,8 @@ Sitemap discovery is reproducible via `mine_jobscore.py`; Common Crawl and finge
 also recognize the public paths. An unmeasured pagination ceiling or rate knee is not claimed.
 New salary dispatch keys affect no existing served rows. Served-row checks follow the normal
 pipeline; this build does not dispatch it.
+
+Review follow-up: pricefx's three feed detail URLs name careers.pricefx.eu. The scraper now
+builds the provider-host route from url_slug; the Solution Strategist route was browser-verified
+to show that job's full description, salary and application control. This keeps the URL contract
+independent of customer vanity-host availability.

@@ -36,3 +36,10 @@ def test_consent_or_marketing_html_is_a_failed_read_and_internal_posts_are_hidde
         )
     hidden = RAW.replace('"is_internal": false', '"is_internal": true')
     assert get_scraper("comeet", "port/59.004").parse(hidden, "now") == []
+
+
+def test_explicit_on_site_beats_remote_text_in_a_published_location():
+    raw = (Path(__file__).parent / "fixtures/comeet_zeronetworks.html").read_text()
+    (job,) = get_scraper("comeet", "zeronetworks/39.00f").parse(raw, "now")
+    assert "Remote" in job.location
+    assert job.remote is False

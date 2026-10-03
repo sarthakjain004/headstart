@@ -110,3 +110,9 @@ missing a URL shape. Its existing served corpus returned two pre-existing Fresht
 the Freshteam correction (browser verification showed the query route opens the whole Board). Several SPA HTML bodies omit the title; those are not evidence
 of a wrong route. No rows from these three new ATSes exist in the served corpus yet:
 actual served-row/filter verification is a **post-pipeline follow-up**, not claimed here.
+
+Review follow-up: explicit On-site now overrides contradictory Remote location text
+(41 captured jobs; Zero Networks 83.26C is the regression fixture). Canonical normalization
+preserves capture timestamps, rejects proofs older than any ledger verdict, streams each
+attempt, and atomically checkpoints dated proofs; `--resume` continues a partial scan.
+Captures with no reliable timestamp are declined rather than stamped as current.

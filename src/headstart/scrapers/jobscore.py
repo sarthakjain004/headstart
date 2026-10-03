@@ -2,7 +2,8 @@
 
 The public feed carries descriptions, department, location and the real opened date;
 `last_updated_date` is an edit date. JobScore asks consumers to poll at most hourly.
-The pipeline is daily; discovery uses its public sitemap and never polls a feed in a loop.
+The planner enforces an hour since the persisted last look; liveness reads public HTML
+instead of polling the feed. Discovery uses its public sitemap.
 Robots disallows the application flow, so links use the public posting instead.
 """
 
@@ -10,7 +11,6 @@ from __future__ import annotations
 
 import re
 from typing import Any
-from urllib.parse import urlsplit, urlunsplit
 
 from headstart.jobs import salary
 from headstart.jobs.job import Job, html_to_text, is_remote
@@ -77,7 +77,6 @@ class JobScoreScraper(BaseScraper):
             remote = {"yes": True, "no": False, "hybrid": None}.get(workplace)
             if not workplace:
                 remote = is_remote(location)
-            parts = urlsplit(row.get("detail_url") or self.job_url(row))
             jobs.append(
                 Job(
                     id=self.job_id(row["id"]),
@@ -87,7 +86,7 @@ class JobScoreScraper(BaseScraper):
                     location=location,
                     remote=remote,
                     department=row.get("department"),
-                    url=urlunsplit((parts.scheme, parts.netloc, parts.path, "", "")),
+                    url=self.job_url(row),
                     posted_at=row.get("opened_date"),
                     scraped_at=scraped_at,
                     description=html_to_text(row.get("description")),

@@ -3486,9 +3486,16 @@ def test_comeet_probe_reads_only_public_positions(monkeypatch):
     assert cl.p_comeet("port/59.004", "") == (cl.LIVE, 2)
 
 
-def test_jobscore_probe_reads_empty_feed_as_live(monkeypatch):
+def test_jobscore_probe_reads_explicitly_empty_public_board_as_live(monkeypatch):
     monkeypatch.setattr(
-        cl, "_get", lambda *_a, **_k: (200, b'{"company_code":"blueleaf","jobs":[]}')
+        cl,
+        "_get",
+        lambda *_a, **_k: (
+            200,
+            (
+                Path(__file__).parent / "fixtures/jobscore_blueleaf_board.html"
+            ).read_bytes(),
+        ),
     )
     assert cl.p_jobscore("blueleaf", "") == (cl.LIVE, 0)
 
@@ -3525,7 +3532,12 @@ def test_comeet_marketing_redirect_is_dead_and_consent_page_unknown(monkeypatch)
     "status,body",
     [
         (410, b"<title>Page Gone (Error 410)</title>"),
-        (200, b'{"company_code":"clpinc","jobs":[]}'),
+        (
+            200,
+            (
+                Path(__file__).parent / "fixtures/jobscore_clp-alias_board.html"
+            ).read_bytes(),
+        ),
     ],
 )
 def test_jobscore_retired_or_renamed_labels_do_not_become_duplicate_boards(
@@ -3533,3 +3545,26 @@ def test_jobscore_retired_or_renamed_labels_do_not_become_duplicate_boards(
 ):
     monkeypatch.setattr(cl, "_get", lambda *_a, **_k: (status, body))
     assert cl.p_jobscore("citylightandpower", "") == (cl.DEAD, None)
+
+
+@pytest.mark.parametrize(
+    "slug,fixture,n",
+    [
+        ("pricefx", "pricefx", 3),
+        ("blueleaf", "blueleaf", 0),
+        ("facefoundri", "facefoundri", 197),
+    ],
+)
+def test_jobscore_liveness_reads_public_html_without_polling_the_feed(
+    monkeypatch, slug, fixture, n
+):
+    body = (
+        Path(__file__).parent / f"fixtures/jobscore_{fixture}_board.html"
+    ).read_bytes()
+
+    def public_page(url, *args, **kwargs):
+        assert url == f"https://careers.jobscore.com/careers/{slug}"
+        return 200, body
+
+    monkeypatch.setattr(cl, "_get", public_page)
+    assert cl.p_jobscore(slug, "") == (cl.LIVE, n)

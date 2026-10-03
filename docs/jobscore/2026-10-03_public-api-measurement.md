@@ -37,8 +37,11 @@ the company name; no separate name-page request is made.
 Robots allows the feed and public postings, disallows `/apply_flow/`, and advertises the
 cross-tenant gzip sitemap. Its 2,332 URLs named 498 Boards; `mine_jobscore.py` reproduces it.
 All initial feed requests used `headstart/0.1`; alternative User-Agent throughput is unknown.
-The scraper spaces process-wide starts by 1.5 seconds; the daily pipeline is below the
-vendor's per-board hourly guidance. Feed boundaries/caps above 197 jobs remain unknown.
+The scraper spaces process-wide starts by 1.5 seconds; the planner enforces one hour since
+the persisted last look before either priority or Tail selection. Pipeline chaining is faster
+than hourly, so the schedule is not the guard. Liveness reads public HTML instead of feeds:
+197/197 facefoundri cards, 18/18 clpinc, 3/3 pricefx and Blueleaf's explicit zero matched the
+feed census. A page without cards or an explicit empty marker remains UNKNOWN. A complete HTML liveness refresh then settled all 502 candidates at 2 workers in 84.9 seconds: 498 live, 4 dead, zero unknown, matching the feed census. Feed boundaries/caps above 197 jobs remain unknown.
 
 Enable: 12,978,552 listing bytes / 221 tech postings ≈ 59 KB/tech posting, well under
 ADR-0158's ~2 MB bar. Seven hiring integration/test Boards are excluded after reading their
@@ -106,3 +109,8 @@ missing a URL shape. Its existing served corpus returned two pre-existing Fresht
 the Freshteam correction (browser verification showed the query route opens the whole Board). Several SPA HTML bodies omit the title; those are not evidence
 of a wrong route. No rows from these three new ATSes exist in the served corpus yet:
 actual served-row/filter verification is a **post-pipeline follow-up**, not claimed here.
+
+Review follow-up: pricefx's three feed detail URLs name careers.pricefx.eu. The scraper now
+builds the provider-host route from url_slug; the Solution Strategist route was browser-verified
+to show that job's full description, salary and application control. This keeps the URL contract
+independent of customer vanity-host availability.

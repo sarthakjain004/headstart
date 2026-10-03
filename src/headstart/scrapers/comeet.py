@@ -100,6 +100,15 @@ class ComeetScraper(BaseScraper):
                 for field in fields
                 if field.get("value")
             )
+            workplace = (row.get("workplace_type") or "").lower()
+            stated_remote = {"on-site": False, "hybrid": None, "remote": True}
+            remote = (
+                stated_remote[workplace]
+                if workplace in stated_remote
+                else remote_from_workplace(
+                    row.get("workplace_type"), location.get("name")
+                )
+            )
             jobs.append(
                 Job(
                     id=self.job_id(row["uid"]),
@@ -107,9 +116,7 @@ class ComeetScraper(BaseScraper):
                     company=company["name"],
                     title=row["name"],
                     location=location.get("name"),
-                    remote=remote_from_workplace(
-                        row.get("workplace_type"), location.get("name")
-                    ),
+                    remote=remote,
                     department=row.get("department"),
                     url=self.job_url(row),
                     posted_at=None,

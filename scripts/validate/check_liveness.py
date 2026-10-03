@@ -1706,25 +1706,27 @@ def p_comeet(t, u):
 
 
 def p_jobscore(t, u):
+    # Keep liveness off the hourly feed budget. Public SSR HTML lists every job:
+    # facefoundri 197, clpinc 18, pricefx 3; blueleaf is explicitly empty (2026-10-03).
     board = _scraper_for_row("jobscore", t, u)
-    status, body = _get(board.url())
+    status, body = _get(f"https://careers.jobscore.com/careers/{board.slug}")
     if status in (404, 410):
         return DEAD, None
     if status != 200:
         _note(f"http-{status}")
         return UNKNOWN, None
-    try:
-        data = json.loads(body)
-        if not isinstance(data.get("jobs"), list) or not data.get("company_code"):
-            raise ValueError("not a Board feed")
-        if data["company_code"].lower() != board.slug:
-            # Old public labels retain the canonical feed: citylightandpower -> clpinc,
-            # oaklandshelter -> lighthousemi, challengepost -> devpost (2026-10-03).
-            return DEAD, None
-        return LIVE, len(data["jobs"])
-    except (ValueError, KeyError, TypeError, AttributeError):
+    page = body.decode("utf-8", "replace")
+    canonical = re.search(r"careers\.jobscore\.com/jobs/([\w-]+)/feed\.atom", page)
+    if not canonical:
         _note("body-unparseable")
         return UNKNOWN, None
+    if canonical[1].lower() != board.slug:
+        return DEAD, None
+    jobs = set(re.findall(r'data-url="(/careers/[^"/]+/jobs/[^"?]+)', page))
+    if jobs or "there are no open positions at this time" in page:
+        return LIVE, len(jobs)
+    _note("body-unparseable")
+    return UNKNOWN, None
 
 
 def p_polymer(t, u):

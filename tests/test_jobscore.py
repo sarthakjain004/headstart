@@ -74,3 +74,14 @@ def test_yen_compensation_is_already_in_whole_yen_not_cents():
     )
     (job,) = get_scraper("jobscore", "imgix").parse(raw, "now")
     assert salary.from_field(job.salary, ats="jobscore").min_annual == 10000000
+
+
+def test_vanity_feed_links_use_the_verified_provider_posting_route():
+    raw = json.loads(
+        (Path(__file__).parent / "fixtures/jobscore_pricefx.json").read_text()
+    )
+    jobs = get_scraper("jobscore", "pricefx").parse(raw, "now")
+    assert (
+        jobs[2].url
+        == "https://careers.jobscore.com/careers/pricefx/jobs/solution-strategist-dvcDLS919kwikf8MefTVkM"
+    )

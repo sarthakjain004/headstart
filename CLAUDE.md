@@ -210,7 +210,9 @@ registry, ADR directory and glossary; its searchable-job badge reads the live se
   normalizer rewrites only UIDs whose canonical public page was successfully read (ADR-0386).
 - **JobScore lands the feed's canonical `company_code` only.** Old labels can still return
   another account label's whole feed (`citylightandpower` → `clpinc`). The probe excludes
-  those aliases. Honor its hourly per-Board feed-poll guidance (ADR-0385).
+  those aliases using public HTML, without polling the feed. The planner defers a JobScore Board
+  until one hour after its persisted last look; manual feed reads must honor the same hourly
+  guidance (ADR-0385).
 
 ### To build, by evidence
 

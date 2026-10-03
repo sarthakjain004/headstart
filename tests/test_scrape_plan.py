@@ -870,3 +870,57 @@ def test_the_scrape_plan_job_fetches_exactly_the_state_files_the_planner_reads()
     )
     assert fetch, "scrape-plan's state_fetch step not found"
     assert set(fetch.group(1).split()) == read
+
+
+def test_jobscore_hourly_feed_floor_applies_before_priority_and_tail_selection(
+    tmp_path, monkeypatch
+):
+    ledger = tmp_path / "ledger"
+    ledger.mkdir()
+    today = datetime.now(UTC).date().isoformat()
+    (ledger / "jobscore.csv").write_text(
+        "ats,tenant,url,status,jobs,checked_at\n"
+        + "".join(
+            f"jobscore,{slug},https://careers.jobscore.com/careers/{slug},live,1,{today}\n"
+            for slug in ["recent", "old", "unseen"]
+        )
+    )
+    (ledger / "lever.csv").write_text(
+        f"ats,tenant,url,status,jobs,checked_at\nlever,recent,https://jobs.lever.co/recent,live,1,{today}\n"
+    )
+    cost = tmp_path / "cost.csv"
+    recent = (datetime.now(UTC) - timedelta(minutes=59)).isoformat()
+    old = (datetime.now(UTC) - timedelta(minutes=61)).isoformat()
+    cost.write_text(
+        f"board,seconds,jobs,updated_at\njobscore:recent,1,1,{recent}\njobscore:old,1,1,{old}\nlever:recent,1,1,{recent}\n"
+    )
+    priority = tmp_path / "priority.csv"
+    priority.write_text(
+        f"board,score,last_tech_jobs,updated_at\njobscore:recent,1000,1,{today}\n"
+    )
+    out = tmp_path / "out"
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "scrape_plan",
+            "--ledger",
+            str(ledger),
+            "--cost",
+            str(cost),
+            "--priority",
+            str(priority),
+            "--out-dir",
+            str(out),
+            "--max-boards",
+            "0",
+        ],
+    )
+    assert ps.main() == 0
+    seen = {
+        f"{row['ats']}:{row['slug']}"
+        for file in out.glob("shard-*.jsonl")
+        for line in file.read_text().splitlines()
+        if (row := json.loads(line))
+    }
+    assert seen == {"jobscore:old", "jobscore:unseen", "lever:recent"}

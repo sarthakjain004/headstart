@@ -44,3 +44,9 @@ The current address can change without re-keying jobs. Canonicalization is a req
 operation; failed canonical reads preserve previous evidence. Consent pages are not bypassed.
 The [measurement](../comeet/2026-10-03_public-api-measurement.md) records discovery coverage,
 non-English prevalence and the post-pipeline served-row verification still required.
+
+Review follow-up: explicit On-site now overrides contradictory Remote location text
+(41 captured jobs; Zero Networks 83.26C is the regression fixture). Canonical normalization
+preserves capture timestamps, rejects proofs older than any ledger verdict, streams each
+attempt, and atomically checkpoints dated proofs; `--resume` continues a partial scan.
+Captures with no reliable timestamp are declined rather than stamped as current.

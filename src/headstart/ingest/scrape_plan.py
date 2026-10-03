@@ -412,6 +412,31 @@ def main() -> int:
     # seconds to decide what is worth a shard's makespan, and a Board dropped after selection
     # would still have taken a slot from something that would have been scraped.
     cost_rows = load_cost_ledger(Path(args.cost))
+    # JobScore's published-feed guide asks for at most hourly reads (ADR-0385).
+    # Runs chain faster than hourly. The persisted cost stamp is written at join,
+    # after the read, so an hour after it is a conservative earliest next request.
+    poll_cutoff = datetime.now(UTC) - timedelta(hours=1)
+    poll_held = set()
+    for company in companies:
+        if company.ats != "jobscore":
+            continue
+        key = cost_ledger.key_for(company)
+        row = cost_rows.get(key)
+        if row is None:
+            continue
+        try:
+            looked = datetime.fromisoformat(row.updated_at)
+        except ValueError:
+            continue
+        if looked.tzinfo is None:
+            looked = looked.replace(tzinfo=UTC)
+        if looked > poll_cutoff:
+            poll_held.add(key)
+    if poll_held:
+        companies = [c for c in companies if cost_ledger.key_for(c) not in poll_held]
+        _log.info(
+            f"JobScore feed cadence: deferred {len(poll_held)} Board(s) read within an hour"
+        )
     gated = _gated_boards(
         [cost_ledger.key_for(c) for c in companies],
         cost_rows,
