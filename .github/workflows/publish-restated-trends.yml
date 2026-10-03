@@ -54,7 +54,9 @@ jobs:
       - name: Fetch pinned runner-only inputs
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-        run: python -u -m headstart.ingest.restate_publish fetch --repo "$HF_DATASET"
+        run: |
+          python -u scripts/eval/prepare_restatement_runner.py
+          python -u -m headstart.ingest.restate_publish fetch --repo "$HF_DATASET"
       # Current rules only. Frozen-reference comparisons belong to the independent verifier.
       # The engine consumes HEADSTART_RESTATE_INPUT_REVISION/INPUT_INVENTORY/CODE_SHA and
       # writes replay.json; absence of that metadata fails packaging, never fabricates a pass.

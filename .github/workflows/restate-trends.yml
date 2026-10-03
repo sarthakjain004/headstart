@@ -66,6 +66,7 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           DATASET_REVISION: ${{ inputs.dataset_revision }}
         run: |
+          python -u scripts/eval/prepare_restatement_runner.py
           echo "HEADSTART_RESTATE_CODE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
           python -u -m headstart.ingest.restate_publish fetch --revision "$DATASET_REVISION"
       - name: Restate
