@@ -301,7 +301,7 @@ PATTERNS: dict[str, tuple[str, list[str]]] = {
     "comeet": (
         "ats",
         [
-            r"(?:www\.)?comeet\.co(?:m)?/jobs/([a-zA-Z0-9_.-]+/[A-Fa-f0-9]+\.[A-Fa-f0-9]+)(?=[/?#\s]|$)"
+            r"(?:www\.)?comeet\.co(?:m)?/jobs/([a-zA-Z0-9_.-]+/[A-Fa-f0-9]+\.[A-Fa-f0-9]+)"
         ],
     ),
     "polymer": ("ats", [r"jobs\.polymer\.co/([a-zA-Z0-9_-]+)"]),

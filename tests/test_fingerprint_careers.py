@@ -1437,3 +1437,13 @@ def test_comeet_and_polymer_fingerprints_are_scrapable_board_coordinates():
         )
         == "nsure/a7.007"
     )
+
+
+def test_comeet_board_links_are_discovered_inside_html_attributes():
+    found = {
+        (ats, tenant)
+        for ats, _kind, tenant, _n in fp.scan(
+            '<a href="https://www.comeet.com/jobs/nsure/A7.007">Careers</a>', "acme.com"
+        )
+    }
+    assert ("comeet", "nsure/a7.007") in found
