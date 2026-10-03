@@ -359,7 +359,7 @@ def test_complete_baseline_keeps_a_served_job_absent_from_all_scrapes(
     import pyarrow.parquet as pq
 
     first_tick = pq.read_table(
-        sorted((tmp_path / "restated" / trend_history.DELTAS).glob("*.parquet"))[0]
+        min((tmp_path / "restated" / trend_history.DELTAS).glob("*.parquet"))
     ).to_pylist()
     assert sum(row["delta"] for row in first_tick if row["metric"] == "opened") == 0
     assert (
