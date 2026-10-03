@@ -466,6 +466,17 @@ def rows_by_id(table):
     return rows
 
 
+def reference_rows(reference):
+    """Stream checkpoint bodies while keeping uniqueness global to that checkpoint."""
+    seen = set()
+    for batch in reference.iter_batches(batch_size=4096):
+        for job_id, row in rows_by_id(pa.Table.from_batches([batch])).items():
+            if job_id in seen:
+                raise ValueError("missing or repeated source id")
+            seen.add(job_id)
+            yield job_id, row
+
+
 def candidate_ticks(root, fingerprint, revision):
     """Read narrow deltas/placements only. Duplicate stamps fail rather than overwrite."""
     out, bound = {}, True
@@ -1194,21 +1205,20 @@ def verify(
             raise ValueError("reference must begin at complete baseline")
         method = json.loads(metadata.get(b"methodology", b"{}"))
         fingerprint = captured_fingerprint(method, inputs)
-        for batch in reference.iter_batches(batch_size=4096):
-            for job_id, row in rows_by_id(pa.Table.from_batches([batch])).items():
-                if row["kind"] == "removed":
-                    if job_id not in current:
-                        raise ValueError("removal of unknown reference id")
-                    del current[job_id]
-                elif row["kind"] == "present":
-                    current[job_id] = row | {
-                        "classifier_input_fingerprint": fingerprint,
-                        "_source_observed_at": tick,
-                    }
-                    observed_reference[job_id] = current[job_id]
-                    seen_reference.add(job_id)
-                else:
-                    raise ValueError("unknown reference kind")
+        for job_id, row in reference_rows(reference):
+            if row["kind"] == "removed":
+                if job_id not in current:
+                    raise ValueError("removal of unknown reference id")
+                del current[job_id]
+            elif row["kind"] == "present":
+                current[job_id] = row | {
+                    "classifier_input_fingerprint": fingerprint,
+                    "_source_observed_at": tick,
+                }
+                observed_reference[job_id] = current[job_id]
+                seen_reference.add(job_id)
+            else:
+                raise ValueError("unknown reference kind")
         del reference
         previous = reference_tick
         if baseline is None:

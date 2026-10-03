@@ -898,6 +898,15 @@ def test_candidate_placements_are_indexed_without_loading_all_snapshots(
     assert all(isinstance(path, Path) for path in snapshots.values())
 
 
+def test_reference_ids_must_be_unique_across_batch_boundaries(tmp_path):
+    path = tmp_path / "reference.parquet"
+    rows = [{"id": str(number), "kind": "present"} for number in range(4096)]
+    rows.append(rows[0].copy())
+    pq.write_table(pa.Table.from_pylist(rows), path)
+    with pytest.raises(ValueError, match="missing or repeated source id"):
+        list(verifier.reference_rows(pq.ParquetFile(path)))
+
+
 def test_legacy_captured_math_reuse_requires_matching_archived_weights_and_normalise(
     tmp_path, policy
 ):
