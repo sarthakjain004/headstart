@@ -1265,10 +1265,9 @@ def test_native_descriptor_retains_previous_vector_math_not_future(
     )
     future = source(vector=np.array([4, 4], np.float16), _source_observed_at=fourth)
     inputs = pinned_native_inputs(facts, store)
-    inputs["reference_observations"] = {job_id: [(FIRST, first), (fourth, future)]}
     for tick, text in ((SECOND, text2), (third, text3)):
         rows, unknown = verifier.materialize_raw_inputs(
-            {job_id: source(experience=None)}, {job_id: future}, [], tick, inputs
+            {job_id: source(experience=None)}, {job_id: first}, [], tick, inputs
         )
         assert not unknown
         assert np.array_equal(rows[job_id]["vector"], [1, 1])
@@ -1276,6 +1275,14 @@ def test_native_descriptor_retains_previous_vector_math_not_future(
         assert rows[job_id]["description"] == text
         policy.transform(rows, "matching-inputs")
         assert policy.years[job_id] == (3 if tick == SECOND else 8)
+    # At the later reference, older descriptors cannot overwrite newer observed
+    # text/vector/math. Chronological caller supplies only the latest source.
+    rows, unknown = verifier.materialize_raw_inputs(
+        {job_id: source(experience=None)}, {job_id: future}, [], fourth, inputs
+    )
+    assert not unknown
+    assert np.array_equal(rows[job_id]["vector"], [4, 4])
+    assert rows[job_id]["description"] == future["description"]
 
 
 def test_bootstrap_and_wrong_attempt_keep_actual_observation_time(
@@ -1442,3 +1449,26 @@ def test_committed_prefix_consumes_intermediate_facts_without_exporting_them(tmp
     selected = verifier.verification_inputs(metadata, facts, state)
     assert [entry["tick"] for entry in selected["ticks"]] == [FIRST, third]
     assert selected["unexported_raw_ticks"] == [SECOND]
+
+
+def test_dense_reference_updates_do_not_accumulate_source_history(tmp_path, policy):
+    first = reference(tmp_path / "first.parquet", [source()])
+    second = reference(
+        tmp_path / "second.parquet",
+        [
+            source(
+                description="We build software services and require three years of experience."
+            )
+        ],
+        SECOND,
+        FIRST,
+    )
+    root = tmp_path / "candidate"
+    candidate(root, [placement()])
+    candidate(root, [placement()], SECOND, deltas=[])
+    request = inputs(first)
+    request["ticks"].append(
+        inputs(second, tick=SECOND, reference_tick=SECOND)["ticks"][0]
+    )
+    verifier.verify(request, tmp_path, root, policy)
+    assert "reference_observations" not in request

@@ -823,10 +823,6 @@ def materialize_raw_inputs(raw, reference, paths, tick, inputs):
         if row.get("_source_observed_at", "") <= tick
     }
     starts = {}
-    for job_id, records in inputs.get("reference_observations", {}).items():
-        eligible = [(at, row) for at, row in records if at <= tick]
-        if eligible:
-            observed[job_id] = max(eligible, key=lambda value: value[0])[1]
     for path in paths:
         schema = pq.read_schema(path)
         metadata = schema.metadata or {}
@@ -844,19 +840,8 @@ def materialize_raw_inputs(raw, reference, paths, tick, inputs):
                     }
                     starts[row["id"]] = at
     native = native_description_inputs(inputs, tick, raw)
-    history = inputs.get("reference_observations", {})
     for job_id, descriptor in native.items():
-        candidates = [
-            (at, row)
-            for at, row in history.get(job_id, ())
-            if at <= descriptor["observed_at"]
-        ]
-        candidates += (
-            [(starts[job_id], observed[job_id])]
-            if job_id in starts and starts[job_id] <= descriptor["observed_at"]
-            else []
-        )
-        anchor = max(candidates, key=lambda value: value[0])[1] if candidates else None
+        anchor = observed.get(job_id)
         current_at = observed.get(job_id, {}).get(
             "_source_observed_at", starts.get(job_id, "")
         )
@@ -1100,9 +1085,6 @@ def verify(
                     "classifier_input_fingerprint": fingerprint,
                     "_source_observed_at": tick,
                 }
-                inputs.setdefault("reference_observations", {}).setdefault(
-                    job_id, []
-                ).append((tick, current[job_id]))
                 observed_reference[job_id] = current[job_id]
                 seen_reference.add(job_id)
             else:
