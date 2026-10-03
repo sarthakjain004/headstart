@@ -35,6 +35,27 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         "jobscore:mergetestaccount",
         "jobscore:jobscoremiddlewaretestcompany",
         "jobscore:bugfest",
+        # PageUp, read 2026-10-03: 584 says "PageUp Demo Careers" and "This is a
+        # test job"; 600 says "Careers-template | AquaCorp" with lorem-ipsum copy.
+        # Every 725 channel below publishes the same five demonstration records,
+        # including a malformed "Brand Manager Officer & - &amp" lorem-ipsum ad.
+        "pageup:584/caw/en",
+        "pageup:600/caw/en",
+        "pageup:725/smbone/en",
+        "pageup:725/smbtwo/en",
+        "pageup:725/smbthree/en",
+        "pageup:725/templateone/en",
+        "pageup:725/templatetwo/en",
+        "pageup:725/templatethree/en",
+        # Expanded cache audit: 218 and 9999 carry location-test/automation/lorem
+        # jobs; 650 contains employee-referral demos and "Testing references";
+        # 517 calls itself PageUpDemo and repeats one unrelated description across
+        # four differently titled roles. Confirmed from posting content, not slugs.
+        "pageup:218/cw/en",
+        "pageup:218/nostyle/en",
+        "pageup:517/caw/en",
+        "pageup:650/cw/en",
+        "pageup:9999/caw/en",
         # Ashby's turn, found late (ADR-0114) by reading board titles rather than slugs:
         # `krakensandbox` titles itself "Kraken Sandbox Jobs" and serves 3 postings,
         # content-confirmed as templates ("Basic Job Template", "Admin Assistant Testing").

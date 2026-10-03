@@ -162,7 +162,7 @@ All requests used `headstart/0.1`, with either JSON Accept or browser-style HTML
 
 ## Captures and candidate pool
 
-Candidate-grade union before advanced hosts: **2,948**, comprising2,824 upstream slugs and124 main-checkout-only slugs (main input193). Adding the three directly observed advanced hosts produces **2,951 source-surface candidates**. Old and new surfaces may belong to the same account, so this is not a unique-employer count. No CC/Wayback requests were made by this task, and no liveness ledger was written.
+Candidate-grade union before advanced hosts: **2,948**, comprising2,824 upstream slugs and124 main-checkout-only slugs (main input193). Adding the three directly observed advanced hosts produces **2,951 source-surface candidates**. Old and new surfaces may belong to the same account, so this is not a unique-employer count. Those figures describe the initial research cohort, before the completed archive recovery and committed liveness ledgers below.
 
 Key local reproducible artifacts:
 
@@ -188,3 +188,11 @@ Browser checks opened the actual Manatal legacy Business Development Internship 
 Raw captures and all limitations are retained under `experiment/manatal-public-api/` and `experiment/three-ats-build/`; the source-specific protocol decisions are committed here.
 
 Archive sanitation rejected 39 malformed URL path labels (RGB colours, JavaScript expressions and pasted text). None resolved live: 37 were dead and two unresolved. They remain in raw captures but are absent from the valid candidate pool and committed ledger.
+
+## Final verification after archive and overlap recovery
+
+The requested older Common Crawl range and every known Wayback namespace are complete. The raw expanded pool had 4,868 addresses; one root `llms.txt` metadata file was excluded as infrastructure, leaving 4,867 candidate rows. New legacy evidence adds 51 live, 2 dead and 3 unknown labels; 145 new advanced hosts remain explicitly unverified. No refusal was bypassed.
+
+Short direct/spare ramps completed 2,048 requests through concurrency 128 without refusal. A sustained 16 starts/s run then received 429 after 1,221 requests/~79 seconds and stopped. The production legacy budget remains the demonstrated sustained 2 starts/s; burst success does not establish a higher lasting quota.
+
+The public frontend's ordering parameter is now sent to v3. The audit additionally used complete walks, unions, organization/geography partitions and alternate page windows. It recovered Mercor's full 16,888 IDs. Final residuals are 29 IDs below stable totals on 7 Boards, one changing-count Board and unread advanced surfaces. Every runtime pagination deficit now marks incomplete, including deficits below 2%, protecting closure inference. Full observed records were compared against the existing corpus; residuals are counted explicitly rather than represented as absent Jobs.

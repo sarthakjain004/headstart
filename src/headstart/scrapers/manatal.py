@@ -26,6 +26,9 @@ from headstart.scrapers.base import (
 )
 from headstart.scrapers.pacer import Pacer
 
+# 2,048 short-ramp requests succeeded through concurrency 128, but a sustained
+# 16-starts/s census first received 429 after 1,221 requests (~79 seconds).
+# Keep the demonstrated long-run two-starts/s budget; concurrency is not quota.
 _API_PACER = Pacer(0.5)
 _HTML_PACER = Pacer(1.25)
 _VOID = frozenset(
@@ -230,6 +233,7 @@ def advanced_listing(page: str, url: str) -> dict:
 
 class ManatalScraper(BaseScraper):
     ats = "manatal"
+    spare_on_transport_error = True
     has_detail_pass = (
         True  # advanced HTML only; legacy JSON already carries descriptions
     )
@@ -322,7 +326,14 @@ class ManatalScraper(BaseScraper):
                 response = self._fetch(
                     "GET",
                     self.url(),
-                    params={"page": page, "page_size": 100},
+                    # The public frontend names this supported ordering. Without
+                    # it Mercor's offset walk repeated ids and lost 961/16,888.
+                    # Explicit ordering gave disjoint pages and stable repeats.
+                    params={
+                        "page": page,
+                        "page_size": 100,
+                        "ordering": "-is_pinned_in_career_page,-last_published_at",
+                    },
                     headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
                     timeout=30,
                 )
@@ -347,9 +358,8 @@ class ManatalScraper(BaseScraper):
             for row in body["results"]:
                 rows[row["id"]] = row
             if not body["next"] or len(rows) == before:
-                self.mark_truncated_unless_negligible(
-                    len(rows), expected, f"Manatal read {len(rows)} of {expected}"
-                ) if len(rows) < expected else None
+                if len(rows) < expected:
+                    self.mark_truncated(f"Manatal read {len(rows)} of {expected}")
                 break
             page += 1
         organization_is_department = False
@@ -418,9 +428,7 @@ class ManatalScraper(BaseScraper):
                 break
             url = page["next"]
         if len(rows) < expected:
-            self.mark_truncated_unless_negligible(
-                len(rows), expected, f"Manatal advanced read {len(rows)} of {expected}"
-            )
+            self.mark_truncated(f"Manatal advanced read {len(rows)} of {expected}")
         return {
             "rows": list(rows.values()),
             "advanced": True,

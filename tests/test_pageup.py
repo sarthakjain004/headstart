@@ -79,6 +79,58 @@ def test_migrated_board_cannot_serve_a_retained_feed_with_generic_search_job_lin
         scraper.fetch_raw()
 
 
+@pytest.mark.parametrize(
+    "account,slug", [("1032", "1032/cw/en"), ("539", "539/cawtwo/en")]
+)
+def test_http_200_meta_refresh_cannot_hide_a_generic_search_migration(account, slug):
+    def route(_method, url, _kwargs):
+        fixture = (
+            f"pageup_{account}_migration_feed.xml"
+            if url.endswith("/rss")
+            else f"pageup_{account}_soft_migration.html"
+        )
+        return FakeResponse(text=(FIXTURES / fixture).read_text())
+
+    scraper = PageUpScraper(slug, fetcher=FakeFetcher(route))
+    with pytest.raises(http.RequestsError, match="gone"):
+        scraper.fetch_raw()
+
+
+def test_a_fragment_addressed_external_job_is_unknown_not_proven_gone():
+    from headstart.scrapers.pageup import MigratedBoard
+
+    def route(_method, url, _kwargs):
+        if url.endswith("/rss"):
+            return FakeResponse(
+                text=(FIXTURES / "pageup_1032_migration_feed.xml").read_text()
+            )
+        page = (FIXTURES / "pageup_1032_soft_migration.html").read_text()
+        return FakeResponse(
+            text=page.replace(
+                "https://careers.g8education.edu.au/jobs/search",
+                "https://example.com/#job/521876",
+            )
+        )
+
+    with pytest.raises(BoardUnreadable) as caught:
+        PageUpScraper("1032/cw/en", fetcher=FakeFetcher(route)).fetch_raw()
+    assert not isinstance(caught.value, MigratedBoard)
+
+
+def test_one_closed_job_does_not_declare_an_externally_fronted_board_dead():
+    def route(_method, url, _kwargs):
+        if url.endswith("/rss"):
+            return FakeResponse(text=(FIXTURES / "pageup_kinetic.xml").read_text())
+        if "/job/" in url:
+            return FakeResponse(404, "gone posting")
+        return FakeResponse(
+            text="current branded career site", url="https://example.com/careers"
+        )
+
+    with pytest.raises(BoardUnreadable, match="one retained"):
+        PageUpScraper("1083/cw/en", fetcher=FakeFetcher(route)).fetch_raw()
+
+
 def test_generic_jobs_title_is_not_adopted_as_the_employer():
     def route(_method, url, _kwargs):
         body = (

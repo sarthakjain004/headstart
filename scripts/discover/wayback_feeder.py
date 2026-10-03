@@ -497,6 +497,8 @@ def extract(url: str, host: str, style: Style) -> tuple[str, str] | None:
             return None
         if style == "pageup":
             return slug, f"https://careers.pageuppeople.com/{slug}/listing/"
+        if slug.lower().endswith(FILE_SUFFIXES):
+            return None
         return slug, f"https://{slug}/" if slug.endswith(
             ".careers-page.com"
         ) else f"https://www.careers-page.com/{urllib.parse.quote(slug, safe='')}"
