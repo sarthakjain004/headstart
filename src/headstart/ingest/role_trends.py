@@ -515,7 +515,11 @@ def main() -> int:
                 placed,
                 args.reference_facts,
                 ts,
-                asdict(methodology) | {"rules_fingerprint": rules},
+                asdict(methodology)
+                | {
+                    "rules_fingerprint": rules,
+                    "classifier_inputs_fingerprint": head.inputs_fingerprint,
+                },
                 state_dir=args.state,
                 row_parts=dict(zip(ids, row_logits, strict=True)),
                 title_cache=cache,

@@ -138,6 +138,34 @@ Historical edits keep their own input versions. This supplements pre-filter Job
 facts; it does not invent raw fields absent from the served table. Half precision
 remains approximate near classifier decision boundaries.
 
+Reference change detection keys row scores by their mathematical inputs, not
+float32 BLAS roundoff: `classifier_inputs_fingerprint` in reference Methodology
+is the head's SHA-256 over its loaded title/row weights and bias (shapes and
+little-endian float32 C-order bytes), title embedding model/revision/width and
+row embedding model/revision/width. An unstated row-model revision stays null;
+the fingerprint also includes canonical ASTs of `Head.title_logits`,
+`Head.row_logits` and `normalise`, excluding docstrings and source positions.
+Cutoff, family labels, version labels, postprocessing and Board coverage are
+excluded. The digest still reads source fields (including served experience
+provenance), original full-precision vectors, title logits and observed placement.
+Full float32 row logits remain captured for validation; callers without this
+fingerprint retain the legacy score-sensitive digest. Existing checkpoints are
+not rewritten; the first fingerprinted capture may record a one-time transition.
+Each present checkpoint row also keeps `vector_fingerprint`, a SHA-256 of its
+original little-endian float32 C-order vector bytes, with field metadata tracing
+the source to `vector`; removals carry null. It participates in the raw-input
+digest and distinguishes float32 changes whose archived float16 vectors collide,
+without storing another full-precision vector. An old baseline's missing head
+fingerprint can only be reconstructed from archived configuration after its three
+math-code ASTs are verified against today's; otherwise its identity stays unknown.
+
+Reference checkpoints also retain served `max_years` and `experience_source` where
+available, alongside `min_years`. A missing description does not establish that
+the stored experience was title-derived; its recorded source distinguishes those
+cases. Changes to these provenance fields produce checkpoint edits even when the
+counted band stays unchanged. Earlier checkpoints without these fields remain
+readable, but their missing provenance is unknown, not inferred retroactively.
+
 The checkpoint index commits with live tick state; input fragments name their parent
 and run identity. Orphan fragments from failed state publication cannot advance
 the next checkpoint. Code, model configuration and Board ledgers are preserved by

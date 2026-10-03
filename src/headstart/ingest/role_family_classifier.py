@@ -33,9 +33,13 @@ Trends series.
 
 from __future__ import annotations
 
+import ast
 import functools
+import hashlib
+import inspect
 import json
 import re
+import textwrap
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
@@ -97,6 +101,7 @@ class Head:
         self.model: str = manifest["model"]
         self.model_revision: str = manifest["model_revision"]
         self.row_vector_model: str = manifest["row_vector"]["model"]
+        self.row_vector_revision: str | None = manifest["row_vector"].get("revision")
         self.row_vector_dim: int = manifest["row_vector"]["dim"]
         self.families: list[str] = manifest["families"]
         self.cutoff: float = manifest["cutoff"]
@@ -122,6 +127,51 @@ class Head:
             raise ValueError(
                 f"{directory}: '{UNCLASSIFIED}' is what the cutoff produces, never a trained class"
             )
+
+    @property
+    def inputs_fingerprint(self) -> str:
+        """SHA-256 of logit mathematics, excluding cutoff and placement policy.
+
+        Hash loaded weights as little-endian float32 in C order, with their shapes,
+        embedding identities/widths and the canonical ASTs of title_logits,
+        row_logits and normalise (without docstrings or source positions).
+        A row revision absent from the manifest
+        stays unknown (None); never infer it from the caller's current embedder.
+        """
+        inputs = {
+            "title_model": self.model,
+            "title_revision": self.model_revision,
+            "title_dim": self._title_weights.shape[1],
+            "row_model": self.row_vector_model,
+            "row_revision": self.row_vector_revision,
+            "row_dim": self.row_vector_dim,
+        }
+        for name, values in (
+            ("title_weights", self._title_weights),
+            ("row_weights", self._row_weights),
+            ("bias", self._bias),
+        ):
+            inputs[name] = {
+                "shape": values.shape,
+                "sha256": hashlib.sha256(values.astype("<f4").tobytes()).hexdigest(),
+            }
+        for name, function in (
+            ("title_logits", self.title_logits),
+            ("row_logits", self.row_logits),
+            ("normalise", normalise),
+        ):
+            node = ast.parse(textwrap.dedent(inspect.getsource(function))).body[0]
+            if ast.get_docstring(node) is not None:
+                del node.body[0]
+            # Python 3.14's ast.dump omits empty lists; 3.12's includes them.
+            for child in ast.walk(node):
+                for field, value in ast.iter_fields(child):
+                    if isinstance(value, list) and not value:
+                        delattr(child, field)
+            inputs[name] = ast.dump(node, include_attributes=False)
+        return hashlib.sha256(
+            json.dumps(inputs, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
 
     def title_logits(self, title_vectors: np.ndarray) -> np.ndarray:
         """The title part of each row's logits: what the cache keeps per title."""

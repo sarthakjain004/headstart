@@ -85,6 +85,7 @@ def capture(
     prior_path = state_dir / STATE
     prior = {}
     previous_tick = ""
+    classifier_inputs = methodology.get("classifier_inputs_fingerprint")
     if prior_path.exists():
         old = pq.read_table(prior_path)
         previous_tick = (old.schema.metadata or {}).get(b"ts", b"").decode()
@@ -92,6 +93,9 @@ def capture(
             raise ValueError("reference tick must advance its stamped parent")
         prior = {r["id"]: r for r in old.to_pylist()}
     columns = ["id", "ats", "first_seen", "description", "min_years", "vector"]
+    columns += [
+        c for c in ("max_years", "experience_source") if c in table.schema.names
+    ]
     columns += [c for c in RAW_FIELDS if c in table.schema.names]
     columns = list(dict.fromkeys(columns))
     absent = set(columns) - set(table.schema.names)
@@ -105,6 +109,15 @@ def capture(
             f if f.name != "vector" else pa.field("vector", pa.list_(pa.float16()))
             for f in source_schema
         ],
+        pa.field(
+            "vector_fingerprint",
+            pa.string(),
+            metadata={
+                b"source_columns": b'["vector"]',
+                b"algorithm": b"sha256",
+                b"encoding": b"little-endian-float32-c-order",
+            },
+        ),
         pa.field("reference_board", pa.string()),
         pa.field("reference_family", pa.string()),
         pa.field("reference_band", pa.string()),
@@ -151,6 +164,8 @@ def capture(
                     if vector.shape != (width,) or not np.isfinite(vector).all():
                         raise ValueError(f"invalid reference vector for {job_id}")
                     raw = {k: v for k, v in source.items() if k != "vector"}
+                    vector_bytes = vector.astype("<f4", copy=False).tobytes()
+                    raw["vector_fingerprint"] = hashlib.sha256(vector_bytes).hexdigest()
                     title_part = (
                         title_cache.title_logits.get(normalise(source.get("title")))
                         if title_cache is not None
@@ -161,9 +176,18 @@ def capture(
                         None if title_part is None else title_part.tolist()
                     )
                     raw["row_logits"] = None if row_part is None else row_part.tolist()
+                    digest_inputs = raw.copy()
+                    if classifier_inputs:
+                        # BLAS batching can move float32 scores for identical inputs.
+                        # Keep exact observed scores in the capture, but key changes
+                        # on their mathematical inputs and the observed placement.
+                        del digest_inputs["row_logits"]
+                        digest_inputs["classifier_inputs_fingerprint"] = (
+                            classifier_inputs
+                        )
                     digest = hashlib.sha256(
-                        json.dumps([raw, where], sort_keys=True).encode()
-                        + vector.tobytes()
+                        json.dumps([digest_inputs, where], sort_keys=True).encode()
+                        + vector_bytes
                     ).hexdigest()
                     state = dict(
                         zip(_STATE_COLUMNS, (job_id, digest, *where), strict=True)
@@ -175,6 +199,7 @@ def capture(
                                 "kind": "present",
                                 **source,
                                 "vector": vector.astype(np.float16).tolist(),
+                                "vector_fingerprint": raw["vector_fingerprint"],
                                 "reference_board": where[0],
                                 "reference_family": where[1],
                                 "reference_band": where[2],

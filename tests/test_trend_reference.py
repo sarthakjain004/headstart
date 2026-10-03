@@ -1,14 +1,17 @@
 """A checkpoint retains unread incumbents and historical edits without full rewrites."""
 
+import json
 from pathlib import Path
 
 import lancedb
+import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
 from headstart.ingest import trend_reference as tr
 from headstart.ingest.role_assignments import Placement
+from headstart.ingest.role_family_classifier import Cache
 
 
 def source(tmp_path, rows):
@@ -38,6 +41,8 @@ def test_baseline_retains_a_job_not_seen_in_new_scrapes_and_quiet_ticks_are_empt
         table, placed, tmp_path / "facts", "2026-10-02T00:00:00+00:00", {}
     )
     assert pq.read_schema(first).metadata[b"baseline"] == b"true"
+    assert "max_years" not in pq.read_schema(first).names
+    assert "experience_source" not in pq.read_schema(first).names
     assert pq.read_table(first)["first_seen"].to_pylist() == ["2026-09-01"]
     second = tr.capture(
         table, placed, tmp_path / "facts", "2026-10-02T01:00:00+00:00", {}
@@ -72,6 +77,182 @@ def test_edit_and_removal_preserve_the_original_inputs(tmp_path):
         ("lever:acme:2", "removed"),
     }
     assert rows[0]["description"] == "Edited"
+
+
+@pytest.mark.parametrize("fingerprint", ["a" * 64, None])
+def test_row_logit_roundoff_is_quiet_only_with_known_input_identity(
+    tmp_path, fingerprint
+):
+    table = source(tmp_path, [job()])
+    facts = tmp_path / "facts"
+    methodology = {"classifier_inputs_fingerprint": fingerprint} if fingerprint else {}
+    original = np.array([0.123456789, -0.25], dtype=np.float32)
+    rounded = np.nextafter(original, np.float32(np.inf))
+    first = tr.capture(
+        table,
+        {},
+        facts,
+        "2026-10-02T00:00:00+00:00",
+        methodology,
+        row_parts={"lever:acme:1": original},
+    )
+    second = tr.capture(
+        table,
+        {},
+        facts,
+        "2026-10-02T01:00:00+00:00",
+        methodology,
+        row_parts={"lever:acme:1": rounded},
+    )
+    assert pq.read_table(second).num_rows == (0 if fingerprint else 1)
+    retained = pq.read_table(first)
+    assert retained.schema.field("row_logits").type.value_type == pa.float32()
+    assert retained["row_logits"].to_pylist() == [original.tolist()]
+    assert retained["vector_fingerprint"].to_pylist() == [
+        "10f189becc7cf227557e11f3999c4d6cbd844eb864a785d0468e6b112c85bc82"
+    ]
+    if fingerprint:
+        third = tr.capture(
+            table,
+            {},
+            facts,
+            "2026-10-02T02:00:00+00:00",
+            {"classifier_inputs_fingerprint": "b" * 64},
+            row_parts={"lever:acme:1": rounded},
+        )
+        assert pq.read_table(third).num_rows == 1
+        assert pq.read_table(third)["row_logits"].to_pylist() == [rounded.tolist()]
+
+
+@pytest.mark.parametrize(
+    "edit",
+    [
+        "vector",
+        "description",
+        "max_years",
+        "experience_source",
+        "title_logits",
+        "placement",
+    ],
+)
+def test_known_input_identity_still_records_input_and_placement_edits(tmp_path, edit):
+    facts = tmp_path / "facts"
+    row = job() | {"max_years": 5, "experience_source": "regex"}
+    methodology = {"classifier_inputs_fingerprint": "a" * 64}
+    placed = {
+        "lever:acme:1": Placement("lever:acme", "software-engineering", "mid", "lever")
+    }
+    cache = Cache(1, {"engineer": np.array([0.2, 0.3], dtype=np.float32)})
+    scores = {"lever:acme:1": np.array([0.1, 0.2], dtype=np.float32)}
+    tr.capture(
+        source(tmp_path, [row]),
+        placed,
+        facts,
+        "2026-10-02T00:00:00+00:00",
+        methodology,
+        row_parts=scores,
+        title_cache=cache,
+    )
+    if edit == "vector":
+        # A real float32 edit that the archived float16 vector cannot distinguish.
+        changed = float(np.nextafter(np.float32(0.1), np.float32(np.inf)))
+        assert np.float16(changed) == np.float16(0.1)
+        row["vector"] = [changed, 0.2]
+    elif edit == "title_logits":
+        cache = Cache(1, {"engineer": np.array([0.4, 0.3], dtype=np.float32)})
+    elif edit == "placement":
+        placed["lever:acme:1"] = Placement("lever:acme", "qa-test", "mid", "lever")
+    else:
+        row[edit] = {
+            "description": "Edited",
+            "max_years": 6,
+            "experience_source": "field",
+        }[edit]
+    second = tr.capture(
+        source(tmp_path, [row]),
+        placed,
+        facts,
+        "2026-10-02T01:00:00+00:00",
+        methodology,
+        row_parts=scores,
+        title_cache=cache,
+    )
+    assert pq.read_table(second).num_rows == 1
+    assert pq.read_table(second)["row_logits"].to_pylist() == [
+        scores["lever:acme:1"].tolist()
+    ]
+
+
+def test_vector_fingerprint_retains_float32_identity_through_half_precision_collision(
+    tmp_path,
+):
+    facts = tmp_path / "facts"
+    methodology = {"classifier_inputs_fingerprint": "a" * 64}
+    first = tr.capture(
+        source(tmp_path, [job(), job("lever:acme:2")]),
+        {},
+        facts,
+        "2026-10-02T00:00:00+00:00",
+        methodology,
+    )
+    before = pq.read_table(first)
+    field = before.schema.field("vector_fingerprint")
+    assert field.type == pa.string() and field.nullable
+    assert json.loads(field.metadata[b"source_columns"]) == ["vector"]
+    assert field.metadata[b"encoding"] == b"little-endian-float32-c-order"
+    changed = float(np.nextafter(np.float32(0.1), np.float32(np.inf)))
+    second = tr.capture(
+        source(tmp_path, [job(vector=[changed, 0.2])]),
+        {},
+        facts,
+        "2026-10-02T01:00:00+00:00",
+        methodology,
+    )
+    after = {r["id"]: r for r in pq.read_table(second).to_pylist()}
+    original = before.to_pylist()[0]
+    assert original["vector_fingerprint"] == (
+        "10f189becc7cf227557e11f3999c4d6cbd844eb864a785d0468e6b112c85bc82"
+    )
+    assert original["vector"] == after["lever:acme:1"]["vector"]
+    assert original["vector_fingerprint"] != after["lever:acme:1"]["vector_fingerprint"]
+    assert after["lever:acme:2"]["kind"] == "removed"
+    assert after["lever:acme:2"]["vector_fingerprint"] is None
+
+
+@pytest.mark.parametrize("edit", [{"max_years": 6}, {"experience_source": "field"}])
+def test_null_description_keeps_provenance_and_provenance_only_edits(tmp_path, edit):
+    facts = tmp_path / "facts"
+    row = job(description=None) | {"max_years": 5, "experience_source": "regex"}
+    placed = {
+        "lever:acme:1": Placement("lever:acme", "software-engineering", "mid", "lever")
+    }
+    first = tr.capture(
+        source(tmp_path, [row]), placed, facts, "2026-10-02T00:00:00+00:00", {}
+    )
+    second = tr.capture(
+        source(tmp_path, [row | edit]),
+        placed,
+        facts,
+        "2026-10-02T01:00:00+00:00",
+        {},
+    )
+    assert pq.read_table(second).num_rows == 1
+    ticks = list(
+        tr.checkpoints(
+            facts, ["2026-10-02T00:00:00+00:00", "2026-10-02T01:00:00+00:00"]
+        )
+    )
+    original = ticks[0][1]["lever:acme:1"]
+    changed = ticks[1][1]["lever:acme:1"]
+    assert original["description"] is None
+    assert original["min_years"] == 3
+    assert original["max_years"] == 5
+    assert original["experience_source"] == "regex"
+    assert changed["description"] is None
+    assert changed["min_years"] == 3
+    assert changed["max_years"] == edit.get("max_years", 5)
+    assert changed["experience_source"] == edit.get("experience_source", "regex")
+    assert pq.read_table(first)["experience_source"].to_pylist() == ["regex"]
 
 
 def test_failed_checkpoint_does_not_advance_the_state(tmp_path, monkeypatch):

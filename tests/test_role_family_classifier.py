@@ -13,6 +13,7 @@ stubbed, so no test downloads JobBERT.
 from __future__ import annotations
 
 import json
+import runpy
 
 import pytest
 
@@ -148,6 +149,99 @@ def test_the_head_decides_and_abstains_below_its_cutoff(tmp_path):
     decided = head.decide(titles, head.row_logits(_neutral_rows(2)))
     assert decided[0][0] == "software-engineering" and decided[0][1] > 0.99
     assert decided[1][0] == rfc.UNCLASSIFIED
+
+
+@pytest.mark.parametrize(
+    "edit",
+    [
+        "title_weights",
+        "row_weights",
+        "bias",
+        "model",
+        "model_revision",
+        "title_dim",
+        "row_model",
+        "row_revision",
+        "row_dim",
+        "cutoff",
+        "version",
+        "families",
+    ],
+)
+def test_inputs_fingerprint_tracks_logit_inputs_not_placement_policy(tmp_path, edit):
+    head = _head(tmp_path)
+    directory = tmp_path / "head"
+    original = head.inputs_fingerprint
+    assert len(original) == 64
+    assert int(original, 16) >= 0
+    assert rfc.Head(directory).inputs_fingerprint == original
+    manifest = json.loads((directory / "manifest.json").read_text())
+    with np.load(directory / "head.npz") as archive:
+        weights = {name: archive[name].copy() for name in archive.files}
+    if edit in weights:
+        weights[edit].flat[0] += 1.0
+    elif edit == "title_dim":
+        weights["title_weights"] = np.pad(weights["title_weights"], ((0, 0), (0, 1)))
+    elif edit == "row_dim":
+        weights["row_weights"] = np.pad(weights["row_weights"], ((0, 0), (0, 1)))
+        manifest["row_vector"]["dim"] = 3
+    elif edit == "row_model":
+        manifest["row_vector"]["model"] = "another-embedder"
+    elif edit == "row_revision":
+        manifest["row_vector"]["revision"] = "another-revision"
+    elif edit in {"model", "model_revision"}:
+        manifest[edit] = "another"
+    elif edit == "families":
+        manifest["families"] = list(reversed(manifest["families"]))
+    else:
+        manifest[edit] += 1
+    np.savez(directory / "head.npz", **weights)
+    (directory / "manifest.json").write_text(json.dumps(manifest))
+    changed = rfc.Head(directory).inputs_fingerprint
+    if edit in {"cutoff", "version", "families"}:
+        assert changed == original
+    else:
+        assert changed != original
+
+
+@pytest.mark.parametrize(
+    "edit", ["title_logits", "row_logits", "normalise", "documentation"]
+)
+def test_inputs_fingerprint_tracks_math_code_not_docstrings_or_formatting(
+    tmp_path, edit
+):
+    from pathlib import Path
+
+    original = _head(tmp_path).inputs_fingerprint
+    code = Path(rfc.__file__).read_text()
+    if edit == "title_logits":
+        code = code.replace(
+            "return title_vectors @ self._title_weights.T",
+            "return title_vectors @ self._title_weights.T + 1",
+        )
+    elif edit == "row_logits":
+        code = code.replace(
+            "return row_vectors @ self._row_weights.T + self._bias",
+            "return row_vectors @ self._row_weights.T - self._bias",
+        )
+    elif edit == "normalise":
+        code = code.replace(
+            '(title or "").lower().split()', '(title or "").upper().split()'
+        )
+    else:
+        code = code.replace(
+            "The title part of each row's logits: what the cache keeps per title.",
+            "Different documentation.",
+        )
+        code = code.replace(
+            "return title_vectors @ self._title_weights.T",
+            "return (title_vectors    @    self._title_weights.T)  # new formatting",
+        )
+    assert code != Path(rfc.__file__).read_text()
+    variant = tmp_path / "classifier_variant.py"
+    variant.write_text(code)
+    changed = runpy.run_path(str(variant))["Head"](tmp_path / "head").inputs_fingerprint
+    assert (changed == original) == (edit == "documentation")
 
 
 def test_the_row_part_moves_a_row_its_title_alone_would_misfile(tmp_path):
