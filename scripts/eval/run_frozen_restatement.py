@@ -100,6 +100,11 @@ def install_adapters(root: Path, frozen: Path) -> None:
     """Expose replay helpers while leaving frozen production decisions intact."""
     for module in (root / "src/headstart/ingest").glob("restate_*.py"):
         shutil.copy2(module, frozen / "src/headstart/ingest" / module.name)
+    # Immutable observation metadata/content lookup, not a production decision rule.
+    shutil.copy2(
+        root / "src/headstart/ingest/description_facts.py",
+        frozen / "src/headstart/ingest/description_facts.py",
+    )
     planner = frozen / "src/headstart/ingest/index_plan.py"
     original = planner.read_text()
     with planner.open("a") as stream:
@@ -157,6 +162,35 @@ def preflight_adapters(frozen: Path) -> None:
                 raise AssertionError('cache accepted different mathematical inputs')
             effective = classifier.Cache(loaded.version, dict(loaded.title_logits), loaded.inputs_fingerprint)
             assert len(classifier.decide_rows_scored(effective, head, ['probe'], row)) == 1
+            # Imports inside load_description_sources must run even with no observations.
+            class DescriptionProbe:
+                def __init__(self):
+                    self.rows = []
+                def add_description(self, stamp, job_id, content_hash, text):
+                    self.rows.append((stamp, job_id, content_hash, text))
+            sources = DescriptionProbe()
+            facts, store = Path(tmp) / 'facts', Path(tmp) / 'descriptions'
+            restate_inputs.load_description_sources(sources, facts, store)
+            assert sources.rows == []
+            import gzip
+            import pyarrow as pa
+            import pyarrow.parquet as pq
+            from headstart.ingest import description_facts
+            stamp = '2026-10-03T01:00:00+00:00'
+            observed = '2026-10-03T02:00:00+00:00'
+            texts = {'greenhouse:probe:1': 'Current.', 'greenhouse:probe:2': 'Earlier.', 'greenhouse:probe:3': 'Unavailable.'}
+            identities = [{'id': job_id, 'description_hash': description_facts.description_hash(text), 'observed_at': observed, 'run_id': 'preflight', 'run_attempt': '1', 'code_sha': 'fixture'} for job_id, text in texts.items()]
+            for name in ('description_facts/greenhouse', 'description_archive/greenhouse', 'job_facts'):
+                (facts / name).mkdir(parents=True)
+            pq.write_table(pa.Table.from_pylist(identities), facts / 'description_facts/greenhouse/fixture.parquet')
+            pq.write_table(pa.Table.from_pylist([{'id': 'greenhouse:probe:2', 'description_hash': identities[1]['description_hash'], 'description': 'Earlier.'}]), facts / 'description_archive/greenhouse/fixture.parquet')
+            pq.write_table(pa.table({'id': ['probe']}, metadata={b'run_id': b'preflight', b'run_attempt': b'1', b'stamp': stamp.encode()}), facts / 'job_facts/fixture.parquet')
+            (store / 'greenhouse').mkdir(parents=True)
+            with gzip.open(store / 'greenhouse/0001.jsonl.gz', 'wt', encoding='utf-8') as stream:
+                for job_id in texts:
+                    stream.write(json.dumps({'id': job_id, 'description': 'Current.' if job_id.endswith(':1') else 'Future.'}) + '\\n')
+            restate_inputs.load_description_sources(sources, facts, store)
+            assert sources.rows == [(stamp, r['id'], r['description_hash'], text) for r, text in zip(identities, ['Current.', 'Earlier.', None], strict=True)]
     """
     subprocess.run(
         [sys.executable, "-c", textwrap.dedent(probe)],

@@ -57,6 +57,9 @@ def test_nonempty_rank_probe_catches_transitive_helper_missing_in_older_snapshot
         Path(role_family_classifier.__file__).read_text()
     )
     runner.install_adapters(ROOT, tmp_path)
+    assert (directory / "description_facts.py").read_bytes() == (
+        ROOT / "src/headstart/ingest/description_facts.py"
+    ).read_bytes()
     after = load(planner)
     assert after.duplicate_ranks(["greenhouse:probe:1"], {"greenhouse:probe"})
     # Frozen decisions already present in the snapshot are retained.
@@ -217,3 +220,7 @@ def test_actual_archived_rule_preflight(tmp_path):
         ast.dump(n) for n in before.body
     ]
     runner.preflight_adapters(tmp_path)
+    # The runtime load, not a restate_inputs module import, must exercise this dependency.
+    (tmp_path / "src/headstart/ingest/description_facts.py").unlink()
+    with pytest.raises(subprocess.CalledProcessError):
+        runner.preflight_adapters(tmp_path)
