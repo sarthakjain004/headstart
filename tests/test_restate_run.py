@@ -302,6 +302,28 @@ def test_complete_baseline_keeps_a_served_job_absent_from_all_scrapes(
         ),
         baseline,
     )
+    if future_changed:
+        observed = facts / "trend_reference" / "future.parquet"
+        observed.parent.mkdir(parents=True)
+        pq.write_table(
+            pa.Table.from_pylist(
+                [
+                    rows[0]
+                    | {
+                        "title": "QA Lead",
+                        "vector": [0.0, 0.0],
+                        "description": text.replace("3 years", "8 years"),
+                    }
+                ]
+            ).replace_schema_metadata(
+                {
+                    b"baseline": b"false",
+                    b"ts": RUNS[1].encode(),
+                    b"previous_tick": baseline_stamp.encode(),
+                }
+            ),
+            observed,
+        )
     args = [
         "restate",
         "--facts",
@@ -328,9 +350,8 @@ def test_complete_baseline_keeps_a_served_job_absent_from_all_scrapes(
     monkeypatch.setattr(sys, "argv", args)
 
     def latest_inputs(_path, wanted):
-        expected = {f"{BOARD}:1"} if future_changed else set()
-        assert wanted == expected, "only later versions need latest inputs"
-        return {job_id: text.replace("3 years", "8 years") for job_id in wanted}
+        assert wanted == set(), "immutable observations must block latest-store guesses"
+        return {}
 
     monkeypatch.setattr(restate_run, "_descriptions", latest_inputs)
     monkeypatch.setattr(

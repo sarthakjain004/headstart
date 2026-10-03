@@ -271,24 +271,37 @@ def english_only(
     judged = {}
     keep = []
     starts = (
-        served["valid_from"].to_pylist()
+        served[
+            "input_from" if "input_from" in served.schema.names else "valid_from"
+        ].to_pylist()
         if "valid_from" in served.schema.names
         else [None] * served.num_rows
     )
-    for job_id, title, start in zip(
-        served["id"].to_pylist(), served["title"].to_pylist(), starts, strict=True
+    retained = []
+    incumbents = (
+        served["baseline_incumbent"].to_pylist()
+        if "baseline_incumbent" in served.schema.names
+        else [False] * len(starts)
+    )
+    for job_id, title, start, incumbent in zip(
+        served["id"].to_pylist(),
+        served["title"].to_pylist(),
+        starts,
+        incumbents,
+        strict=True,
     ):
-        text = (
-            version_sources.get((job_id, start), (None, descriptions.get(job_id)))[1]
-            or ""
-        )
+        text = version_sources.get((job_id, start), (None, descriptions.get(job_id)))[1]
+        preserve = bool(incumbent and text is None)
         # The version identifies its immutable text; caching whole descriptions would
         # retain the entire disk-backed baseline in RAM again.
         key = (job_id, title or "", start)
         if key not in judged:
-            judged[key] = is_english(title or "", text)
+            judged[key] = preserve or is_english(title or "", text or "")
         keep.append(judged[key])
-    return served.filter(pa.array(keep, pa.bool_()))
+        retained.append(preserve)
+    return served.append_column(
+        "baseline_language_retained", pa.array(retained, pa.bool_())
+    ).filter(pa.array(keep, pa.bool_()))
 
 
 def fold_duplicates(served, keep: Collection[str], *, site_jobs=None, backing=None):

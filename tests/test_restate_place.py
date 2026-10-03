@@ -103,6 +103,47 @@ def test_baseline_uses_its_own_vector_and_description_instead_of_latest_inputs(
     assert rp.place_of(placed.to_pylist()[0]) == ("software-engineering", "mid")
 
 
+@pytest.mark.parametrize(
+    "experience, expected", [(None, "mid"), ("1+ years", "entry")]
+)
+def test_missing_historical_text_retains_observed_years_but_real_raw_field_wins(
+    tmp_path, experience, expected
+):
+    from headstart.ingest.restate_inputs import VersionSources
+
+    job_id, stamp = "greenhouse:acme:1", "2026-10-02"
+    served = _served(
+        {
+            "id": job_id,
+            "title": "Backend Engineer",
+            "valid_from": stamp,
+            "input_from": stamp,
+            "experience": experience,
+        }
+    )
+    with VersionSources(2) as sources:
+        sources.add_batch(
+            stamp,
+            [
+                {
+                    "id": job_id,
+                    "vector": [0.0, 0.0],
+                    "description": None,
+                    "min_years": 4,
+                    "experience_source": "regex",
+                }
+            ],
+        )
+        sources.bind(job_id, stamp)
+        row = rp.placements(
+            served, _head(tmp_path), _cache(), {}, {}, version_sources=sources
+        ).to_pylist()[0]
+        assert row["band"] == expected
+        assert ("observed_experience_retained" in row["input_quality"]) == (
+            experience is None
+        )
+
+
 def test_the_family_reads_the_title_and_the_description_vector(tmp_path):
     served = _served(
         {"id": "greenhouse:acme:1", "title": "Backend Engineer"},

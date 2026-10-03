@@ -7,77 +7,7 @@ incumbents. Future raw Job facts still supply non-tech Jobs a widened filter may
 
 from __future__ import annotations
 
-import sqlite3
-import tempfile
-from collections import OrderedDict
 from pathlib import Path
-
-import numpy as np
-
-
-class BaselineSources:
-    """Immutable baseline inputs on disk, with a bounded cache for replay consumers."""
-
-    def __init__(self, stamp: str):
-        self.stamp = stamp
-        self._temporary = tempfile.TemporaryDirectory(prefix="trends-baseline-inputs-")
-        self._db = sqlite3.connect(Path(self._temporary.name) / "sources.sqlite")
-        self._db.execute(
-            "CREATE TABLE inputs (id TEXT PRIMARY KEY, vector BLOB NOT NULL, description TEXT)"
-        )
-        self._cache = OrderedDict()
-        self._count = 0
-
-    def add_batch(self, rows):
-        values = [
-            (job_id, np.asarray(vector, dtype="<f2").tobytes(), description)
-            for job_id, vector, description in rows
-        ]
-        self._db.executemany("INSERT INTO inputs VALUES (?, ?, ?)", values)
-        self._db.commit()
-        self._count += len(values)
-
-    def __len__(self):
-        return self._count
-
-    def __contains__(self, key):
-        job_id, stamp = key
-        return (
-            stamp == self.stamp
-            and self._db.execute(
-                "SELECT 1 FROM inputs WHERE id=?", (job_id,)
-            ).fetchone()
-            is not None
-        )
-
-    def get(self, key, default=None):
-        job_id, stamp = key
-        if stamp != self.stamp:
-            return default
-        if job_id in self._cache:
-            self._cache.move_to_end(job_id)
-            return self._cache[job_id]
-        row = self._db.execute(
-            "SELECT vector, description FROM inputs WHERE id=?", (job_id,)
-        ).fetchone()
-        if row is None:
-            return default
-        result = (np.frombuffer(row[0], dtype="<f2"), row[1])
-        self._cache[job_id] = result
-        if len(self._cache) > 256:
-            self._cache.popitem(last=False)
-        return result
-
-    def close(self):
-        self._cache.clear()
-        self._db.close()
-        self._temporary.cleanup()
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *_):
-        self.close()
 
 
 def committed_baseline(facts: Path, state: Path) -> Path | None:

@@ -5,42 +5,6 @@ import pyarrow as pa
 from headstart.ingest.restate_baseline import seed_versions
 
 
-def test_disk_backed_sources_are_exact_and_cache_is_bounded():
-    import numpy as np
-
-    from headstart.ingest.restate_baseline import BaselineSources
-
-    sources = BaselineSources("baseline")
-    try:
-        vector = np.array([0.25, 0.5], dtype=np.float16)
-        sources.add_batch((str(i), vector, f"Historical text {i}") for i in range(300))
-        for i in range(300):
-            got, text = sources.get((str(i), "baseline"))
-            assert got.tobytes() == vector.tobytes()
-            assert text == f"Historical text {i}"
-        assert len(sources._cache) <= 256
-        assert sources.get(("0", "future"), "latest") == "latest"
-        assert ("0", "baseline") in sources
-        assert ("absent", "baseline") not in sources
-        assert sources.get(("0", "baseline"))[1] == "Historical text 0"
-    finally:
-        sources.close()
-
-
-def test_baseline_source_context_cleans_up_after_failure():
-    from pathlib import Path
-
-    import pytest
-
-    from headstart.ingest.restate_baseline import BaselineSources
-
-    sources = BaselineSources("baseline")
-    directory = Path(sources._temporary.name)
-    with pytest.raises(RuntimeError), sources:
-        raise RuntimeError("classifier failed")
-    assert not directory.exists()
-
-
 def test_unread_baseline_job_is_not_lost_and_future_edit_replaces_it():
     schema = pa.schema(
         [

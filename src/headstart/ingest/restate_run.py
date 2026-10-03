@@ -24,11 +24,13 @@ from __future__ import annotations
 
 import argparse
 import gc
+import json
+import os
 import shutil
+import subprocess
+from collections import Counter
 from contextlib import ExitStack
 from pathlib import Path
-
-import numpy as np
 
 from headstart import log
 from headstart.boards import eightfold_backing
@@ -38,10 +40,12 @@ from headstart.ingest import (
     job_facts,
     restate_baseline,
     restate_count,
+    restate_inputs,
     restate_place,
     restate_replay,
     restate_served,
     role_family_classifier,
+    trend_reference,
 )
 from headstart.ingest.doc_prep import DERIVATIONS_VERSION, is_english
 from headstart.ingest.index_plan import (
@@ -140,6 +144,9 @@ def main() -> int:
         "--families", type=Path, default=REPO_ROOT / "config" / "role_families.json"
     )
     ap.add_argument(
+        "--watchlist", type=Path, help="defaults beside the family taxonomy"
+    )
+    ap.add_argument(
         "--title-cache",
         type=Path,
         default=REPO_ROOT / "data" / "state" / "role_title_families.parquet",
@@ -162,6 +169,7 @@ def main() -> int:
 
 
 def _run(args, resources) -> int:
+    import pyarrow.parquet as pq
 
     runs = restate_replay.runs(args.facts)
     if not runs:
@@ -177,8 +185,6 @@ def _run(args, resources) -> int:
             args.facts, args.board_failures.parent
         )
     if args.baseline is not None:
-        import pyarrow.parquet as pq
-
         baseline_file = pq.ParquetFile(args.baseline)
         metadata = baseline_file.schema_arrow.metadata or {}
         if metadata.get(b"baseline") != b"true":
@@ -246,36 +252,27 @@ def _run(args, resources) -> int:
     del periods
     gc.collect()
     pa.default_memory_pool().release_unused()
+    head = role_family_classifier.Head(args.classifier)
     if baseline_stamp is not None:
-        _log.info("loading baseline version vectors and descriptions in batches")
+        _log.info("loading immutable observed input versions")
         baseline_sources = resources.enter_context(
-            restate_baseline.BaselineSources(baseline_stamp)
+            restate_inputs.VersionSources(head.row_vector_dim)
         )
-        for batch in baseline_file.iter_batches(
-            batch_size=4096, columns=["id", "vector", "description"]
-        ):
-            table = pa.Table.from_batches([batch])
-            matrix = (
-                table["vector"]
-                .combine_chunks()
-                .flatten()
-                .to_numpy()
-                .reshape(len(table), -1)
-                .astype(np.float16, copy=False)
-            )
-            # The row views retain only the vector buffer, not Python lists of every
-            # component or the batch's description column.
-            baseline_sources.add_batch(
-                (row["id"], vector, row["description"])
-                for row, vector in zip(
-                    table.select(["id", "description"]).to_pylist(), matrix, strict=True
-                )
-            )
-        _log.info(f"loaded {len(baseline_sources)} baseline version sources")
+        restate_inputs.load_reference_sources(
+            baseline_sources, args.facts, args.baseline, args.board_failures.parent
+        )
+        restate_inputs.load_description_sources(
+            baseline_sources, args.facts, args.descriptions
+        )
+        served = restate_inputs.bind_intervals(served, baseline_sources)
     latest_ids = {
         job_id
         for job_id, start in zip(
-            served["id"].to_pylist(), served["valid_from"].to_pylist(), strict=True
+            served["id"].to_pylist(),
+            served[
+                "input_from" if "input_from" in served.schema.names else "valid_from"
+            ].to_pylist(),
+            strict=True,
         )
         if (job_id, start) not in baseline_sources
     }
@@ -297,9 +294,13 @@ def _run(args, resources) -> int:
     _log.info(f"{served.num_rows} served intervals under today's rules")
 
     families = role_taxonomy.load_families(args.families)
-    head = role_family_classifier.Head(args.classifier)
+    watchlist = role_taxonomy.load_watchlist(
+        args.watchlist or args.families.with_name("role_watchlist.json"), set(families)
+    )
     head.check_families(families)
-    cache = role_family_classifier.load_cache(args.title_cache, head.version)
+    cache = role_family_classifier.load_cache(
+        args.title_cache, head.version, head.inputs_fingerprint
+    )
     titles = served["title"].to_pylist()
     if args.encode_budget_seconds > 0:
         added = role_family_classifier.fill(
@@ -334,26 +335,67 @@ def _run(args, resources) -> int:
     # A Restatement is derived whole from the facts: the previous one is replaced, not extended.
     shutil.rmtree(args.out, ignore_errors=True)
     previous: tuple[str | None, dict] = (None, {})
-    ticks = restate_count.tick_counts(
-        served.select(
-            [
-                "id",
-                "board",
-                "dedup_group",
-                "served_from",
-                "first_seen",
-                "served_to",
-                "starts_as",
-                "ended_as",
-                "family",
-                "band",
-            ]
-        ),
-        runs,
-        restate_replay.first_reads(reads),
-        restate_place.place_of,
+    count_columns = [
+        "id",
+        "board",
+        "dedup_group",
+        "served_from",
+        "first_seen",
+        "served_to",
+        "starts_as",
+        "ended_as",
+        "family",
+        "band",
+    ]
+    ticks = [
+        restate_count.tick_counts(
+            served.select(count_columns),
+            runs,
+            restate_replay.first_reads(reads),
+            restate_place.place_of,
+        )
+    ]
+    for watch in watchlist:
+        selected = served.filter(
+            pa.array(
+                [
+                    family is not None and watch.matches(title)
+                    for family, title in zip(
+                        served["family"].to_pylist(),
+                        served["title"].to_pylist(),
+                        strict=True,
+                    )
+                ],
+                pa.bool_(),
+            )
+        )
+        name = role_taxonomy.WATCH_PREFIX + watch.name
+        ticks.append(
+            restate_count.tick_counts(
+                selected.select(count_columns),
+                runs,
+                restate_replay.first_reads(reads),
+                lambda row, name=name: (name, row["band"]),
+            )
+        )
+    inventory_path = os.environ.get("HEADSTART_RESTATE_INPUT_INVENTORY")
+    inventory = json.loads(Path(inventory_path).read_text()) if inventory_path else {}
+    input_revision = (
+        os.environ.get("HEADSTART_RESTATE_INPUT_REVISION")
+        or inventory.get("input_revision")
+        or inventory.get("revision")
     )
-    for n, (run, levels, turnover) in enumerate(ticks, 1):
+    rules_fingerprint = trend_reference.freeze_rules(REPO_ROOT, args.facts)
+    for n, grouped in enumerate(zip(*ticks, strict=True), 1):
+        run = grouped[0][0]
+        levels, turnover = Counter(), Counter()
+        for stamp, values, events in grouped:
+            if stamp != run:
+                raise ValueError(
+                    "watched-role tick alignment differs from primary history"
+                )
+            levels.update(values)
+            turnover.update(events)
         if broken := restate_count.unbalanced(previous[1], levels, turnover):
             raise ValueError(
                 f"tick {run}: stock did not move by its turnover for {len(broken)} "
@@ -361,6 +403,16 @@ def _run(args, resources) -> int:
             )
         trend_history.record_tick(
             args.out, run, levels, turnover, methodology, replayed=previous
+        )
+        tick_path = args.out / trend_history.DELTAS / job_facts.file_name(run)
+        table = pq.read_table(tick_path)
+        bound = table.schema.metadata | {
+            b"rules_fingerprint": rules_fingerprint.encode()
+        }
+        if input_revision:
+            bound[b"input_revision"] = input_revision.encode()
+        pq.write_table(
+            table.replace_schema_metadata(bound), tick_path, compression="zstd"
         )
         import pyarrow.compute as pc
         import pyarrow.parquet as pq
@@ -372,17 +424,60 @@ def _run(args, resources) -> int:
             ),
         )
         active = pc.and_(active, pc.is_valid(served["family"]))
-        placements = served.filter(active).select(["id", "board", "family", "band"])
+        placements = served.filter(active).select(
+            [
+                "id",
+                "board",
+                "family",
+                "band",
+                "first_seen",
+                "restated_min_years",
+                "input_quality",
+            ]
+        )
         directory = args.out / "placements"
         directory.mkdir(parents=True, exist_ok=True)
         pq.write_table(
-            placements.replace_schema_metadata({b"ts": run.encode()}),
+            placements.replace_schema_metadata(
+                {
+                    b"ts": run.encode(),
+                    **{
+                        key: value
+                        for key, value in bound.items()
+                        if key in {b"rules_fingerprint", b"input_revision"}
+                    },
+                }
+            ),
             directory / job_facts.file_name(run),
             compression="zstd",
         )
         previous = (run, levels)
         _log.info(f"tick {n}/{len(runs)} {run}: {sum(turnover.values())} moves")
     _log.info(f"restated {len(runs)} ticks under today's rules -> {args.out}")
+    code_sha = (
+        os.environ.get("HEADSTART_RESTATE_CODE_SHA")
+        or subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, text=True
+        ).strip()
+    )
+    quality = Counter(
+        flag for flags in served["input_quality"].to_pylist() for flag in flags
+    )
+    replay = {
+        "schema_version": 1,
+        "rules_fingerprint": rules_fingerprint,
+        "rules_code_sha": code_sha,
+        "input_revision": input_revision,
+        "first_covered_tick": runs[0],
+        "last_covered_tick": runs[-1],
+        "inputs": inventory.get("inputs", []),
+        "files": [],
+        "quality": {"input_counts": dict(quality), "watched_roles": bool(watchlist)},
+        "limitations": [
+            "History before the complete reference baseline is retained separately, not recomputed."
+        ],
+    }
+    (args.out / "replay.json").write_text(json.dumps(replay, indent=2) + "\n")
     return 0
 
 

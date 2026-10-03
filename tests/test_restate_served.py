@@ -275,6 +275,25 @@ def test_a_job_the_english_gate_holds_out_never_counts(tmp_path):
     assert served == {A1: [(RUNS[0], None)]}
 
 
+def test_unknown_baseline_text_is_not_evidence_of_foreign_language():
+    import pyarrow as pa
+
+    table = pa.table(
+        {
+            "id": [A1, A2],
+            "title": ["GCP DevOps", "Engineer"],
+            "valid_from": [RUNS[0], RUNS[0]],
+            "baseline_incumbent": [True, True],
+        }
+    )
+    sources = {(A1, RUNS[0]): (None, None), (A2, RUNS[0]): (None, "Known Korean text")}
+    result = rs.english_only(
+        table, {}, lambda title, body: False, version_sources=sources
+    )
+    assert result["id"].to_pylist() == [A1]
+    assert result["baseline_language_retained"].to_pylist() == [True]
+
+
 def test_the_english_gate_judges_each_version_on_its_own_title(tmp_path):
     served = _english(
         tmp_path,
