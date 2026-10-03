@@ -137,6 +137,14 @@ ATS_PATTERNS = {
         "kind": "label",
         "patterns": [r"([a-z0-9][a-z0-9-]*)\.avature\.net"],
     },
+    "manatal": {
+        "targets": ["careers-page.com", "api.manatal.com", "core.api.manatal.com"],
+        "kind": "manatal",
+        "patterns": [
+            r"(https?://(?:[a-z0-9-]+\.)?careers-page\.com/[^\s\"'<>]*)",
+            r"(https?://(?:core\.)?api\.manatal\.com/open/v3/career-page/[^\s\"'<>]*)",
+        ],
+    },
     "smartrecruiters": {
         "targets": [
             "jobs.smartrecruiters.com",
@@ -292,6 +300,13 @@ ATS_PATTERNS = {
             r"(?://|%2f)([a-z0-9][a-z0-9-]*)\.(?:careers\.mynexthire\.io|mynexthire\.com)(?![a-z0-9.-])"
         ],
     },
+    "recruiterflow": {
+        "targets": ["recruiterflow.com"],
+        "kind": "recruiterflow",
+        "patterns": [
+            r"recruiterflow\.com/([a-z0-9_.%+-]+)/jobs(?:-page-widget)?(?:[/?#]|$)"
+        ],
+    },
     "recruitee": {
         "targets": ["recruitee.com"],
         "kind": "label",
@@ -344,6 +359,13 @@ ATS_PATTERNS = {
         "targets": ["peoplestrong.com"],
         "kind": "label",
         "patterns": [r"([a-z0-9][a-z0-9-]*)\.peoplestrong\.com"],
+    },
+    "pageup": {
+        "targets": ["careers.pageuppeople.com"],
+        "kind": "pageup",
+        "patterns": [
+            r"(https?://careers\.pageuppeople\.com/(?:mob/)?\d+/[a-z0-9_-]+/[a-z-]+(?:/[^\s\"'<>]*)?)"
+        ],
     },
     "personio": {
         "targets": ["jobs.personio.com", "jobs.personio.de"],
@@ -584,6 +606,10 @@ def num_pages(cdx, target):
 
 def tenant_from(kind, match):
     """Normalize one regex match to a (tenant, url_hint) or None to drop it."""
+    if kind in {"pageup", "manatal"}:
+        url = match.group(1)
+        host = urllib.parse.urlsplit(url).hostname or ""
+        return extract(url, host, kind)
     if kind == "workday":
         host, site = match.group(1), match.group(2)
         low = site.lower()
@@ -643,6 +669,9 @@ def tenant_from(kind, match):
     # names no Board (`wayback_feeder.extract` keeps it for the same reason).
     if tok.lower() in BLOCK or len(tok) < 2 or tok.isdigit():
         return None
+    if kind == "recruiterflow":
+        tok = urllib.parse.unquote(tok).lower()
+        return tok, f"https://recruiterflow.com/{urllib.parse.quote(tok, safe='')}/jobs"
     return tok, None
 
 

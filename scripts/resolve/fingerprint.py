@@ -208,6 +208,16 @@ PATTERNS = {
     ],
     "zoho": [HOST + r"([a-z0-9][a-z0-9-]*)\.zohorecruit\.(?:com|eu|in|ca)"],
     "recruitee": [HOST + r"([a-z0-9][a-z0-9-]*)\.recruitee\.com"],
+    "manatal": [
+        HOST + r"(?:www\.)?careers-page\.com/([a-z0-9_.%+-]+)(?=[/?#]|$)",
+        HOST + r"((?!www\.)[a-z0-9-]+\.careers-page\.com)(?=[/?#]|$)",
+    ],
+    "pageup": [
+        r"careers\.pageuppeople\.com/(?:mob/)?(\d+/[a-z0-9_-]+/[a-z-]+)(?=[/?#]|$)"
+    ],
+    "recruiterflow": [
+        r"recruiterflow\.com/([a-z0-9_.%+-]+)/jobs(?:-page-widget)?(?=[/?#]|$)"
+    ],
     "workable": [r"apply\.workable\.com/([a-zA-Z0-9_-]+)"],
     # Supported scrapers that had no HTML signature — an embedded board on any of these was
     # invisible to the page scan and only ever found if the slug probe happened to guess it.

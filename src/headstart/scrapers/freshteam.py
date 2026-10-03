@@ -126,7 +126,9 @@ class FreshteamScraper(BaseScraper):
         framemediaexcel's went to an unrelated news page. The Freshteam route rendered the
         posting's title on 10 of 10 postings sampled across those three and outsidehire."""
         host = f"https://{self.slug}.freshteam.com/"
-        if native_url and native_url.lower().startswith(host):
+        # usiglobal's own ?jobId= links open the whole Board, not its Job.
+        # Browser-verified 2026-10-03: the /jobs/{id} route renders the detail.
+        if native_url and native_url.lower().startswith(host + "jobs/"):
             return native_url
         return f"{host}jobs/{unique_id}"
 

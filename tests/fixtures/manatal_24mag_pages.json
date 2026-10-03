@@ -1,0 +1,1750 @@
+[
+  {
+    "count": 344,
+    "next": "https://core.api.manatal.com/open/v3/career-page/24-mag/jobs/?page=2&page_size=100",
+    "previous": null,
+    "results": [
+      {
+        "id": 4442473,
+        "hash": "V68V3V76",
+        "position_name": "Business Owners & Company Executives \u2014 Commercial Video Data Collection Partnership (20+ Employees) \u2014 Argentina"
+      },
+      {
+        "id": 4442497,
+        "hash": "V68V3V96",
+        "position_name": "Business Owners & Company Executives \u2014 Commercial Video Data Collection Partnership (20+ Employees) \u2014 Australia"
+      },
+      {
+        "id": 4442471,
+        "hash": "937WRW7Y",
+        "position_name": "Business Owners & Company Executives \u2014 Commercial Video Data Collection Partnership (20+ Employees) \u2014 Brazil"
+      },
+      {
+        "id": 4442457,
+        "hash": "7X5949V3",
+        "position_name": "Business Owners & Company Executives \u2014 Commercial Video Data Collection Partnership (20+ Employees) \u2014 Canada"
+      },
+      {
+        "id": 4442484,
+        "hash": "RY95V546",
+        "position_name": "Business Owners & Company Executives \u2014 Commercial Video Data Collection Partnership (20+ Employees) \u2014 Chile"
+      },
+      {
+        "id": 4442480,
+        "hash": "6369X985",
+        "position_name": "Business Owners & Company Executives \u2014 Commercial Video Data Collection Partnership (20+ Employees) \u2014 Colombia"
+      },
+      {
+        "id": 4442512,
+        "hash": "RY95V53R",
+        "position_name": "Business Owners & Company Executives \u2014 Commercial Video Data Collection Partnership (20+ Employees) \u2014 Indonesia"
+      },
+      {
+        "id": 4442505,
+        "hash": "3W84R4YV",
+        "position_name": "Business Owners & Company Executives \u2014 Commercial Video Data Collection Partnership (20+ Employees) \u2014 Japan"
+      },
+      {
+        "id": 4442463,
+        "hash": "X98X6X8Y",
+        "position_name": "Business Owners & Company Executives \u2014 Commercial Video Data Collection Partnership (20+ Employees) \u2014 Mexico"
+      },
+      {
+        "id": 4442501,
+        "hash": "V68V3V98",
+        "position_name": "Business Owners & Company Executives \u2014 Commercial Video Data Collection Partnership (20+ Employees) \u2014 New Zealand"
+      },
+      {
+        "id": 4442518,
+        "hash": "4R45V5W5",
+        "position_name": "Business Owners & Company Executives \u2014 Commercial Video Data Collection Partnership (20+ Employees) \u2014 Qatar"
+      },
+      {
+        "id": 4442528,
+        "hash": "Y68Y3YY9",
+        "position_name": "Business Owners & Company Executives \u2014 Commercial Video Data Collection Partnership (20+ Employees) \u2014 Saudi Arabia"
+      },
+      {
+        "id": 4442533,
+        "hash": "7X5949RX",
+        "position_name": "Business Owners & Company Executives \u2014 Commercial Video Data Collection Partnership (20+ Employees) \u2014 South Africa"
+      },
+      {
+        "id": 4442509,
+        "hash": "7X59493X",
+        "position_name": "Business Owners & Company Executives \u2014 Commercial Video Data Collection Partnership (20+ Employees) \u2014 South Korea"
+      },
+      {
+        "id": 4442508,
+        "hash": "6369X9YW",
+        "position_name": "Business Owners & Company Executives \u2014 Commercial Video Data Collection Partnership (20+ Employees) \u2014 Taiwan"
+      },
+      {
+        "id": 4442535,
+        "hash": "937WRWY4",
+        "position_name": "Business Owners & Company Executives \u2014 Commercial Video Data Collection Partnership (20+ Employees) \u2014 United Arab Emirates"
+      },
+      {
+        "id": 4442442,
+        "hash": "4R45V587",
+        "position_name": "Business Owners & Company Executives \u2014 Commercial Video Data Collection Partnership (20+ Employees) \u2014 United States"
+      },
+      {
+        "id": 4446407,
+        "hash": "5W868WX5",
+        "position_name": "Business Owners & Company Executives \u2014 Enterprise Data Partnership (30\u2013200 Employees) \u2014 Canada"
+      },
+      {
+        "id": 4446356,
+        "hash": "63696365",
+        "position_name": "Business Owners & Company Executives \u2014 Enterprise Data Partnership (30\u2013200 Employees) \u2014 United Kingdom"
+      },
+      {
+        "id": 4442390,
+        "hash": "4R45VW3V",
+        "position_name": "Business Owners & Company Executives \u2014 Enterprise Data Partnership (30\u2013200 Employees) \u2014 United States"
+      },
+      {
+        "id": 4392411,
+        "hash": "93765WW4",
+        "position_name": "Hybrid | AI/ML Engineer \u2014 $70\u2013$200/hour"
+      },
+      {
+        "id": 4262215,
+        "hash": "X98977V3",
+        "position_name": "Hybrid | Attorney (AI Evaluation & Benchmarking) \u2014 $40\u2013$80/hour"
+      },
+      {
+        "id": 4292601,
+        "hash": "V68YW69R",
+        "position_name": "Hybrid | Business & Revenue Operations Lead \u2014 $50\u2013$90/hour"
+      },
+      {
+        "id": 4268909,
+        "hash": "7X5X9545",
+        "position_name": "Hybrid | Character Animator (Facial & Performance Capture) \u2014 $50\u2013$80/hour"
+      },
+      {
+        "id": 4262205,
+        "hash": "3W8W779V",
+        "position_name": "Hybrid | Finance AI Evaluation Specialist \u2014 $40\u2013$80/hour"
+      },
+      {
+        "id": 4395025,
+        "hash": "V68X58W6",
+        "position_name": "Hybrid | Forward Deployed Engineer, U.S. Government \u2014 $300,000\u2013$500,000/year"
+      },
+      {
+        "id": 4268873,
+        "hash": "V686V458",
+        "position_name": "Hybrid | Investment Banking & M&A Specialist \u2014 $90\u2013$140/hour"
+      },
+      {
+        "id": 4268882,
+        "hash": "8X5XV5Y3",
+        "position_name": "Hybrid | Legal Counsel (AI Evaluation & Benchmarking) \u2014 $90\u2013$140/hour"
+      },
+      {
+        "id": 4392415,
+        "hash": "X983WXX3",
+        "position_name": "Hybrid | Member of Technical Staff, Forward Deployed (US Gov) \u2014 $40\u2013$60/hour"
+      },
+      {
+        "id": 4268885,
+        "hash": "V686V8W8",
+        "position_name": "Hybrid | Private Equity & Venture Capital Investment Specialist \u2014 $100\u2013$140/hour"
+      },
+      {
+        "id": 4292632,
+        "hash": "636VW37R",
+        "position_name": "Hybrid | Senior Accounting & Audit Specialist \u2014 $50\u2013$90/hour"
+      },
+      {
+        "id": 4292661,
+        "hash": "V68YW36R",
+        "position_name": "Hybrid | Senior Biochemistry & Life Sciences Research Scientist \u2014 $55\u2013$95/hour"
+      },
+      {
+        "id": 4292630,
+        "hash": "4R48XR3V",
+        "position_name": "Hybrid | Senior Insurance & Actuarial Specialist \u2014 $50\u2013$90/hour"
+      },
+      {
+        "id": 4268902,
+        "hash": "W383W83W",
+        "position_name": "Hybrid | Senior Legal AI Evaluation Counsel \u2014 $75\u2013$110/hour"
+      },
+      {
+        "id": 4292677,
+        "hash": "3W865R6W",
+        "position_name": "Hybrid | Senior Materials Scientist \u2014 $60\u2013$100/hour"
+      },
+      {
+        "id": 4292644,
+        "hash": "636VWXWR",
+        "position_name": "Hybrid | Senior Pharmaceutical R&D Scientist \u2014 $65\u2013$105/hour"
+      },
+      {
+        "id": 4292638,
+        "hash": "W385X37W",
+        "position_name": "Hybrid | Senior Physician & Clinical Medicine Specialist \u2014 $60\u2013$100/hour"
+      },
+      {
+        "id": 4292684,
+        "hash": "RY976V7X",
+        "position_name": "Hybrid | Senior Software Engineering Expert \u2014 $55\u2013$95/hour"
+      },
+      {
+        "id": 4391331,
+        "hash": "5W83XR9R",
+        "position_name": "Onsite | College Student \u2013 AI Robotics Trainer (No Experience Required) \u2014 $10\u2013$20/hour"
+      },
+      {
+        "id": 4246771,
+        "hash": "93795676",
+        "position_name": "Onsite | Full Stack Software Engineer \u2014 $45\u2013$60/hour"
+      },
+      {
+        "id": 4392279,
+        "hash": "5W83XX5R",
+        "position_name": "Onsite | Naval Subject Matter Expert (Cleared) \u2014 $50\u2013$100/hour"
+      },
+      {
+        "id": 4259863,
+        "hash": "X9898643",
+        "position_name": "Onsite | Project Coordinator \u2014 $35\u2013$45/hour"
+      },
+      {
+        "id": 4391363,
+        "hash": "X983WY7R",
+        "position_name": "Onsite | Robotics Data Trainer \u2014 $10\u2013$20/hour"
+      },
+      {
+        "id": 4246766,
+        "hash": "4R4XWY4V",
+        "position_name": "Onsite | Senior Full Stack Software Engineer \u2014 $85\u2013$105/hour"
+      },
+      {
+        "id": 4395197,
+        "hash": "V68X5738",
+        "position_name": "Remote | Accountant / Auditor \u2014 $60\u2013$75/hour"
+      },
+      {
+        "id": 4396384,
+        "hash": "RY9X6V9R",
+        "position_name": "Remote | Accountant (CPA/CA) \u2014 $20\u2013$30/hour"
+      },
+      {
+        "id": 4292714,
+        "hash": "W385X696",
+        "position_name": "Remote | ADC & Bispecific Antibody R&D Scientist \u2014 $50\u2013$90/hour"
+      },
+      {
+        "id": 4392254,
+        "hash": "4R4YWWWV",
+        "position_name": "Remote | Adolescent/Child Safeguarding & Exploitation Specialist \u2014 $45\u2013$95/hour"
+      },
+      {
+        "id": 4392243,
+        "hash": "5W83XX4R",
+        "position_name": "Remote | Adolescent Suicide & Self-Harm Specialist \u2014 $45\u2013$95/hour"
+      },
+      {
+        "id": 4399212,
+        "hash": "RY9XY5Y6",
+        "position_name": "Remote | Aerodynamics Expert \u2014 $60\u2013$130/hour"
+      },
+      {
+        "id": 4392128,
+        "hash": "Y684X9Y9",
+        "position_name": "Remote | Aerodynamics Expert \u2014 $80\u2013$130/hour"
+      },
+      {
+        "id": 4391400,
+        "hash": "RY943756",
+        "position_name": "Remote | Aerospace CAD Expert \u2014 $40\u2013$80/hour"
+      },
+      {
+        "id": 4398646,
+        "hash": "8X58XRXV",
+        "position_name": "Remote | AI Consulting Domain Expert \u2014 $100\u2013$200/hour"
+      },
+      {
+        "id": 4398480,
+        "hash": "636536WW",
+        "position_name": "Remote | AI Data Science Domain Expert \u2014 $100\u2013$200/hour"
+      },
+      {
+        "id": 4398632,
+        "hash": "636538W5",
+        "position_name": "Remote | AI Domain Expert \u2014 $140\u2013$200/hour"
+      },
+      {
+        "id": 4394237,
+        "hash": "V68XV578",
+        "position_name": "Remote | AI Engineer \u2014 $60\u2013$120/hour"
+      },
+      {
+        "id": 4163445,
+        "hash": "7XV83V33",
+        "position_name": "Remote | AI Evaluation Guidelines & Rubric Specialist \u2014 $40\u2013$60/hour"
+      },
+      {
+        "id": 4391937,
+        "hash": "V68XRX7R",
+        "position_name": "Remote | AI Facial Data Collection Associate \u2014 $130\u2013$140/hour"
+      },
+      {
+        "id": 4391994,
+        "hash": "8X5646WR",
+        "position_name": "Remote | AI Facial Data Collection Associate (Siblings) \u2014 $130\u2013$140/hour"
+      },
+      {
+        "id": 4391233,
+        "hash": "7X56348X",
+        "position_name": "Remote | AI Facial Data Collection Associate (Twins)"
+      },
+      {
+        "id": 4398439,
+        "hash": "X98V94V3",
+        "position_name": "Remote | AI Finance Domain Expert \u2014 $100\u2013$200/hour"
+      },
+      {
+        "id": 4417730,
+        "hash": "4R4WX79V",
+        "position_name": "Remote | AI Legal Fellow \u2014 Litigation & Motion Practice \u2014 $150\u2013$300/hour"
+      },
+      {
+        "id": 4398462,
+        "hash": "W38R34W9",
+        "position_name": "Remote | AI Software Engineering Domain Expert \u2014 $100\u2013$200/hour"
+      },
+      {
+        "id": 4441966,
+        "hash": "4R45V735",
+        "position_name": "Remote | Altium Designer Specialist \u2014 $90\u2013$175/hour"
+      },
+      {
+        "id": 4418013,
+        "hash": "V68RW9XR",
+        "position_name": "Remote | Application Security Engineer (AppSec) \u2014 $30\u2013$100/hour"
+      },
+      {
+        "id": 4394902,
+        "hash": "W38Y743W",
+        "position_name": "Remote | Associate Data Partnerships Manager \u2014 $160,000\u2013$250,000/year"
+      },
+      {
+        "id": 4391023,
+        "hash": "937653R6",
+        "position_name": "Remote | Associate Forward Deployed Engineer \u2014 $40\u2013$60/hour"
+      },
+      {
+        "id": 4417722,
+        "hash": "8X54YR6R",
+        "position_name": "Remote | Associate Recruiter \u2014 $30/hour"
+      },
+      {
+        "id": 4392199,
+        "hash": "X983WW43",
+        "position_name": "Remote | Attorney \u2014 $90\u2013$110/hour"
+      },
+      {
+        "id": 4392386,
+        "hash": "W38YVWR6",
+        "position_name": "Remote | Audio Expert \u2014 $50\u2013$100/hour"
+      },
+      {
+        "id": 4394913,
+        "hash": "V68X543R",
+        "position_name": "Remote | Autodesk Fusion 360 Specialist \u2014 $40\u2013$100/hour"
+      },
+      {
+        "id": 4396407,
+        "hash": "5W84VY3R",
+        "position_name": "Remote | Autodesk Fusion CAM Expert \u2014 $80\u2013$120/hour"
+      },
+      {
+        "id": 4394927,
+        "hash": "X983R4YR",
+        "position_name": "Remote | Autodesk Inventor Specialist \u2014 $30\u2013$100/hour"
+      },
+      {
+        "id": 4350278,
+        "hash": "4R44W78V",
+        "position_name": "Remote | AWS Cloud Engineer (Serverless & IaC) \u2014 $60\u2013$80/hour"
+      },
+      {
+        "id": 4350315,
+        "hash": "X988W77Y",
+        "position_name": "Remote | AWS Trainium Kernel Engineer (NKI) \u2014 $60\u2013$80/hour"
+      },
+      {
+        "id": 4394332,
+        "hash": "63647WXR",
+        "position_name": "Remote | Backend Java Developer \u2014 $60\u2013$110/hour"
+      },
+      {
+        "id": 4417987,
+        "hash": "X98W5V83",
+        "position_name": "Remote | Backend Security Engineer \u2014 $30\u2013$100/hour"
+      },
+      {
+        "id": 4398527,
+        "hash": "X98V98YR",
+        "position_name": "Remote | Bankruptcy Attorney \u2014 $90\u2013$150/hour"
+      },
+      {
+        "id": 4395460,
+        "hash": "RY948X6R",
+        "position_name": "Remote | Bengali Bilingual Expert \u2014 $30\u2013$65/hour"
+      },
+      {
+        "id": 4390796,
+        "hash": "RY94X84X",
+        "position_name": "Remote | Big Data Engineer \u2014 $30\u2013$80/hour"
+      },
+      {
+        "id": 4394298,
+        "hash": "W38YW779",
+        "position_name": "Remote | BigLaw lawyers \u2014 $140\u2013$400/hour"
+      },
+      {
+        "id": 4395131,
+        "hash": "5W835845",
+        "position_name": "Remote | BigLaw lawyers (Litigation/Corporate/M&A) \u2014 $140\u2013$400/hour"
+      },
+      {
+        "id": 4391033,
+        "hash": "7X563XW5",
+        "position_name": "Remote | Bilingual Mental Health Expert \u2014 $100\u2013$200/hour"
+      },
+      {
+        "id": 4399221,
+        "hash": "7X58X9X3",
+        "position_name": "Remote | Biologist \u2014 $70\u2013$90/hour"
+      },
+      {
+        "id": 4398604,
+        "hash": "Y68968Y5",
+        "position_name": "Remote | Biostatistician \u2014 $60\u2013$65/hour"
+      },
+      {
+        "id": 4441951,
+        "hash": "X98X67X3",
+        "position_name": "Remote | Brand & Creative Strategy Expert \u2014 $150\u2013$350/hour"
+      },
+      {
+        "id": 4395139,
+        "hash": "X983R8W3",
+        "position_name": "Remote | Business Document Expert (Excel, PowerPoint, Word) \u2014 $35\u2013$50/hour"
+      },
+      {
+        "id": 4394982,
+        "hash": "8X56W98R",
+        "position_name": "Remote | CAD Data Generation & Validation Specialist (FreeCAD) \u2014 $40\u2013$100/hour"
+      },
+      {
+        "id": 4392214,
+        "hash": "W38YVV8W",
+        "position_name": "Remote | CAD Expert \u2014 $80\u2013$130/hour"
+      },
+      {
+        "id": 4391919,
+        "hash": "5W83X38R",
+        "position_name": "Remote | Cantonese Language Evaluator \u2014 $30\u2013$40/hour"
+      },
+      {
+        "id": 4392150,
+        "hash": "W38YVVX9",
+        "position_name": "Remote | Cantonese Transcription Expert \u2014 $20\u2013$35/hour"
+      },
+      {
+        "id": 4390956,
+        "hash": "6364YWYW",
+        "position_name": "Remote | Career Coach \u2014 $50\u2013$100/hour"
+      },
+      {
+        "id": 4419946,
+        "hash": "8X54XVYV",
+        "position_name": "Remote | Central Bank Expert \u2014 Non-G7 Policy Communication \u2014 $150\u2013$250/hour"
+      },
+      {
+        "id": 4392195,
+        "hash": "937655X4",
+        "position_name": "Remote | CFD Engineer \u2014 $50\u2013$150/hour"
+      },
+      {
+        "id": 4399175,
+        "hash": "X98V9WWR",
+        "position_name": "Remote | Chemistry Specialist \u2014 $70\u2013$90/hour"
+      },
+      {
+        "id": 4391380,
+        "hash": "6364YV5R",
+        "position_name": "Remote | Child & Youth Abuse Trauma Specialist \u2014 $100\u2013$200/hour"
+      },
+      {
+        "id": 4392132,
+        "hash": "6364Y57W",
+        "position_name": "Remote | Circuit Design Expert \u2014 $80\u2013$130/hour"
+      },
+      {
+        "id": 4398331,
+        "hash": "5W84WR53",
+        "position_name": "Remote | Civil Rights Attorney (BigLaw Firms) \u2014 $140\u2013$400/hour"
+      },
+      {
+        "id": 4418056,
+        "hash": "636YW57R",
+        "position_name": "Remote | Civil/Structural Engineer \u2014 $30\u2013$50/hour"
+      },
+      {
+        "id": 4398550,
+        "hash": "W38R388W",
+        "position_name": "Remote | Clinician (Oncology / Hematology) \u2014 $160\u2013$200/hour"
+      }
+    ]
+  },
+  {
+    "count": 344,
+    "next": "https://core.api.manatal.com/open/v3/career-page/24-mag/jobs/?page=3&page_size=100",
+    "previous": "https://core.api.manatal.com/open/v3/career-page/24-mag/jobs/?page_size=100",
+    "results": [
+      {
+        "id": 4398256,
+        "hash": "63653V6R",
+        "position_name": "Remote | CNC Machinist \u2014 $80\u2013$120/hour"
+      },
+      {
+        "id": 4399486,
+        "hash": "W38R377W",
+        "position_name": "Remote | Commercial Attorney \u2014 $90\u2013$110/hour"
+      },
+      {
+        "id": 4399398,
+        "hash": "W38R3749",
+        "position_name": "Remote | Community Manager \u2014 $15\u2013$20/hour"
+      },
+      {
+        "id": 4441962,
+        "hash": "W38W6979",
+        "position_name": "Remote | Community Manager \u2014 $15\u2013$20/hour"
+      },
+      {
+        "id": 4419937,
+        "hash": "V68R6VW6",
+        "position_name": "Remote | Company Analysis Expert \u2014 Event Propagation \u2014 $150\u2013$250/hour"
+      },
+      {
+        "id": 4399592,
+        "hash": "6365XW55",
+        "position_name": "Remote | Competitive Coder \u2014 $45\u2013$65/hour"
+      },
+      {
+        "id": 4398508,
+        "hash": "636536XR",
+        "position_name": "Remote | Compliance Attorney \u2014 $90\u2013$150/hour"
+      },
+      {
+        "id": 4394317,
+        "hash": "3W89X5WW",
+        "position_name": "Remote | Computer Systems Analyst \u2014 $60\u2013$120/hour"
+      },
+      {
+        "id": 4405796,
+        "hash": "RY9X943X",
+        "position_name": "Remote | Consultant - Executive Presentation Review & Reconstruction \u2014 $150\u2013$350/hour"
+      },
+      {
+        "id": 4441982,
+        "hash": "8X5V36X3",
+        "position_name": "Remote |   Consulting Specialist \u2014 $150\u2013$350/hour"
+      },
+      {
+        "id": 4395608,
+        "hash": "63647YW5",
+        "position_name": "Remote | Contract Attorney \u2014 $80\u2013$130/hour"
+      },
+      {
+        "id": 4441944,
+        "hash": "6369X89W",
+        "position_name": "Remote | Contract Attorney \u2014 $85\u2013$105/hour"
+      },
+      {
+        "id": 4399501,
+        "hash": "V6893W66",
+        "position_name": "Remote | Contracts Attorney \u2014 $90\u2013$110/hour"
+      },
+      {
+        "id": 4418061,
+        "hash": "V68RW95R",
+        "position_name": "Remote | Control System Engineer \u2014 $30\u2013$50/hour"
+      },
+      {
+        "id": 4405783,
+        "hash": "93787686",
+        "position_name": "Remote | Corporate Attorney \u2014 $140\u2013$350/hour"
+      },
+      {
+        "id": 4398539,
+        "hash": "X98V984R",
+        "position_name": "Remote | Corporate Attorney \u2014 $90\u2013$150/hour"
+      },
+      {
+        "id": 4399362,
+        "hash": "W38R3739",
+        "position_name": "Remote | Corporate Attorney \u2014 $90\u2013$150/hour"
+      },
+      {
+        "id": 4394285,
+        "hash": "V68XV5V8",
+        "position_name": "Remote | Corporate Attorney (BigLaw Firms) \u2014 $140\u2013$400/hour"
+      },
+      {
+        "id": 4396322,
+        "hash": "8X58Y3Y3",
+        "position_name": "Remote | Corporate Counsel \u2014 $100\u2013$130/hour"
+      },
+      {
+        "id": 4418079,
+        "hash": "5W8XVXWR",
+        "position_name": "Remote | Corporate Transactions Attorney \u2014 $90\u2013$130/hour"
+      },
+      {
+        "id": 4398367,
+        "hash": "5W84W9Y3",
+        "position_name": "Remote | Criminal Defense Attorney (BigLaw Firms) \u2014 $140\u2013$400/hour"
+      },
+      {
+        "id": 4398357,
+        "hash": "7X58XVX3",
+        "position_name": "Remote | Criminal Lawyer (BigLaw Firms) \u2014 $140\u2013$400/hour"
+      },
+      {
+        "id": 4396328,
+        "hash": "Y689V3V9",
+        "position_name": "Remote | CUDA Engineering Expert \u2014 $60\u2013$100/hour"
+      },
+      {
+        "id": 4391998,
+        "hash": "W38YVY7W",
+        "position_name": "Remote | Customer Service Expert \u2014 $18\u2013$28/hour"
+      },
+      {
+        "id": 4394313,
+        "hash": "V68X5WWR",
+        "position_name": "Remote | Customer Support Assistant \u2014 $21\u2013$45/hour"
+      },
+      {
+        "id": 4350355,
+        "hash": "5W88X7X3",
+        "position_name": "Remote | CVE Vulnerability Researcher \u2014 $60\u2013$80/hour"
+      },
+      {
+        "id": 4418020,
+        "hash": "636YW55R",
+        "position_name": "Remote | Cyber Security Engineer \u2014 $30\u2013$100/hour"
+      },
+      {
+        "id": 4392068,
+        "hash": "6364Y565",
+        "position_name": "Remote | Data Analyst \u2014 $30\u2013$60/hour"
+      },
+      {
+        "id": 4398278,
+        "hash": "4R49R8YV",
+        "position_name": "Remote | Data Engineer \u2014 $140,000\u2013$180,000/year"
+      },
+      {
+        "id": 4399334,
+        "hash": "8X58XVW3",
+        "position_name": "Remote | Data Engineer \u2014 $140,000\u2013$180,000/year"
+      },
+      {
+        "id": 4441981,
+        "hash": "7X5946XX",
+        "position_name": "Remote | Data Science Specialist \u2014 $150\u2013$350/hour"
+      },
+      {
+        "id": 4392314,
+        "hash": "W38YVW66",
+        "position_name": "Remote | Data Scientist \u2014 $245\u2013$280/hour"
+      },
+      {
+        "id": 4392419,
+        "hash": "5W83X665",
+        "position_name": "Remote | Defense & Cleared Workforce Recruiter \u2014 $35\u2013$65/hour"
+      },
+      {
+        "id": 4394203,
+        "hash": "X983XRY3",
+        "position_name": "Remote | Developmental Psychology (PhD) \u2014 $100\u2013$200/hour"
+      },
+      {
+        "id": 4399651,
+        "hash": "X98V6993",
+        "position_name": "Remote | Developmental Psychology (PhD) \u2014 $100\u2013$200/hour"
+      },
+      {
+        "id": 4394258,
+        "hash": "8X56VW83",
+        "position_name": "Remote | DevOps Engineer \u2014 $50\u2013$100/hour"
+      },
+      {
+        "id": 4315247,
+        "hash": "937X3RYY",
+        "position_name": "Remote | DevOps Engineer (Kubernetes, AWS & Terraform) \u2014 $65\u2013$100/hour"
+      },
+      {
+        "id": 4398274,
+        "hash": "W38R359W",
+        "position_name": "Remote | Director of Infrastructure Engineering \u2014 $350,000\u2013$500,000/year"
+      },
+      {
+        "id": 4392148,
+        "hash": "RY94336R",
+        "position_name": "Remote | Dutch Transcription Expert \u2014 $25\u2013$30/hour"
+      },
+      {
+        "id": 4392256,
+        "hash": "6364YYYR",
+        "position_name": "Remote | Eating Disorder Specialist (Adolescent) \u2014 $45\u2013$95/hour"
+      },
+      {
+        "id": 4390946,
+        "hash": "8X564Y83",
+        "position_name": "Remote | Education & Tutoring Expert \u2014 $50\u2013$100/hour"
+      },
+      {
+        "id": 4417686,
+        "hash": "W38VX949",
+        "position_name": "Remote | Educator/ Assessor Writer \u2014 $90\u2013$140/hour"
+      },
+      {
+        "id": 4399165,
+        "hash": "3W8YWVVW",
+        "position_name": "Remote | Electrical & Circuit Design Expert \u2014 $60\u2013$130/hour"
+      },
+      {
+        "id": 4399367,
+        "hash": "5W84W5W5",
+        "position_name": "Remote | Enterprise Client Partner, Frontier AI \u2014 $220,000\u2013$400,000/year"
+      },
+      {
+        "id": 4268906,
+        "hash": "4R4R54VV",
+        "position_name": "Remote | Enterprise Sales & GTM Specialist \u2014 $50\u2013$80/hour"
+      },
+      {
+        "id": 4246846,
+        "hash": "8X5Y46WV",
+        "position_name": "Remote | Epidemiologist \u2014 $145\u2013$170/hour"
+      },
+      {
+        "id": 4391256,
+        "hash": "6364YX9W",
+        "position_name": "Remote | Equity research Expert \u2014 $175\u2013$300/hour"
+      },
+      {
+        "id": 4419956,
+        "hash": "636Y3935",
+        "position_name": "Remote | Equity Research Expert \u2014 Single-Name Analyst Publications \u2014 $150\u2013$250/hour"
+      },
+      {
+        "id": 4419971,
+        "hash": "93753WRY",
+        "position_name": "Remote | Excel Expert \u2014 Finance \u2014 $70\u2013$100/hour"
+      },
+      {
+        "id": 4419973,
+        "hash": "V68R6VY6",
+        "position_name": "Remote | Excel Expert \u2014 General \u2014 $70\u2013$100/hour"
+      },
+      {
+        "id": 4399235,
+        "hash": "93783WRY",
+        "position_name": "Remote | Excel Specialist \u2014 $20\u2013$60/hour"
+      },
+      {
+        "id": 4394269,
+        "hash": "7X569R3X",
+        "position_name": "Remote | Family Law Attorney (AAML Registered) \u2014 $140\u2013$400/hour"
+      },
+      {
+        "id": 4418031,
+        "hash": "5W8XV4XR",
+        "position_name": "Remote | Federal Staff Reporting Analyst \u2014 $40\u2013$80/hour"
+      },
+      {
+        "id": 4163360,
+        "hash": "RYRX3RVX",
+        "position_name": "Remote | Finance Operations Program Coordinator \u2014 $35\u2013$55/hour"
+      },
+      {
+        "id": 4441995,
+        "hash": "937WR6R4",
+        "position_name": "Remote | Finance Specialist \u2014 $150\u2013$350/hour"
+      },
+      {
+        "id": 4391042,
+        "hash": "4R4YWR6V",
+        "position_name": "Remote | Forward Deployed Engineer \u2014 $300,000\u2013$650,000/year"
+      },
+      {
+        "id": 4391826,
+        "hash": "W38YV9V9",
+        "position_name": "Remote | FreeCAD Expert \u2014 $40\u2013$80/hour"
+      },
+      {
+        "id": 4398935,
+        "hash": "9378383Y",
+        "position_name": "Remote | Gameplay Data Capture Specialist \u2014 $10\u2013$15/hour"
+      },
+      {
+        "id": 4394847,
+        "hash": "9376Y454",
+        "position_name": "Remote | General Counsel \u2014 $90\u2013$130/hour"
+      },
+      {
+        "id": 4418067,
+        "hash": "5W8XVXVR",
+        "position_name": "Remote | General Counsel \u2014 $90\u2013$130/hour"
+      },
+      {
+        "id": 4392192,
+        "hash": "6364YYRW",
+        "position_name": "Remote | GitHub Contributor \u2014 $50\u2013$100/hour"
+      },
+      {
+        "id": 4441931,
+        "hash": "5W86Y745",
+        "position_name": "Remote | GitHub Specialist \u2014 $90\u2013$175/hour"
+      },
+      {
+        "id": 4350330,
+        "hash": "4R44W7Y7",
+        "position_name": "Remote | GPU Kernel Engineer \u2014 $60\u2013$80/hour"
+      },
+      {
+        "id": 4399191,
+        "hash": "5W84WX5R",
+        "position_name": "Remote | GPU Programming Software Engineer \u2014 $60\u2013$95/hour"
+      },
+      {
+        "id": 4392322,
+        "hash": "8X564V3V",
+        "position_name": "Remote | Graphic Designer - Editorial, Poster & Marketing Layout \u2014 $20\u2013$50/hour"
+      },
+      {
+        "id": 4392377,
+        "hash": "3W89V498",
+        "position_name": "Remote | Hardware Expert \u2014 $50\u2013$100/hour"
+      },
+      {
+        "id": 4398316,
+        "hash": "Y6896RY5",
+        "position_name": "Remote | Healthcare Attorney (BigLaw Firms) \u2014 $140\u2013$400/hour"
+      },
+      {
+        "id": 4395547,
+        "hash": "9376Y866",
+        "position_name": "Remote | Hebrew Bilingual Expert \u2014 $30\u2013$65/hour"
+      },
+      {
+        "id": 4394888,
+        "hash": "Y684W5V9",
+        "position_name": "Remote | Hospitalist Physician \u2014 $70\u2013$100/hour"
+      },
+      {
+        "id": 4399375,
+        "hash": "X98V9R63",
+        "position_name": "Remote | Human Data Manager \u2014 $40\u2013$60/hour"
+      },
+      {
+        "id": 4399370,
+        "hash": "8X58XW33",
+        "position_name": "Remote | Human Data Manager, New Grad"
+      },
+      {
+        "id": 4405761,
+        "hash": "V6898X7R",
+        "position_name": "Remote | Human Intelligence Collector \u2014 $25\u2013$65/hour"
+      },
+      {
+        "id": 4268867,
+        "hash": "5W8W6965",
+        "position_name": "Remote | Image Quality Specialist (VFX & Film) \u2014 $50\u2013$80/hour"
+      },
+      {
+        "id": 4394267,
+        "hash": "5W836545",
+        "position_name": "Remote | Immigration Attorney \u2014 $140\u2013$400/hour"
+      },
+      {
+        "id": 4391894,
+        "hash": "8X564673",
+        "position_name": "Remote | Industrial Design CAD Expert \u2014 $40\u2013$80/hour"
+      },
+      {
+        "id": 4418096,
+        "hash": "RY9363VX",
+        "position_name": "Remote | In-House Counsel \u2014 $90\u2013$130/hour"
+      },
+      {
+        "id": 4396297,
+        "hash": "V689W6V6",
+        "position_name": "Remote | Intellectual Property Counsel \u2014 $100\u2013$200/hour"
+      },
+      {
+        "id": 4391289,
+        "hash": "3W89V65V",
+        "position_name": "Remote | Investment Banking Expert \u2014 $175\u2013$300/hour"
+      },
+      {
+        "id": 4392294,
+        "hash": "8X564VYR",
+        "position_name": "Remote | Investment & Finance Expert \u2014 $245\u2013$280/hour"
+      },
+      {
+        "id": 4418073,
+        "hash": "V68RWRWR",
+        "position_name": "Remote | Investment Funds Attorney \u2014 $90\u2013$130/hour"
+      },
+      {
+        "id": 4395495,
+        "hash": "9376Y844",
+        "position_name": "Remote | Italian Bilingual Expert \u2014 $30\u2013$65/hour"
+      },
+      {
+        "id": 4395169,
+        "hash": "7X56R7YX",
+        "position_name": "Remote | IT Manager \u2014 $60\u2013$75/hour"
+      },
+      {
+        "id": 4417708,
+        "hash": "636YW88R",
+        "position_name": "Remote | Journalist/Writer \u2014 $90\u2013$140/hour"
+      },
+      {
+        "id": 4441968,
+        "hash": "6369X4WW",
+        "position_name": "Remote | Junior Transactional Attorney \u2014 $70\u2013$90/hour"
+      },
+      {
+        "id": 4350305,
+        "hash": "3W88V788",
+        "position_name": "Remote | Kubernetes Engineer \u2014 $60\u2013$80/hour"
+      },
+      {
+        "id": 4395203,
+        "hash": "X983R76R",
+        "position_name": "Remote | Lawyer \u2014 $60\u2013$75/hour"
+      },
+      {
+        "id": 4417693,
+        "hash": "7X53Y75X",
+        "position_name": "Remote | Lawyer/Legal Writer \u2014 $90\u2013$140/hour"
+      },
+      {
+        "id": 4394276,
+        "hash": "Y684YWX9",
+        "position_name": "Remote | Litigation Associate Attorney (BigLaw Firms) \u2014 $140\u2013$400/hour"
+      },
+      {
+        "id": 4392391,
+        "hash": "5W83X643",
+        "position_name": "Remote | Litigation Attorney (Commercial contract) \u2014 $100\u2013$100/hour"
+      },
+      {
+        "id": 4392388,
+        "hash": "Y684XY95",
+        "position_name": "Remote | Litigation Attorney (Commercial Real Estate) \u2014 $100\u2013$100/hour"
+      },
+      {
+        "id": 4392392,
+        "hash": "6364Y955",
+        "position_name": "Remote | Litigation Attorney (Shareholder / LLC) \u2014 $100\u2013$100/hour"
+      },
+      {
+        "id": 4399255,
+        "hash": "5W84W693",
+        "position_name": "Remote | Litigator / Practicing Attorney (US) \u2014 $80\u2013$140/hour"
+      },
+      {
+        "id": 4419923,
+        "hash": "937535WY",
+        "position_name": "Remote | Local Political Expert \u2014 Elections Forecasting & Political Risk \u2014 $150\u2013$250/hour"
+      },
+      {
+        "id": 4350260,
+        "hash": "RY993WYX",
+        "position_name": "Remote | Machine Learning Engineer \u2014 $60\u2013$80/hour"
+      },
+      {
+        "id": 4392267,
+        "hash": "5W83XX6R",
+        "position_name": "Remote | Machine Learning Engineer \u2014 $80\u2013$140/hour"
+      },
+      {
+        "id": 4392297,
+        "hash": "V68XRVWR",
+        "position_name": "Remote | Management Consultant \u2014 $245\u2013$280/hour"
+      },
+      {
+        "id": 4392145,
+        "hash": "7X5633YX",
+        "position_name": "Remote | Mandarin Transcription Expert \u2014 $20\u2013$30/hour"
+      },
+      {
+        "id": 4394969,
+        "hash": "7X56RV65",
+        "position_name": "Remote | Manufacturing Design Engineer (FreeCAD) \u2014 $40\u2013$100/hour"
+      },
+      {
+        "id": 4398240,
+        "hash": "Y6896R5V",
+        "position_name": "Remote | Manufacturing Specialist \u2014 $80\u2013$120/hour"
+      },
+      {
+        "id": 4246842,
+        "hash": "4R4XWY37",
+        "position_name": "Remote | Market Access Specialist \u2014 $170\u2013$195/hour"
+      }
+    ]
+  },
+  {
+    "count": 344,
+    "next": "https://core.api.manatal.com/open/v3/career-page/24-mag/jobs/?page=4&page_size=100",
+    "previous": "https://core.api.manatal.com/open/v3/career-page/24-mag/jobs/?page=2&page_size=100",
+    "results": [
+      {
+        "id": 4417656,
+        "hash": "636YW8XW",
+        "position_name": "Remote | Marketing, Sales & Communications Expert \u2014 $150\u2013$350/hour"
+      },
+      {
+        "id": 4392130,
+        "hash": "4R4YW955",
+        "position_name": "Remote | Materials Science Expert \u2014 $80\u2013$130/hour"
+      },
+      {
+        "id": 4399205,
+        "hash": "3W8YW458",
+        "position_name": "Remote | Materials Scientist / Engineer \u2014 $80\u2013$130/hour"
+      },
+      {
+        "id": 4398225,
+        "hash": "V6896Y3R",
+        "position_name": "Remote | Mathematics Expert \u2014 $80\u2013$90/hour"
+      },
+      {
+        "id": 4394227,
+        "hash": "X983XR83",
+        "position_name": "Remote | MCP Expert \u2014 $60\u2013$120/hour"
+      },
+      {
+        "id": 4391842,
+        "hash": "4R4YW755",
+        "position_name": "Remote | Mechanical CAD Expert \u2014 $40\u2013$80/hour"
+      },
+      {
+        "id": 4399124,
+        "hash": "RY9XY39X",
+        "position_name": "Remote | Mechanical Design / CAD Expert \u2014 $60\u2013$130/hour"
+      },
+      {
+        "id": 4441999,
+        "hash": "X98X6363",
+        "position_name": "Remote |   Mechanical Design Engineer \u2013 CAD & Manufacturing \u2014 $40\u2013$80/hour"
+      },
+      {
+        "id": 4419831,
+        "hash": "5W8XWXRR",
+        "position_name": "Remote | Mechanical Engineer \u2014 $60\u2013$90/hour"
+      },
+      {
+        "id": 4399146,
+        "hash": "8X58X46R",
+        "position_name": "Remote | Mechanical Engineering Expert \u2014 $60\u2013$100/hour"
+      },
+      {
+        "id": 4392135,
+        "hash": "937658Y4",
+        "position_name": "Remote | Mechanical Engineering Expert \u2014 $80\u2013$130/hour"
+      },
+      {
+        "id": 4398291,
+        "hash": "5W84WR4R",
+        "position_name": "Remote | Medical Auditor \u2014 $30\u2013$40/hour"
+      },
+      {
+        "id": 4398306,
+        "hash": "4R49R8W7",
+        "position_name": "Remote | Medical Coder \u2014 $25\u2013$40/hour"
+      },
+      {
+        "id": 4418007,
+        "hash": "5W8XV43R",
+        "position_name": "Remote | Medical Writer (Pharmaceutical) \u2014 $30\u2013$60/hour"
+      },
+      {
+        "id": 4392271,
+        "hash": "937655W6",
+        "position_name": "Remote | Member of Legal Staff, Corporate Counsel \u2014 $225,000\u2013$275,000/year"
+      },
+      {
+        "id": 4395117,
+        "hash": "3W89X89V",
+        "position_name": "Remote | Member of Legal Staff, Legal Ops & Corporate Paralegal \u2014 $200,000\u2013$250,000/year"
+      },
+      {
+        "id": 4391193,
+        "hash": "7X5634V3",
+        "position_name": "Remote | Member of Technical Staff, Coding Research \u2014 $600,000\u2013$1,300,000/year"
+      },
+      {
+        "id": 4399321,
+        "hash": "7X58X99X",
+        "position_name": "Remote | Member of Technical Staff, Economics Research \u2014 $400,000\u2013$800,000/year"
+      },
+      {
+        "id": 4391133,
+        "hash": "7X563XR3",
+        "position_name": "Remote | Member of Technical Staff, Enterprise AI \u2014 $300,000\u2013$700,000/year"
+      },
+      {
+        "id": 4379675,
+        "hash": "X983674R",
+        "position_name": "Remote | Member of Technical Staff, Finance Research \u2014 $400,000\u2013$800,000/year"
+      },
+      {
+        "id": 4391091,
+        "hash": "5W83XW4R",
+        "position_name": "Remote | Member of Technical Staff, Frontier AI \u2014 $600,000\u2013$2,000,000/year"
+      },
+      {
+        "id": 4441913,
+        "hash": "V68V37X8",
+        "position_name": "Remote |   Member of Technical Staff, Legal Research \u2014 $400,000\u2013$800,000/year"
+      },
+      {
+        "id": 4441906,
+        "hash": "4R45V775",
+        "position_name": "Remote |   Member of Technical Staff, Medical Research \u2014 $400,000\u2013$800,000/year"
+      },
+      {
+        "id": 4391154,
+        "hash": "4R4YWVR7",
+        "position_name": "Remote | Member of Technical Staff, Research Engineering \u2014 $400,000\u2013$800,000/year"
+      },
+      {
+        "id": 4395064,
+        "hash": "Y684W8R5",
+        "position_name": "Remote | Member of Technical Staff, Robotics Research \u2014 $500,000\u2013$1,500,000/year"
+      },
+      {
+        "id": 4399381,
+        "hash": "7X58XRWX",
+        "position_name": "Remote | Member of Technical Staff, Vulnerability Researcher \u2014 $240,000\u2013$400,000/year"
+      },
+      {
+        "id": 4394290,
+        "hash": "4R4Y5355",
+        "position_name": "Remote | Mergers & Acquisitions (M&A) Attorney (BigLaw Firms) \u2014 $140\u2013$400/hour"
+      },
+      {
+        "id": 4399225,
+        "hash": "V6896V36",
+        "position_name": "Remote | Microbiologist \u2014 $70\u2013$90/hour"
+      },
+      {
+        "id": 4418049,
+        "hash": "V68RW9VR",
+        "position_name": "Remote | Military Operations & Reporting SME \u2014 $40\u2013$80/hour"
+      },
+      {
+        "id": 4392428,
+        "hash": "Y684XYW9",
+        "position_name": "Remote | Military/Veteran Mental Health Experts \u2014 $100\u2013$200/hour"
+      },
+      {
+        "id": 4418043,
+        "hash": "5W8XV46R",
+        "position_name": "Remote | Military Writing Specialist \u2014 $40\u2013$80/hour"
+      },
+      {
+        "id": 4379804,
+        "hash": "Y68434R9",
+        "position_name": "Remote | ML Engineer \u2014 $100\u2013$150/hour"
+      },
+      {
+        "id": 4419926,
+        "hash": "W38V3V76",
+        "position_name": "Remote | MLOps Engineer, LLM Systems (Serving, GPU Kernels, Profiling) \u2014 $90\u2013$120/hour"
+      },
+      {
+        "id": 4379113,
+        "hash": "V68X3376",
+        "position_name": "Remote | Molecular Biology Expert (UK Based) \u2014 $60\u2013$95/hour"
+      },
+      {
+        "id": 4379108,
+        "hash": "6364XX65",
+        "position_name": "Remote | Molecular Biology Expert (US Based) \u2014 $60\u2013$95/hour"
+      },
+      {
+        "id": 4392245,
+        "hash": "7X563385",
+        "position_name": "Remote | Music & Sound Annotation Expert \u2014 $30\u2013$45/hour"
+      },
+      {
+        "id": 4399585,
+        "hash": "V6893W96",
+        "position_name": "Remote | Open Source Contributor (GitHub) \u2014 $100\u2013$150/hour"
+      },
+      {
+        "id": 4442003,
+        "hash": "X98X636R",
+        "position_name": "Remote | Open Source GitHub Maintainer \u2014 $150\u2013$300/hour"
+      },
+      {
+        "id": 4350245,
+        "hash": "7X5537Y5",
+        "position_name": "Remote | Open Source Software Engineer \u2014 $60\u2013$80/hour"
+      },
+      {
+        "id": 4398683,
+        "hash": "93783VXY",
+        "position_name": "Remote | Personal Trainer \u2014 $25\u2013$40/hour"
+      },
+      {
+        "id": 4398569,
+        "hash": "7X58X565",
+        "position_name": "Remote | Pharmacovigilance Expert \u2014 $70\u2013$80/hour"
+      },
+      {
+        "id": 4399261,
+        "hash": "V6896V86",
+        "position_name": "Remote | PhD Physicist \u2014 $70\u2013$90/hour"
+      },
+      {
+        "id": 4399024,
+        "hash": "RY9XYX3R",
+        "position_name": "Remote | Physics Expert (AMO / Quantum Information) \u2014 $80\u2013$160/hour"
+      },
+      {
+        "id": 4399036,
+        "hash": "RY9XYX5R",
+        "position_name": "Remote | Physics Expert (Biophysics / Statistical Physics) \u2014 $80\u2013$160/hour"
+      },
+      {
+        "id": 4399013,
+        "hash": "V6896998",
+        "position_name": "Remote | Physics Expert (Condensed Matter / Magnetic Materials) \u2014 $80\u2013$160/hour"
+      },
+      {
+        "id": 4399000,
+        "hash": "RY9XYX4R",
+        "position_name": "Remote | Physics Expert (Condensed Matter / Quantum Information) \u2014 $100\u2013$170/hour"
+      },
+      {
+        "id": 4399056,
+        "hash": "63653YWW",
+        "position_name": "Remote | Physics Expert (Gravitation / Cosmology / Astrophysics) \u2014 $80\u2013$160/hour"
+      },
+      {
+        "id": 4399088,
+        "hash": "Y6896X39",
+        "position_name": "Remote | Physics Expert (High Energy / Mathematical Physics) \u2014 $80\u2013$160/hour"
+      },
+      {
+        "id": 4392136,
+        "hash": "RY943X8R",
+        "position_name": "Remote | Physics Expert PhD (AMO / Optical Properties of Materials) \u2014 $100\u2013$200/hour"
+      },
+      {
+        "id": 4392123,
+        "hash": "937658W4",
+        "position_name": "Remote | Physics Expert (PhD / Postdoc) \u2014 $100\u2013$200/hour"
+      },
+      {
+        "id": 4392095,
+        "hash": "9376586Y",
+        "position_name": "Remote | Physics Expert PhD (Statistical Physics / Quantum Information / Condensed Matter) \u2014 $100\u2013$200/hour"
+      },
+      {
+        "id": 4398963,
+        "hash": "X98V9V4Y",
+        "position_name": "Remote | Physics Expert (Postdoc / Junior professor) \u2014 $80\u2013$150/hour"
+      },
+      {
+        "id": 4398952,
+        "hash": "Y68969R5",
+        "position_name": "Remote | Physics Expert (Professor / Principal Investigator) \u2014 $80\u2013$160/hour"
+      },
+      {
+        "id": 4395563,
+        "hash": "X983RVVR",
+        "position_name": "Remote | Polish Bilingual Expert \u2014 $30\u2013$65/hour"
+      },
+      {
+        "id": 4419963,
+        "hash": "X98W9X6Y",
+        "position_name": "Remote | Political Expert \u2014 Elections Forecasting & Political Risk \u2014 $150\u2013$250/hour"
+      },
+      {
+        "id": 4399232,
+        "hash": "636539X5",
+        "position_name": "Remote | Powerpoint Specialist \u2014 $20\u2013$60/hour"
+      },
+      {
+        "id": 4399333,
+        "hash": "7X58X9RX",
+        "position_name": "Remote | Private Equity & Investment Funds Attorney \u2014 $90\u2013$130/hour"
+      },
+      {
+        "id": 4379632,
+        "hash": "6364X83R",
+        "position_name": "Remote | Product Manager/Product Owner \u2014 $90\u2013$140/hour"
+      },
+      {
+        "id": 4392396,
+        "hash": "RY943536",
+        "position_name": "Remote | Product Owner \u2014 $120,000\u2013$200,000/year"
+      },
+      {
+        "id": 4399482,
+        "hash": "8X58XWWR",
+        "position_name": "Remote | Purchasing Agent \u2014 $30\u2013$65/hour"
+      },
+      {
+        "id": 4379807,
+        "hash": "5W83Y3R5",
+        "position_name": "Remote | Puzzle Solver (Coding) \u2014 $50\u2013$80/hour"
+      },
+      {
+        "id": 4396306,
+        "hash": "4R49XR55",
+        "position_name": "Remote | QA Engineer \u2014 $140,000\u2013$180,000/year"
+      },
+      {
+        "id": 4398656,
+        "hash": "636538X5",
+        "position_name": "Remote | Recruiter \u2014 $30\u2013$42/hour"
+      },
+      {
+        "id": 4417716,
+        "hash": "Y68XV74V",
+        "position_name": "Remote | Recruiter \u2014 $50/hour"
+      },
+      {
+        "id": 4398590,
+        "hash": "4R49R4WV",
+        "position_name": "Remote | Regulatory Affairs Specialist \u2014 $50\u2013$80/hour"
+      },
+      {
+        "id": 4391310,
+        "hash": "8X56473R",
+        "position_name": "Remote | Research Engineer - Code Generation & Model Evaluation \u2014 $50\u2013$100/hour"
+      },
+      {
+        "id": 4392087,
+        "hash": "X983WV3Y",
+        "position_name": "Remote | Research Evaluation Specialist (PhD / Researcher / Professor) \u2014 $40\u2013$90/hour"
+      },
+      {
+        "id": 4391206,
+        "hash": "4R4YWV45",
+        "position_name": "Remote | Revenue Operations & CRM Systems Specialist (SaaS) \u2014 $45\u2013$90/hour"
+      },
+      {
+        "id": 4392210,
+        "hash": "8X56445R",
+        "position_name": "Remote | Revenue Operations Specialist (SaaS) \u2014 $50\u2013$100/hour"
+      },
+      {
+        "id": 4395449,
+        "hash": "V68X5X58",
+        "position_name": "Remote | Russian Bilingual Expert \u2014 $30\u2013$65/hour"
+      },
+      {
+        "id": 4399469,
+        "hash": "7X58XR95",
+        "position_name": "Remote | Sales Agent (Securities & Commodities) \u2014 $30\u2013$80/hour"
+      },
+      {
+        "id": 4398895,
+        "hash": "937836W6",
+        "position_name": "Remote | Sales Development Representative \u2014 $30\u2013$42/hour"
+      },
+      {
+        "id": 4391218,
+        "hash": "4R4YWV75",
+        "position_name": "Remote | Salesforce / HubSpot Administrator - Revenue Systems (SaaS) \u2014 $35\u2013$80/hour"
+      },
+      {
+        "id": 4394212,
+        "hash": "RY9458RR",
+        "position_name": "Remote | SalesOps & Business Analytics Specialist \u2014 $100,000\u2013$140,000/year"
+      },
+      {
+        "id": 4392202,
+        "hash": "W38YVV4W",
+        "position_name": "Remote | Sales / Revenue / CS Operations Expert \u2014 $40\u2013$80/hour"
+      },
+      {
+        "id": 4441917,
+        "hash": "3W84R79V",
+        "position_name": "Remote | Security Onion Specialist \u2014 $90\u2013$175/hour"
+      },
+      {
+        "id": 4399105,
+        "hash": "3W8YWV3W",
+        "position_name": "Remote | Semiconductor Devices & Microelectronics Expert \u2014 $66\u2013$130/hour"
+      },
+      {
+        "id": 4441937,
+        "hash": "V68V37R8",
+        "position_name": "Remote | Senior Accountant Expert \u2014 $60\u2013$120/hour"
+      },
+      {
+        "id": 4391980,
+        "hash": "6364Y49R",
+        "position_name": "Remote | Senior AI Trainer \u2014 $50\u2013$90/hour"
+      },
+      {
+        "id": 4398269,
+        "hash": "7X58XW75",
+        "position_name": "Remote | Senior Backend Engineer \u2014 $50\u2013$100/hour"
+      },
+      {
+        "id": 4441973,
+        "hash": "V68V3XW8",
+        "position_name": "Remote | Senior Book Editor \u2014 $80\u2013$120/hour"
+      },
+      {
+        "id": 4392264,
+        "hash": "Y684XXYV",
+        "position_name": "Remote | Senior Database Reliability Engineer \u2014 $220,000\u2013$260,000/year"
+      },
+      {
+        "id": 4261791,
+        "hash": "5W8W7RXR",
+        "position_name": "Remote | Senior Designer (AI Design Research Study) \u2014 $140\u2013$240/hour"
+      },
+      {
+        "id": 4418025,
+        "hash": "V68RW99R",
+        "position_name": "Remote | Senior DoD Staff Writing SME \u2014 $40\u2013$80/hour"
+      },
+      {
+        "id": 4163416,
+        "hash": "Y659X545",
+        "position_name": "Remote | Senior Finance & AI Evaluation Specialist \u2014 $60\u2013$85/hour"
+      },
+      {
+        "id": 4395003,
+        "hash": "X983R4XY",
+        "position_name": "Remote | Senior FreeCAD Engineer \u2014 $40\u2013$100/hour"
+      },
+      {
+        "id": 4394874,
+        "hash": "W38Y7579",
+        "position_name": "Remote | Senior Hospitalist Clinical Reviewer \u2014 $70\u2013$100/hour"
+      },
+      {
+        "id": 4163376,
+        "hash": "Y659X55V",
+        "position_name": "Remote | Senior Insurance & Underwriting Evaluation Specialist \u2014 $55\u2013$75/hour"
+      },
+      {
+        "id": 4163369,
+        "hash": "7XV83VW5",
+        "position_name": "Remote | Senior Marketing Strategy & AI Evaluation Specialist \u2014 $55\u2013$75/hour"
+      },
+      {
+        "id": 4399396,
+        "hash": "RY9XY8RR",
+        "position_name": "Remote | Senior Platform Engineer \u2014 $60\u2013$130/hour"
+      },
+      {
+        "id": 4442021,
+        "hash": "7X5946V5",
+        "position_name": "Remote | Senior Product Designer, UI/UX \u2014 $80\u2013$110/hour"
+      },
+      {
+        "id": 4163386,
+        "hash": "W34RV44W",
+        "position_name": "Remote | Senior Retail Strategy & Operations Specialist \u2014 $55\u2013$75/hour"
+      },
+      {
+        "id": 4398421,
+        "hash": "7X58XV6X",
+        "position_name": "Remote | Senior Software Engineer \u2014 $100\u2013$150/hour"
+      },
+      {
+        "id": 4417740,
+        "hash": "Y68XV7XV",
+        "position_name": "Remote | Senior Software Engineer \u2014 $100\u2013$150/hour"
+      },
+      {
+        "id": 4392312,
+        "hash": "RY9435V6",
+        "position_name": "Remote | Senior Software Engineer \u2014 $245\u2013$280/hour"
+      },
+      {
+        "id": 4417747,
+        "hash": "93759V56",
+        "position_name": "Remote | Senior Software Engineer \u2014 $30\u2013$100/hour"
+      },
+      {
+        "id": 4395792,
+        "hash": "636479RW",
+        "position_name": "Remote | Senior Software Engineer \u2014 $50\u2013$100/hour"
+      },
+      {
+        "id": 4398401,
+        "hash": "V6896488",
+        "position_name": "Remote | Senior Software Engineer \u2014 $80\u2013$120/hour"
+      },
+      {
+        "id": 4442006,
+        "hash": "4R45VY8V",
+        "position_name": "Remote | Senior Software Engineer, Backend (Node.js, TypeScript, Rust) \u2014 $50\u2013$80/hour"
+      },
+      {
+        "id": 4399360,
+        "hash": "RY9XY8YR",
+        "position_name": "Remote | Senior Technical Architect \u2014 $60\u2013$130/hour"
+      }
+    ]
+  },
+  {
+    "count": 344,
+    "next": null,
+    "previous": "https://core.api.manatal.com/open/v3/career-page/24-mag/jobs/?page=3&page_size=100",
+    "results": [
+      {
+        "id": 4391970,
+        "hash": "8X56464R",
+        "position_name": "Remote | Shopify Specialist \u2014 $60\u2013$100/hour"
+      },
+      {
+        "id": 4395407,
+        "hash": "5W835335",
+        "position_name": "Remote | Software Developer \u2014 $60\u2013$75/hour"
+      },
+      {
+        "id": 4392189,
+        "hash": "3W89VV6V",
+        "position_name": "Remote | Software Engineer \u2014 $50\u2013$100/hour"
+      },
+      {
+        "id": 4350209,
+        "hash": "7X553535",
+        "position_name": "Remote | Software Engineer (AI-Assisted Development) \u2014 $60\u2013$80/hour"
+      },
+      {
+        "id": 4391984,
+        "hash": "RY94345X",
+        "position_name": "Remote | Software Engineer, Data Platforms \u2014 $200,000\u2013$280,000/year"
+      },
+      {
+        "id": 4392072,
+        "hash": "RY943XW6",
+        "position_name": "Remote | Software Engineer (Electron.js) \u2014 $150,000\u2013$220,000/year"
+      },
+      {
+        "id": 4441987,
+        "hash": "X98X6393",
+        "position_name": "Remote | Software Engineering Specialist \u2014 $150\u2013$350/hour"
+      },
+      {
+        "id": 4392078,
+        "hash": "4R4YW977",
+        "position_name": "Remote | Software Engineer, Internal Platforms \u2014 $200,000\u2013$280,000/year"
+      },
+      {
+        "id": 4398919,
+        "hash": "5W84W4V3",
+        "position_name": "Remote | Software Engineer, New Grad \u2014 $180,000\u2013$250,000/year"
+      },
+      {
+        "id": 4399657,
+        "hash": "7X584X4X",
+        "position_name": "Remote | Software Engineer - Open Source Contributions \u2014 $50\u2013$100/hour"
+      },
+      {
+        "id": 4394944,
+        "hash": "63647R6R",
+        "position_name": "Remote | SolidWorks Specialist \u2014 $40\u2013$100/hour"
+      },
+      {
+        "id": 4346874,
+        "hash": "W388Y9Y9",
+        "position_name": "Remote | Spanish Language Learner (Recorded Conversation Sessions) \u2014 $25\u2013$35/hour"
+      },
+      {
+        "id": 4399595,
+        "hash": "9378R98Y",
+        "position_name": "Remote | Sr. Full-Stack Software Engineer \u2014 $50\u2013$100/hour"
+      },
+      {
+        "id": 4442013,
+        "hash": "V68V3XYR",
+        "position_name": "Remote | Staff Software Engineer, Mobile (Android, Kotlin, Full Stack) \u2014 $50\u2013$90/hour"
+      },
+      {
+        "id": 4392249,
+        "hash": "V68XRR9R",
+        "position_name": "Remote | STEM Expert \u2014 $100\u2013$150/hour"
+      },
+      {
+        "id": 4417589,
+        "hash": "3W8V58Y8",
+        "position_name": "Remote | Strategic Project Lead \u2014 $300,000\u2013$500,000/year"
+      },
+      {
+        "id": 4395094,
+        "hash": "8X56W55V",
+        "position_name": "Remote | Strategic Project Lead, Coding/SWE \u2014 $300,000\u2013$500,000/year"
+      },
+      {
+        "id": 4399272,
+        "hash": "RY9XY5W6",
+        "position_name": "Remote | Strategic Project Lead, Finance Expertise \u2014 $400,000\u2013$550,000/year"
+      },
+      {
+        "id": 4399311,
+        "hash": "93783W54",
+        "position_name": "Remote | Strategic Project Lead, J.D./Legal Expertise \u2014 $400,000\u2013$550,000/year"
+      },
+      {
+        "id": 4399283,
+        "hash": "93783WVY",
+        "position_name": "Remote | Strategic Project Lead, MD/Health \u2014 $400,000\u2013$550,000/year"
+      },
+      {
+        "id": 4399433,
+        "hash": "7X58XR65",
+        "position_name": "Remote | Subject Matter Expert \u2013 Chart & Data Visualization Analysis \u2014 $25\u2013$50/hour"
+      },
+      {
+        "id": 4399449,
+        "hash": "V689659R",
+        "position_name": "Remote | Subject Matter Expert \u2013 Data & Statistical Chart Analysis \u2014 $25\u2013$50/hour"
+      },
+      {
+        "id": 4399451,
+        "hash": "X98V9RVR",
+        "position_name": "Remote | Subject Matter Expert \u2013 Financial & Operations Chart Analysis \u2014 $25\u2013$50/hour"
+      },
+      {
+        "id": 4399460,
+        "hash": "RY9XY83X",
+        "position_name": "Remote | Subject Matter Expert \u2013 Medicine & Biostatistics Chart Analysis \u2014 $25\u2013$50/hour"
+      },
+      {
+        "id": 4392258,
+        "hash": "8X56444R",
+        "position_name": "Remote | Substance Use - Adolescent Addiction Specialist \u2014 $45\u2013$95/hour"
+      },
+      {
+        "id": 4396396,
+        "hash": "RY9X6VWR",
+        "position_name": "Remote | Talent Operations Manager \u2014 $70,000\u2013$110,000/year"
+      },
+      {
+        "id": 4395531,
+        "hash": "5W83547R",
+        "position_name": "Remote | Tamil Bilingual Expert \u2014 $30\u2013$65/hour"
+      },
+      {
+        "id": 4396379,
+        "hash": "5W84VY95",
+        "position_name": "Remote | Technical Problem Author (Multi-Domain) \u2014 $60\u2013$110/hour"
+      },
+      {
+        "id": 4379136,
+        "hash": "RY94VVX6",
+        "position_name": "Remote | Technical Writer / Editor \u2014 $90\u2013$140/hour"
+      },
+      {
+        "id": 4395145,
+        "hash": "7X56R59X",
+        "position_name": "Remote | Thai Bilingual Expert \u2014 $30\u2013$65/hour"
+      },
+      {
+        "id": 4418088,
+        "hash": "Y68XVX3V",
+        "position_name": "Remote | Transactional Attorney \u2014 $90\u2013$130/hour"
+      },
+      {
+        "id": 4396274,
+        "hash": "W38RX3R6",
+        "position_name": "Remote | Transactions Associate \u2014 $80\u2013$130/hour"
+      },
+      {
+        "id": 4398692,
+        "hash": "63653865",
+        "position_name": "Remote | Travel Agent \u2014 $20\u2013$35/hour"
+      },
+      {
+        "id": 4395435,
+        "hash": "9376Y6W4",
+        "position_name": "Remote | Turkish Bilingual Expert \u2014 $30\u2013$65/hour"
+      },
+      {
+        "id": 4390924,
+        "hash": "RY9436WR",
+        "position_name": "Remote | UI Engineer \u2014 $30\u2013$80/hour"
+      },
+      {
+        "id": 4394308,
+        "hash": "63647WWR",
+        "position_name": "Remote | UI/UX Designer \u2014 $30\u2013$80/hour"
+      },
+      {
+        "id": 4395418,
+        "hash": "4R4Y3Y95",
+        "position_name": "Remote | U.S based Accountant (CPA/CA) \u2014 $65\u2013$70/hour"
+      },
+      {
+        "id": 4391353,
+        "hash": "3W89V67W",
+        "position_name": "Remote | Video Annotation Specialist \u2014 $8\u2013$10/hour"
+      },
+      {
+        "id": 4394218,
+        "hash": "4R4Y5365",
+        "position_name": "Remote | Video Editor \u2014 $40\u2013$80/hour"
+      },
+      {
+        "id": 4395512,
+        "hash": "RY948XRX",
+        "position_name": "Remote | Vietnamese Bilingual Expert \u2014 $30\u2013$65/hour"
+      },
+      {
+        "id": 4399464,
+        "hash": "Y6896WYV",
+        "position_name": "Remote | Virtual Assistant \u2014 $15\u2013$30/hour"
+      },
+      {
+        "id": 4395624,
+        "hash": "RY9483V6",
+        "position_name": "Remote | Visual Designer (Deck/Presentation focused) \u2014 $20\u2013$60/hour"
+      },
+      {
+        "id": 4405736,
+        "hash": "RY9X94RX",
+        "position_name": "Remote | VP of Robotics Research \u2014 $1,500,000\u2013$4,000,000/year"
+      },
+      {
+        "id": 4399251,
+        "hash": "X98V9X4Y",
+        "position_name": "Remote | Word and PDF Experts \u2014 $20\u2013$55/hour"
+      }
+    ]
+  }
+]

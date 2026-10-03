@@ -69,6 +69,18 @@ def test_wayback_429_retries_on_spare_and_honors_retry_after(monkeypatch):
     assert sleeps == [7]
 
 
+def test_recruiterflow_extracts_only_public_job_paths_and_keeps_the_board_suffix():
+    assert wf.extract(
+        "https://recruiterflow.com/RFCAREERS/jobs/166?source=linkedin",
+        "recruiterflow.com",
+        "path",
+    ) == ("rfcareers", "https://recruiterflow.com/rfcareers/jobs")
+    assert (
+        wf.extract("https://recruiterflow.com/blog/ats", "recruiterflow.com", "path")
+        is None
+    )
+
+
 @pytest.mark.parametrize(
     "url, host, style, expected",
     [
@@ -285,11 +297,17 @@ def test_every_table_host_yields_the_slug_its_own_scraper_expects():
         "taleo_be": lambda host: f"ACME:1@phe.{host}/phe01",
         "taleo_enterprise": lambda host: f"https://acme.{host}/careersection/2",
         "adp": lambda host: f"{_ADP_CID}/19000101_000001",
+        "manatal": lambda host: "acme",
+        "pageup": lambda host: "1083/cw/en",
     }
     for ats, hosts in wf.ATS_HOSTS.items():
         for host, style in hosts:
             probe = {
                 "path": f"https://{host}/acme/jobs/1",
+                "manatal": f"https://{host}/open/v3/career-page/acme/jobs/"
+                if "api.manatal.com" in host
+                else f"https://{host}/acme/job/L8597V4V",
+                "pageup": f"https://{host}/1083/cw/en/job/495865",
                 "sub": f"https://acme.{host}/jobs",
                 "host": f"https://acme.{host}/careers",
                 "workday": f"https://acme.wd1.{host}/en-US/External_Careers/job/1",

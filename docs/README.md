@@ -7,6 +7,7 @@ Start here — docs are grouped by area.
 - [product/2026-08-14_twelve-week-roadmap.md](product/2026-08-14_twelve-week-roadmap.md) — the plan that came out of it: one strategy, one conversion feature, and the decision gates that say continue or stop.
 
 ## Discovery — growing company / ATS coverage
+- [Recruiterflow public HTML](recruiterflow/2026-10-03_public-api-measurement.md), [PageUp public RSS](pageup/2026-10-03_public-api-measurement.md), and [Manatal Jobs/JobPosts](manatal/2026-10-03_public-api-measurement.md) — measured protocols, identity, discovery and operating limits (ADRs 0382–0384).
 - [discovery/overview.md](discovery/overview.md) — how we find the `(ats, slug)` pairs; what works, what doesn't.
 - [discovery/crawler-design.md](discovery/crawler-design.md) — design for a focused ATS-tenant discovery crawler.
 - [discovery/common-crawl-mining.md](discovery/common-crawl-mining.md) — the Common Crawl mining run for India-tier ATS tenants.

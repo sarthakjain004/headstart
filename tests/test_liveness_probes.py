@@ -140,6 +140,85 @@ def _stub_get(status, body):
     return _get
 
 
+@pytest.mark.parametrize(
+    ("status", "fixture", "expected"),
+    [
+        (200, "recruiterflow_empty.html", ("live", 0)),
+        (200, "recruiterflow_inactive.html", ("dead", None)),
+        (404, None, ("dead", None)),
+        (429, None, ("unknown", None)),
+        (200, None, ("unknown", None)),
+        ("dns", None, ("unknown", None)),
+    ],
+)
+def test_recruiterflow_public_board_verdicts(monkeypatch, status, fixture, expected):
+    from headstart.scrapers.pacer import Pacer
+    from headstart.scrapers.recruiterflow import RecruiterflowScraper
+
+    monkeypatch.setattr(RecruiterflowScraper, "pacer", Pacer(0))
+    body = (
+        (_ROOT / "tests/fixtures" / fixture).read_bytes() if fixture else b"maintenance"
+    )
+    monkeypatch.setattr(cl, "_get", _stub_get(status, body))
+    assert cl.p_recruiterflow("cyrten", "") == expected
+
+
+def test_pageup_probe_uses_the_probe_timeout_and_counts_the_real_feed(monkeypatch):
+    from fake_fetcher import FakeResponse
+
+    def fetch(_method, url, **kwargs):
+        assert kwargs["timeout"] == cl.TIMEOUT
+        body = (
+            (_ROOT / "tests/fixtures/pageup_kinetic.xml").read_text()
+            if url.endswith("/rss")
+            else "<title>Kinetic IT / Careers</title>"
+        )
+        return FakeResponse(text=body, url=url)
+
+    monkeypatch.setattr(cl.http, "fetch", fetch)
+    assert cl.p_pageup("1083/cw/en", "") == (cl.LIVE, 3)
+
+
+@pytest.mark.parametrize(
+    ("status", "body", "expected"),
+    [
+        (
+            404,
+            {"detail": "No ClientPortalSettings matches the given query."},
+            ("dead", None),
+        ),
+        (404, {"detail": "Invalid page."}, ("unknown", None)),
+        (200, {"count": 0, "next": None, "previous": None, "results": []}, ("live", 0)),
+        (
+            200,
+            {
+                "count": 32,
+                "next": "https://core.api.manatal.com/open/v3/career-page/manatal/jobs/?page=2",
+                "results": [
+                    {
+                        "id": 1333846,
+                        "hash": "L8597V4V",
+                        "position_name": "Business Development Internship (12PM - 9PM)",
+                    }
+                ],
+            },
+            ("live", 32),
+        ),
+        (200, {"count": 32, "next": None, "results": []}, ("unknown", None)),
+        (429, {}, ("unknown", None)),
+    ],
+)
+def test_manatal_distinguishes_public_empty_dead_and_unreadable(
+    monkeypatch, status, body, expected
+):
+    from headstart.scrapers.manatal import ManatalScraper
+    from headstart.scrapers.pacer import Pacer
+
+    monkeypatch.setattr(ManatalScraper, "api_pacer", Pacer(0))
+    monkeypatch.setattr(cl, "_get", _stub_get(status, json.dumps(body).encode()))
+    assert cl.p_manatal("manatal", "") == expected
+
+
 def test_zoho_error_page_is_dead(monkeypatch):
     body = b"<html><head><style>.cl-error-block{}</style></head><body>Page does not exist</body></html>"
     monkeypatch.setattr(cl, "_get", _stub_get(200, body))

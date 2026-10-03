@@ -88,6 +88,21 @@ def test_cdx_429_retries_on_spare_and_honors_retry_after(miner, monkeypatch):
     assert 7 in sleeps
 
 
+def test_recruiterflow_captures_public_board_identity_and_url(miner):
+    spec = miner.ATS_PATTERNS["recruiterflow"]
+    found = {}
+    miner.extract_tenants(
+        spec,
+        [re.compile(p, re.IGNORECASE) for p in spec["patterns"]],
+        [
+            "https://recruiterflow.com/RFCAREERS/jobs/166?source=x",
+            "https://recruiterflow.com/blog/ats",
+        ],
+        found,
+    )
+    assert found == {"rfcareers": "https://recruiterflow.com/rfcareers/jobs"}
+
+
 H = "https://acme.wd1.myworkdayjobs.com"
 
 
