@@ -102,17 +102,18 @@ whenever a rule changes, so a rule change moves the whole history and draws no s
      duplicate copies and a move between families are Recounted. Closures are unlistings and
      Dormancy (ADR-0250). Stock moves exactly by its turnover at every tick.
 
-   Watched roles are not restated yet.
+   Watched roles are restated as current title-rule overlays on tech placements.
 4. **Serve the restated history.** A workflow reruns the restatement whenever the rules'
    fingerprint moves, and the Space reads its output. The fingerprint is a hash of the rule code,
    config, classifier weights and alias ledgers, computed rather than bumped by hand. Netting and
    counting-change markers remain only where a restatement cannot reach.
-5. **Coverage.** A restatement cannot see Jobs no scrape saw. A found Board's backlog is placed at
-   each Job's `posted_at` on the ATSes where that date is reliable (measured 2026-09-29 on the
-   served table: 90% or more of postings within 2 days of first sight on Workday, SuccessFactors,
-   Oracle, Ashby, SmartRecruiters, iCIMS and Workable). Elsewhere it is left out as it is today.
-   A removed Board is removed from the past too. A percentage or a direction defaults to Boards
-   tracked from the start.
+5. **Coverage.** A restatement cannot see Jobs no scrape saw. The original posting-date
+   backdating recommendation is superseded by
+   [ADR-0378](0378-trends-separates-first-counted-coverage-from-observed-activity.md):
+   no stock is backfilled from posting dates. A later observation does not establish the
+   earlier listing state or its historical rule inputs. A found Board's initial backlog is
+   coverage/Recounted, separate from later observed activity. A removed Board is removed
+   from the past too. A percentage or a direction defaults to Boards tracked from the start.
 6. **History before step 1** cannot be fully recomputed. It is spliced onto the restated series at
    their overlap and labelled approximate, and may be seeded from the full-row snapshots kept on
    the owner's machine.
