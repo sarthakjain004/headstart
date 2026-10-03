@@ -99,10 +99,16 @@ Final ledger after all archive increments: 422 rows, 227 live, 195 dead, 0 unkno
 These are rows; exclusions and identity election determine Scrapable/Hiring Boards.
 Upstream `kalil0321/ats-scrapers/ats-companies` contains no seed file for this provider
 (confirmed by the repository directory listing; all three guessed file requests 404).
-Common Crawl was attempted directly, one request at a time, over a three-year index list.
-The 2026-39 JobScore query yielded 697 captured URLs / 93 labels (4 outside the sitemap);
-Comeet 2026-39 returned 504, Polymer 2026-39 returned 502, and JobScore 2026-34 returned
-504. Their older remainder is **unmeasured**, not exhausted. No alternate address was used.
+The initial Common Crawl index-API failures were recovered through the published CDXJ
+range data. All 33 collections from CC-MAIN-2023-40 through CC-MAIN-2026-39 completed
+for jobs.polymer.co and api.polymer.co: **66/66 host-crawls**, with 2,298 deduplicated
+capture records / 1,330 distinct original URLs. Wayback completed **2/2 public-host
+pages and 1/1 API-host page**. The recovery added 12 labels: nine CC-only and three
+Wayback API-only relative to the previous pool. The selected archive namespaces have
+no outstanding outage gap. These are historical indexes, not an exhaustive customer
+roster or current Job evidence. The coordinating notebook
+`experiment/ats-archive-completion-2026-10-03/` retains `REPORT.md`,
+`artifacts/FINAL.json`, per-crawl/page completion manifests and raw ranges.
 
 ## Validation
 

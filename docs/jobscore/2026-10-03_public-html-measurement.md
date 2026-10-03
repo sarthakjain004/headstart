@@ -78,8 +78,17 @@ integration/test Boards remain excluded. This is request-body cost, not served-i
 `mine_jobscore.py` reads the robots-advertised gzip sitemap: 2,332 URLs named 498 Boards.
 Wayback/Common Crawl and careers-page fingerprinting recognize the public path forms.
 The upstream ats-scrapers repository has no JobScore seed file. The initial CC 2026-39
-query yielded 697 captures / 93 labels and four additional candidates; older-archive work
-and cross-provider overlap are tracked by the coordinating task.
+query yielded 697 captures / 93 labels and four additional candidates. The later recovery
+completed **33/33 careers.jobscore.com host-crawls**, CC-MAIN-2023-40 through
+CC-MAIN-2026-39, plus **31/31 Wayback pages**. Published CDXJ range data recovered
+index-API outages. The Common Crawl corpus contains 40,463 capture records / 21,711
+distinct original URLs. The 2,822 new labels comprise 36 CC-only, 2,406 Wayback-only and
+380 in both, relative to the previous pool. Every recovered label was probed as above.
+The selected archive namespaces have no outstanding outage gap; unarchived customers
+remain outside that claim. The coordinating notebook
+`experiment/ats-archive-completion-2026-10-03/` retains `REPORT.md`,
+`artifacts/FINAL.json`, completion manifests and raw ranges. Cross-provider overlap is
+reported by the coordinating audit.
 
 Local reproduction artifacts remain under `experiment/jobscore-public-api/`: `artifacts/`,
 `html_sample.py`, `html-sample-final.log`, `html-live-summary.json`, and

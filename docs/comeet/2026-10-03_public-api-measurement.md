@@ -43,7 +43,9 @@ Wayback completed 89 comeet.com and 22 comeet.co pages: 5,116 identities, 5,117 
 search seeds. Canonicalization then removed duplicate routes as above. No complete vendor
 roster was located. The Demo Company (yourcompany/80.003) lists 695 fabricated jobs and is
 excluded after reading its contents. Native Comeet job/apply pages do not name a separate
-backing ATS; cross-provider employer overlap remains unmeasured.
+backing ATS. The subsequent [employer overlap check](../discovery/2026-10-03_comeet-employer-overlap-validation.md)
+confirms partial overlap with Greenhouse, BambooHR and Lever for three employers;
+none supplies whole-Board alias proof. The separate full-corpus audit owns broader coverage.
 
 Enable: 113,839,488 bytes / 3,094 tech postings ≈ 37 KB/tech posting, comfortably below
 ADR-0158's ~2 MB bar. Missing descriptions (30) remain null rather than dropping Jobs.
@@ -93,10 +95,16 @@ Final ledger after the archive increment: 5,113 rows, 613 live, 4,305 dead, 195 
 These are rows; exclusions and identity election determine Scrapable/Hiring Boards.
 Upstream `kalil0321/ats-scrapers/ats-companies` contains no seed file for this provider
 (confirmed by the repository directory listing; all three guessed file requests 404).
-Common Crawl was attempted directly, one request at a time, over a three-year index list.
-The 2026-39 JobScore query yielded 697 captured URLs / 93 labels (4 outside the sitemap);
-Comeet 2026-39 returned 504, Polymer 2026-39 returned 502, and JobScore 2026-34 returned
-504. Their older remainder is **unmeasured**, not exhausted. No alternate address was used.
+The initial Common Crawl index-API failures were recovered through the published CDXJ
+range data. All 33 collections from CC-MAIN-2023-40 through CC-MAIN-2026-39 completed
+for both comeet.com and comeet.co: **66/66 host-crawls**, with 264,517 deduplicated
+capture records / 129,552 distinct original URLs. Wayback completed **89/89 .com and
+22/22 .co pages**. The recovery added 50 company UIDs, all CC-only relative to the
+previous pool; 40 alternate addresses were retained separately instead of replacing
+current labels. The selected archive namespaces have no outstanding outage gap.
+These are historical indexes, not an exhaustive customer roster or current Job evidence.
+The coordinating notebook `experiment/ats-archive-completion-2026-10-03/` retains
+`REPORT.md`, `artifacts/FINAL.json`, per-crawl/page completion manifests and raw ranges.
 
 ## Validation
 
