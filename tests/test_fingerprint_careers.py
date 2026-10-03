@@ -35,6 +35,13 @@ def test_host_keyed_provider_patterns_keep_the_full_host_and_count_hits():
     assert found[("phenom", "careers.acme.phenompeople.com")] == 1
 
 
+def test_instahyre_is_a_global_marketplace_not_an_unusable_jobboard_link():
+    assert fp.scan(
+        "https://www.instahyre.com/job-352689-full-stack-engineer-at-geoserve-bangalore/",
+        "acme.com",
+    ) == [("instahyre", "marketplace", "global", 1)]
+
+
 def test_gr8people_keeps_vendor_hosts_and_fingerprints_a_vanity_site():
     found = {
         (ats, tenant)

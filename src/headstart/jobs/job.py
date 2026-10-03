@@ -31,6 +31,9 @@ class Job:
     experience: str | None = None  # e.g. "3-5 Years", "Mid-Senior level"
     employment_type: str | None = None  # e.g. "Full-time", "Intern", "Contract"
     salary: str | None = None
+    # A provider-owned employer-profile key for a marketplace posting, never a cross-source
+    # company identity (ADR-0389). None for every ordinary ATS Board.
+    marketplace_employer_id: str | None = None
     # The ATS's own requisition id as it states it (ADR-0210), stated by the eight ATSes a served
     # row can be matched across: an Eightfold career site's posting names its backing Board's
     # requisition, and a row on that Board carries the same id. None on every other ATS; the store

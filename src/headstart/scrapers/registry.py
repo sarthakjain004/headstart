@@ -28,6 +28,7 @@ from headstart.scrapers.gr8people import Gr8PeopleScraper
 from headstart.scrapers.greenhouse import GreenhouseScraper
 from headstart.scrapers.happydance import HappydanceScraper
 from headstart.scrapers.icims import ICIMSScraper
+from headstart.scrapers.instahyre import InstahyreScraper
 from headstart.scrapers.jazzhr import JazzHRScraper
 from headstart.scrapers.jibe import JibeScraper
 from headstart.scrapers.jobscore import JobScoreScraper
@@ -133,6 +134,7 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
         MyNextHireScraper,
         TikTokScraper,
         GemScraper,
+        InstahyreScraper,
     )
 }
 

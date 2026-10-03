@@ -39,6 +39,7 @@ def test_job_round_trips_to_dict():
         "experience",
         "employment_type",
         "salary",
+        "marketplace_employer_id",
         "requisition",
     }
 

@@ -2954,6 +2954,33 @@ def _happydance_get(url):
     return r.status_code, r.content
 
 
+def p_instahyre(t, u):
+    """The global public listing is Instahyre's one marketplace Board."""
+    scraper = _scraper_for_row("instahyre", t, u)
+    try:
+        response = _fetch("GET", scraper.url(), headers={"User-Agent": UA})
+    except http.RequestsError as exc:
+        _note(_net_reason(exc))
+        return UNKNOWN, None
+    if response is None:
+        return UNKNOWN, None
+    if response.status_code in (404, 410):
+        return DEAD, None
+    if response.status_code != 200:
+        _note(f"http-{response.status_code}")
+        return UNKNOWN, None
+    try:
+        payload = response.json()
+        rows = payload.get("objects")
+        total = (payload.get("meta") or {}).get("total_count")
+    except (TypeError, ValueError):
+        rows = total = None
+    if not isinstance(rows, list) or not isinstance(total, int):
+        _note("body-unparseable")
+        return UNKNOWN, None
+    return LIVE, total
+
+
 def _rippling_posting_count(body):
     """Distinct postings: the listing has one row per work location, so rows overcount
     (rippling: 628 rows, 331 postings; petfolk 581 rows, 282 = the board page's `totalItems`,
@@ -3766,6 +3793,7 @@ PROBES = {
     "gem": p_gem,
     "gr8people": p_gr8people,
     "happydance": p_happydance,
+    "instahyre": p_instahyre,
 }
 
 

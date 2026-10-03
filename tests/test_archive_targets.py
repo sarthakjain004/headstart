@@ -14,11 +14,16 @@ from headstart.scrapers.registry import SCRAPERS
 
 def test_every_scraper_is_swept_or_explicitly_single_source():
     for namespaces in (cc_miner.ATS_PATTERNS, wayback_feeder.ATS_HOSTS):
-        assert set(
-            namespaces
-        ) | targets.COMPANY_DOMAIN_ATS | targets.SINGLE_SOURCE_ATS == set(SCRAPERS)
+        assert (
+            set(namespaces)
+            | targets.COMPANY_DOMAIN_ATS
+            | targets.SINGLE_SOURCE_ATS
+            | targets.MARKETPLACE_SOURCE_ATS
+            == set(SCRAPERS)
+        )
         assert not set(namespaces) & targets.COMPANY_DOMAIN_ATS
         assert not set(namespaces) & targets.SINGLE_SOURCE_ATS
+        assert not set(namespaces) & targets.MARKETPLACE_SOURCE_ATS
 
 
 def test_cc_includes_every_measured_wayback_regional_and_legacy_host():

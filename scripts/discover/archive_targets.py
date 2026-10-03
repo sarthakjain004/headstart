@@ -1,8 +1,9 @@
 """Archive sweep coverage outside enumerable ATS namespaces.
 
 Company-domain providers can be checked on known hosts; this is an archive-presence
-audit, not discovery of unknown customers. The single-company scrapers have no
-tenant roster to discover. Tests reconcile these sets with the scraper registry.
+audit, not discovery of unknown customers. The single-company scrapers and global
+marketplaces have no tenant roster to discover. Tests reconcile these sets with the
+scraper registry.
 """
 
 import csv
@@ -17,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SINGLE_SOURCE_ATS = frozenset(
     {"amazon", "apple", "bytedance", "google", "meta", "tesla", "tiktok", "uber"}
 )
+MARKETPLACE_SOURCE_ATS = frozenset({"instahyre"})
 COMPANY_DOMAIN_ATS = frozenset(
     {"phenom", "radancy", "happydance", "spire2grow", "wp_job_openings"}
 )

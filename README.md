@@ -7,14 +7,16 @@
 [![Python](https://img.shields.io/badge/python-3.12+-blue)](./pyproject.toml)
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue)](./LICENSE)
 
-### Every opening. Straight from the source.
+### Every opening. From public hiring sources.
 
-Software-engineering and tech roles, read directly from companies' own hiring boards.
+Software-engineering and tech roles, read directly from companies' own hiring boards and selected public marketplaces.
 The badge above reads the searchable-job count from the running service; open
 [HeadStart](https://imposeidon-headstart-search.hf.space) for the current count. Badge caches
 can lag by a few minutes, and a sleeping or restarting service may make the badge unavailable.
 
-Not from a feed employers had to opt in to. Not from a list ranked by who paid.
+Direct employer Boards remain the default. A measured public marketplace is admitted only when its
+listing and application flow are public, its identity limits are explicit, and its trade-offs are
+recorded in an ADR.
 
 **[Search the index](https://imposeidon-headstart-search.hf.space)** (free; browse without signing in) ·
 **[Read the decisions](./docs/adr/)**
@@ -37,13 +39,15 @@ Semantic search over local embeddings, with the structured filters — years, sa
 employment type — left exactly where they belong: under your control, not inferred from a
 sentence.
 
-### Many hiring platforms. One shape.
+### Many hiring sources. One shape.
 
-Greenhouse, Workday, Lever, Ashby, iCIMS, Oracle, Taleo, BambooHR, Phenom, and more, plus
-companies' own career sites. The [scraper registry](src/headstart/scrapers/registry.py) is the
-current list; new providers appear there automatically.
-HeadStart finds which companies host boards on which ATS, checks that each board is alive,
-and normalizes every posting into a single `Job`. You never learn an ATS's name.
+Greenhouse, Workday, Lever, Ashby, iCIMS, Oracle, Taleo, BambooHR, Phenom, Instahyre, and more,
+plus companies' own career sites. The [scraper registry](src/headstart/scrapers/registry.py) is
+the current list; new providers appear there automatically.
+HeadStart finds which companies host boards on which ATS, checks that each board is alive, and
+normalizes every posting into a single `Job`. A marketplace is one explicitly labelled exception:
+Instahyre is read from its global public listing, where its employer profile remains source-local
+metadata and the job link stays on Instahyre (ADR-0389). You never need to learn a source's name.
 
 ### Everything above is measured.
 
@@ -324,6 +328,7 @@ fails if this table drifts from it.
 | `id` | string | `{ats}:{slug}:{native_id}` — the Board key is everything before the last `:` |
 | `ats` | string | `greenhouse`, `workday`, `ashby`, `darwinbox`, … |
 | `company` | string | the company's name: a curated one, else the one its Board states, else its humanised tenant; empty where the tenant is only a code (see *ATS coverage*, above; ADR-0212) |
+| `marketplace_employer_id` | string | source-local employer-profile key for a marketplace Job (Instahyre); **not** a verified company, legal entity, Board key, or cross-source deduplication key. Null for ATS Boards (ADR-0389) |
 | `title` | string | embedded, with the description |
 | `description` | string | the Job's description text, so the Keyword filter can match inside it (ADR-0104). Follows the posting: when a run fetches different text, the row is rewritten to serve it, while an empty fetch leaves it alone (ADR-0207). The `vector` is not re-embedded then, so it can encode an older revision. **Nullable** — null on rows indexed before the column existed and on Jobs whose detail pass found nothing. `/search` omits it; `/job` serves its first 12,000 characters (ADR-0277) |
 | `description_stored` | bool | whether this row carries `description`; materialized and bitmap-indexed so coverage does not scan the text column (ADR-0173) |

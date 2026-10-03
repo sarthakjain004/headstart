@@ -141,21 +141,21 @@ Count distinct keys, never lines — both files carry case-variants.
 
 Two rules resolve most of it. **"live" describes a _row_, not a Board** — a sentence saying "live boards" is ambiguous by construction, because 6,628 live rows are duplicate spellings of a Board counted elsewhere. And **the subtractions depend on the order you apply them**: `EXCLUDED_BOARDS` removes 453 Boards from the raw live rows but only **450** from the deduped set, because three of them were themselves duplicate spellings. The chain below dedupes *first*; excluding first and so reads −453 / −6,625. Both reconcile; neither is quotable without saying which order it used.
 
-**Ledger row** — 354,018:
+**Ledger row** — 354,019:
 One line in a `data/validate/liveness/{ats}.csv`. Includes `dead` and `unknown`. Never a Board count; a raw `wc -l` overstates by however many duplicates exist.
 
-**Live row** — 219,970:
+**Live row** — 219,971:
 A Ledger row whose last verdict is `live`. Still a row: pre-dedupe, and pre every deliberate exclusion.
 _Avoid_: "live Boards" for this number — that is the phrase this section exists to kill.
 
-**Unique Board** — 213,338:
+**Unique Board** — 213,339:
 Live rows collapsed to one entry per canonical `board_key` (ADR-0023) — the distinct Boards we know exist — less the 4 Boards with a `dead` row newer than their newest `live` row (ADR-0219). **Scrapable Board** and **Hiring Board** are subsets of it; nothing in that chain removes a duplicate, only Boards we choose not to read. The two *history* counts at the end are **not** subsets: 949 Scraped Boards are absent from it (measured 2026-09-25; `board_cost.csv` is HF-backed, so CI skips this figure), because a Board read months ago may have gone Dead since and left the live set.
 
-**Scrapable Board** — 184,773:
+**Scrapable Board** — 184,774:
 A Unique Board a run may actually pick: minus `registry.DISABLED_ATS` (−25,627, all of it `join`), `excluded_and_parked.EXCLUDED_BOARDS` (−450 vendor test Boards), the alias ledger (−2,111 Boards published under a second hostname or label, Taleo career sections and ADP Recruiting Management career sites whose every posting another section or site of the same tenant already lists, Eightfold career sites whose backing ATS Board already serves them, or Radancy fronts whose every posting another front lists, ADR-0111, ADR-0182, ADR-0186, ADR-0202, ADR-0205, ADR-0222, ADR-0265 and ADR-0301) and `excluded_and_parked.PARKED_BOARDS` (−377). Computed by `scrapable_boards.load(min_jobs=0)` (ADR-0191, the one place that decides whether a Board is scraped) — which applies these in the *other* order, excluding before it dedupes, and lands on the same figure. The right default answer to "how many Boards do we have".
 _Avoid_: calling this "unique" — the 28,565 Boards between it and Unique Board are real and distinct, deliberately skipped rather than deduplicated. The alias subtraction is the one exception, and it is small: those 2,111 serve no posting a kept Board does not — one Board reached by more than one name, a Taleo career section or ADP Recruiting Management career site whose every posting another of its tenant already lists, an Eightfold career site whose backing ATS Board lists its postings and serves every tech one (a distinct Board, but a redundant one), or a Radancy front whose every posting another front lists.
 
-**Hiring Board** — 128,223:
+**Hiring Board** — 128,224:
 A Scrapable Board with at least one open posting (`scrapable_boards.load(min_jobs=1)`, the function's default). The other 56,550 are live but empty.
 
 **Slice** — 80,000:
@@ -588,9 +588,9 @@ _Avoid_: using it for a **shard**, which is the unit of _work_ a planner assigns
 
 ## Relationships
 
-- A **Company** runs its **Board** on exactly one **ATS**, located by its **Slug**.
+- A **Company** normally runs its **Board** on exactly one **ATS**, located by its **Slug**. A **Marketplace** is the exception: its global source hosts many employer profiles and owns the application flow; that profile is not a Company identity.
 - A **Tenant** holds one or more **Boards** on one **ATS**; the **Company directory** joins a Tenant's Boards into one entry.
-- A **Scraper** (one per **ATS**) reads a **Board** and produces **Jobs**.
+- A **Scraper** reads an ATS **Board** or one **Marketplace** source and produces **Jobs**.
 - **Discovery** collects **Companies** (each as an `(ATS, slug)`) via **Feeders**; **Liveness** sorts their **Boards** into Live / Dead / Unknown and writes the Live ones to the **Active list**; **Resolve** maps a known **Company** to its `(ATS, slug)`.
 - The scrape step runs **Scrapers** over the **Active list** and assembles the **Feed**.
 - The alerts run ranks **Jobs** from the **Search index** against each **Subscription**'s **Query**, and delivers the ones past its **Watermark** as one **Digest** over that Subscription's **Transport**.
@@ -604,6 +604,7 @@ _Avoid_: using it for a **shard**, which is the unit of _work_ a planner assigns
 ## Flagged ambiguities
 
 - **"provider" vs "ATS"** — used interchangeably across code and docs; resolved: **ATS** is canonical.
+- **"marketplace" vs "aggregator"** — **Marketplace** is a source kind: one platform's public multi-employer listings and its own application flow (Instahyre, ADR-0389). **Aggregator** remains a Company-directory operator label for a job board that re-posts others' jobs. Never use the latter as the source kind.
 - **"board" vs "careers page"** — distinct: **Board** is the ATS-hosted listing; **Careers page** is the company's own page that links or embeds it.
 - **"posting/opening" vs "Job"** — resolved: **Job** is the normalized record; "posting" names the raw ATS record before normalization.
 - **"active"** — overloaded between "the board responds" (**Live**) and "currently hiring" (Live with count > 0); resolved: the **Active list** is the Live set, and "hiring" is the count-filtered subset.

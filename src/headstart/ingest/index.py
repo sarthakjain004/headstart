@@ -206,6 +206,9 @@ _EXPERIENCE_FILTER_FIELDS = tuple(
 # already held once its Board is re-scraped. Held as a constant because `_schema` and `sync`'s
 # migration both need it.
 _REQUISITION_FIELD = pa.field("requisition", pa.string())
+# The source-local employer-profile key marketplace Jobs carry. It is not a Company identity and
+# is not used for cross-source deduplication (ADR-0389).
+_MARKETPLACE_EMPLOYER_ID_FIELD = pa.field("marketplace_employer_id", pa.string())
 
 
 class _Held(NamedTuple):
@@ -228,6 +231,7 @@ def _schema(dim: int) -> pa.Schema:
             pa.field("id", pa.string()),
             pa.field("ats", pa.string()),
             pa.field("company", pa.string()),
+            _MARKETPLACE_EMPLOYER_ID_FIELD,
             pa.field("title", pa.string()),
             _DESCRIPTION_FIELD,
             _DESCRIPTION_STORED_FIELD,
@@ -948,6 +952,12 @@ def sync(args: argparse.Namespace) -> int:
     if _DESCRIPTION_FIELD.name not in table.schema.names:
         _log.info(f"adding '{_DESCRIPTION_FIELD.name}' to the existing table")
         table.add_columns(_DESCRIPTION_FIELD)
+
+    if _MARKETPLACE_EMPLOYER_ID_FIELD.name not in table.schema.names:
+        _log.info(
+            f"adding '{_MARKETPLACE_EMPLOYER_ID_FIELD.name}' to the existing table"
+        )
+        table.add_columns(_MARKETPLACE_EMPLOYER_ID_FIELD)
 
     _migrate_presence_flags(table)
     _migrate_posted_at_comparable(table)
