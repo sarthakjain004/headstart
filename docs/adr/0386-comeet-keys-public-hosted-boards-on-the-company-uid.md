@@ -20,7 +20,7 @@ Before landing/refreshing the ledger, run `comeet_canonical_boards.py`: retain o
 canonical public label per live UID in both pool and ledger. Only a successful canonical-page
 read may replace previous rows. This prevents a dead old label's newer verdict from shadowing
 its live replacement under ADR-0219. The initial normalization removed 54 redundant rows;
-the final 5,063 rows contain 591 live Boards, 4,277 dead rows and 195 consent unknowns.
+the original 5,063 rows contained 591 live Boards. The recovered 50 company UIDs bring the ledger to 5,113 rows: 613 live, 4,305 dead and 195 consent unknowns. Its 22 remaining duplicate-UID groups contain no live row.
 No new alias-ledger signal or served deduplication migration is required.
 
 Descriptions/requirements, company, location, department, experience and type come from the
@@ -29,8 +29,7 @@ Account Manager has `is_remote=true`). No posted date is fabricated from `time_u
 No native structured salary was observed. No detail pass or tech-detail gate is needed.
 
 Enable it: 113,839,488 bytes / 3,094 tech postings ≈ 37 KB/tech posting. Exclude the Demo
-Company's 695 fabricated postings. Pace process-wide starts at one second; a courteous
-8-request test at concurrency 4 succeeded, and the census saw no 429. The knee is unknown.
+Company's 695 fabricated postings. The bounded 2/4/8/16 ramp returned 120/120 HTTP 200, reaching 5.92 mixed-board requests/s at eight. Pace starts at four requests/s; no refusal threshold is claimed.
 
 ## Alternatives considered
 

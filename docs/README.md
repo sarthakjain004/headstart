@@ -14,7 +14,7 @@ Start here — docs are grouped by area.
 
 ## Public ATS measurements
 - [Comeet / Spark Hire Recruit](comeet/2026-10-03_public-api-measurement.md) — public hosted JSON, UID identity, canonical labels and consent unknowns.
-- [JobScore](jobscore/2026-10-03_public-api-measurement.md) — complete feeds, canonical company codes and compensation units.
+- [JobScore](jobscore/2026-10-03_public-html-measurement.md) — public HTML, canonical labels and stale posting routes.
 - [Polymer](polymer/2026-10-03_public-api-measurement.md) — public listing/details, bounded pagination and metadata.
 
 ## Pipeline — how the run actually works

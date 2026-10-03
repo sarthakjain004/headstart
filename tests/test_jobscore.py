@@ -1,87 +1,84 @@
-"""JobScore's public feed, recorded 2026-10-03; personal hiring-team data omitted."""
+"""Public JobScore HTML, recorded 2026-10-03; styles and unrelated scripts removed."""
 
-import json
 from pathlib import Path
+
+from fake_fetcher import FakeFetcher, FakeResponse
 
 from headstart.scrapers.registry import get_scraper
 
-RAW = json.loads(
-    (Path(__file__).parent / "fixtures/jobscore_jobscore.json").read_text()
-)
+FIXTURES = Path(__file__).parent / "fixtures"
 
 
-def test_full_feed_preserves_source_fields_without_a_detail_request():
-    (job,) = get_scraper("jobscore", "jobscore").parse(RAW, "2026-10-03T00:00:00Z")
+def test_public_pages_never_poll_a_feed_or_serve_confirmed_gone_postings():
+    page = (FIXTURES / "jobscore_pricefx_public.html").read_text()
+    detail = (FIXTURES / "jobscore_pricefx_detail.html").read_text()
+
+    def route(method, url, kwargs):
+        assert "feed." not in url
+        if url.endswith("/careers/pricefx"):
+            return FakeResponse(text=page)
+        return (
+            FakeResponse(text=detail)
+            if "/solution-strategist-" in url
+            else FakeResponse(404)
+        )
+
+    scraper = get_scraper("jobscore", "pricefx", fetcher=FakeFetcher(route))
+    jobs = scraper.fetch()
+    assert len(jobs) == 1
+    job = next(j for j in jobs if j.title == "Solution Strategist")
+    assert job.id == "jobscore:pricefx:dvcDLS919kwikf8MefTVkM"
+    assert job.department == "Solution Strategy"
+    assert job.posted_at == "2026-09-28T17:00:55Z"
+    assert job.remote is True
+    assert "base salary range" in job.description
+    assert job.description.endswith("#BI-REMOTE")
+    assert job.salary == "145000.0-170000.0 USD YEAR"
+    assert scraper.detail_losses["HTTP 404"] == 2
+
+
+def test_missing_jsonld_still_has_the_full_visible_description_and_no_invented_date():
+    page = (FIXTURES / "jobscore_jobscore_public.html").read_text()
+    detail = (FIXTURES / "jobscore_jobscore_detail.html").read_text()
+    scraper = get_scraper(
+        "jobscore",
+        "jobscore",
+        fetcher=FakeFetcher(
+            lambda m, u, k: FakeResponse(text=detail if "/jobs/" in u else page)
+        ),
+    )
+    (job,) = scraper.fetch()
     assert job.id == "jobscore:jobscore:dpi9LtxFTluy3ZQtfTfYWo"
     assert job.company == "JobScore"
     assert job.title == "Senior Front-End Engineer"
     assert job.remote is True
-    assert job.location == "Remote in Joinville, Santa Catarina, Brazil"
-    assert job.posted_at == "2026-01-20T18:35:42.129Z"
-    assert job.employment_type == "Full Time"
     assert job.department == "Engineering"
+    assert job.employment_type == "Full Time"
     assert "7+ years of commercial software engineering" in job.description
-    assert job.url.endswith("/senior-front-end-engineer-dpi9LtxFTluy3ZQtfTfYWo")
+    assert job.posted_at is None
 
 
-def test_compensation_cents_become_an_hourly_dollar_range():
-    from headstart.jobs import salary
-
-    raw = json.loads(
-        (Path(__file__).parent / "fixtures/jobscore_avispatechnology.json").read_text()
+def test_transient_detail_failures_keep_listed_jobs_and_explicit_empty_boards_are_empty():
+    page = (FIXTURES / "jobscore_pricefx_public.html").read_text()
+    scraper = get_scraper(
+        "jobscore",
+        "pricefx",
+        fetcher=FakeFetcher(
+            lambda m, u, k: (
+                FakeResponse(503) if "/jobs/" in u else FakeResponse(text=page)
+            )
+        ),
     )
-    (job,) = get_scraper("jobscore", "avispatechnology").parse(
-        raw, "2026-10-03T00:00:00Z"
-    )
-    span = salary.from_field(job.salary, ats="jobscore")
-    assert span.min_annual == 83200
-    assert span.max_annual == 83200
-    assert span.currency == "USD"
-
-
-def test_a_missing_jobs_envelope_fails_instead_of_certifying_an_empty_board():
-    import pytest
-
-    with pytest.raises(TypeError):
-        get_scraper("jobscore", "jobscore").parse({"error": "unavailable"}, "now")
+    jobs = scraper.fetch()
+    assert len(jobs) == 3
+    assert all(j.description is None for j in jobs)
+    assert scraper.detail_losses["HTTP 503"] == 3
+    empty = (FIXTURES / "jobscore_blueleaf_public.html").read_text()
     assert (
-        get_scraper("jobscore", "jobscore").parse(
-            {"company_code": "jobscore", "jobs": []}, "now"
-        )
+        get_scraper(
+            "jobscore",
+            "blueleaf",
+            fetcher=FakeFetcher(lambda *_: FakeResponse(text=empty)),
+        ).fetch()
         == []
-    )
-
-
-def test_a_lone_salary_ceiling_is_not_a_salary_floor():
-    from copy import deepcopy
-
-    raw = deepcopy(RAW)
-    raw["jobs"][0].update(
-        public_salary_minimum=None,
-        public_salary_maximum=9000000,
-        currency_code="USD",
-        public_compensation_interval="per year",
-    )
-    (job,) = get_scraper("jobscore", "jobscore").parse(raw, "now")
-    assert job.salary is None
-
-
-def test_yen_compensation_is_already_in_whole_yen_not_cents():
-    from headstart.jobs import salary
-
-    raw = json.loads(
-        (Path(__file__).parent / "fixtures/jobscore_imgix_jpy.json").read_text()
-    )
-    (job,) = get_scraper("jobscore", "imgix").parse(raw, "now")
-    assert salary.from_field(job.salary, ats="jobscore").min_annual == 10000000
-
-
-def test_vanity_feed_links_use_the_verified_provider_posting_route():
-    raw = json.loads(
-        (Path(__file__).parent / "fixtures/jobscore_pricefx.json").read_text()
-    )
-    jobs = get_scraper("jobscore", "pricefx").parse(raw, "now")
-    assert (
-        jobs[2].url
-        == "https://careers.jobscore.com/careers/pricefx/jobs/solution-strategist-dvcDLS919kwikf8MefTVkM"
     )

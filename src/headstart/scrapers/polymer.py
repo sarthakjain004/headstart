@@ -22,13 +22,15 @@ from headstart.scrapers.base import (
 from headstart.scrapers.country_codes import ISO_ALPHA2_NAMES
 from headstart.scrapers.pacer import Pacer
 
-_PACER = Pacer(0.5)
+# Mixed-board throughput flattened after eight concurrent (120/120 HTTP 200).
+_PACER = Pacer(0.125)
 
 
 class PolymerScraper(BaseScraper):
     ats = "polymer"
+    spare_on_transport_error = True
     has_detail_pass = True
-    detail_workers = 2
+    detail_workers = 8
     url_shape = r"https://jobs\.polymer\.co/[\w-]+/\d+"
 
     @staticmethod

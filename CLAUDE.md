@@ -208,11 +208,10 @@ registry, ADR directory and glossary; its searchable-job badge reads the live se
   liveness refresh. The UID is the Board key; renamed labels can publish the same jobs without
   redirecting. A later dead old label would otherwise shadow the live canonical label. The
   normalizer rewrites only UIDs whose canonical public page was successfully read (ADR-0386).
-- **JobScore lands the feed's canonical `company_code` only.** Old labels can still return
-  another account label's whole feed (`citylightandpower` → `clpinc`). The probe excludes
-  those aliases using public HTML, without polling the feed. The planner defers a JobScore Board
-  until one hour after its persisted last look; manual feed reads must honor the same hourly
-  guidance (ADR-0385).
+- **JobScore lands the canonical label stated by its public page's Atom link.** Old labels can
+  still display the same Board (`citylightandpower` → `clpinc`); the probe excludes those aliases.
+  The scraper and prober read public HTML and never request a feed. Advertised card counts can
+  exceed reachable postings; confirmed 404/410 posting pages are omitted (ADR-0385).
 
 ### To build, by evidence
 

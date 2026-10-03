@@ -41,8 +41,7 @@ previously served rows, so no DERIVATIONS_VERSION bump is needed.
 
 API and board robots are empty 200 documents. No credentials, tokens or private endpoints
 are needed. The 392 uncached candidates completed with 2 workers in 49.4 seconds, zero
-unknowns and no 429; the production scraper paces process-wide starts at 0.5 seconds and
-uses 2 detail workers. This is a conservative operating point, not a measured rate-limit knee.
+unknowns and no 429; the subsequent ramp below supports eight detail workers and eight process-wide starts per second. Mixed-board throughput flattened after concurrency eight in the subsequent ramp.
 Other user agents and a larger/live multi-page Board are unmeasured.
 
 Wayback completed 2 pages, 406 labels; search seeds make 410. No vendor-wide roster was
@@ -63,7 +62,7 @@ All observations are from 2026-10-03. The local notebook is
 record requests, parse real responses and calculate the figures below. Captures stay
 local; fixtures are trimmed real responses with recruiter/contact/token material omitted.
 
-The rate-limit knee was deliberately not stress-tested. No credential, customer API,
+The bounded ramp below replaces the initial untested operating point; no origin was stressed past a refusal. No credential, customer API,
 IP rotation, daemon rotation or pipeline/deploy workflow was used. The normal prober was
 run through `probe_no_rotation.py`, which disables rotation and records every response.
 Unexplained responses remain UNKNOWN; malformed scraper envelopes fail instead of
@@ -96,7 +95,7 @@ in the local summary; source phrases are retained rather than inventing employme
 
 ## Discovery and liveness
 
-Final ledger: 410 rows, 223 live, 187 dead, 0 unknown.
+Final ledger after the nine-label archive increment: 419 rows, 225 live, 194 dead, 0 unknown. The incremental pass settled two live and seven dead in 1.3 seconds at four workers.
 These are rows; exclusions and identity election determine Scrapable/Hiring Boards.
 Upstream `kalil0321/ats-scrapers/ats-companies` contains no seed file for this provider
 (confirmed by the repository directory listing; all three guessed file requests 404).
@@ -116,3 +115,28 @@ missing a URL shape. Its existing served corpus returned two pre-existing Fresht
 the Freshteam correction (browser verification showed the query route opens the whole Board). Several SPA HTML bodies omit the title; those are not evidence
 of a wrong route. No rows from these three new ATSes exist in the served corpus yet:
 actual served-row/filter verification is a **post-pipeline follow-up**, not claimed here.
+
+## Bounded concurrency and spare-route health
+
+After the initial courtesy runs, a fresh process measured two scenarios per provider:
+one Board and eight distinct Boards. Each level issued twice its concurrency in requests,
+then paused two seconds; any non-200/transport failure would stop that provider. No feed
+was requested. This is a short operating-point experiment, not a claim about the vendor's
+maximum or an adversarial stress test. Every one of 120 ramp requests returned HTTP 200.
+
+| Scenario | Concurrency | Requests | Requests/s | p50 seconds | p95 seconds |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| one-board | 2 | 4 | 4.05 | 0.492 | 0.7107 |
+| one-board | 4 | 8 | 6.93 | 0.565 | 0.7718 |
+| one-board | 8 | 16 | 14.14 | 0.542 | 0.7613 |
+| one-board | 16 | 32 | 18.64 | 0.703 | 1.0295 |
+| many-boards | 2 | 4 | 2.91 | 0.559 | 1.3225 |
+| many-boards | 4 | 8 | 4.99 | 0.591 | 1.6023 |
+| many-boards | 8 | 16 | 11.33 | 0.7 | 1.3633 |
+| many-boards | 16 | 32 | 12.42 | 0.785 | 1.73 |
+
+A serial direct/spare pair before the ramp returned 200 on both routes: direct 0.7437 s / 4,785 bytes, spare 0.7817 s / 4,785 bytes. The existing SOCKS proxy was used; no daemon changes or rotation occurred. This proves route health, not a live transport-failure recovery.
+
+Polymer mixed-board throughput rose from 11.33 to only 12.42 requests/s between eight and sixteen while p95 rose from 1.36 to 1.73 seconds. Choose eight detail workers and eight starts/s at that observed throughput knee. No refusal threshold is asserted.
+
+The scraper opts into one spare retry for an exhausted connection/timeout/reset failure through the shared Fetcher seam. HTTP responses, including 403/429 challenges/refusals, never trigger that switch. The selected pacing remains in place. Raw outcomes and reproduction script: `experiment/polymer-public-api/concurrency-results.json` and `concurrency.py`.

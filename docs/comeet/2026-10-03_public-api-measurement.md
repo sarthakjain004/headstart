@@ -36,8 +36,7 @@ postings; description salary extraction remains available. No detail pass or det
 Robots allows `/jobs/` and forbids tracking-query variants; the scraper adds none.
 Courtesy sample: 8/8 public boards succeeded at concurrency 4 in 2.67 seconds. The full
 first pass probed 5,102 uncached candidates at 4 workers in 530.5 seconds, with no HTTP
-429. It found consent pages and aliases, not a measured rate-limit knee. Production
-spaces request starts process-wide by one second. Only `headstart/0.1` was compared at scale;
+429. It found consent pages and aliases. The subsequent ramp below measured concurrency through sixteen. Production now spaces process-wide starts by 0.25 seconds, below the measured mixed-board rate at concurrency eight. Only `headstart/0.1` was compared at scale;
 other user agents and limits beyond these observations are unknown.
 
 Wayback completed 89 comeet.com and 22 comeet.co pages: 5,116 identities, 5,117 with
@@ -57,7 +56,7 @@ All observations are from 2026-10-03. The local notebook is
 record requests, parse real responses and calculate the figures below. Captures stay
 local; fixtures are trimmed real responses with recruiter/contact/token material omitted.
 
-The rate-limit knee was deliberately not stress-tested. No credential, customer API,
+The bounded ramp below replaces the initial untested operating point; no origin was stressed past a refusal. No credential, customer API,
 IP rotation, daemon rotation or pipeline/deploy workflow was used. The normal prober was
 run through `probe_no_rotation.py`, which disables rotation and records every response.
 Unexplained responses remain UNKNOWN; malformed scraper envelopes fail instead of
@@ -90,7 +89,7 @@ in the local summary; source phrases are retained rather than inventing employme
 
 ## Discovery and liveness
 
-Final ledger: 5,063 rows, 591 live, 4,277 dead, 195 unknown.
+Final ledger after the archive increment: 5,113 rows, 613 live, 4,305 dead, 195 unknown. The 50 new company UIDs yielded 22 live and 28 dead in 7.1 seconds at four workers. There are 5,091 distinct UIDs; the 22 duplicate-UID groups are entirely non-live and cannot shadow a live canonical Board. A fresh canonical reconciliation verified 599 captured/live canonical UIDs plus the 14 already-canonical seed Boards, changing no row counts.
 These are rows; exclusions and identity election determine Scrapable/Hiring Boards.
 Upstream `kalil0321/ats-scrapers/ats-companies` contains no seed file for this provider
 (confirmed by the repository directory listing; all three guessed file requests 404).
@@ -116,3 +115,28 @@ Review follow-up: explicit On-site now overrides contradictory Remote location t
 preserves capture timestamps, rejects proofs older than any ledger verdict, streams each
 attempt, and atomically checkpoints dated proofs; `--resume` continues a partial scan.
 Captures with no reliable timestamp are declined rather than stamped as current.
+
+## Bounded concurrency and spare-route health
+
+After the initial courtesy runs, a fresh process measured two scenarios per provider:
+one Board and eight distinct Boards. Each level issued twice its concurrency in requests,
+then paused two seconds; any non-200/transport failure would stop that provider. No feed
+was requested. This is a short operating-point experiment, not a claim about the vendor's
+maximum or an adversarial stress test. Every one of 120 ramp requests returned HTTP 200.
+
+| Scenario | Concurrency | Requests | Requests/s | p50 seconds | p95 seconds |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| one-board | 2 | 4 | 1.91 | 0.817 | 1.3251 |
+| one-board | 4 | 8 | 4.09 | 0.835 | 1.1909 |
+| one-board | 8 | 16 | 7.32 | 0.803 | 1.4311 |
+| one-board | 16 | 32 | 13.37 | 0.882 | 1.5676 |
+| many-boards | 2 | 4 | 1.67 | 1.2 | 1.7726 |
+| many-boards | 4 | 8 | 3.35 | 0.89 | 1.7781 |
+| many-boards | 8 | 16 | 5.92 | 0.96 | 2.0675 |
+| many-boards | 16 | 32 | 10.24 | 1.064 | 1.881 |
+
+A serial direct/spare pair before the ramp returned 200 on both routes: direct 1.601 s / 220,486 bytes, spare 0.6809 s / 220,485 bytes. The existing SOCKS proxy was used; no daemon changes or rotation occurred. This proves route health, not a live transport-failure recovery.
+
+Comeet mixed-board throughput rose to 5.92 requests/s at eight and 10.24 at sixteen. Ship four process-wide starts/s; there is no detail fan-out. No refusal knee was reached within the tested range.
+
+The scraper opts into one spare retry for an exhausted connection/timeout/reset failure through the shared Fetcher seam. HTTP responses, including 403/429 challenges/refusals, never trigger that switch. The selected pacing remains in place. Raw outcomes and reproduction script: `experiment/polymer-public-api/concurrency-results.json` and `concurrency.py`.

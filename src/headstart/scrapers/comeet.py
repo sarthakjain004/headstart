@@ -19,8 +19,8 @@ from headstart.jobs.job import Job, html_to_text, remote_from_workplace
 from headstart.scrapers.base import BaseScraper
 from headstart.scrapers.pacer import Pacer
 
-# Conservative process-wide starts below this session's courtesy sample; knee unknown.
-_PACER = Pacer(1.0)
+# Four starts/s: mixed-board ramp reached 5.92/s at eight concurrent, 120/120 HTTP 200.
+_PACER = Pacer(0.25)
 
 BOARD = re.compile(
     r"(?:https?://(?:www\.)?comeet\.co(?:m)?/jobs/)?([\w.-]+/[0-9a-f]+\.[0-9a-f]+)(?:/|$)",
@@ -48,6 +48,7 @@ def hosted_board(page: str) -> tuple[dict, list[dict]]:
 
 class ComeetScraper(BaseScraper):
     ats = "comeet"
+    spare_on_transport_error = True
     url_shape = r"https://www\.comeet\.com/jobs/[\w.-]+/[\w.]+/[^/]+/[\w.]+"
 
     @staticmethod

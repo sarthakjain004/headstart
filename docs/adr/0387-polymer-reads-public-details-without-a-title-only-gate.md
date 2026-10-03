@@ -26,10 +26,9 @@ hourly amounts before annualization. Serve the verified vendor-host posting rout
 when the feed's URL names a vanity host.
 
 A named empty feed is live-empty; only the two measured 422 missing-organization/careers-page
-bodies are dead. Other failures are unknown. The census settled 410 labels: 223 live,
-187 dead, no unknowns. Exclude the documentation's Aperture Labs demo after reading its
-corporate-ipsum description. Process-wide request starts are 0.5 seconds apart; detail width
-is two. No rate-limit knee or real multi-page Board was established.
+bodies are dead. Other failures are unknown. The initial census settled 410 labels; recovered archives bring it to 419: 225 live,
+194 dead, no unknowns. Exclude the documentation's Aperture Labs demo after reading its
+corporate-ipsum description. A 120-request ramp through 2/4/8/16 concurrency returned only HTTP 200. Mixed-board throughput flattened after eight, so detail width is eight with eight starts/s. No real multi-page Board was established.
 
 Enable it: 384,986 listing bytes plus ~6.6 KB per detail projects ~2.9 MB for all 380 sampled
 postings / 91 tech jobs ≈ 32 KB/tech, well below ADR-0158's ~2 MB bar.

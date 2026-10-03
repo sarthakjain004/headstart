@@ -130,7 +130,13 @@ def main() -> None:
             except Exception as exc:  # noqa: BLE001 - an unresolved UID keeps its old rows
                 checkpoint(slug, f"preserve: {type(exc).__name__}")
     for slug in sorted(renamed):
-        if slug.rsplit("/", 1)[-1] in proven:
+        uid = slug.rsplit("/", 1)[-1]
+        proof = proven.get(uid)
+        newest = max(
+            (r["checked_at"] for r in rows if r["tenant"].rsplit("/", 1)[-1] == uid),
+            default="",
+        )
+        if proof and proof[2][:10] >= newest[:10]:
             continue
         try:
             read(slug, ComeetScraper(slug).fetch_raw(), datetime.now(UTC).isoformat())

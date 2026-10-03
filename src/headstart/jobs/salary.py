@@ -845,7 +845,7 @@ _FIELD_PARSERS = {
     # one; the 25 that still decline are the bound rejecting a tenant's own data-entry error
     # (an hourly rate typed under `unitText: YEAR`, e.g. "35-60 USD YEAR").
     "jazzhr": _field_range_currency_interval,
-    # New public feeds: JobScore converts cents, Polymer expands K and period phrases.
+    # New public fields: JobScore encodes schema salary, Polymer expands K and period phrases.
     # Preserve fractional hourly rates and the stated week/day periods (ADR-0385/0387).
     "jobscore": _field_range_currency_interval,
     "polymer": _field_range_currency_interval,
