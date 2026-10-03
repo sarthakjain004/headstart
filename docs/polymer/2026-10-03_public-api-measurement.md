@@ -95,7 +95,7 @@ in the local summary; source phrases are retained rather than inventing employme
 
 ## Discovery and liveness
 
-Final ledger after the nine-label archive increment: 419 rows, 225 live, 194 dead, 0 unknown. The incremental pass settled two live and seven dead in 1.3 seconds at four workers.
+Final ledger after all archive increments: 422 rows, 227 live, 195 dead, 0 unknown. The final three labels were Motive (live, five advertised jobs), PopVax (live, 13), and Rock Rabbit (dead). The incremental pass settled two live and seven dead in 1.3 seconds at four workers.
 These are rows; exclusions and identity election determine Scrapable/Hiring Boards.
 Upstream `kalil0321/ats-scrapers/ats-companies` contains no seed file for this provider
 (confirmed by the repository directory listing; all three guessed file requests 404).
