@@ -1,9 +1,12 @@
 """CAS and content checks with a local fake HF writer; these tests perform no remote writes."""
 
+import hashlib
 import shutil
 from pathlib import Path
 from types import SimpleNamespace
 
+import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 import requests
 from huggingface_hub.errors import EntryNotFoundError, HfHubHTTPError
@@ -11,6 +14,7 @@ from test_trends_restated_history import candidate as _candidate
 from test_trends_restated_history import packaged as _packaged
 
 from headstart.ingest import restate_publish
+from headstart.ingest.restate_baseline import committed_baseline
 from headstart.trends import restated_history as artifact
 
 candidate = _candidate
@@ -105,6 +109,181 @@ def test_package_requires_prepared_metadata_file_identity(candidate, tmp_path):
     metadata_path.write_bytes(artifact.encoded(metadata))
     with pytest.raises(ValueError, match="prepared replay file inventory"):
         restate_publish.package(candidate, tmp_path / "out")
+
+
+def test_prepare_trims_company_groups_to_generation_boards(candidate, tmp_path):
+    root = tmp_path / "source"
+    _prepare_sources(candidate, root)
+    labels = root / "data/state/company_directory.json"
+    original = {
+        "companies": [
+            {
+                "name": "Acme",
+                "operator": "services",
+                "boards": ["lever:outside", "greenhouse:acme"],
+            },
+            {"name": "Later Company", "operator": "employer", "boards": ["ashby:new"]},
+        ]
+    }
+    labels.write_bytes(artifact.encoded(original))
+    restate_publish.prepare(candidate, root)
+    assert artifact.read_json(candidate / "company_directory.json") == {
+        "companies": [
+            {"name": "Acme", "operator": "services", "boards": ["greenhouse:acme"]}
+        ]
+    }
+    assert artifact.read_json(labels) == original
+    metadata = artifact.read_json(candidate / "replay.json")
+    entry = next(e for e in metadata["files"] if e["path"] == "company_directory.json")
+    assert entry == artifact.file_entry(candidate / entry["path"], entry["path"])
+
+
+def test_prepare_rejects_duplicate_company_board_membership(candidate, tmp_path):
+    root = tmp_path / "source"
+    _prepare_sources(candidate, root)
+    labels = root / "data/state/company_directory.json"
+    labels.write_bytes(
+        artifact.encoded(
+            {
+                "companies": [
+                    {"name": "Acme", "boards": ["greenhouse:acme"]},
+                    {"name": "Different company", "boards": ["greenhouse:acme"]},
+                ]
+            }
+        )
+    )
+    before = (candidate / "replay.json").read_bytes()
+    with pytest.raises(ValueError, match="Company directory"):
+        restate_publish.prepare(candidate, root)
+    assert (candidate / "replay.json").read_bytes() == before
+
+
+@pytest.fixture
+def pinned_fetch(tmp_path, monkeypatch):
+    import huggingface_hub
+
+    from headstart.ingest import state_fetch
+
+    def parquet(metadata):
+        sink = pa.BufferOutputStream()
+        pq.write_table(
+            pa.table({"id": ["fixture"]}).replace_schema_metadata(metadata), sink
+        )
+        return sink.getvalue().to_pybytes()
+
+    payloads = {
+        "data/state/reference_state.parquet": parquet({b"ts": b"2026-10-02"}),
+        "data/facts/trend_reference/baseline.parquet": parquet(
+            {b"ts": b"2026-10-01", b"previous_tick": b"", b"baseline": b"true"}
+        ),
+        "data/facts/trend_reference/next.parquet": parquet(
+            {
+                b"ts": b"2026-10-02",
+                b"previous_tick": b"2026-10-01",
+                b"baseline": b"false",
+            }
+        ),
+        "data/facts/job_facts/one.parquet": b"raw fixture facts",
+        "data/descriptions/greenhouse/one.parquet": b"pinned fixture text",
+        "data/lancedb/jobs.lance/data/one.lance": b"unused live vectors",
+    }
+    calls = []
+    root = tmp_path / "runner"
+    root.mkdir()
+
+    def info(*args, **kwargs):
+        return SimpleNamespace(
+            sha="f" * 40,
+            siblings=[
+                SimpleNamespace(
+                    rfilename=name,
+                    size=len(body),
+                    lfs={"sha256": hashlib.sha256(body).hexdigest()},
+                )
+                for name, body in payloads.items()
+            ],
+        )
+
+    def download(url, path, size, headers):
+        name = path.relative_to(root).as_posix()
+        calls.append((name, url))
+        path.write_bytes(payloads[name])
+
+    monkeypatch.setattr(
+        huggingface_hub, "HfApi", lambda **kwargs: SimpleNamespace(repo_info=info)
+    )
+    monkeypatch.setattr(huggingface_hub, "get_token", lambda: None)
+    monkeypatch.setattr(
+        huggingface_hub,
+        "hf_hub_url",
+        lambda repo, name, **kwargs: f"{kwargs['revision']}:{name}",
+    )
+    monkeypatch.setattr(state_fetch, "_fetch_whole", download)
+    monkeypatch.setattr(state_fetch, "_fetch_ranged", download)
+    monkeypatch.delenv("GITHUB_ENV", raising=False)
+    return root, payloads, calls, parquet
+
+
+def test_fetch_omits_lance_and_validates_committed_baseline(pinned_fetch):
+    root, payloads, calls, _ = pinned_fetch
+    result = restate_publish.fetch("fixture", root)
+    expected = set(payloads) - {"data/lancedb/jobs.lance/data/one.lance"}
+    assert {name for name, _ in calls} == expected
+    assert {entry["path"] for entry in result["inputs"]} == expected
+    assert all(url.startswith(result["input_revision"] + ":") for _, url in calls)
+    assert (
+        committed_baseline(root / "data/facts", root / "data/state")
+        == root / "data/facts/trend_reference/baseline.parquet"
+    )
+
+
+def test_fetch_requested_revision_records_resolved_sha(pinned_fetch, monkeypatch):
+    import huggingface_hub
+
+    root, _, calls, _ = pinned_fetch
+    original_api = huggingface_hub.HfApi
+    requested = []
+
+    def api(**kwargs):
+        original = original_api(**kwargs)
+
+        def info(*args, **options):
+            requested.append(options["revision"])
+            return original.repo_info(*args, **options)
+
+        return SimpleNamespace(repo_info=info)
+
+    monkeypatch.setattr(huggingface_hub, "HfApi", api)
+    result = restate_publish.fetch("fixture", root, revision="selected-ref")
+    assert requested == ["selected-ref"]
+    assert result["input_revision"] == "f" * 40
+    assert (
+        artifact.read_json(root / "data/restated-inputs.json")["input_revision"]
+        == "f" * 40
+    )
+    assert all(url.startswith("f" * 40 + ":") for _, url in calls)
+
+
+@pytest.mark.parametrize("failure", ["missing", "broken"])
+def test_fetch_missing_or_broken_baseline_fails_before_remaining_inputs(
+    pinned_fetch, failure
+):
+    root, payloads, calls, parquet = pinned_fetch
+    if failure == "missing":
+        del payloads["data/state/reference_state.parquet"]
+    else:
+        payloads["data/state/reference_state.parquet"] = parquet(
+            {b"ts": b"missing-parent"}
+        )
+    with pytest.raises(ValueError, match="baseline"):
+        restate_publish.fetch("fixture", root)
+    assert not any(
+        name.startswith(
+            ("data/descriptions/", "data/lancedb/", "data/facts/job_facts/")
+        )
+        for name, _ in calls
+    )
+    assert not (root / "data/restated-inputs.json").exists()
 
 
 def test_immutable_inputs_allow_new_pipeline_content(packaged):

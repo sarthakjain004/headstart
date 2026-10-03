@@ -37,15 +37,45 @@ def _serving_inventory(candidate: Path) -> list[dict]:
     ]
 
 
+def _trim_company_directory(candidate: Path, source: Path) -> dict:
+    import pyarrow.parquet as pq
+
+    from headstart.trends.role_taxonomy import NON_TECH
+    from headstart.trends.trend_history import DELTAS
+
+    boards = set()
+    for path in (candidate / DELTAS).glob("*.parquet"):
+        boards.update(
+            row["board"]
+            for row in pq.read_table(path, columns=["board", "family"]).to_pylist()
+            if row["family"] != NON_TECH
+        )
+    directory = artifact.read_json(source)
+    companies, named = [], []
+    for entry in directory["companies"]:
+        kept = [board for board in entry["boards"] if board in boards]
+        if kept:
+            if not isinstance(entry.get("name"), str) or not entry["name"].strip():
+                raise ValueError("Company directory lacks a name")
+            companies.append(entry | {"boards": kept})
+            named.extend(kept)
+    if len(named) != len(set(named)) or set(named) != boards:
+        raise ValueError(
+            "Company directory must cover each generation tech Board exactly once"
+        )
+    return directory | {"companies": companies}
+
+
 def prepare(candidate: Path, root: Path) -> None:
     """Add pinned serving labels/config before the independent verifier inventories output."""
-    for name, source in [
-        ("company_directory.json", root / "data/state/company_directory.json"),
-        *((name, root / name) for name in artifact.CONFIG_FILES),
-    ]:
+    directory = _trim_company_directory(
+        candidate, root / "data/state/company_directory.json"
+    )
+    (candidate / "company_directory.json").write_bytes(artifact.encoded(directory))
+    for name in artifact.CONFIG_FILES:
         destination = candidate / name
         destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(source, destination)
+        shutil.copyfile(root / name, destination)
     # Check coverage now too; do not fabricate companies for missing Board keys.
     metadata_path = candidate / "replay.json"
     metadata = artifact.read_json(metadata_path)
@@ -244,23 +274,30 @@ def publish(
     raise RuntimeError("publication attempts exhausted")
 
 
-def fetch(repo: str, root: Path) -> dict:
-    """Runner-only pinned input fetch using the existing ranged HTTP implementation."""
+def fetch(repo: str, root: Path, revision: str | None = None) -> dict:
+    """Fetch pinned baseline replay inputs; bound historical pieces never read live LanceDB."""
     from huggingface_hub import HfApi, get_token, hf_hub_url
 
+    from headstart.ingest.restate_baseline import committed_baseline
     from headstart.ingest.state_fetch import _fetch_ranged, _fetch_whole
 
     token = os.environ.get("HF_TOKEN") or get_token()
-    tip = HfApi(token=token).repo_info(repo, repo_type="dataset", files_metadata=True)
+    tip = HfApi(token=token).repo_info(
+        repo, repo_type="dataset", revision=revision, files_metadata=True
+    )
     files = [
         s
         for s in tip.siblings
-        if s.rfilename.startswith(
-            ("data/facts/", "data/state/", "data/descriptions/", "data/lancedb/")
-        )
+        if s.rfilename.startswith(("data/facts/", "data/state/", "data/descriptions/"))
     ]
     if not files:
         raise ValueError("no replay input files at the pinned dataset revision")
+    checkpoint = "data/state/reference_state.parquet"
+    reference_prefix = "data/facts/trend_reference/"
+    if not any(s.rfilename == checkpoint for s in files) or not any(
+        s.rfilename.startswith(reference_prefix) for s in files
+    ):
+        raise ValueError("pinned dataset lacks a committed reference baseline")
     headers = {"Authorization": f"Bearer {token}"} if token else {}
 
     def one(item):
@@ -292,8 +329,23 @@ def fetch(repo: str, root: Path) -> dict:
         return entry
 
     entries = []
+    prerequisites = [
+        s
+        for s in files
+        if s.rfilename == checkpoint or s.rfilename.startswith(reference_prefix)
+    ]
+    remaining = [s for s in files if s not in prerequisites]
     with ThreadPoolExecutor(max_workers=4) as pool:
-        for future in as_completed([pool.submit(one, item) for item in files]):
+        for future in as_completed([pool.submit(one, item) for item in prerequisites]):
+            entries.append(future.result())
+        try:
+            baseline = committed_baseline(root / "data/facts", root / "data/state")
+        except (KeyError, ValueError) as exc:
+            raise ValueError(f"invalid committed reference baseline: {exc}") from exc
+        if baseline is None:
+            raise ValueError("pinned dataset lacks a committed reference baseline")
+        print(f"validated committed baseline: {baseline.name}", flush=True)
+        for future in as_completed([pool.submit(one, item) for item in remaining]):
             entries.append(future.result())
     value = {
         "input_revision": tip.sha,
@@ -315,6 +367,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=("fetch", "prepare", "package"))
     parser.add_argument("--repo", default="imPoseidon/headstart-index")
+    parser.add_argument(
+        "--revision", help="dataset revision for fetch; defaults to current head"
+    )
     parser.add_argument("--candidate", type=Path, default=Path("data/restated"))
     parser.add_argument("--root", type=Path, default=Path("."))
     parser.add_argument("--out", type=Path, default=Path("data/restated-publication"))
@@ -325,7 +380,7 @@ def main() -> int:
     if args.publish and args.command != "package":
         parser.error("--publish requires package")
     if args.command == "fetch":
-        fetch(args.repo, args.root)
+        fetch(args.repo, args.root, args.revision)
     elif args.command == "prepare":
         prepare(args.candidate, args.root)
     else:
