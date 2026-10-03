@@ -135,13 +135,14 @@ class VersionSources:
 
     def events(self):
         """Only observed content changes, ordered by Job and time; score noise is not input."""
-        previous_id, previous_body = None, None
-        for job_id, stamp, body in self._db.execute(
-            "SELECT id, stamp, body FROM observations ORDER BY id, stamp"
+        previous_id, previous_inputs = None, None
+        for job_id, stamp, body, observed in self._db.execute(
+            "SELECT id, stamp, body, observed FROM observations ORDER BY id, stamp"
         ):
-            if job_id != previous_id or body != previous_body:
+            identity = (body, observed)
+            if job_id != previous_id or identity != previous_inputs:
                 yield job_id, stamp
-            previous_id, previous_body = job_id, body
+            previous_id, previous_inputs = job_id, identity
 
     def bind(self, job_id, stamp):
         """Bind a replay piece to the latest observation no later than its start."""

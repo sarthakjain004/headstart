@@ -85,6 +85,26 @@ def test_a_future_description_does_not_replace_an_earlier_version():
         assert pieces[1]["starts_as"] == "changed"
 
 
+def test_experience_only_observations_are_input_changes():
+    with VersionSources(2) as sources:
+        for stamp, years in (("1", 3), ("2", 8)):
+            sources.add_batch(
+                stamp,
+                [
+                    {
+                        "id": "lever:acme:1",
+                        "vector": [0.25, 0.5],
+                        "description": None,
+                        "min_years": years,
+                        "experience_source": "field",
+                    }
+                ],
+            )
+        assert list(sources.events()) == [("lever:acme:1", "1"), ("lever:acme:1", "2")]
+        sources.bind("lever:acme:1", "2")
+        assert sources.observed(("lever:acme:1", "2"))["min_years"] == 8
+
+
 def test_unknown_inputs_block_latest_store_fallback_and_score_noise_is_not_an_edit():
     job = "lever:acme:1"
     with VersionSources(2) as sources:
