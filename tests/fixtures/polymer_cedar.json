@@ -1,0 +1,117 @@
+{
+  "items": [
+    {
+      "id": 38850,
+      "job_id": 38850,
+      "hash_id": "5ygent54gw5u",
+      "title": "Senior Software Engineer",
+      "country": "US",
+      "state_region": "CA",
+      "city": "San Diego",
+      "organization_name": "Cedar",
+      "kind_pretty": "Full-time",
+      "created_at": "2026-02-19T16:10:53.889Z",
+      "published_at": "2026-02-19T16:17:06.862Z",
+      "created_at_timestamp": 1771517453,
+      "published_at_timestamp": 1771517826,
+      "published_at_time_ago_short": "8M",
+      "show_published_at_times": true,
+      "display_location": "San Diego, CA",
+      "job_post_url": "https://careers.cedar.build/38850",
+      "remoteness_pretty": "No remote",
+      "job_category_name": "Software Development",
+      "salary_pretty": "170K - 220K USD a year",
+      "remote_restriction_country_residency_is_required": false,
+      "remote_restriction_country_list": [],
+      "remote_restriction_overlap_hours_is_required": false,
+      "remote_restriction_overlap_hours": null,
+      "remote_restriction_city": null,
+      "remote_restriction_city_google_place_id": null,
+      "remote_restriction_timezone_utc_offset_seconds": null
+    }
+  ],
+  "details": {
+    "38850": {
+      "id": 38850,
+      "job_id": 38850,
+      "hash_id": "5ygent54gw5u",
+      "title": "Senior Software Engineer",
+      "description": "<p><strong>Help reinvent how housing gets designed, permitted, and built in America.</strong></p><p>Cedar is building the operating system for urban housing delivery. We combine architectural expertise with software, automation, and data systems to dramatically accelerate how projects move from land acquisition to approved designs and construction. The result: faster timelines, higher quality, lower risk, and more housing in the cities that need it most. Our team blends architects, engineers, and product builders. We design beautiful, responsive housing \u2014 and we build the software systems that make great architecture scalable.</p><h2><strong>The Role</strong></h2><p>As a Senior Software Engineer, you\u2019ll help architect and build the core platform that powers Cedar\u2019s automation, decision-making, and delivery workflows. You\u2019ll own meaningful systems end-to-end and work closely with architects and product leaders to translate real-world constraints into scalable software.</p><p>This is not a narrow feature role. You\u2019ll be shaping foundational architecture, data models, and developer workflows that compound across every project.</p><p>You\u2019ll collaborate closely with software engineers, architects, product, and operations teams.</p><p>We strongly prefer candidates who can share recent solo-developed projects or meaningful open source contributions. It gives us a clear signal of how you think and build, and lets us skip the usual technical interview gauntlet.</p><h2><strong>What You'll Do</strong></h2><ul>\n<li><p>Design and build core platform services, APIs, and internal tools</p></li>\n<li><p>Own systems end-to-end: architecture, implementation, reliability, and iteration</p></li>\n<li><p>Translate complex domain logic (zoning, design constraints, workflows) into robust software abstractions</p></li>\n<li><p>Leverage AI tools to increase development velocity and iterate quickly on new and existing features</p></li>\n<li><p>Improve performance, scalability, and developer velocity</p></li>\n<li><p>Partner with architects and product teams to operationalize domain expertise into software</p></li>\n<li><p>Evaluate and adopt the latest AI development tools, and translate what works into standards and practices for a growing team</p></li>\n<li><p>Ship continuously in a fast-moving product environment</p></li>\n</ul><h2><strong>Who You Are</strong></h2><ul>\n<li><p>Strong systems thinker with high engineering judgment</p></li>\n<li><p>Comfortable owning ambiguous problems and driving them to clarity</p></li>\n<li><p>Motivated by building platforms, not just features</p></li>\n<li><p>Excited to work close to real-world constraints and users</p></li>\n<li><p>High bar for code quality, reliability, and maintainability</p></li>\n<li><p>Collaborative, pragmatic, and outcome-driven</p></li>\n</ul><h2><strong>Qualifications</strong></h2><ul>\n<li><p>6\u201310+ years of professional software engineering experience (flexible for exceptional candidates)</p></li>\n<li><p>Experience designing and operating production systems</p></li>\n<li><p>Strong proficiency in TypeScript and Node.js; experience with Next.js and React a plus</p></li>\n<li><p>Familiarity with PostgreSQL and relational data modeling</p></li>\n<li><p>Experience with cloud infrastructure (AWS or GCP), APIs, and data pipelines</p></li>\n<li><p>Ability to reason about system architecture, performance, and tradeoffs</p></li>\n<li><p>Bonus: experience with distributed systems, developer platforms, or applied ML</p></li>\n</ul><h2><strong>Nice to Have</strong></h2><ul>\n<li><p>Experience with AEC (architecture, engineering, construction) software, BIM tools, or CAD systems</p></li>\n<li><p>Familiarity with geometric modeling, computational geometry, or parametric design</p></li>\n<li><p>Background working with regulatory or compliance data (zoning codes, building codes, permitting)</p></li>\n<li><p>Experience building knowledge graphs, rule engines, or constraint-solving systems</p></li>\n<li><p>Exposure to Revit, IFC, or other building information modeling formats</p></li>\n<li><p>Interest in how physical systems get represented and manipulated in software</p></li>\n</ul><h2><strong>Compensation &amp; Benefits</strong></h2><ul>\n<li><p>Competitive salary</p></li>\n<li><p>Meaningful equity ownership</p></li>\n<li><p>Healthcare, dental, and vision</p></li>\n<li><p>Opportunity to shape a foundational platform from early stage</p></li>\n</ul>",
+      "department": null,
+      "country": "US",
+      "state_region": "CA",
+      "city": "San Diego",
+      "organization_name": "Cedar",
+      "kind": "full_time",
+      "kind_pretty": "Full-time",
+      "created_at": "2026-02-19T16:10:53.889Z",
+      "published_at": "2026-02-19T16:17:06.862Z",
+      "archived_at": null,
+      "display_location": "San Diego, CA",
+      "settings": {
+        "name": "required",
+        "email": "required",
+        "phone": "optional",
+        "resume": "optional",
+        "location": "required",
+        "github_url": "hidden",
+        "twitter_url": "hidden",
+        "website_url": "hidden",
+        "cover_letter": "optional",
+        "dribbble_url": "hidden",
+        "linkedin_url": "required",
+        "social_share_image_type": "default"
+      },
+      "created_at_timestamp": 1771517453,
+      "published_at_timestamp": 1771517826,
+      "job_post_url": "https://careers.cedar.build/38850",
+      "job_application_description_url": "https://careers.cedar.build/38850",
+      "remoteness_pretty": "No remote",
+      "job_category_name": "Software Development",
+      "remote_restriction_country_residency_is_required": false,
+      "remote_restriction_country_list": [],
+      "remote_restriction_overlap_hours_is_required": false,
+      "remote_restriction_overlap_hours": null,
+      "remote_restriction_city": null,
+      "remote_restriction_city_google_place_id": null,
+      "remote_restriction_timezone_utc_offset_seconds": null,
+      "questions": [
+        {
+          "id": 24226,
+          "question_id": 24226,
+          "job_id": 38850,
+          "question_text": "Are you available to work in our San Diego office?",
+          "placeholder_text": null,
+          "requirement_setting": "required",
+          "kind": "single_select",
+          "position": 1,
+          "options": {
+            "data": [
+              "No, but I'm happy to relocate",
+              "Neither",
+              "Yes, I live in San Diego"
+            ]
+          },
+          "visibility_setting": "visibility_public"
+        },
+        {
+          "id": 24359,
+          "question_id": 24359,
+          "job_id": 38850,
+          "question_text": "Will you now or in the future need sponsorship? ",
+          "placeholder_text": null,
+          "requirement_setting": "required",
+          "kind": "single_select",
+          "position": 2,
+          "options": {
+            "data": [
+              "Yes",
+              "No"
+            ]
+          },
+          "visibility_setting": "visibility_public"
+        }
+      ]
+    }
+  }
+}

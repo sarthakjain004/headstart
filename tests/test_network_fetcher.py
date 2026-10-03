@@ -454,6 +454,167 @@ def test_a_scraper_that_never_opted_in_carries_only_its_board() -> None:
     assert fake.requests[0].kwargs == {"egress_board": "greenhouse:acme"}
 
 
+@pytest.mark.parametrize("asynchronous", [False, True])
+def test_opted_in_transport_failure_gets_one_spare_request(monkeypatch, asynchronous):
+    from headstart.network import spare_egress
+
+    outcomes = iter(
+        [http.RequestsError("connection reset", code=56), FakeResponse(200, "ok")]
+    )
+
+    def route(_method, _url, _kwargs):
+        result = next(outcomes)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    monkeypatch.setattr(
+        spare_egress, "proxy_for", lambda *_a, **_k: "socks5h://spare:40000"
+    )
+
+    async def available(*_a, **_k):
+        return "socks5h://spare:40000"
+
+    monkeypatch.setattr(spare_egress, "proxy_for_async", available)
+    fake = FakeFetcher(route)
+    scraper = GreenhouseScraper("acme", fetcher=fake)
+    scraper.spare_on_transport_error = True
+    response = (
+        asyncio.run(scraper._fetch_async(None, "GET", "https://example.invalid"))
+        if asynchronous
+        else scraper._fetch("GET", "https://example.invalid")
+    )
+    assert response.status_code == 200
+    assert len(fake.requests) == 2
+    retry = fake.requests[-1].kwargs
+    assert retry["prefer_spare"] is True
+    assert retry["attempts"] == 1
+    assert retry["egress_on"] == frozenset()
+
+
+@pytest.mark.parametrize("code", [6, 22, 60])
+def test_dns_http_and_certificate_errors_do_not_move_to_spare(monkeypatch, code):
+    from headstart.network import spare_egress
+
+    def route(*_args):
+        raise http.RequestsError("not a retriable connection error", code=code)
+
+    monkeypatch.setattr(
+        spare_egress,
+        "proxy_for",
+        lambda *_a, **_k: pytest.fail("must not resolve a spare route"),
+    )
+    fake = FakeFetcher(route)
+    scraper = GreenhouseScraper("acme", fetcher=fake)
+    scraper.spare_on_transport_error = True
+    with pytest.raises(http.RequestsError):
+        scraper._fetch("GET", "https://example.invalid")
+    assert len(fake.requests) == 1
+
+
+@pytest.mark.parametrize("status", [401, 403, 404, 429, 503])
+def test_http_responses_never_trigger_the_transport_spare(monkeypatch, status):
+    from headstart.network import spare_egress
+
+    monkeypatch.setattr(
+        spare_egress,
+        "proxy_for",
+        lambda *_a, **_k: pytest.fail("must not resolve a spare route"),
+    )
+    fake = FakeFetcher(lambda *_args: FakeResponse(status, "refused"))
+    scraper = GreenhouseScraper("acme", fetcher=fake)
+    scraper.spare_on_transport_error = True
+    assert scraper._fetch("GET", "https://example.invalid").status_code == status
+    assert len(fake.requests) == 1
+
+
+@pytest.mark.parametrize("direct,available", [(True, True), (False, False)])
+def test_explicit_direct_or_unavailable_spare_keeps_the_original_error(
+    monkeypatch, direct, available
+):
+    from headstart.network import spare_egress
+
+    error = http.RequestsError("connect failed", code=7)
+
+    def route(*_args):
+        raise error
+
+    monkeypatch.setattr(
+        spare_egress,
+        "proxy_for",
+        lambda *_a, **_k: "socks5h://spare:40000" if available else None,
+    )
+    fake = FakeFetcher(route)
+    scraper = GreenhouseScraper("acme", fetcher=fake)
+    scraper.spare_on_transport_error = True
+    with pytest.raises(http.RequestsError) as caught:
+        scraper._fetch("GET", "https://example.invalid", direct=direct)
+    assert caught.value is error
+    assert len(fake.requests) == 1
+
+
+def test_spare_failure_is_not_recursively_retried(monkeypatch):
+    from headstart.network import spare_egress
+
+    def route(*_args):
+        raise http.RequestsError("connect failed", code=7)
+
+    monkeypatch.setattr(
+        spare_egress, "proxy_for", lambda *_a, **_k: "socks5h://spare:40000"
+    )
+    fake = FakeFetcher(route)
+    scraper = GreenhouseScraper("acme", fetcher=fake)
+    scraper.spare_on_transport_error = True
+    with pytest.raises(http.RequestsError):
+        scraper._fetch("GET", "https://example.invalid")
+    assert len(fake.requests) == 2
+
+
+def test_a_post_is_not_replayed_after_an_ambiguous_transport_failure(monkeypatch):
+    from headstart.network import spare_egress
+
+    def route(*_args):
+        raise http.RequestsError("response lost", code=56)
+
+    monkeypatch.setattr(
+        spare_egress,
+        "proxy_for",
+        lambda *_a, **_k: pytest.fail("must not resolve a spare route"),
+    )
+    fake = FakeFetcher(route)
+    scraper = GreenhouseScraper("acme", fetcher=fake)
+    scraper.spare_on_transport_error = True
+    with pytest.raises(http.RequestsError):
+        scraper._fetch("POST", "https://example.invalid", json={"example": True})
+    assert len(fake.requests) == 1
+
+
+@pytest.mark.parametrize(
+    "route_option",
+    [
+        {"proxy": "socks5h://chosen:40000"},
+        {"proxies": {"https": "socks5h://chosen:40000"}},
+    ],
+)
+def test_an_explicit_proxy_is_not_replaced(monkeypatch, route_option):
+    from headstart.network import spare_egress
+
+    def route(*_args):
+        raise http.RequestsError("chosen proxy failed", code=7)
+
+    monkeypatch.setattr(
+        spare_egress,
+        "proxy_for",
+        lambda *_a, **_k: pytest.fail("must preserve explicit route"),
+    )
+    fake = FakeFetcher(route)
+    scraper = GreenhouseScraper("acme", fetcher=fake)
+    scraper.spare_on_transport_error = True
+    with pytest.raises(http.RequestsError):
+        scraper._fetch("GET", "https://example.invalid", **route_option)
+    assert len(fake.requests) == 1
+
+
 def test_the_stream_width_is_read_through_the_board_fetcher() -> None:
     from headstart.network import spare_egress
 

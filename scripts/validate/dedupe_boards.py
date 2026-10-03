@@ -123,6 +123,8 @@ def main() -> int:
     # its rows (`shared-reqs`, `subset-reqs`, `backing-reqs`), so an --apply here would replace
     # every one of them with nothing.
     written_elsewhere = {
+        "pageup": "pageup_subset_boards.py (ADR-0383)",
+        "recruiterflow": "recruiterflow_shared_boards.py (ADR-0382)",
         "gr8people": "gr8people_shared_clients.py (ADR-0373)",
         "adp_recruiting": "adp_recruiting_subset_sites.py (ADR-0202)",
         "clearcompany": "clearcompany_shared_accounts.py (ADR-0182)",

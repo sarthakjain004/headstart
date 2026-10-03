@@ -1,0 +1,297 @@
+{
+  "department": [
+    [
+      "Customer Success",
+      [
+        {
+          "apply_link": "rfcareers/jobs/161",
+          "details": "Bengaluru, New Delhi, Gurgaon",
+          "employment_type": "Full time",
+          "job_id": 161,
+          "job_name": "Product Consultant",
+          "last_opened": "2026-09-27T07:18:36+0000",
+          "remote_type": null
+        },
+        {
+          "apply_link": "rfcareers/jobs/216",
+          "details": "Bengaluru",
+          "employment_type": "Full time",
+          "job_id": 216,
+          "job_name": "Associate Project Manager - Implementations & Data Migration",
+          "last_opened": "2026-09-21T05:40:07+0000",
+          "remote_type": null
+        }
+      ]
+    ],
+    [
+      "Engineering",
+      [
+        {
+          "apply_link": "rfcareers/jobs/218",
+          "details": "Bengaluru",
+          "employment_type": "Full time",
+          "job_id": 218,
+          "job_name": "Manual QA Tester",
+          "last_opened": "2026-10-01T06:09:50+0000",
+          "remote_type": null
+        },
+        {
+          "apply_link": "rfcareers/jobs/166",
+          "details": "Bengaluru",
+          "employment_type": "Full time",
+          "job_id": 166,
+          "job_name": "Backend Engineer",
+          "last_opened": "2026-08-31T13:38:53+0000",
+          "remote_type": null
+        },
+        {
+          "apply_link": "rfcareers/jobs/196",
+          "details": "Bengaluru",
+          "employment_type": "Full time",
+          "job_id": 196,
+          "job_name": "Implementation Engineer",
+          "last_opened": "2026-06-22T04:42:32+0000",
+          "remote_type": null
+        }
+      ]
+    ],
+    [
+      "Marketing",
+      [
+        {
+          "apply_link": "rfcareers/jobs/159",
+          "details": "Bengaluru",
+          "employment_type": "Full time",
+          "job_id": 159,
+          "job_name": "Content Writer",
+          "last_opened": "2026-09-30T10:25:23+0000",
+          "remote_type": null
+        }
+      ]
+    ],
+    [
+      "Product",
+      [
+        {
+          "apply_link": "rfcareers/jobs/217",
+          "details": "Bengaluru",
+          "employment_type": "Full time",
+          "job_id": 217,
+          "job_name": "Associate Product Manager",
+          "last_opened": "2026-09-25T07:50:22+0000",
+          "remote_type": null
+        },
+        {
+          "apply_link": "rfcareers/jobs/211",
+          "details": "Bengaluru",
+          "employment_type": "Full time",
+          "job_id": 211,
+          "job_name": "Technical Content Specialist",
+          "last_opened": "2026-09-22T05:20:22+0000",
+          "remote_type": null
+        }
+      ]
+    ]
+  ],
+  "group": [
+    [
+      "Customer Success",
+      [
+        {
+          "apply_link": "rfcareers/jobs/161",
+          "details": "Bengaluru, New Delhi, Gurgaon",
+          "employment_type": "Full time",
+          "job_id": 161,
+          "job_name": "Product Consultant",
+          "last_opened": "2026-09-27T07:18:36+0000",
+          "remote_type": null
+        },
+        {
+          "apply_link": "rfcareers/jobs/216",
+          "details": "Bengaluru",
+          "employment_type": "Full time",
+          "job_id": 216,
+          "job_name": "Associate Project Manager - Implementations & Data Migration",
+          "last_opened": "2026-09-21T05:40:07+0000",
+          "remote_type": null
+        }
+      ]
+    ],
+    [
+      "Engineering",
+      [
+        {
+          "apply_link": "rfcareers/jobs/218",
+          "details": "Bengaluru",
+          "employment_type": "Full time",
+          "job_id": 218,
+          "job_name": "Manual QA Tester",
+          "last_opened": "2026-10-01T06:09:50+0000",
+          "remote_type": null
+        },
+        {
+          "apply_link": "rfcareers/jobs/166",
+          "details": "Bengaluru",
+          "employment_type": "Full time",
+          "job_id": 166,
+          "job_name": "Backend Engineer",
+          "last_opened": "2026-08-31T13:38:53+0000",
+          "remote_type": null
+        },
+        {
+          "apply_link": "rfcareers/jobs/196",
+          "details": "Bengaluru",
+          "employment_type": "Full time",
+          "job_id": 196,
+          "job_name": "Implementation Engineer",
+          "last_opened": "2026-06-22T04:42:32+0000",
+          "remote_type": null
+        }
+      ]
+    ],
+    [
+      "Marketing",
+      [
+        {
+          "apply_link": "rfcareers/jobs/159",
+          "details": "Bengaluru",
+          "employment_type": "Full time",
+          "job_id": 159,
+          "job_name": "Content Writer",
+          "last_opened": "2026-09-30T10:25:23+0000",
+          "remote_type": null
+        }
+      ]
+    ],
+    [
+      "Product",
+      [
+        {
+          "apply_link": "rfcareers/jobs/217",
+          "details": "Bengaluru",
+          "employment_type": "Full time",
+          "job_id": 217,
+          "job_name": "Associate Product Manager",
+          "last_opened": "2026-09-25T07:50:22+0000",
+          "remote_type": null
+        },
+        {
+          "apply_link": "rfcareers/jobs/211",
+          "details": "Bengaluru",
+          "employment_type": "Full time",
+          "job_id": 211,
+          "job_name": "Technical Content Specialist",
+          "last_opened": "2026-09-22T05:20:22+0000",
+          "remote_type": null
+        }
+      ]
+    ]
+  ],
+  "location": [
+    [
+      "Bengaluru",
+      [
+        {
+          "apply_link": "rfcareers/jobs/218",
+          "details": "Engineering",
+          "employment_type": "Full time",
+          "job_id": 218,
+          "job_name": "Manual QA Tester",
+          "last_opened": "2026-10-01T06:09:50+0000",
+          "remote_type": null
+        },
+        {
+          "apply_link": "rfcareers/jobs/159",
+          "details": "Marketing",
+          "employment_type": "Full time",
+          "job_id": 159,
+          "job_name": "Content Writer",
+          "last_opened": "2026-09-30T10:25:23+0000",
+          "remote_type": null
+        },
+        {
+          "apply_link": "rfcareers/jobs/161",
+          "details": "Customer Success",
+          "employment_type": "Full time",
+          "job_id": 161,
+          "job_name": "Product Consultant",
+          "last_opened": "2026-09-27T07:18:36+0000",
+          "remote_type": null
+        },
+        {
+          "apply_link": "rfcareers/jobs/217",
+          "details": "Product",
+          "employment_type": "Full time",
+          "job_id": 217,
+          "job_name": "Associate Product Manager",
+          "last_opened": "2026-09-25T07:50:22+0000",
+          "remote_type": null
+        },
+        {
+          "apply_link": "rfcareers/jobs/211",
+          "details": "Product",
+          "employment_type": "Full time",
+          "job_id": 211,
+          "job_name": "Technical Content Specialist",
+          "last_opened": "2026-09-22T05:20:22+0000",
+          "remote_type": null
+        },
+        {
+          "apply_link": "rfcareers/jobs/216",
+          "details": "Customer Success",
+          "employment_type": "Full time",
+          "job_id": 216,
+          "job_name": "Associate Project Manager - Implementations & Data Migration",
+          "last_opened": "2026-09-21T05:40:07+0000",
+          "remote_type": null
+        },
+        {
+          "apply_link": "rfcareers/jobs/166",
+          "details": "Engineering",
+          "employment_type": "Full time",
+          "job_id": 166,
+          "job_name": "Backend Engineer",
+          "last_opened": "2026-08-31T13:38:53+0000",
+          "remote_type": null
+        },
+        {
+          "apply_link": "rfcareers/jobs/196",
+          "details": "Engineering",
+          "employment_type": "Full time",
+          "job_id": 196,
+          "job_name": "Implementation Engineer",
+          "last_opened": "2026-06-22T04:42:32+0000",
+          "remote_type": null
+        }
+      ]
+    ],
+    [
+      "Gurgaon",
+      [
+        {
+          "apply_link": "rfcareers/jobs/161",
+          "details": "Customer Success",
+          "employment_type": "Full time",
+          "job_id": 161,
+          "job_name": "Product Consultant",
+          "last_opened": "2026-09-27T07:18:36+0000",
+          "remote_type": null
+        }
+      ]
+    ],
+    [
+      "New Delhi",
+      [
+        {
+          "apply_link": "rfcareers/jobs/161",
+          "details": "Customer Success",
+          "employment_type": "Full time",
+          "job_id": 161,
+          "job_name": "Product Consultant",
+          "last_opened": "2026-09-27T07:18:36+0000",
+          "remote_type": null
+        }
+      ]
+    ]
+  ]
+}

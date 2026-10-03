@@ -416,6 +416,11 @@ class BaseScraper(ABC):
     #: drops it on purpose, with ``direct=True``, for its one direct-egress retry.
     egress_fallback_on: frozenset[int] = frozenset()
 
+    #: After exhausted connect/timeout/reset errors, try one GET/HEAD on an available
+    #: spare route. HTTP responses (including rate limits/challenges) never trigger
+    #: this option, and it never rotates an address. Both Fetcher transports agree.
+    spare_on_transport_error: bool = False
+
     #: Hosts this ATS parks a decommissioned tenant on — its own marketing pages. A Board whose
     #: :meth:`alias_key` lands on one of these has not moved and is not a duplicate: the tenant is
     #: gone (ADR-0111). Reporting-only, but the label is the difference between "go find where this
@@ -899,9 +904,9 @@ class BaseScraper(ABC):
         """This Board's fetcher: the injected fetcher, bound to the Board's spare-egress opt-in
         and its attribution, so every request made through it carries both (ADR-0204).
 
-        Routing (``egress_group``/``egress_on``) is empty for every scraper that leaves
-        :attr:`egress_fallback_on` unset, so its requests are identical to the ones made before
-        the fallback existed — no scraper is routed or walled without opting in. Keyed on
+        Routing is empty unless :attr:`egress_fallback_on` or
+        :attr:`spare_on_transport_error` opts in. The latter leaves wall statuses empty:
+        HTTP refusals cannot spend a new route. Existing scrapers stay unchanged. Keyed on
         :attr:`egress_group` rather than the Board, because the metering that motivates it is per
         origin across all of an ATS's tenants. ``egress_board`` rides along unconditionally: it steers
         nothing, and exists so the retry log (``http._note_retry``, DEBUG) and the shard report
@@ -915,8 +920,11 @@ class BaseScraper(ABC):
         return BoardFetcher(
             self._fetcher,
             board_key=self.board_key(),
-            egress_group=self.egress_group if self.egress_fallback_on else None,
+            egress_group=self.egress_group
+            if self.egress_fallback_on or self.spare_on_transport_error
+            else None,
             wall_statuses=self.egress_fallback_on,
+            spare_on_transport_error=self.spare_on_transport_error,
         )
 
     def _get(self, url: str | None = None) -> str:

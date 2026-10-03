@@ -106,6 +106,9 @@ docs/LLM_API.md
 # Discovery-technique ranking — local working notes on where to spend discovery effort next.
 docs/discovery/technique-ranking.md
 
+# ATS provider atlas and source research — retained in the project as local working notes.
+/docs/discovery/2026-10-03_ats-*.md
+
 # deploy-space.yml sync artifacts (ADR-0153) — CI stages the whole headstart package and
 # config/ here before pushing to the Space; a stale local copy from a manual staging run
 # would otherwise show up as untracked cruft.

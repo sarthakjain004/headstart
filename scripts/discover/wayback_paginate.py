@@ -16,6 +16,7 @@ Usage:  python scripts/discover/wayback_paginate.py zoho
         python scripts/discover/wayback_paginate.py eightfold --filter 'urlkey:ai,eightfold,.*'
 """
 
+import os
 import time
 import urllib.parse
 
@@ -30,15 +31,17 @@ from wayback_feeder import (
     slug_sink,
 )
 
-PAGE = 15000  # urls per CDX page
+PAGE = int(os.environ.get("WAYBACK_PAGE_SIZE", "15000"))  # URLs per resume-key page
 SLEEP = 1.0  # politeness between pages (seconds)
 
 
-def fetch_page(domain, resume, cdx_filter):
+def fetch_page(domain, resume, cdx_filter, since=None):
     url = (
         f"https://web.archive.org/cdx/search/cdx?url={urllib.parse.quote(domain)}"
         f"&matchType=domain&fl=original&collapse=urlkey&limit={PAGE}&showResumeKey=true"
     )
+    if since:
+        url += "&from=" + urllib.parse.quote(since, safe="")
     if cdx_filter:
         url += "&filter=" + urllib.parse.quote(cdx_filter, safe="")
     if resume:
@@ -55,12 +58,19 @@ def fetch_page(domain, resume, cdx_filter):
     if len(lines) >= 2 and lines[-2] == "":  # blank line then resume key
         nxt = lines[-1].strip() or None
         lines = lines[:-2]
-    return [ln for ln in lines if ln], nxt
+    urls = [ln for ln in lines if ln]
+    if any(not url.startswith(("http://", "https://")) for url in urls):
+        print("  unreadable CDX response; leaving cursor unchanged", flush=True)
+        return None, resume
+    return urls, nxt
 
 
-def sweep(ats, domain, style, max_pages, cdx_filter, sink, refresh=False):
+def sweep(ats, domain, style, max_pages, cdx_filter, sink, refresh=False, since=None):
     """Walk one host's CDX result set from its saved cursor to the end."""
-    state = WB / f".{ats}_{domain}_resume"
+    period = f"_{since}" if since else ""
+    state = WB / f".{ats}_{domain}{period}_resume"
+    if refresh:
+        state.unlink(missing_ok=True)
     resume = (
         state.read_text(encoding="utf-8").strip()
         if state.exists() and not refresh
@@ -75,14 +85,18 @@ def sweep(ats, domain, style, max_pages, cdx_filter, sink, refresh=False):
 
     pages = total = 0
     while True:
-        urls, nxt = fetch_page(domain, resume, cdx_filter)
+        urls, nxt = (
+            fetch_page(domain, resume, cdx_filter, since)
+            if since
+            else fetch_page(domain, resume, cdx_filter)
+        )
         if urls is None:
             print(
                 f"{ats}/{domain}: STOPPED after {pages} page(s) — cursor saved, "
                 "re-run to resume",
                 flush=True,
             )
-            return
+            return False
         pages += 1
         total += len(urls)
         new = 0
@@ -112,7 +126,7 @@ def sweep(ats, domain, style, max_pages, cdx_filter, sink, refresh=False):
                 f"{ats}/{domain}: stopped at max_pages={max_pages} (cursor saved)",
                 flush=True,
             )
-        return
+        return not nxt
 
 
 def main():
@@ -125,6 +139,10 @@ def main():
         dest="cdx_filter",
         help="server-side CDX filter, to skip a dense apex whose captures sort before the "
         "subdomains (e.g. 'urlkey:ai,eightfold,.*')",
+    )
+    ap.add_argument("--refresh", action="store_true")
+    ap.add_argument(
+        "--since", help="earliest capture date, YYYYMMDD; omitted = full history"
     )
     args = ap.parse_args()
     # Resolve first: both calls below touch the filesystem, and a bad argument should
@@ -141,6 +159,7 @@ def main():
                 args.cdx_filter,
                 sink,
                 refresh=args.refresh,
+                since=args.since,
             )
 
 

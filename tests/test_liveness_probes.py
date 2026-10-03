@@ -140,6 +140,85 @@ def _stub_get(status, body):
     return _get
 
 
+@pytest.mark.parametrize(
+    ("status", "fixture", "expected"),
+    [
+        (200, "recruiterflow_empty.html", ("live", 0)),
+        (200, "recruiterflow_inactive.html", ("dead", None)),
+        (404, None, ("dead", None)),
+        (429, None, ("unknown", None)),
+        (200, None, ("unknown", None)),
+        ("dns", None, ("unknown", None)),
+    ],
+)
+def test_recruiterflow_public_board_verdicts(monkeypatch, status, fixture, expected):
+    from headstart.scrapers.pacer import Pacer
+    from headstart.scrapers.recruiterflow import RecruiterflowScraper
+
+    monkeypatch.setattr(RecruiterflowScraper, "pacer", Pacer(0))
+    body = (
+        (_ROOT / "tests/fixtures" / fixture).read_bytes() if fixture else b"maintenance"
+    )
+    monkeypatch.setattr(cl, "_get", _stub_get(status, body))
+    assert cl.p_recruiterflow("cyrten", "") == expected
+
+
+def test_pageup_probe_uses_the_probe_timeout_and_counts_the_real_feed(monkeypatch):
+    from fake_fetcher import FakeResponse
+
+    def fetch(_method, url, **kwargs):
+        assert kwargs["timeout"] == cl.TIMEOUT
+        body = (
+            (_ROOT / "tests/fixtures/pageup_kinetic.xml").read_text()
+            if url.endswith("/rss")
+            else "<title>Kinetic IT / Careers</title>"
+        )
+        return FakeResponse(text=body, url=url)
+
+    monkeypatch.setattr(cl.http, "fetch", fetch)
+    assert cl.p_pageup("1083/cw/en", "") == (cl.LIVE, 3)
+
+
+@pytest.mark.parametrize(
+    ("status", "body", "expected"),
+    [
+        (
+            404,
+            {"detail": "No ClientPortalSettings matches the given query."},
+            ("dead", None),
+        ),
+        (404, {"detail": "Invalid page."}, ("unknown", None)),
+        (200, {"count": 0, "next": None, "previous": None, "results": []}, ("live", 0)),
+        (
+            200,
+            {
+                "count": 32,
+                "next": "https://core.api.manatal.com/open/v3/career-page/manatal/jobs/?page=2",
+                "results": [
+                    {
+                        "id": 1333846,
+                        "hash": "L8597V4V",
+                        "position_name": "Business Development Internship (12PM - 9PM)",
+                    }
+                ],
+            },
+            ("live", 32),
+        ),
+        (200, {"count": 32, "next": None, "results": []}, ("unknown", None)),
+        (429, {}, ("unknown", None)),
+    ],
+)
+def test_manatal_distinguishes_public_empty_dead_and_unreadable(
+    monkeypatch, status, body, expected
+):
+    from headstart.scrapers.manatal import ManatalScraper
+    from headstart.scrapers.pacer import Pacer
+
+    monkeypatch.setattr(ManatalScraper, "api_pacer", Pacer(0))
+    monkeypatch.setattr(cl, "_get", _stub_get(status, json.dumps(body).encode()))
+    assert cl.p_manatal("manatal", "") == expected
+
+
 def test_zoho_error_page_is_dead(monkeypatch):
     body = b"<html><head><style>.cl-error-block{}</style></head><body>Page does not exist</body></html>"
     monkeypatch.setattr(cl, "_get", _stub_get(200, body))
@@ -3373,3 +3452,119 @@ def test_mynexthire_a_dns_failure_is_unknown_because_every_label_resolves(monkey
     dns = _dns_error()
     monkeypatch.setattr(cl, "_fetch", _mnh_fetch(0, raises=dns))
     assert cl.p_mynexthire("swiggy", "") == (cl.UNKNOWN, None)
+
+
+def test_polymer_public_missing_organization_and_careers_page_are_dead(monkeypatch):
+    for payload in (
+        {"errors": {"general": ["no careers_page found"]}},
+        {"errors": {"organization": ["could not be found"]}},
+    ):
+        monkeypatch.setattr(
+            cl,
+            "_get",
+            lambda *_a, payload=payload, **_k: (422, json.dumps(payload).encode()),
+        )
+        assert cl.p_polymer("realresponse", "") == (cl.DEAD, None)
+
+
+def test_polymer_probe_uses_count_not_number_of_pages(monkeypatch):
+    payload = {
+        "items": [],
+        "meta": {"count": 50, "total": 1, "organization_name": "Aru Labs"},
+    }
+    monkeypatch.setattr(
+        cl, "_get", lambda *_a, **_k: (200, json.dumps(payload).encode())
+    )
+    assert cl.p_polymer("aru-labs", "") == (cl.LIVE, 50)
+
+
+def test_comeet_probe_reads_only_public_positions(monkeypatch):
+    from fake_fetcher import FakeResponse
+
+    page = (Path(__file__).parent / "fixtures/comeet_port.html").read_text()
+    monkeypatch.setattr(cl, "_fetch", lambda *_a, **_k: FakeResponse(text=page))
+    assert cl.p_comeet("port/59.004", "") == (cl.LIVE, 2)
+
+
+def test_jobscore_probe_reads_explicitly_empty_public_board_as_live(monkeypatch):
+    monkeypatch.setattr(
+        cl,
+        "_get",
+        lambda *_a, **_k: (
+            200,
+            (
+                Path(__file__).parent / "fixtures/jobscore_blueleaf_board.html"
+            ).read_bytes(),
+        ),
+    )
+    assert cl.p_jobscore("blueleaf", "") == (cl.LIVE, 0)
+
+
+@pytest.mark.parametrize("ats", ["jobscore", "polymer"])
+@pytest.mark.parametrize("status,body", [(200, b"{}"), (429, b"{}"), ("dns", b"")])
+def test_new_feed_probes_never_call_an_unreadable_or_rate_limited_board_empty(
+    monkeypatch, ats, status, body
+):
+    monkeypatch.setattr(cl, "_get", lambda *_a, **_k: (status, body))
+    assert cl.PROBES[ats]("sample", "") == (cl.UNKNOWN, None)
+
+
+def test_comeet_marketing_redirect_is_dead_and_consent_page_unknown(monkeypatch):
+    from fake_fetcher import FakeResponse
+
+    monkeypatch.setattr(
+        cl,
+        "_fetch",
+        lambda *_a, **_k: FakeResponse(
+            302, headers={"Location": "https://www.comeet.com/"}
+        ),
+    )
+    assert cl.p_comeet("port/59.004", "") == (cl.DEAD, None)
+    monkeypatch.setattr(
+        cl,
+        "_fetch",
+        lambda *_a, **_k: FakeResponse(text="<title>Request for consent</title>"),
+    )
+    assert cl.p_comeet("port/59.004", "") == (cl.UNKNOWN, None)
+
+
+@pytest.mark.parametrize(
+    "status,body",
+    [
+        (410, b"<title>Page Gone (Error 410)</title>"),
+        (
+            200,
+            (
+                Path(__file__).parent / "fixtures/jobscore_clp-alias_board.html"
+            ).read_bytes(),
+        ),
+    ],
+)
+def test_jobscore_retired_or_renamed_labels_do_not_become_duplicate_boards(
+    monkeypatch, status, body
+):
+    monkeypatch.setattr(cl, "_get", lambda *_a, **_k: (status, body))
+    assert cl.p_jobscore("citylightandpower", "") == (cl.DEAD, None)
+
+
+@pytest.mark.parametrize(
+    "slug,fixture,n",
+    [
+        ("pricefx", "pricefx", 3),
+        ("blueleaf", "blueleaf", 0),
+        ("facefoundri", "facefoundri", 197),
+    ],
+)
+def test_jobscore_liveness_reads_public_html_without_polling_the_feed(
+    monkeypatch, slug, fixture, n
+):
+    body = (
+        Path(__file__).parent / f"fixtures/jobscore_{fixture}_board.html"
+    ).read_bytes()
+
+    def public_page(url, *args, **kwargs):
+        assert url == f"https://careers.jobscore.com/careers/{slug}"
+        return 200, body
+
+    monkeypatch.setattr(cl, "_get", public_page)
+    assert cl.p_jobscore(slug, "") == (cl.LIVE, n)

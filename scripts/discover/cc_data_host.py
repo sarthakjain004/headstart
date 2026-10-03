@@ -10,9 +10,8 @@ The unit is a **SURT key range** ``[lo, hi)``. :func:`domain_range` turns a CDX 
 target into one, so any miner keyed on host targets (``cc_miner.ATS_PATTERNS``) can use it, and
 :func:`capture_urls` returns every captured URL in that range for one crawl.
 
-When the data host answers 429 or 503 (S3's SlowDown), requests move to the spare egress
-(``headstart.network.spare_egress``, the WARP SOCKS proxy) and rotate it on repeated refusals, then go
-back to direct after :data:`PROXY_HOLD` seconds.
+When the data host answers 403, 429 or 503 (S3's SlowDown), requests move to the spare egress
+(``headstart.network.spare_egress``, the WARP SOCKS proxy) and rotate it on repeated refusals, with paced retries and Retry-After (the shared client's 30 s cap).
 """
 
 from __future__ import annotations
@@ -20,28 +19,110 @@ from __future__ import annotations
 import gzip
 import json
 import re
-import time
+from bisect import bisect_left, bisect_right
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from curl_cffi import requests
-
-from headstart.network import spare_egress
+from headstart.network import http
 
 DATA = "https://data.commoncrawl.org"
 UA = "HeadStart-discovery/0.1 (ATS board discovery)"
 #: Parallel block fetches per target. The data host is S3 behind CloudFront; stay polite.
 WORKERS = 4
-#: Seconds to stay on the spare egress after a refusal before trying direct again.
-PROXY_HOLD = 300.0
 #: Bytes of cluster.idx read per window once the binary search has found the range's start.
 WINDOW = 524288
 
-_proxy_until = 0.0
+_PACER = http.RoutePacer(0.25)
+
+
+def capture_known_hosts(crawl_id, hosts, *, on_host=None):
+    """Read many exact hosts in one pass over cluster.idx and each needed CDX block.
+
+    The company-domain ATS audit has thousands of hosts. Binary-searching the
+    remote sparse index separately for each would cost ~25 requests per host.
+    Failed blocks leave every host they cover incomplete (None), never empty.
+    """
+    hosts = set(hosts)
+    result = {host: [] for host in hosts}
+    base = f"{DATA}/cc-index/collections/{crawl_id}/indexes/"
+    response = _get(base + "cluster.idx")
+    if response is None:
+        if on_host:
+            for host in hosts:
+                on_host(host, None)
+        return dict.fromkeys(hosts)
+    lines = [line for line in response.content.splitlines() if line]
+    keys = [_key(line) for line in lines]
+    blocks = {}
+    for host in hosts:
+        lo = surt_host(host).encode() + b")"
+        hi = surt_host(host).encode() + b"*"
+        start = max(0, bisect_right(keys, lo) - 1)
+        stop = bisect_left(keys, hi)
+        for line in lines[start : max(start + 1, stop)]:
+            parts = line.split(b"\t")
+            block = (parts[1].decode(), int(parts[2]), int(parts[3]))
+            blocks.setdefault(block, set()).add(host)
+    print(
+        f"[cc-data] {len(hosts)} known hosts in {len(blocks)} shared blocks", flush=True
+    )
+
+    def read(block, covered):
+        filename, offset, length = block
+        response = _get(base + filename, start=offset, end=offset + length - 1)
+        if response is None:
+            return None
+        try:
+            rows = gzip.decompress(response.content).splitlines()
+        except (OSError, EOFError):
+            return None
+        surts = {}
+        for host in covered:
+            surts.setdefault(surt_host(host).encode(), []).append(host)
+        hits = []
+        for row in rows:
+            key, _, rest = row.partition(b" ")
+            matched_hosts = surts.get(key.partition(b")")[0])
+            if matched_hosts is None:
+                continue
+            try:
+                url = json.loads(rest.split(b" ", 1)[1])["url"]
+                hits.extend((host, url) for host in matched_hosts)
+            except (IndexError, ValueError, KeyError):
+                return None
+        return hits
+
+    with ThreadPoolExecutor(WORKERS) as pool:
+        remaining = Counter(host for covered in blocks.values() for host in covered)
+        futures = {
+            pool.submit(read, block, covered): covered
+            for block, covered in blocks.items()
+        }
+        for number, future in enumerate(as_completed(futures), 1):
+            hits = future.result()
+            if hits is None:
+                for host in futures[future]:
+                    result[host] = None
+            else:
+                for host, url in hits:
+                    if result[host] is not None:
+                        result[host].append(url)
+            for host in futures[future]:
+                remaining[host] -= 1
+                if remaining[host] == 0 and on_host:
+                    on_host(host, result[host])
+            if number % 100 == 0:
+                print(
+                    f"[cc-data] {number}/{len(blocks)} known-host blocks read",
+                    flush=True,
+                )
+    return result
 
 
 def surt_host(host: str) -> str:
     """``jobs.lever.co`` -> ``co,lever,jobs``: the host part of a SURT key."""
-    return ",".join(reversed(host.lower().strip(".").split(".")))
+    # Common Crawl canonicalizes www.example.com and example.com to the same key.
+    return ",".join(reversed(host.lower().strip(".").removeprefix("www.").split(".")))
 
 
 def domain_range(target: str) -> tuple[bytes, bytes]:
@@ -66,39 +147,25 @@ def crawl_ids(since: str = "") -> list[str]:
 
 
 def _get(url: str, *, start: int | None = None, end: int | None = None, tries: int = 6):
-    """One GET (a Range GET when bounds are given). The response, or None after `tries`.
-
-    429/503 are the data host saying slow down: move to the spare egress, and rotate it if it is
-    already the route that was refused. Every failure, those included, backs off before retrying.
-    """
-    global _proxy_until
+    """GET a whole file or byte range, using paced spare-egress retries on 403/429/503."""
     headers = {"User-Agent": UA}
     if start is not None:
         headers["Range"] = f"bytes={start}-{end}"
-    for attempt in range(tries):
-        proxy = spare_egress.proxy_url() if time.monotonic() < _proxy_until else None
-        try:
-            r = requests.get(url, timeout=90, headers=headers, proxy=proxy)
-            # A Range GET must come back 206: a 200 would be the whole ~100 MB file.
-            if r.status_code == (200 if start is None else 206):
-                return r
-            # No such crawl or file: retrying will not change it.
-            if r.status_code == 404:
-                return None
-            if r.status_code in (429, 503):
-                if proxy:
-                    spare_egress.rotate()
-                elif spare_egress.proxy_url():
-                    print(
-                        f"  [cc-data] {r.status_code} direct -> spare egress",
-                        flush=True,
-                    )
-                _proxy_until = time.monotonic() + PROXY_HOLD
-        except Exception:  # noqa: BLE001, S110
-            pass
-        if attempt < tries - 1:
-            time.sleep(min(3 * 2**attempt, 45))
-    return None
+    try:
+        response = http.fetch(
+            "GET",
+            url,
+            attempts=tries,
+            timeout=90,
+            headers=headers,
+            egress_group="cc-data",
+            egress_on=frozenset({403, 429, 503}),
+            request_pacer=_PACER,
+        )
+    except http.RequestsError:
+        return None
+    # A Range GET must come back 206, never the whole ~100 MB file at 200.
+    return response if response.status_code == (200 if start is None else 206) else None
 
 
 def _seek_key(url: str, size: int, pos: int) -> tuple[int, bytes] | None:

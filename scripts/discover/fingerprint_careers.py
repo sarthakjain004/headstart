@@ -298,11 +298,30 @@ PATTERNS: dict[str, tuple[str, list[str]]] = {
     ),
     "avature": ("ats", [SUB + r"avature\.net"]),
     "cornerstone": ("ats", [SUB + r"csod\.com"]),
-    "comeet": ("ats", [r"comeet\.com/jobs/([a-zA-Z0-9_.-]+)", SUB + r"comeet\.co"]),
+    "comeet": (
+        "ats",
+        [
+            r"(?:www\.)?comeet\.co(?:m)?/jobs/([a-zA-Z0-9_.-]+/[A-Fa-f0-9]+\.[A-Fa-f0-9]+)"
+        ],
+    ),
+    "polymer": ("ats", [r"jobs\.polymer\.co/([a-zA-Z0-9_-]+)"]),
     "pinpoint": ("ats", [SUB + r"pinpointhq\.com"]),
     "homerun": ("ats", [SUB + r"homerun\.co"]),
-    "manatal": ("ats", [SUB + r"manatal\.com"]),
-    "recruiterflow": ("ats", [SUB + r"recruiterflow\.com"]),
+    "manatal": (
+        "ats",
+        [
+            HOST + r"(?:www\.)?careers-page\.com/([a-z0-9_.%+-]+)(?=[/?#]|$)",
+            HOST + r"((?!www\.)[a-z0-9-]+\.careers-page\.com)(?=[/?#]|$)",
+        ],
+    ),
+    "pageup": (
+        "ats",
+        [r"careers\.pageuppeople\.com/(?:mob/)?(\d+/[a-z0-9_-]+/[a-z-]+)(?=[/?#]|$)"],
+    ),
+    "recruiterflow": (
+        "ats",
+        [r"recruiterflow\.com/([a-z0-9_.%+-]+)/jobs(?:-page-widget)?(?=[/?#]|$)"],
+    ),
     "recruitcrm": ("ats", [SUB + r"recruitcrm\.io"]),
     "loxo": ("ats", [SUB + r"loxo\.co"]),
     "jobscore": ("ats", [r"careers\.jobscore\.com/careers/([a-zA-Z0-9_-]+)"]),
@@ -729,6 +748,8 @@ CNAME_ZONES = {
     "homerun.co": "homerun",
     "getro.com": "getro",
     "comeet.co": "comeet",
+    "comeet.com": "comeet",
+    "polymer.co": "polymer",
     "recruiterflow.com": "recruiterflow",
     "manatal.com": "manatal",
     "zappyhire.com": "zappyhire",
@@ -1287,6 +1308,13 @@ def normalise_tenant(ats: str, tenant: str, evidence: str) -> str:
     conclusive while still lacking Workday's site path or a Teamtailor company label.  Returning an
     empty string makes that state explicit instead of minting a plausible-but-broken Board.
     """
+    if ats == "comeet":
+        from headstart.scrapers.comeet import ComeetScraper
+
+        try:
+            return ComeetScraper.slug_from(tenant, evidence)
+        except ValueError:
+            return ""
     if not evidence:
         return tenant
     if ats == "gr8people":

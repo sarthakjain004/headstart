@@ -59,6 +59,50 @@ def _site(miner, url: str) -> str | None:
     return got[0] if got else None
 
 
+def test_cdx_429_retries_on_spare_and_honors_retry_after(miner, monkeypatch):
+    from types import SimpleNamespace
+
+    from headstart.network import http, spare_egress
+
+    spare_egress.reset()
+    spare_egress.use_daemon(
+        spare_egress.InMemoryEgressDaemon("socks5h://127.0.0.1:40000")
+    )
+    calls, sleeps = [], []
+    outcomes = iter([429, 200])
+
+    def request(*args, **kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(
+            status_code=next(outcomes), text="ok", headers={"Retry-After": "7"}
+        )
+
+    monkeypatch.setattr(http, "session", lambda: SimpleNamespace(request=request))
+    monkeypatch.setattr(http.RoutePacer, "claim_delay", lambda *args: 0)
+    monkeypatch.setattr(http.time, "sleep", sleeps.append)
+    assert miner.curl("https://index.commoncrawl.org/test", attempts=2) == ("ok", True)
+    assert len(calls) == 2
+    assert not calls[0].get("proxies")
+    assert calls[1]["proxies"]["https"].startswith("socks5h://")
+    assert "cc-index" in spare_egress.walled_groups()
+    assert 7 in sleeps
+
+
+def test_recruiterflow_captures_public_board_identity_and_url(miner):
+    spec = miner.ATS_PATTERNS["recruiterflow"]
+    found = {}
+    miner.extract_tenants(
+        spec,
+        [re.compile(p, re.IGNORECASE) for p in spec["patterns"]],
+        [
+            "https://recruiterflow.com/RFCAREERS/jobs/166?source=x",
+            "https://recruiterflow.com/blog/ats",
+        ],
+        found,
+    )
+    assert found == {"rfcareers": "https://recruiterflow.com/rfcareers/jobs"}
+
+
 H = "https://acme.wd1.myworkdayjobs.com"
 
 
@@ -328,3 +372,67 @@ def test_an_ashby_slug_is_read_as_the_scraper_says_a_link_writes_it(miner):
         hits,
     )
     assert sorted(hits) == ["Elveo", "Flock Safety", "ambient.ai"]
+
+
+def test_eightfold_capture_emits_only_the_full_board_host(miner):
+    spec = miner.ATS_PATTERNS["eightfold"]
+    pats = [re.compile(pattern, re.IGNORECASE) for pattern in spec["patterns"]]
+    hits = {}
+    miner.extract_tenants(
+        spec, pats, ["https://paypal.eightfold.ai/careers/job/123"], hits
+    )
+    assert hits == {"paypal.eightfold.ai": "https://paypal.eightfold.ai"}
+
+
+def test_resumed_eightfold_labels_are_reconciled_to_full_hosts(
+    miner, monkeypatch, tmp_path
+):
+    candidate = tmp_path / "candidates.csv"
+    candidate.write_text(
+        "ats,tenant,url\neightfold,paypal,https://paypal.eightfold.ai/careers/job/1\neightfold,paypal.eightfold.ai,https://paypal.eightfold.ai\n"
+    )
+    monkeypatch.setattr(miner, "CSV", str(candidate))
+    monkeypatch.setattr(miner, "DONE", str(tmp_path / "checkpoint"))
+    tenants, _ = miner.load_existing()
+    assert tenants["eightfold"] == {
+        "paypal.eightfold.ai": "https://paypal.eightfold.ai"
+    }
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://ats.rippling.com/rpc_downtown/jobs/123",
+        "https://api.rippling.com/platform/api/ats/v1/board/rpc_downtown",
+    ],
+)
+def test_rippling_preserves_the_whole_underscored_slug(miner, url):
+    spec = miner.ATS_PATTERNS["rippling"]
+    pats = [re.compile(pattern, re.IGNORECASE) for pattern in spec["patterns"]]
+    hits = {}
+    miner.extract_tenants(spec, pats, [url], hits)
+    assert set(hits) == {"rpc_downtown"}
+
+
+@pytest.mark.parametrize(
+    "ats,url,slug",
+    [
+        (
+            "comeet",
+            "https://www.comeet.co/jobs/nsure/A7.007/engineer/33.1AB",
+            "nsure/a7.007",
+        ),
+        (
+            "jobscore",
+            "https://careers.jobscore.com/careers/jobscore/jobs/front-end-abc",
+            "jobscore",
+        ),
+        ("polymer", "https://jobs.polymer.co/cedar/38850", "cedar"),
+    ],
+)
+def test_new_public_boards_keep_their_identity(miner, ats, url, slug):
+    entry = miner.ATS_PATTERNS[ats]
+    match = next(
+        re.search(pattern, url, re.IGNORECASE) for pattern in entry["patterns"]
+    )
+    assert miner.tenant_from(entry["kind"], match)[0] == slug

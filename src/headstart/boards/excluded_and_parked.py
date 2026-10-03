@@ -17,6 +17,45 @@ from __future__ import annotations
 # one entry covers a Board that appears under several casings (smartrecruiters Dev2/dev2).
 EXCLUDED_BOARDS: frozenset[str] = frozenset(
     {
+        # Read 2026-10-03: Starbucks' staging front serves 53 postings, including
+        # "barista CAN ext test", "barista US ext test" and "test_testing lead".
+        # Its PCSX group is starbucks-staging.com; these are test requisitions.
+        "eightfold:starbucks-staging.eightfold.ai",
+        # New public feed census, 2026-10-03 (ADR-0385/0386): integration tests,
+        # "Status Test", "Open Job Delay Test #1", and Comeet's "Demo Company"
+        # with 695 fabricated postings including "20240530 Deployment" and "2222".
+        "comeet:yourcompany/80.003",
+        # Polymer's API-doc example tenant; Back End Developer is corporate ipsum
+        # ("Globalize game-plan can you champion this incentivization..."), read live.
+        "polymer:aperturelabs",
+        "jobscore:googleaccountapptest",
+        "jobscore:facebooktestaccount",
+        "jobscore:microsoftaccountapptest",
+        "jobscore:appcuetest3",
+        "jobscore:mergetestaccount",
+        "jobscore:jobscoremiddlewaretestcompany",
+        "jobscore:bugfest",
+        # PageUp, read 2026-10-03: 584 says "PageUp Demo Careers" and "This is a
+        # test job"; 600 says "Careers-template | AquaCorp" with lorem-ipsum copy.
+        # Every 725 channel below publishes the same five demonstration records,
+        # including a malformed "Brand Manager Officer & - &amp" lorem-ipsum ad.
+        "pageup:584/caw/en",
+        "pageup:600/caw/en",
+        "pageup:725/smbone/en",
+        "pageup:725/smbtwo/en",
+        "pageup:725/smbthree/en",
+        "pageup:725/templateone/en",
+        "pageup:725/templatetwo/en",
+        "pageup:725/templatethree/en",
+        # Expanded cache audit: 218 and 9999 carry location-test/automation/lorem
+        # jobs; 650 contains employee-referral demos and "Testing references";
+        # 517 calls itself PageUpDemo and repeats one unrelated description across
+        # four differently titled roles. Confirmed from posting content, not slugs.
+        "pageup:218/cw/en",
+        "pageup:218/nostyle/en",
+        "pageup:517/caw/en",
+        "pageup:650/cw/en",
+        "pageup:9999/caw/en",
         # Ashby's turn, found late (ADR-0114) by reading board titles rather than slugs:
         # `krakensandbox` titles itself "Kraken Sandbox Jobs" and serves 3 postings,
         # content-confirmed as templates ("Basic Job Template", "Admin Assistant Testing").
@@ -1033,6 +1072,35 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
 # cannot keep its rows fresh, so serving them would be serving a snapshot that only ages.
 PARKED_BOARDS: frozenset[str] = frozenset(
     {
+        # Read 2026-10-03 after the iCIMS landing: each client's whole listing
+        # is covered by Scrapable iCIMS Boards (ADR-0240), so Jibe keeps none.
+        "jibe:chumashcareers",  # 23 of 23 postings
+        "jibe:davidsonhospitality",  # 928 of 928
+        "jibe:jointcommission",  # 1 of 1
+        "jibe:oraucareers",  # 14 of 14
+        "jibe:paveamerica",  # 2 of 2
+        # New Manatal adapter, ADR-0384: the company's own /careers redirects to its
+        # legacy Board (32 Jobs); this alternative advanced Board has 40 JobPosts
+        # with substantial overlap and different ids. Prefer the endorsed surface
+        # until including both collections is explicitly decided. No existing
+        # Manatal support predates this initial publication choice.
+        "manatal:manatal.careers-page.com",
+        # Same-label legacy and advanced surfaces both read live on 2026-10-03.
+        # Keep the initial legacy source while employer endorsement/overlap is
+        # unresolved; these are not asserted to be exact aliases (ADR-0384).
+        "manatal:10folders.careers-page.com",
+        "manatal:aperiohub.careers-page.com",
+        "manatal:bandwidth-global.careers-page.com",
+        "manatal:barthhaas.careers-page.com",
+        "manatal:chefra-solutions.careers-page.com",
+        "manatal:city-care-partnership.careers-page.com",
+        "manatal:cmsistemiinformatici.careers-page.com",
+        "manatal:empire.careers-page.com",
+        "manatal:find-job-latam.careers-page.com",
+        "manatal:gigalabs-private-ltd.careers-page.com",
+        "manatal:global-staff-network.careers-page.com",
+        "manatal:integrated-office-solutions-inc.careers-page.com",
+        "manatal:intelus-agency.careers-page.com",
         # Masimo's retired Oracle Board (#873), rechecked 2026-10-02: both served
         # job 4018 and 2562 redirect to CandidateExperience/errors/404 (HTTP 200).
         # The API still lists them, so absence-based sync cannot remove them.

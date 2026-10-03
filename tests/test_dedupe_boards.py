@@ -19,7 +19,9 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 
 
-@pytest.mark.parametrize("ats", ["clearcompany", "taleo_enterprise", "eightfold"])
+@pytest.mark.parametrize(
+    "ats", ["clearcompany", "taleo_enterprise", "eightfold", "pageup", "recruiterflow"]
+)
 def test_apply_refuses_a_ledger_another_script_writes(ats, tmp_path):
     """Run from a copy rooted in ``tmp_path`` with an empty liveness ledger: the script finds its
     ledgers from its own path, so were the refusal missing, the apply would probe nothing and

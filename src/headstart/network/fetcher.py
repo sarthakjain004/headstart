@@ -38,7 +38,11 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
-from headstart.network import spare_egress
+from headstart.network import http, spare_egress
+
+# curl connect failure, timeout, empty reply, send failure and receive failure.
+# DNS, HTTP status and certificate errors are deliberately not route failures.
+_TRANSPORT_ERRORS = frozenset({7, 28, 52, 55, 56})
 
 
 class Fetcher(Protocol):
@@ -73,6 +77,9 @@ class BoardFetcher:
     ``egress_group`` is None for a scraper that never opted into the spare egress; its requests
     then carry only ``egress_board``, which steers nothing and names the Board in the retry log.
     ``wall_statuses`` are the statuses that mark the group walled (``http.fetch``'s ``egress_on``).
+    ``spare_on_transport_error`` adds one available-spare GET/HEAD after exhausted
+    connect/timeout/reset errors. It never reacts to HTTP responses, replays a POST,
+    rotates an address or recursively retries a failed spare request.
     """
 
     def __init__(
@@ -82,11 +89,38 @@ class BoardFetcher:
         board_key: str,
         egress_group: str | None,
         wall_statuses: frozenset[int],
+        spare_on_transport_error: bool = False,
     ) -> None:
         self._inner_fetcher = inner_fetcher
         self._board_key = board_key
         self._egress_group = egress_group
         self._wall_statuses = wall_statuses
+        self._spare_on_transport_error = spare_on_transport_error
+
+    def _may_retry_on_spare(
+        self, exc: http.RequestsError, method: str, direct: bool, kwargs: dict[str, Any]
+    ) -> bool:
+        """One alternative route after failed transport, never after an HTTP refusal."""
+        return bool(
+            self._spare_on_transport_error
+            and method.upper() in {"GET", "HEAD"}
+            and self._egress_group
+            and not direct
+            and not kwargs.get("prefer_spare")
+            and not kwargs.get("proxies")
+            and not kwargs.get("proxy")
+            and getattr(exc, "response", None) is None
+            and getattr(exc, "code", None) in _TRANSPORT_ERRORS
+        )
+
+    def _spare_request(self, kwargs: dict[str, Any]) -> dict[str, Any]:
+        # Empty wall statuses prevent HTTP refusals from spending another route.
+        return {
+            **kwargs,
+            **self.egress_binding(marks_wall=False),
+            "prefer_spare": True,
+            "attempts": 1,
+        }
 
     def egress_binding(self, *, marks_wall: bool = True) -> dict[str, Any]:
         """The keyword arguments :meth:`fetch` adds to every request it forwards.
@@ -120,7 +154,14 @@ class BoardFetcher:
         non-JSON page, and :meth:`BaseScraper.alias_key`'s redirect probe, which never carried
         one."""
         binding = {} if direct else self.egress_binding(marks_wall=marks_wall)
-        return self._inner_fetcher.fetch(method, url, **binding, **kwargs)
+        try:
+            return self._inner_fetcher.fetch(method, url, **binding, **kwargs)
+        except http.RequestsError as exc:
+            if not self._may_retry_on_spare(exc, method, direct, kwargs):
+                raise
+            if not spare_egress.proxy_for(self._egress_group, prefer_spare=True):
+                raise
+            return self._inner_fetcher.fetch(method, url, **self._spare_request(kwargs))
 
     async def fetch_async(
         self,
@@ -134,9 +175,20 @@ class BoardFetcher:
     ) -> Any:
         """The multiplexed counterpart to :meth:`fetch`, over a caller-supplied session."""
         binding = {} if direct else self.egress_binding(marks_wall=marks_wall)
-        return await self._inner_fetcher.fetch_async(
-            session, method, url, **binding, **kwargs
-        )
+        try:
+            return await self._inner_fetcher.fetch_async(
+                session, method, url, **binding, **kwargs
+            )
+        except http.RequestsError as exc:
+            if not self._may_retry_on_spare(exc, method, direct, kwargs):
+                raise
+            if not await spare_egress.proxy_for_async(
+                self._egress_group, prefer_spare=True
+            ):
+                raise
+            return await self._inner_fetcher.fetch_async(
+                session, method, url, **self._spare_request(kwargs)
+            )
 
     def stream_width(self, ceiling: int) -> int:
         """How wide this Board's fan-out may go now, at most ``ceiling``: narrowed once its

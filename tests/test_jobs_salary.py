@@ -2404,3 +2404,21 @@ def test_a_small_rupee_figure_on_a_job_placed_abroad_is_dropped():
     dollars = SalarySpan(100_000, 130_000, "USD", "field")
     assert salary_module.placed(dollars, {"US"}) == dollars
     assert salary_module.placed(None, {"US"}) is None
+
+
+@pytest.mark.parametrize(
+    "ats,value,low,high",
+    [
+        ("jobscore", "13.5-14.5 USD per hour", 28080, 30160),
+        ("jobscore", "500-600 USD per week", 26000, 31200),
+        ("polymer", "13.50 USD per-hour", 28080, None),
+        ("polymer", "170000.0 - 220000.0 USD per-year", 170000, 220000),
+    ],
+)
+def test_new_public_feed_fields_preserve_fractions_and_periods(ats, value, low, high):
+    from headstart.jobs.salary import from_field
+
+    span = from_field(value, ats=ats)
+    assert span.min_annual == low
+    assert span.max_annual == high
+    assert span.currency == "USD"
