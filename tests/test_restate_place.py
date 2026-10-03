@@ -103,9 +103,7 @@ def test_baseline_uses_its_own_vector_and_description_instead_of_latest_inputs(
     assert rp.place_of(placed.to_pylist()[0]) == ("software-engineering", "mid")
 
 
-@pytest.mark.parametrize(
-    "experience, expected", [(None, "mid"), ("1+ years", "entry")]
-)
+@pytest.mark.parametrize("experience, expected", [(None, "mid"), ("1+ years", "entry")])
 def test_missing_historical_text_retains_observed_years_but_real_raw_field_wins(
     tmp_path, experience, expected
 ):
