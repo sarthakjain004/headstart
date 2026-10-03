@@ -89,6 +89,34 @@ def test_gr8people_graphql_error_on_200_is_unknown(monkeypatch):
     assert cl.p_gr8people("x.gr8people.com", "") == (cl.UNKNOWN, None)
 
 
+@pytest.mark.parametrize(
+    ("status", "payload", "expected"),
+    [
+        (200, {"objects": [], "meta": {"total_count": 12}}, ("live", 12)),
+        (404, {}, ("dead", None)),
+        (200, {"objects": [], "meta": {}}, ("unknown", None)),
+        (429, {}, ("unknown", None)),
+    ],
+)
+def test_instahyre_global_marketplace_probe_reads_the_list_total(
+    monkeypatch, status, payload, expected
+):
+    from fake_fetcher import FakeResponse
+
+    monkeypatch.setattr(
+        cl,
+        "_fetch",
+        lambda *_args, **_kwargs: FakeResponse(
+            status_code=status, text=json.dumps(payload)
+        ),
+    )
+
+    assert (
+        cl.p_instahyre("global", "https://www.instahyre.com/api/v1/job_search")
+        == expected
+    )
+
+
 @pytest.fixture(autouse=True)
 def _no_spare_egress(monkeypatch):
     """No test in this file may reach the machine's real WARP daemon.

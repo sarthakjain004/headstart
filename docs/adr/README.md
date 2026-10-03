@@ -350,7 +350,7 @@ supersedes it and note the supersession in both.
 | [0386](0386-comeet-keys-public-hosted-boards-on-the-company-uid.md) | Comeet keys public hosted Boards on the company UID | 2026-10-03 |
 | [0387](0387-polymer-reads-public-details-without-a-title-only-gate.md) | Polymer reads public details without a title-only gate | 2026-10-03 |
 | [0388](0388-ats-throughput-and-recovery-follow-measured-public-behavior.md) | ATS throughput and recovery follow measured public behavior | 2026-10-03 |
+| [0389](0389-marketplaces-are-one-global-source-with-profile-scoped-jobs.md) | Marketplaces are one global source with profile-scoped jobs | 2026-10-04 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*
-

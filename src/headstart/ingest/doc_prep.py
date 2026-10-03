@@ -45,6 +45,7 @@ META_FIELDS = (
     "id",
     "ats",
     "company",
+    "marketplace_employer_id",
     "title",
     "location",
     "remote",

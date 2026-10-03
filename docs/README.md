@@ -17,6 +17,9 @@ Start here — docs are grouped by area.
 - [JobScore](jobscore/2026-10-03_public-html-measurement.md) — public HTML, canonical labels and stale posting routes.
 - [Polymer](polymer/2026-10-03_public-api-measurement.md) — public listing/details, bounded pagination and metadata.
 
+## Public marketplace measurements
+- [Instahyre](instahyre/2026-10-03_public-api-and-scraper-research.md) — anonymous global listings, employer-profile limits, detail fields and the marketplace identity boundary (ADR-0389).
+
 ## Pipeline — how the run actually works
 - [pipeline/walkthrough.md](pipeline/walkthrough.md) — plain-language explainer of the run, written for someone learning it: the job/stage map, facts vs derivations and `DERIVATIONS_VERSION`, and the description store. Question-driven and grows; undated, unlike the dated one-off analyses beside it in that folder.
 

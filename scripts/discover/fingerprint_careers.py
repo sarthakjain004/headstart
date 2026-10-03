@@ -18,14 +18,15 @@ here by a different signal rather than by fetching the same two pages harder:
    shapes, all but two of them supported ATSes. Coverage questions are exactly the ones you cannot
    answer with a table of what you already have — the point is to find what is *missing*. The
    table here carries 70+ providers, marked `supported` / `unsupported` from
-   `headstart.scrapers.registry`, plus two deliberately-separate non-ATS classes: `jobboard`
+   `headstart.scrapers.registry`, plus three deliberately-separate non-ATS classes: `marketplace`
+   (Instahyre — a public multi-employer source we can scrape), `jobboard`
    (LinkedIn/Naukri/workatastartup — an apply link, not a board we could scrape) and
    `diy` (Notion/Typeform/Google Forms/`mailto:`), which is what much of the genuine "no ATS"
    tail turns out to be.
 
 **A failure is never a negative result.** Every company settles into exactly one of five states,
 and they are kept apart in the CSV because collapsing them is how a headline number goes wrong:
-`resolved` (an ATS matched), `jobboard`/`diy` (a real apply route, not an ATS), `none` (at least
+`resolved` (an ATS matched), `marketplace`/`jobboard`/`diy` (a real apply route, not an ATS), `none` (at least
 one page fetched cleanly and nothing matched — a settled negative), and `unreachable` (every
 probe DNS-failed, timed out, or was walled — says nothing about the company, worth re-probing).
 `pages_ok`/`pages_err` are written per row so that split is auditable after the fact.
@@ -139,9 +140,9 @@ SUPPORTED: frozenset[str] = frozenset(registry.SCRAPERS)
 HOST = r"(?<![a-z0-9.-])"
 SUB = HOST + r"([a-z0-9][a-z0-9-]{1,60})\."
 
-# kind: "ats" (a real board we could scrape), "jobboard" (an aggregator's apply page — a real
-# route, but not a per-company board), "diy" (a form/doc, i.e. genuinely no ATS). Only "ats"
-# counts toward the resolution headline; the other two are reported separately on purpose.
+# kind: "ats" (a real Board we could scrape), "marketplace" (a global public multi-employer
+# source), "jobboard" (an aggregator's apply page — a route but not a source we scrape), and
+# "diy" (a form/doc, i.e. genuinely no ATS). Only "ats" counts toward the resolution headline.
 PATTERNS: dict[str, tuple[str, list[str]]] = {
     "radancy": (
         "ats",
@@ -415,7 +416,10 @@ PATTERNS: dict[str, tuple[str, list[str]]] = {
         [r"naukri\.com/[a-z0-9-]{0,60}-jobs", r"naukri\.com/(?:job-listings|jobs)"],
     ),
     "indeed": ("jobboard", [r"indeed\.com/(?:cmp|viewjob|jobs)"]),
-    "instahyre": ("jobboard", [r"instahyre\.com/(?:jobs|c)/"]),
+    "instahyre": (
+        "marketplace",
+        [r"(?:www\.)?instahyre\.com/(?:jobs|c|job-\d+)[^\"'\s]*"],
+    ),
     "cutshort": ("jobboard", [r"cutshort\.io/(?:company|jobs)/"]),
     "glassdoor": ("jobboard", [r"glassdoor\.[a-z.]{2,6}/(?:Jobs|job-listing)"]),
     "foundit": ("jobboard", [r"foundit\.in/(?:search|job)"]),
@@ -1061,7 +1065,7 @@ def is_html_page(body: str, url: str) -> bool:
 def scan(
     text: str, self_domain: str, *, allow_provider_host: bool = False
 ) -> list[tuple[str, str, str, int]]:
-    """Every ATS/jobboard/diy reference in `text`, as (ats, kind, tenant, hits).
+    """Every ATS/marketplace/jobboard/diy reference in `text`, as (ats, kind, tenant, hits).
 
     Self-referential matches are dropped: a company that IS a provider (zoho.com sits in this very
     seed) otherwise matches its own infra subdomains as if they were a tenant board.
@@ -1119,7 +1123,11 @@ def scan(
                     )
                     tok = got[0] if got else ""
                 else:
-                    raw = (m.group(1) if m.lastindex else "") or ""
+                    raw = (
+                        "global"
+                        if kind == "marketplace"
+                        else (m.group(1) if m.lastindex else "") or ""
+                    )
                     if ats == "ashby":
                         raw = AshbyScraper.slug_from_link(raw)  # "Blackpoint Cyber"
                     tok = raw if ats in KEEPS_SLUG_CASE else raw.lower()
@@ -1729,7 +1737,12 @@ def probe(
         "browser": 7,
     }
     ats, kind, tok, signal, ev = "", "", "", "", ""
-    for want, state in (("ats", "resolved"), ("jobboard", "jobboard"), ("diy", "diy")):
+    for want, state in (
+        ("ats", "resolved"),
+        ("marketplace", "marketplace"),
+        ("jobboard", "jobboard"),
+        ("diy", "diy"),
+    ):
         pool = [h for h in hits if h[1] == want]
         if pool:
             if want == "ats":
@@ -1778,7 +1791,9 @@ def probe(
         "status": status,
         "ats": ats,
         "kind": kind,
-        "supported": ("yes" if ats in SUPPORTED else "no") if kind == "ats" else "",
+        "supported": ("yes" if ats in SUPPORTED else "no")
+        if kind in ("ats", "marketplace")
+        else "",
         "tenant": tok,
         "board_key": key,
         "candidate": candidate,

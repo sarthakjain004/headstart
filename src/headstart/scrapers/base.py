@@ -16,7 +16,7 @@ from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from functools import cached_property
 from types import MappingProxyType
-from typing import Any, TypeVar
+from typing import Any, Literal, TypeVar
 
 from headstart import log
 from headstart.boards import company_name
@@ -338,6 +338,10 @@ class BaseScraper(ABC):
     """
 
     ats: str  # set by each subclass
+
+    #: ``"ats"`` reads one employer-owned Board; ``"marketplace"`` reads a platform that
+    #: hosts employers' postings and owns the application flow (ADR-0389).
+    source_kind: Literal["ats", "marketplace"] = "ats"
 
     #: Regex the URL :meth:`job_url` produces must always match for this ATS — the single
     #: declared shape of a job-detail link, so ``scripts/eval/verify_filters.py``'s

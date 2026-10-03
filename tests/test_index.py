@@ -387,6 +387,33 @@ def test_new_table_carries_the_column(tmp_path, monkeypatch):
     assert "first_seen" in table.schema.names
 
 
+def test_sync_persists_and_migrates_a_marketplace_employer_profile_id(
+    tmp_path, monkeypatch
+):
+    """A marketplace profile key survives the store-to-index path on old tables too."""
+    import pyarrow as pa
+
+    old_schema = pa.schema(
+        [f for f in idx._schema(_DIM) if f.name != "marketplace_employer_id"]
+    )
+    db = lancedb.connect(str(tmp_path / "db"))
+    db.create_table(idx.PROD_TABLE, schema=old_schema)
+
+    assert (
+        _sync(
+            tmp_path,
+            monkeypatch,
+            ["instahyre:global:1"],
+            meta_over={"marketplace_employer_id": "48297"},
+        )
+        == 0
+    )
+
+    table = db.open_table(idx.PROD_TABLE)
+    assert "marketplace_employer_id" in table.schema.names
+    assert table.search().limit(1).to_list()[0]["marketplace_employer_id"] == "48297"
+
+
 def test_sync_adds_the_column_to_a_table_that_predates_it(tmp_path, monkeypatch):
     """The migration. A table built before `first_seen` existed keeps its frozen schema, and
     `apply_sync` rejects rows that don't match it — so sync must widen the table before writing.

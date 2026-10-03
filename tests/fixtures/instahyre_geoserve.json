@@ -1,0 +1,43 @@
+{
+  "objects": [
+    {
+      "resource_uri": "/api/v1/job_search/352689",
+      "employer": {
+        "resource_uri": "/api/v1/candidate_opportunity_employer/48297",
+        "id": 48297,
+        "company_name": "GeoServe"
+      },
+      "public_url": "https://www.instahyre.com/job-352689-full-stack-engineer-at-geoserve-bangalore/",
+      "candidate_title": "Full Stack Engineer",
+      "id": 352689,
+      "title": "Full Stack Engineer",
+      "locations": "Bangalore",
+      "keywords": [".NET", "Angular", "Java"]
+    }
+  ],
+  "meta": {
+    "offset": 0,
+    "limit": 35,
+    "total_count": 12919,
+    "next": "/api/v1/job_search?limit=35&offset=35"
+  },
+  "details": {
+    "352689": {
+      "resource_uri": "/api/v1/employer_public_jobs/352689",
+      "opportunity_url": "/job-352689-full-stack-engineer-at-geoserve-bangalore/",
+      "hiring_company_name": "GeoServe",
+      "candidate_title": "Full Stack Engineer",
+      "is_internship": false,
+      "id": 352689,
+      "title": "Full Stack Engineer",
+      "is_active": true,
+      "locations": ["Bangalore"],
+      "job_category": "Software Engineering",
+      "description": "<html><body><p>We are seeking a talented Full-Stack Developer to join our dynamic team.</p><p><strong>Responsibilities:</strong></p><ul><li>Designing, developing, and maintaining software applications and services.</li></ul></body></html>",
+      "workex_min": 4,
+      "workex_max": 8,
+      "job_functions": [],
+      "internship": null
+    }
+  }
+}

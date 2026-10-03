@@ -53,6 +53,13 @@ registry, ADR directory and glossary; its searchable-job badge reads the live se
 
 ### Landing rules the ledgers' code does not enforce
 
+- **Marketplace sources use one global Board unless a complete, employer-profile listing surface
+  is measured.** Instahyre is `instahyre:global`: its anonymous global listing is complete, while
+  its employer-profile endpoint returns at most 10 rows even when it states hundreds. A Job's
+  `marketplace_employer_id` is an Instahyre profile grouping, not a verified company or an ATS
+  Board; never cross-source-deduplicate or merge on it. Its public Instahyre URL is the
+  application destination. See ADR-0389.
+
 - **Decide "new" by `board_key`, and land in the ledger's own spelling.** `check_liveness.py` keys
   a ledger on the raw `tenant` string, so a Board already held under another spelling lands as a
   second row. Match candidates through each scraper's `slug_from(tenant, url)` and `board_key` (the
