@@ -1,5 +1,6 @@
 """Independent source-oracle fixtures; candidate output never supplies expected truth."""
 
+import gzip
 import importlib.util
 import json
 import zipfile
@@ -426,13 +427,19 @@ def test_same_reference_run_id_maps_exactly_not_nearest_timestamp(tmp_path):
     )
     table = pq.read_table(later["path"])
     pq.write_table(
-        table.replace_schema_metadata(table.schema.metadata | {b"run_id": b"123"}),
+        table.replace_schema_metadata(
+            table.schema.metadata | {b"run_id": b"123", b"run_attempt": b"1"}
+        ),
         later["path"],
     )
     reads = write(
         facts / "board_reads/read.parquet",
         [{"board": BOARD}],
-        {b"run_id": b"123", b"stamp": b"2026-10-01T23:30:00+00:00"},
+        {
+            b"run_id": b"123",
+            b"run_attempt": b"1",
+            b"stamp": b"2026-10-01T23:30:00+00:00",
+        },
     )
     selected = []
     for item in (baseline, later, reads):
@@ -444,6 +451,12 @@ def test_same_reference_run_id_maps_exactly_not_nearest_timestamp(tmp_path):
                 "size": p.stat().st_size,
             }
         )
+    checkpoint = write(
+        state / "reference_state.parquet",
+        [{"id": BOARD + ":1"}],
+        {b"ts": SECOND.encode()},
+    )
+    selected.append(checkpoint | {"path": "data/state/reference_state.parquet"})
     result = verifier.verification_inputs(
         {"inputs": selected, "rules_fingerprint": FP, "input_revision": REVISION},
         facts,
@@ -1145,3 +1158,287 @@ def test_native_fp_title_cache_loading_never_mutates_pinned_evidence(
     selected = verifier.Policy(root, path, tmp_path)
     assert selected.cache.title_logits == {}
     assert path.read_bytes() == before
+
+
+def pinned_native_inputs(facts, store):
+    selected = {}
+    for root, prefix in ((facts, "data/facts/"), (store, "data/descriptions/")):
+        for path in root.rglob("*"):
+            if path.is_file():
+                selected[prefix + path.relative_to(root).as_posix()] = {
+                    "path": str(path),
+                    "sha256": verifier.sha256(path),
+                }
+    return {"facts_root": str(facts), "pinned_inputs": selected}
+
+
+def write_current(store, rows):
+    path = store / "greenhouse/base.jsonl.gz"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with gzip.open(path, "wt") as stream:
+        for row in rows:
+            stream.write(json.dumps(row) + "\n")
+    return path
+
+
+def test_native_same_run_and_attempt_resolves_superseded_original_text(
+    tmp_path, monkeypatch
+):
+    facts, store = tmp_path / "facts", tmp_path / "descriptions"
+    row = source()
+    older = "Original software description requiring 3 years of experience."
+    later = "Changed software description requiring 8 years of experience."
+    monkeypatch.setenv("GITHUB_RUN_ID", "77")
+    monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "1")
+    write(
+        facts / "job_facts/first.parquet",
+        [row | {"kind": "listed"}],
+        {b"stamp": FIRST.encode(), b"run_id": b"77", b"run_attempt": b"1"},
+    )
+    verifier.description_facts.record(
+        facts,
+        "greenhouse",
+        [{"id": row["id"], "description": older}],
+        [],
+        "2026-10-01T00:30:00+00:00",
+    )
+    monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "2")
+    write(
+        facts / "job_facts/second.parquet",
+        [row | {"kind": "changed"}],
+        {b"stamp": SECOND.encode(), b"run_id": b"77", b"run_attempt": b"2"},
+    )
+    verifier.description_facts.record(
+        facts,
+        "greenhouse",
+        [{"id": row["id"], "description": later}],
+        [{"id": row["id"], "description": older}],
+        "2026-10-02T00:30:00+00:00",
+    )
+    write_current(store, [{"id": row["id"], "description": later}])
+    inputs = pinned_native_inputs(facts, store)
+    assert (
+        verifier.native_description_inputs(inputs, FIRST, {row["id"]})[row["id"]][
+            "description"
+        ]
+        == older
+    )
+    assert (
+        verifier.native_description_inputs(inputs, SECOND, {row["id"]})[row["id"]][
+            "description"
+        ]
+        == later
+    )
+    assert (
+        verifier.native_description_inputs(
+            inputs, "2026-09-30T23:59:59+00:00", {row["id"]}
+        )
+        == {}
+    )
+
+
+def test_native_descriptor_retains_previous_vector_math_not_future(
+    tmp_path, monkeypatch, policy
+):
+    facts, store = tmp_path / "facts", tmp_path / "descriptions"
+    monkeypatch.delenv("GITHUB_RUN_ID", raising=False)
+    monkeypatch.delenv("GITHUB_RUN_ATTEMPT", raising=False)
+    job_id = BOARD + ":1"
+    text2 = "We build software services and require 3 years of experience."
+    text3 = "We build software services and require 8 years of experience."
+    third, fourth = "2026-10-03T00:00:00+00:00", "2026-10-04T00:00:00+00:00"
+    verifier.description_facts.record(
+        facts, "greenhouse", [{"id": job_id, "description": text2}], [], SECOND
+    )
+    verifier.description_facts.record(
+        facts,
+        "greenhouse",
+        [{"id": job_id, "description": text3}],
+        [{"id": job_id, "description": text2}],
+        third,
+    )
+    write_current(store, [{"id": job_id, "description": text3}])
+    first = source(
+        vector=np.array([1, 1], np.float16),
+        classifier_input_fingerprint="matching-inputs",
+        _source_observed_at=FIRST,
+    )
+    future = source(vector=np.array([4, 4], np.float16), _source_observed_at=fourth)
+    inputs = pinned_native_inputs(facts, store)
+    inputs["reference_observations"] = {job_id: [(FIRST, first), (fourth, future)]}
+    for tick, text in ((SECOND, text2), (third, text3)):
+        rows, unknown = verifier.materialize_raw_inputs(
+            {job_id: source(experience=None)}, {job_id: future}, [], tick, inputs
+        )
+        assert not unknown
+        assert np.array_equal(rows[job_id]["vector"], [1, 1])
+        assert rows[job_id]["row_logits"] == first["row_logits"]
+        assert rows[job_id]["description"] == text
+        policy.transform(rows, "matching-inputs")
+        assert policy.years[job_id] == (3 if tick == SECOND else 8)
+
+
+def test_bootstrap_and_wrong_attempt_keep_actual_observation_time(
+    tmp_path, monkeypatch
+):
+    facts, store = tmp_path / "facts", tmp_path / "descriptions"
+    row = source()
+    write(
+        facts / "job_facts/first.parquet",
+        [row],
+        {b"stamp": FIRST.encode(), b"run_id": b"77", b"run_attempt": b"1"},
+    )
+    monkeypatch.setenv("GITHUB_RUN_ID", "77")
+    monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "2")
+    write_current(store, [row])
+    verifier.description_facts.seed_existing(
+        facts, "greenhouse", {row["id"]: row["description"]}, SECOND
+    )
+    inputs = pinned_native_inputs(facts, store)
+    assert verifier.native_description_inputs(inputs, FIRST, {row["id"]}) == {}
+    assert (
+        verifier.native_description_inputs(inputs, SECOND, {row["id"]})[row["id"]][
+            "observed_at"
+        ]
+        == SECOND
+    )
+
+
+def test_producer_description_inventory_uses_exact_hashes_and_rejects_escape(tmp_path):
+    facts, state, root, _, metadata = package_fixture(tmp_path)
+    path = write_current(tmp_path / "descriptions", [source()])
+    metadata["inputs"].append(
+        {
+            "path": "data/descriptions/greenhouse/base.jsonl.gz",
+            "size": path.stat().st_size,
+            "sha256": verifier.sha256(path),
+        }
+    )
+    metadata["inputs"].sort(key=lambda item: item["path"])
+    verifier.publication_bindings(metadata, facts, state, root)
+    with gzip.open(path, "at") as stream:
+        stream.write(json.dumps(source(BOARD + ":2")) + "\n")
+    with pytest.raises(ValueError, match="inventory content mismatch"):
+        verifier.publication_bindings(metadata, facts, state, root)
+    with pytest.raises(ValueError, match="unsafe"):
+        verifier.inventory_path(
+            {"path": "data/descriptions/../../secret"}, facts, state
+        )
+
+
+def test_raw_fact_known_widened_role_recovers_without_reference_anchor(policy):
+    row = source(
+        title="Senior Software Engineer - Backend Services",
+        experience=None,
+    )
+    policy.cache.title_logits[verifier.rfc.normalise(row["title"])] = np.array(
+        [10, -10], np.float32
+    )
+    rows, unknown = verifier.materialize_raw_inputs({row["id"]: row}, {}, [], FIRST, {})
+    assert not unknown
+    expected, quality, _ = policy.transform(rows)
+    assert expected[row["id"]][1] == FAMILY
+    assert quality["title_only_without_vector"] == 1
+    assert quality["title_only_language_judgement"] == 1
+
+
+def test_changed_raw_title_discards_prior_title_logits_and_encodes_independently(
+    policy, monkeypatch
+):
+    old = source(classifier_input_fingerprint="matching-inputs")
+    raw = source(title="New Platform Software Engineer")
+    rows, unknown = verifier.materialize_raw_inputs(
+        {raw["id"]: raw}, {old["id"]: old}, [], FIRST, {}
+    )
+    assert not unknown and rows[raw["id"]]["title_logits"] is None
+    assert np.array_equal(rows[raw["id"]]["vector"], old["vector"])
+    calls = []
+
+    def encode(titles, model, revision):
+        calls.append((titles, model, revision))
+        return np.array([[10, 0]], np.float32)
+
+    monkeypatch.setattr(rfc, "encode", encode)
+    expected, quality, _ = policy.transform(rows)
+    assert expected[raw["id"]][1] == FAMILY
+    assert quality["independently_encoded_titles"] == 1
+    assert calls == [
+        ([rfc.normalise(raw["title"])], policy.head.model, policy.head.model_revision)
+    ]
+
+
+def test_independent_title_budget_failure_is_not_unclassified_pass(policy):
+    row = source(
+        title="New Platform Software Engineer", classifier_input_fingerprint=None
+    )
+    policy.encode_budget_seconds = 0
+    with pytest.raises(ValueError, match="title coverage incomplete"):
+        policy.transform({row["id"]: row})
+
+
+def test_committed_chain_ignores_orphan_reference_and_pending_raw_tail(tmp_path):
+    facts, state, _, _, metadata = package_fixture(tmp_path)
+    metadata.pop("verification_ticks")
+    orphan = reference(
+        facts / "trend_reference/orphan.parquet",
+        [source(title="Future wrong title")],
+        SECOND,
+        FIRST,
+    )
+    tail = write(
+        facts / "job_facts/tail.parquet",
+        [source() | {"kind": "changed"}],
+        {b"stamp": SECOND.encode(), b"run_id": b"uncommitted", b"run_attempt": b"1"},
+    )
+    for item in (orphan, tail):
+        metadata["inputs"].append(
+            item
+            | {"path": "data/facts/" + Path(item["path"]).relative_to(facts).as_posix()}
+        )
+    selected = verifier.verification_inputs(metadata, facts, state)
+    assert [entry["tick"] for entry in selected["ticks"]] == [FIRST]
+    assert selected["unexported_raw_ticks"] == []
+
+
+def test_committed_prefix_consumes_intermediate_facts_without_exporting_them(tmp_path):
+    facts, state, _, _, metadata = package_fixture(tmp_path)
+    metadata.pop("verification_ticks")
+    third = "2026-10-03T00:00:00+00:00"
+    final = reference(facts / "trend_reference/final.parquet", [source()], third, FIRST)
+    table = pq.read_table(final["path"])
+    pq.write_table(
+        table.replace_schema_metadata(
+            table.schema.metadata | {b"run_id": b"33", b"run_attempt": b"2"}
+        ),
+        final["path"],
+    )
+    items = [
+        write(
+            facts / "job_facts/intermediate.parquet",
+            [source() | {"kind": "changed"}],
+            {b"stamp": SECOND.encode()},
+        ),
+        write(
+            facts / "job_facts/committed.parquet",
+            [source() | {"kind": "changed"}],
+            {b"stamp": third.encode(), b"run_id": b"33", b"run_attempt": b"2"},
+        ),
+    ]
+    for item in [final, *items]:
+        path = Path(item["path"])
+        metadata["inputs"].append(
+            {
+                "path": "data/facts/" + path.relative_to(facts).as_posix(),
+                "sha256": verifier.sha256(path),
+                "size": path.stat().st_size,
+            }
+        )
+    pq.write_table(
+        pa.Table.from_pylist([{"id": BOARD + ":1"}]).replace_schema_metadata(
+            {b"ts": third.encode()}
+        ),
+        state / "reference_state.parquet",
+    )
+    selected = verifier.verification_inputs(metadata, facts, state)
+    assert [entry["tick"] for entry in selected["ticks"]] == [FIRST, third]
+    assert selected["unexported_raw_ticks"] == [SECOND]

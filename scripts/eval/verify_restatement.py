@@ -39,6 +39,7 @@ import itertools
 import json
 import subprocess
 import tempfile
+import time
 import zipfile
 from collections import Counter
 from datetime import datetime, timedelta
@@ -54,12 +55,14 @@ from headstart.ingest import (
     board_dormancy,
     board_failures,
     derived_meta,
+    description_facts,
     doc_prep,
     index_plan,
     job_facts,
     role_trends,
 )
 from headstart.ingest import role_family_classifier as rfc
+from headstart.ingest.update_descriptions import read_store
 from headstart.jobs import tech_filter
 from headstart.trends import role_taxonomy
 from headstart.trends.trend_history import DELTAS, TICK_COLUMNS
@@ -162,22 +165,18 @@ def captured_fingerprint(method, inputs):
 class Policy:
     """Established production rules; never calls the candidate replay implementation."""
 
-    def __init__(self, root, title_cache, state=None):
+    def __init__(self, root, title_cache, state=None, encode_budget_seconds=1800):
         # A changed PYTHONPATH must not silently load rules from another checkout.
         import sys
 
         for name, module in tuple(sys.modules.items()):
             source = getattr(module, "__file__", None)
             if name.startswith("headstart.") and source and source.endswith(".py"):
-                if (
-                    not Path(source)
-                    .resolve()
-                    .is_relative_to((root / "src/headstart").resolve())
-                ):
+                package = (root / "src/headstart").resolve()
+                resolved = Path(source).resolve()
+                if not resolved.is_relative_to(package):
                     raise ValueError(f"loaded rule comes from another checkout: {name}")
-                relative = Path(source).parts
-                at = relative.index("headstart")
-                frozen = root / "src" / Path(*relative[at:])
+                frozen = package / resolved.relative_to(package)
                 if not frozen.exists() or sha256(Path(source)) != sha256(frozen):
                     raise ValueError(f"loaded rule differs from frozen policy: {name}")
         head_dir = root / "config/role_family_classifier"
@@ -185,6 +184,7 @@ class Policy:
         families = role_taxonomy.load_families(root / "config/role_families.json")
         self.head.check_families(families)
         self.input_fingerprint = self.head.inputs_fingerprint
+        self.encode_budget_seconds = encode_budget_seconds
         # No fingerprint argument: production migration would rewrite pinned evidence.
         self.cache = rfc.load_cache(title_cache, self.head.version)
         if self.cache.inputs_fingerprint not in {None, self.input_fingerprint}:
@@ -229,6 +229,9 @@ class Policy:
             if text is None:
                 # A served checkpoint proves prior English admission, not its text.
                 english = row.get("observed_english")
+                if english is None and row.get("title_only_recovery"):
+                    english = doc_prep.is_english(row.get("title") or "", "")
+                    quality["title_only_language_judgement"] += 1
                 if english is None and row.get("kind") == "present":
                     english = True
                 if english is None:
@@ -286,6 +289,34 @@ class Policy:
         reasons.update(
             {"off_board": len(off), "duplicate": len(duplicates) + len(plan.refused)}
         )
+        needed = []
+        for job_id in self.winners:
+            row = admitted[job_id]
+            exact = (
+                row.get("classifier_input_fingerprint", captured_fingerprint)
+                == self.input_fingerprint
+            )
+            if (not exact or row.get("title_logits") is None) and rfc.normalise(
+                row.get("title")
+            ) not in self.cache.title_logits:
+                needed.append(row.get("title"))
+        if needed:
+            budget = getattr(self, "encode_budget_seconds", 1800)
+            if budget <= 0:
+                raise ValueError(
+                    f"independent title coverage incomplete: {len(set(needed))} titles; encoding budget exhausted"
+                )
+            started = time.monotonic()
+            added = rfc.fill(self.cache, self.head, needed, budget, lambda _: None)
+            self.encode_budget_seconds = max(0, budget - (time.monotonic() - started))
+            quality["independently_encoded_titles"] += added
+            missing = {
+                rfc.normalise(title) for title in needed
+            } - self.cache.title_logits.keys()
+            if missing:
+                raise ValueError(
+                    f"independent title coverage incomplete: {len(missing)} titles after finite encoding budget"
+                )
         result = {}
         for n, job_id in enumerate(sorted(self.winners), 1):
             if n % 40960 == 0:
@@ -350,6 +381,7 @@ class Policy:
             if (
                 row.get("description") is None
                 and "min_years" in row
+                and row.get("observed_min_years_available", True)
                 and derived["experience_source"] != "field"
                 and row.get("experience_source") != "seniority"
             ):
@@ -702,9 +734,99 @@ def check_source_inputs(source, reference, paths, tick, inputs):
     return unknown
 
 
+def native_description_inputs(inputs, tick, wanted):
+    """Read pinned native identities independently; never select text by latest id alone."""
+    pinned = inputs.get("pinned_inputs", {})
+    facts = Path(inputs["facts_root"]) if inputs.get("facts_root") else None
+    if facts is None:
+        return {}
+    run_stamps = {}
+    for name, item in pinned.items():
+        if name.startswith(("data/facts/job_facts/", "data/facts/board_reads/")):
+            metadata = pq.read_schema(item["path"]).metadata or {}
+            key = (
+                metadata.get(b"run_id", b"").decode(),
+                metadata.get(b"run_attempt", b"").decode(),
+            )
+            if all(key):
+                stamp = metadata[b"stamp"].decode()
+                if key in run_stamps and run_stamps[key] != stamp:
+                    raise ValueError("ambiguous logical description run/attempt")
+                run_stamps[key] = stamp
+    selected = {}
+    atses = {
+        Path(name).parts[3]
+        for name in pinned
+        if name.startswith("data/facts/description_facts/")
+    }
+    store = facts.parent / "descriptions"
+    for ats in sorted(atses):
+        directories = (
+            (
+                facts / "description_facts" / ats,
+                "data/facts/description_facts/" + ats + "/",
+                "*.parquet",
+            ),
+            (
+                facts / "description_archive" / ats,
+                "data/facts/description_archive/" + ats + "/",
+                "*.parquet",
+            ),
+            (store / ats, "data/descriptions/" + ats + "/", "*.jsonl.gz"),
+        )
+        for directory, prefix, pattern in directories:
+            actual = {p.resolve() for p in directory.glob(pattern)}
+            expected = {
+                Path(item["path"]).resolve()
+                for name, item in pinned.items()
+                if name.startswith(prefix)
+            }
+            if actual != expected:
+                raise ValueError(
+                    f"native description inputs contain unpinned/missing files: {prefix}"
+                )
+        current = read_store(store / ats)
+        for observation in description_facts.iter_observations(facts, ats):
+            job_id = observation["id"]
+            if job_id not in wanted:
+                continue
+            key = (observation["run_id"], observation["run_attempt"])
+            logical = run_stamps.get(key, observation["observed_at"])
+            if logical > tick:
+                continue
+            text = description_facts.read_description(
+                facts, current, job_id, observation["description_hash"]
+            )
+            value = {
+                "description": text,
+                "description_hash": observation["description_hash"],
+                "observed_at": logical,
+                "actual_observed_at": observation["observed_at"],
+            }
+            prior = selected.get(job_id)
+            if (
+                prior
+                and prior["observed_at"] == logical
+                and prior["description_hash"] != value["description_hash"]
+            ):
+                raise ValueError("conflicting same-time description identities")
+            if prior is None or logical > prior["observed_at"]:
+                selected[job_id] = value
+    return selected
+
+
 def materialize_raw_inputs(raw, reference, paths, tick, inputs):
     """Attach independently observed bodies; unknown text is never latest-store text."""
-    observed, starts = dict(reference), {}
+    observed = {
+        i: row
+        for i, row in reference.items()
+        if row.get("_source_observed_at", "") <= tick
+    }
+    starts = {}
+    for job_id, records in inputs.get("reference_observations", {}).items():
+        eligible = [(at, row) for at, row in records if at <= tick]
+        if eligible:
+            observed[job_id] = max(eligible, key=lambda value: value[0])[1]
     for path in paths:
         schema = pq.read_schema(path)
         metadata = schema.metadata or {}
@@ -721,6 +843,31 @@ def materialize_raw_inputs(raw, reference, paths, tick, inputs):
                         "classifier_input_fingerprint": fingerprint
                     }
                     starts[row["id"]] = at
+    native = native_description_inputs(inputs, tick, raw)
+    history = inputs.get("reference_observations", {})
+    for job_id, descriptor in native.items():
+        candidates = [
+            (at, row)
+            for at, row in history.get(job_id, ())
+            if at <= descriptor["observed_at"]
+        ]
+        candidates += (
+            [(starts[job_id], observed[job_id])]
+            if job_id in starts and starts[job_id] <= descriptor["observed_at"]
+            else []
+        )
+        anchor = max(candidates, key=lambda value: value[0])[1] if candidates else None
+        current_at = observed.get(job_id, {}).get(
+            "_source_observed_at", starts.get(job_id, "")
+        )
+        if current_at > descriptor["observed_at"]:
+            continue
+        observed[job_id] = (anchor or {}) | {
+            "description": descriptor["description"],
+            "description_hash": descriptor["description_hash"],
+            "native_description_identity": True,
+            "_source_observed_at": descriptor["observed_at"],
+        }
     result, unknown = {}, set()
     for job_id, row in raw.items():
         # Rejected non-tech Jobs still supply Dormancy evidence, but read no body.
@@ -728,14 +875,19 @@ def materialize_raw_inputs(raw, reference, paths, tick, inputs):
             result[job_id] = row | {k: None for k in SOURCE_COLUMNS - row.keys()}
             continue
         anchor = observed.get(job_id)
-        if anchor is None or any(
-            row.get(k) != anchor.get(k)
-            for k in ("title", "department", "experience", "employment_type")
-            if k in row
-        ):
-            unknown.add(job_id)
+        if anchor is None:
+            # Membership and fields come from the independent raw-fact reducer,
+            # not a candidate or an assertion in its private placements.
+            result[job_id] = (
+                row
+                | {k: None for k in MATH_SOURCE_COLUMNS}
+                | {"title_only_recovery": True, "observed_min_years_available": False}
+            )
             continue
         result[job_id] = row | {k: anchor.get(k) for k in MATH_SOURCE_COLUMNS}
+        result[job_id]["observed_min_years_available"] = "min_years" in anchor
+        if anchor.get("title") != row.get("title"):
+            result[job_id]["title_logits"] = None
         result[job_id]["classifier_input_fingerprint"] = anchor.get(
             "classifier_input_fingerprint"
         )
@@ -744,8 +896,7 @@ def materialize_raw_inputs(raw, reference, paths, tick, inputs):
             english = True
         result[job_id]["observed_english"] = english
         if result[job_id]["description"] is None and english is None:
-            unknown.add(job_id)
-            del result[job_id]
+            result[job_id]["title_only_recovery"] = True
     return result, unknown
 
 
@@ -945,7 +1096,13 @@ def verify(
                     raise ValueError("removal of unknown reference id")
                 del current[job_id]
             elif row["kind"] == "present":
-                current[job_id] = row | {"classifier_input_fingerprint": fingerprint}
+                current[job_id] = row | {
+                    "classifier_input_fingerprint": fingerprint,
+                    "_source_observed_at": tick,
+                }
+                inputs.setdefault("reference_observations", {}).setdefault(
+                    job_id, []
+                ).append((tick, current[job_id]))
                 observed_reference[job_id] = current[job_id]
                 seen_reference.add(job_id)
             else:
@@ -1227,9 +1384,16 @@ def inventory_path(item, facts, state):
     path = Path(item["path"])
     if path.is_absolute() or ".." in path.parts:
         raise ValueError("unsafe input inventory path")
-    for prefix, root in ((Path("data/facts"), facts), (Path("data/state"), state)):
+    for prefix, root in (
+        (Path("data/facts"), facts),
+        (Path("data/state"), state),
+        (Path("data/descriptions"), facts.parent / "descriptions"),
+    ):
         if path.is_relative_to(prefix):
-            return root / path.relative_to(prefix)
+            resolved = root / path.relative_to(prefix)
+            if not resolved.resolve().is_relative_to(root.resolve()):
+                raise ValueError("input inventory symlink escapes selected root")
+            return resolved
     raise ValueError(f"unsupported pinned input path: {path}")
 
 
@@ -1325,7 +1489,7 @@ def verification_inputs(metadata, facts, state):
     """Bind reference evidence to pinned inventory and exact shared run identities."""
     pinned = {r["path"]: r for r in metadata["inputs"]}
     references = []
-    runs = {}
+    runs, raw_ticks = {}, set()
     for name, item in pinned.items():
         if not name.endswith(".parquet"):
             continue
@@ -1333,15 +1497,57 @@ def verification_inputs(metadata, facts, state):
             references.append(
                 (pq.read_schema(inventory_path(item, facts, state)).metadata, item)
             )
-        if name.startswith("data/facts/board_reads/"):
+        if name.startswith(("data/facts/job_facts/", "data/facts/board_reads/")):
             attributes = (
                 pq.read_schema(inventory_path(item, facts, state)).metadata or {}
             )
-            run = attributes.get(b"run_id", b"").decode()
-            if run:
-                if run in runs:
+            run = (
+                attributes.get(b"run_id", b"").decode(),
+                attributes.get(b"run_attempt", b"").decode(),
+            )
+            stamp = attributes[b"stamp"].decode()
+            raw_ticks.add(stamp)
+            if all(run):
+                if run in runs and runs[run] != stamp:
                     raise ValueError("ambiguous repeated run identity")
-                runs[run] = attributes[b"stamp"].decode()
+                runs[run] = stamp
+    checkpoint = pinned.get("data/state/reference_state.parquet")
+    if checkpoint is None:
+        raise ValueError("no pinned committed reference checkpoint")
+    by_stamp = {}
+    for attributes, item in references:
+        stamp = attributes[b"ts"].decode()
+        if stamp in by_stamp:
+            raise ValueError("repeated reference stamp")
+        by_stamp[stamp] = (attributes, item)
+    cursor = (pq.read_schema(inventory_path(checkpoint, facts, state)).metadata or {})[
+        b"ts"
+    ].decode()
+    chain, visited = [], set()
+    while cursor:
+        if cursor in visited or cursor not in by_stamp:
+            raise ValueError("broken committed reference chain")
+        visited.add(cursor)
+        attributes, item = by_stamp[cursor]
+        chain.append((attributes, item))
+        cursor = attributes.get(b"previous_tick", b"").decode()
+    references = list(reversed(chain))
+    if not references or references[0][0].get(b"baseline") != b"true":
+        raise ValueError("committed chain lacks complete baseline")
+    expected_mapping = []
+    for attributes, item in references:
+        reference_tick = attributes[b"ts"].decode()
+        if attributes.get(b"baseline") == b"true":
+            logical = reference_tick
+        else:
+            key = (
+                attributes.get(b"run_id", b"").decode(),
+                attributes.get(b"run_attempt", b"").decode(),
+            )
+            if not all(key) or key not in runs:
+                raise ValueError("committed reference lacks exact run/attempt mapping")
+            logical = runs[key]
+        expected_mapping.append((logical, reference_tick, item["path"]))
     explicit = metadata.get("verification_ticks")
     if explicit is None:
         explicit = []
@@ -1350,7 +1556,10 @@ def verification_inputs(metadata, facts, state):
             if attributes.get(b"baseline") == b"true":
                 tick = reference_tick
             else:
-                run = attributes.get(b"run_id", b"").decode()
+                run = (
+                    attributes.get(b"run_id", b"").decode(),
+                    attributes.get(b"run_attempt", b"").decode(),
+                )
                 if run not in runs:
                     raise ValueError(
                         "exact reference/run mapping unavailable; supply verification_ticks"
@@ -1364,6 +1573,16 @@ def verification_inputs(metadata, facts, state):
                 }
             )
     ticks = []
+    chain_paths = [item["path"] for _, item in references]
+    if [entry["reference"]["path"] for entry in explicit] != chain_paths:
+        raise ValueError("verification mapping differs from committed reference chain")
+    if [
+        (entry["tick"], entry["reference_tick"], entry["reference"]["path"])
+        for entry in explicit
+    ] != expected_mapping:
+        raise ValueError(
+            "verification mapping differs from independent run/attempt join"
+        )
     for entry in explicit:
         result = dict(entry)
         for key in ("reference", "universe"):
@@ -1384,9 +1603,16 @@ def verification_inputs(metadata, facts, state):
                 "sha256": item["sha256"],
             }
         ticks.append(result)
+    covered_raw = {
+        stamp for stamp in raw_ticks if ticks[0]["tick"] <= stamp <= ticks[-1]["tick"]
+    } | {ticks[0]["tick"]}
     return {
         "rules_fingerprint": metadata["rules_fingerprint"],
         "input_revision": metadata["input_revision"],
+        "facts_root": str(facts.resolve()),
+        "unexported_raw_ticks": sorted(
+            covered_raw - {entry["tick"] for entry in ticks}
+        ),
         "ticks": ticks,
         "pinned_inputs": {
             name: {
@@ -1415,6 +1641,7 @@ def main():
     parser.add_argument("--metadata", type=Path, required=True)
     parser.add_argument("--rules-root", type=Path, default=Path.cwd())
     parser.add_argument("--title-cache", type=Path)
+    parser.add_argument("--encode-budget-seconds", type=float, default=1800)
     parser.add_argument("--report", type=Path, required=True)
     args = parser.parse_args()
     metadata = {}
@@ -1492,6 +1719,7 @@ def main():
             args.rules_root,
             args.title_cache or args.state / "role_title_families.parquet",
             args.state,
+            args.encode_budget_seconds,
         )
         report = verify(
             inputs,
