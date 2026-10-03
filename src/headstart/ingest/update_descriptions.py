@@ -538,6 +538,17 @@ def _update_store() -> int:
         help="record Tech-subset description identities and superseded text under this facts root",
     )
     ap.add_argument(
+        "--seed-existing",
+        action="store_true",
+        help="observe unrecorded current-store identities now, without archiving text, and stop",
+    )
+    ap.add_argument(
+        "--seed-batch-size",
+        type=int,
+        default=10000,
+        help="maximum descriptor rows per bootstrap file (one ATS loaded at a time)",
+    )
+    ap.add_argument(
         "--held-details", default=str(HELD_DETAILS_PATH), help="skip-list to publish"
     )
     ap.add_argument(
@@ -573,6 +584,32 @@ def _update_store() -> int:
     )
     args = ap.parse_args()
     store = Path(args.store)
+
+    if args.seed_existing:
+        if not args.facts_dir or args.compact or args.seed_batch_size < 1:
+            ap.error(
+                "--seed-existing requires --facts-dir, a positive --seed-batch-size, and no --compact"
+            )
+        if not store.is_dir():
+            ap.error(f"--seed-existing requires an existing description store: {store}")
+        observed_at = held_refetch.now().isoformat(timespec="seconds")
+        seeded = 0
+        for ats_dir in sorted(p for p in store.glob("*") if p.is_dir()):
+            count = description_facts.seed_existing(
+                Path(args.facts_dir),
+                ats_dir.name,
+                read_store(ats_dir),
+                observed_at,
+                batch_size=args.seed_batch_size,
+            )
+            seeded += count
+            _log.info(
+                f"{ats_dir.name}: bootstrap added {count:,} identities as of {observed_at}"
+            )
+        _log.info(
+            f"bootstrap: {seeded:,} identities added; current text and state untouched"
+        )
+        return 0
 
     if args.compact:
         started = time.monotonic()

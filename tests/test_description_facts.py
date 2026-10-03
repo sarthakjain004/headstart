@@ -79,6 +79,80 @@ def test_empty_record_writes_nothing(tmp_path):
     assert list(tmp_path.iterdir()) == []
 
 
+def test_observations_are_chronological_and_keep_run_join_metadata(
+    tmp_path, monkeypatch
+):
+    for stamp, run in (
+        ("2026-10-03T02:00:00+00:00", "2"),
+        ("2026-10-03T01:00:00+00:00", "1"),
+    ):
+        monkeypatch.setenv("GITHUB_RUN_ID", run)
+        monkeypatch.setenv("GITHUB_RUN_ATTEMPT", "1")
+        df.record(
+            tmp_path,
+            "eightfold",
+            [{"id": "eightfold:a:1", "description": run}],
+            [],
+            stamp,
+        )
+    rows = list(df.iter_observations(tmp_path))
+    assert [r["run_id"] for r in rows] == ["1", "2"]
+    assert all(r["run_attempt"] == "1" for r in rows)
+    assert list(df.iter_observations(tmp_path, "other")) == []
+
+
+def test_seed_is_identity_only_bounded_and_idempotent(tmp_path):
+    current = {f"eightfold:a:{i}": f"Legacy text {i}" for i in range(5)}
+    df.record(
+        tmp_path,
+        "eightfold",
+        [{"id": "eightfold:a:0", "description": current["eightfold:a:0"]}],
+        [],
+        "earlier",
+    )
+    assert df.seed_existing(tmp_path, "eightfold", current, "now", batch_size=2) == 4
+    paths = list(tmp_path.rglob("*.parquet"))
+    assert len(paths) == 3  # one existing + two bounded bootstrap files
+    before = {p: p.read_bytes() for p in paths}
+    assert df.seed_existing(tmp_path, "eightfold", current, "later", batch_size=2) == 0
+    assert {p: p.read_bytes() for p in tmp_path.rglob("*.parquet")} == before
+    rows = list(df.iter_observations(tmp_path))
+    assert len(rows) == 5
+    assert sum(r["observed_at"] == "now" for r in rows) == 4
+    assert all("description" not in r for r in rows)
+    assert not (tmp_path / "description_archive").exists()
+
+
+def test_seed_resumes_after_a_failed_batch_without_backdating(tmp_path, monkeypatch):
+    current = {f"eightfold:a:{i}": f"Text {i}" for i in range(5)}
+    record = df.record
+    calls = 0
+
+    def fail_second(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("seed failed")
+        record(*args, **kwargs)
+
+    monkeypatch.setattr(df, "record", fail_second)
+    with pytest.raises(OSError, match="seed failed"):
+        df.seed_existing(
+            tmp_path, "eightfold", current, "2026-10-03T01:00:00+00:00", batch_size=2
+        )
+    monkeypatch.setattr(df, "record", record)
+    assert (
+        df.seed_existing(
+            tmp_path, "eightfold", current, "2026-10-03T02:00:00+00:00", batch_size=2
+        )
+        == 3
+    )
+    rows = list(df.iter_observations(tmp_path))
+    assert len(rows) == len({(r["id"], r["description_hash"]) for r in rows}) == 5
+    assert sum(r["observed_at"] == "2026-10-03T01:00:00+00:00" for r in rows) == 2
+    assert not (tmp_path / "description_archive").exists()
+
+
 def test_corrupt_archive_is_not_returned_or_overwritten(tmp_path):
     import pyarrow as pa
 

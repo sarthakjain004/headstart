@@ -1,6 +1,6 @@
 """Tech-subset description identities and immutable superseded text.
 
-Only ``update_descriptions``' accepted new/changed text produces facts. Current text
+Accepted new/changed text and an explicit descriptor-only bootstrap produce facts. Current text
 stays in the description store; only text about to be superseded is archived.
 These are parsed Job descriptions, never raw ATS payloads (deferred to #904).
 """
@@ -11,8 +11,12 @@ import hashlib
 import json
 import os
 import tempfile
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from pathlib import Path
+
+from headstart import log
+
+_log = log.get(__name__, __spec__)
 
 
 def description_hash(text: str) -> str:
@@ -122,3 +126,72 @@ def read_description(
                 raise ValueError(f"description archive hash mismatch: {path}")
             return row["description"]
     return None
+
+
+def iter_observations(facts_dir: Path, ats: str | None = None) -> Iterator[dict]:
+    """Scan descriptor rows chronologically by canonical UTC ``observed_at``.
+
+    Each immutable batch has one observation time. Only its first descriptor is
+    read to order files, then rows stream in bounded batches. Equal-time files
+    have deterministic path order, not a claimed causal order. Rows expose run_id,
+    run_attempt and code_sha; join (run_id, run_attempt) to Job-fact file metadata's
+    stamp when a union-time facts stamp is needed. Observation time is not that
+    stamp. Missing history yields no rows; unreadable files raise.
+    """
+    import pyarrow.parquet as pq
+
+    root = facts_dir / "description_facts"
+    paths = (
+        (root / ats).glob("*.parquet") if ats is not None else root.glob("*/*.parquet")
+    )
+    ordered: list[tuple[str, Path]] = []
+    for path in paths:
+        first = next(
+            pq.ParquetFile(path).iter_batches(batch_size=1, columns=["observed_at"]),
+            None,
+        )
+        if first is not None:
+            ordered.append((first.column(0)[0].as_py(), path))
+    for _, path in sorted(ordered):
+        for batch in pq.ParquetFile(path).iter_batches(batch_size=8192):
+            yield from batch.to_pylist()
+
+
+def seed_existing(
+    facts_dir: Path,
+    ats: str,
+    current: Mapping[str, str],
+    observed_at: str,
+    *,
+    batch_size: int = 10000,
+) -> int:
+    """Observe unrecorded current (id, hash) pairs now, with no body archive.
+
+    The caller loads one ATS through read_store. Descriptor batches are bounded;
+    only that ATS's existing identity pairs are held for retry deduplication.
+    Existing immutable observations, store files and other state are untouched.
+    Supply all existing descriptor files locally for retry deduplication to work.
+    """
+    if batch_size < 1:
+        raise ValueError("seed batch_size must be positive")
+    known = {
+        (r["id"], r["description_hash"]) for r in iter_observations(facts_dir, ats)
+    }
+    batch: list[dict] = []
+    seeded = 0
+    for job_id, text in current.items():
+        if not text.strip() or (job_id, description_hash(text)) in known:
+            continue
+        batch.append({"id": job_id, "description": text})
+        if len(batch) == batch_size:
+            record(facts_dir, ats, batch, [], observed_at)
+            seeded += len(batch)
+            _log.info(
+                f"{ats}: seeded {seeded:,} description identities (no archived text)"
+            )
+            batch.clear()
+    if batch:
+        record(facts_dir, ats, batch, [], observed_at)
+        seeded += len(batch)
+        _log.info(f"{ats}: seeded {seeded:,} description identities (no archived text)")
+    return seeded

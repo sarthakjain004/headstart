@@ -259,6 +259,64 @@ def test_main_records_only_tech_corpus_with_facts_option(tmp_path, monkeypatch):
     assert rows[0]["observed_at"]
 
 
+def test_seed_cli_observes_existing_store_now_without_rewriting_it(
+    tmp_path, monkeypatch
+):
+    store = tmp_path / "store" / "eightfold"
+    facts = tmp_path / "facts"
+    ud._write_fragment(
+        store,
+        [
+            {"id": "eightfold:acme:1", "description": "Held."},
+            {"id": "eightfold:acme:2", "description": None},
+            {"id": "eightfold:acme:3", "description": "  "},
+        ],
+    )
+    before = {p: p.read_bytes() for p in store.iterdir()}
+    monkeypatch.setattr(held_refetch, "now", lambda: _AT)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "update_descriptions",
+            "--seed-existing",
+            "--store",
+            str(store.parent),
+            "--facts-dir",
+            str(facts),
+            "--seed-batch-size",
+            "1",
+        ],
+    )
+    assert ud.main() == 0
+    assert {p: p.read_bytes() for p in store.iterdir()} == before
+    rows = list(df.iter_observations(facts))
+    assert len(rows) == 1
+    assert rows[0]["observed_at"] == _AT.isoformat(timespec="seconds")
+    assert rows[0]["description_hash"] == df.description_hash("Held.")
+    assert not (facts / "description_archive").exists()
+    assert ud.main() == 0
+    assert list(df.iter_observations(facts)) == rows
+    jobs = tmp_path / "tech" / "eightfold.jsonl"
+    _corpus(jobs, [_job("eightfold:acme:1", None)])
+    assert ud.reconcile(jobs, store, facts_dir=facts, observed_at="later").learned == 0
+    assert list(df.iter_observations(facts)) == rows
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        [],
+        ["--facts-dir", "unused", "--seed-batch-size", "0"],
+        ["--facts-dir", "unused", "--compact"],
+    ],
+)
+def test_seed_cli_rejects_invalid_options(monkeypatch, extra):
+    monkeypatch.setattr(sys, "argv", ["update_descriptions", "--seed-existing", *extra])
+    with pytest.raises(SystemExit):
+        ud.main()
+
+
 def test_a_failed_fetch_is_repaired_from_the_store(tmp_path):
     """The whole point. A Job embedded without its description keeps a title-only vector forever
     (ADR-0047), so the run that loses the fetch must not be the run that embeds it."""

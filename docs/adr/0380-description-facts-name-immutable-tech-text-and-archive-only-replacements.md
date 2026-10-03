@@ -31,8 +31,44 @@ question-mark degradation guard. Null, missing, empty and whitespace-only fetche
 retain the existing store policy: they cannot establish an actual blank or a
 deletion (ADR-0089). Legacy textless store entries remain unknown and unheld.
 No new text is projected backwards; existing held versions are not backfilled
-with invented observation times. A superseded legacy text can be retrieved by
+with invented past observation times. A superseded legacy text can be retrieved by
 hash without proving when it was first observed.
+
+## Parent-approved descriptor bootstrap and observation scan
+
+The parent approved observing legacy held text once at the current observation
+time, since an unchanged skip-listed description otherwise has no identity fact.
+Run against a refreshed durable store and all existing descriptor facts locally:
+
+```bash
+python -m headstart.ingest.update_descriptions --seed-existing \
+  --store data/descriptions --facts-dir data/facts --seed-batch-size 10000
+```
+
+This standalone operation stops without reconciling a corpus, rewriting any store
+or state, or archiving any bodies. It loads one ATS with the existing `read_store`
+policy (null/blank entries excluded), holds that ATS's existing identity pairs
+for deduplication, and writes at most the requested descriptor rows per immutable
+file. A retry scans existing observations and skips recorded `(id, hash)` pairs;
+partially completed seeds resume with remaining pairs observed at the retry's
+current time. This bounds output batches, not `read_store`'s per-ATS memory usage.
+Normal unchanged reconciliations remain empty. Bootstrap is explicit and is not
+enabled in the regular pipeline.
+
+`description_facts.iter_observations(facts_dir, ats=None)` streams all descriptor
+rows chronologically by their canonical UTC `observed_at`; equal timestamps have
+deterministic file order, not a claimed causal order. Each file has one observation
+time; file ordering reads its first descriptor, then rows stream in 8,192-row
+batches. Rows include `run_id`, `run_attempt`, and `code_sha`. Join the run id and
+attempt to `data/facts/job_facts/*.parquet` schema metadata for that union's `stamp`;
+`observed_at` is reconciliation/bootstrap time and must not be renamed to that
+stamp. The archive is content storage, with no chronological/run metadata: its
+rows are `(id, description_hash, description)` and are read through exact-hash
+`read_description`. Neither helper resolves a missing run join by guessing.
+
+A nonnull actual reference-baseline body can supply its own historical text. A
+null old baseline remains unknown: a bootstrap observation today is not evidence
+that today's text existed at that baseline, even when the Job id matches.
 
 Archive or identity-write failure stops replacement of that ATS's current store
 and leaves its corpus and in-memory change ledger unchanged. Store fragments
