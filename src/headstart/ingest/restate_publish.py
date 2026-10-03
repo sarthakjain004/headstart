@@ -380,7 +380,7 @@ def main() -> int:
     if args.publish and args.command != "package":
         parser.error("--publish requires package")
     if args.command == "fetch":
-        fetch(args.repo, args.root, args.revision)
+        fetch(args.repo, args.root, args.revision or None)
     elif args.command == "prepare":
         prepare(args.candidate, args.root)
     else:
