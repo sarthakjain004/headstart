@@ -1673,6 +1673,88 @@ class _GatedFetcher:
         http.DEFAULT_FETCHER.clear_cookies(domain)
 
 
+def p_comeet(t, u):
+    from headstart.scrapers.comeet import hosted_board
+
+    board = _scraper_for_row("comeet", t, u)
+    response = _fetch(
+        "GET", board.url(), headers={"User-Agent": UA}, allow_redirects=False
+    )
+    if response is None:
+        _note("breaker-open")
+        return UNKNOWN, None
+    if (
+        response.status_code == 302
+        and response.headers.get(
+            "Location", response.headers.get("location", "")
+        ).rstrip("/")
+        == "https://www.comeet.com"
+    ):
+        return DEAD, None
+    if response.status_code != 200:
+        _note(f"http-{response.status_code}")
+        return UNKNOWN, None
+    try:
+        company, rows = hosted_board(response.text)
+        if company["company_uid"].lower() != board.slug.rsplit("/", 1)[-1].lower():
+            _note("different-board-identity")
+            return UNKNOWN, None
+        return LIVE, sum(not row.get("is_internal") for row in rows)
+    except (ValueError, KeyError, TypeError):
+        _note("body-unparseable")
+        return UNKNOWN, None
+
+
+def p_jobscore(t, u):
+    # Keep liveness off the hourly feed budget. Public SSR HTML lists every job:
+    # facefoundri 197, clpinc 18, pricefx 3; blueleaf is explicitly empty (2026-10-03).
+    board = _scraper_for_row("jobscore", t, u)
+    status, body = _get(f"https://careers.jobscore.com/careers/{board.slug}")
+    if status in (404, 410):
+        return DEAD, None
+    if status != 200:
+        _note(f"http-{status}")
+        return UNKNOWN, None
+    page = body.decode("utf-8", "replace")
+    canonical = re.search(r"careers\.jobscore\.com/jobs/([\w-]+)/feed\.atom", page)
+    if not canonical:
+        _note("body-unparseable")
+        return UNKNOWN, None
+    if canonical[1].lower() != board.slug:
+        return DEAD, None
+    jobs = set(re.findall(r'data-url="(/careers/[^"/]+/jobs/[^"?]+)', page))
+    if jobs or "there are no open positions at this time" in page:
+        return LIVE, len(jobs)
+    _note("body-unparseable")
+    return UNKNOWN, None
+
+
+def p_polymer(t, u):
+    board = _scraper_for_row("polymer", t, u)
+    status, body = _get(board.url())
+    try:
+        data = json.loads(body)
+    except (ValueError, TypeError):
+        _note(f"http-{status}" if status != 200 else "body-unparseable")
+        return UNKNOWN, None
+    if status == 422 and data in (
+        {"errors": {"general": ["no careers_page found"]}},
+        {"errors": {"organization": ["could not be found"]}},
+    ):
+        return DEAD, None
+    meta = data.get("meta", {}) if isinstance(data, dict) else {}
+    if (
+        status == 200
+        and isinstance(data, dict)
+        and isinstance(data.get("items"), list)
+        and isinstance(meta.get("count"), int)
+        and meta.get("organization_name")
+    ):
+        return LIVE, meta["count"]
+    _note(f"http-{status}" if status != 200 else "body-unparseable")
+    return UNKNOWN, None
+
+
 def p_cornerstone(t, u):
     """The Board's whole listing, read by the scraper's own walk (`CornerstoneScraper.listing`).
 
@@ -3641,6 +3723,7 @@ PROBES = {
     "bamboohr": p_bamboohr,
     "breezy": p_breezy,
     "clearcompany": p_clearcompany,
+    "comeet": p_comeet,
     "cornerstone": p_cornerstone,
     "recruitee": p_recruitee,
     "recruiterflow": p_recruiterflow,
@@ -3668,11 +3751,13 @@ PROBES = {
     "zwayam": p_zwayam,
     "jazzhr": p_jazzhr,
     "jibe": p_jibe,
+    "jobscore": p_jobscore,
     "jobvite": p_jobvite,
     "oracle": p_oracle,
     "pageup": p_pageup,
     "phenom": p_phenom,
     "pinpoint": p_pinpoint,
+    "polymer": p_polymer,
     "pyjamahr": p_pyjamahr,
     "radancy": p_radancy,
     "sensehq": p_sensehq,

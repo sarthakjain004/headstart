@@ -17,6 +17,7 @@ from headstart.scrapers.base import BaseScraper
 from headstart.scrapers.breezy import BreezyScraper
 from headstart.scrapers.bytedance import ByteDanceScraper
 from headstart.scrapers.clearcompany import ClearCompanyScraper
+from headstart.scrapers.comeet import ComeetScraper
 from headstart.scrapers.cornerstone import CornerstoneScraper
 from headstart.scrapers.darwinbox import DarwinboxScraper
 from headstart.scrapers.eightfold import EightfoldScraper
@@ -29,6 +30,7 @@ from headstart.scrapers.happydance import HappydanceScraper
 from headstart.scrapers.icims import ICIMSScraper
 from headstart.scrapers.jazzhr import JazzHRScraper
 from headstart.scrapers.jibe import JibeScraper
+from headstart.scrapers.jobscore import JobScoreScraper
 from headstart.scrapers.jobvite import JobviteScraper
 from headstart.scrapers.join import JoinScraper
 from headstart.scrapers.keka import KekaScraper
@@ -42,6 +44,7 @@ from headstart.scrapers.peoplestrong import PeopleStrongScraper
 from headstart.scrapers.personio import PersonioScraper
 from headstart.scrapers.phenom import PhenomScraper
 from headstart.scrapers.pinpoint import PinpointScraper
+from headstart.scrapers.polymer import PolymerScraper
 from headstart.scrapers.pyjamahr import PyjamaHRScraper
 from headstart.scrapers.radancy import RadancyScraper
 from headstart.scrapers.recruitee import RecruiteeScraper
@@ -109,17 +112,20 @@ SCRAPERS: dict[str, type[BaseScraper]] = {
         ClearCompanyScraper,
         PhenomScraper,
         PinpointScraper,
+        PolymerScraper,
         PyjamaHRScraper,
         RadancyScraper,
         HappydanceScraper,
         JazzHRScraper,
         JibeScraper,
+        JobScoreScraper,
         JobviteScraper,
         TeslaScraper,
         ADPScraper,
         ADPRecruitingScraper,
         AmazonScraper,
         ByteDanceScraper,
+        ComeetScraper,
         CornerstoneScraper,
         AppleScraper,
         UberScraper,

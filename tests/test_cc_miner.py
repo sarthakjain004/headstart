@@ -412,3 +412,27 @@ def test_rippling_preserves_the_whole_underscored_slug(miner, url):
     hits = {}
     miner.extract_tenants(spec, pats, [url], hits)
     assert set(hits) == {"rpc_downtown"}
+
+
+@pytest.mark.parametrize(
+    "ats,url,slug",
+    [
+        (
+            "comeet",
+            "https://www.comeet.co/jobs/nsure/A7.007/engineer/33.1AB",
+            "nsure/a7.007",
+        ),
+        (
+            "jobscore",
+            "https://careers.jobscore.com/careers/jobscore/jobs/front-end-abc",
+            "jobscore",
+        ),
+        ("polymer", "https://jobs.polymer.co/cedar/38850", "cedar"),
+    ],
+)
+def test_new_public_boards_keep_their_identity(miner, ats, url, slug):
+    entry = miner.ATS_PATTERNS[ats]
+    match = next(
+        re.search(pattern, url, re.IGNORECASE) for pattern in entry["patterns"]
+    )
+    assert miner.tenant_from(entry["kind"], match)[0] == slug

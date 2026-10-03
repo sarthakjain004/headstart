@@ -319,11 +319,15 @@ def test_every_table_host_yields_the_slug_its_own_scraper_expects():
             }[style]
             if ats == "join":
                 probe = f"https://{host}/companies/acme/jobs/1"
+
+            wanted = expected[style](host)
+            if ats == "comeet":
+                probe, wanted = f"https://www.{host}/jobs/acme/aa.001", "acme/aa.001"
+            elif ats == "jobscore":
+                probe = f"https://{host}/careers/acme/jobs/engineer-abc"
             got = wf.extract(probe, host, style)
             assert got, f"{ats}: {host} ({style}) reads nothing"
-            assert got[0] == expected[style](host), (
-                f"{ats}: {host} ({style}) emitted {got[0]}"
-            )
+            assert got[0] == wanted, f"{ats}: {host} ({style}) emitted {got[0]}"
             # An alias host must emit the CANONICAL spelling, because that is the whole mechanism
             # by which the two spellings of one board collapse — `dedupe_key` keys every
             # non-`path` style on the URL. A row still carrying the alias host would double-count.
@@ -939,3 +943,27 @@ def test_page_fallback_keeps_capture_window_and_separate_checkpoint(
     assert (
         tmp_path / ".ashby_jobs.ashbyhq.com_20260917_pages_done"
     ).read_text().split() == ["0"]
+
+
+@pytest.mark.parametrize(
+    "url,host,expected",
+    [
+        (
+            "https://www.comeet.com/jobs/port/59.004/engineer/AA.100",
+            "comeet.com",
+            ("port/59.004", "https://www.comeet.com/jobs/port/59.004"),
+        ),
+        (
+            "https://www.comeet.co/jobs/nsure/A7.007",
+            "comeet.co",
+            ("nsure/a7.007", "https://www.comeet.com/jobs/nsure/a7.007"),
+        ),
+        (
+            "https://careers.jobscore.com/careers/jobscore/jobs/engineer-abcd",
+            "careers.jobscore.com",
+            ("jobscore", "https://careers.jobscore.com/careers/jobscore"),
+        ),
+    ],
+)
+def test_compound_and_prefixed_boards_keep_the_complete_identity(url, host, expected):
+    assert wf.extract(url, host, "path") == expected

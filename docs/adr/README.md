@@ -343,10 +343,12 @@ supersedes it and note the supersession in both.
 | [0377](0377-avature-dual-egress-is-opt-in-and-paced-by-the-actual-route.md) | Opt-in Avature dual egress shares actual-route caps across retries and fallback | 2026-10-02 |
 | [0378](0378-trends-separates-first-counted-coverage-from-observed-activity.md) | Separate fixed first-counted coverage, entrant backlog/activity and all-known inventory; read quality remains unknown | 2026-10-02 |
 | [0379](0379-navigation-follows-the-seekers-journey-and-a-skin-does-not-own-layout.md) | Navigation follows the seeker's journey, and a skin does not own layout (amends 0249, 0247, 0128) | 2026-10-02 |
-
 | [0382](0382-recruiterflow-reads-public-pages-and-reconciles-shared-databases.md) | Recruiterflow reads public pages and reconciles shared databases | 2026-10-03 |
 | [0383](0383-pageup-reads-full-public-rss-and-checks-career-migrations.md) | PageUp reads full public RSS and checks career migrations | 2026-10-03 |
 | [0384](0384-manatal-keeps-legacy-jobs-and-advanced-jobposts-distinct.md) | Manatal keeps legacy Jobs and advanced JobPosts distinct | 2026-10-03 |
+| [0385](0385-jobscore-reads-public-html-without-polling-feeds.md) | JobScore reads public HTML without polling feeds | 2026-10-03 |
+| [0386](0386-comeet-keys-public-hosted-boards-on-the-company-uid.md) | Comeet keys public hosted Boards on the company UID | 2026-10-03 |
+| [0387](0387-polymer-reads-public-details-without-a-title-only-gate.md) | Polymer reads public details without a title-only gate | 2026-10-03 |
 
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*

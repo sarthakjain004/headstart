@@ -21,6 +21,20 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
         # "barista CAN ext test", "barista US ext test" and "test_testing lead".
         # Its PCSX group is starbucks-staging.com; these are test requisitions.
         "eightfold:starbucks-staging.eightfold.ai",
+        # New public feed census, 2026-10-03 (ADR-0385/0386): integration tests,
+        # "Status Test", "Open Job Delay Test #1", and Comeet's "Demo Company"
+        # with 695 fabricated postings including "20240530 Deployment" and "2222".
+        "comeet:yourcompany/80.003",
+        # Polymer's API-doc example tenant; Back End Developer is corporate ipsum
+        # ("Globalize game-plan can you champion this incentivization..."), read live.
+        "polymer:aperturelabs",
+        "jobscore:googleaccountapptest",
+        "jobscore:facebooktestaccount",
+        "jobscore:microsoftaccountapptest",
+        "jobscore:appcuetest3",
+        "jobscore:mergetestaccount",
+        "jobscore:jobscoremiddlewaretestcompany",
+        "jobscore:bugfest",
         # Ashby's turn, found late (ADR-0114) by reading board titles rather than slugs:
         # `krakensandbox` titles itself "Kraken Sandbox Jobs" and serves 3 postings,
         # content-confirmed as templates ("Basic Job Template", "Admin Assistant Testing").

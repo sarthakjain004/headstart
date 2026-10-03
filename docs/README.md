@@ -12,6 +12,11 @@ Start here — docs are grouped by area.
 - [discovery/crawler-design.md](discovery/crawler-design.md) — design for a focused ATS-tenant discovery crawler.
 - [discovery/common-crawl-mining.md](discovery/common-crawl-mining.md) — the Common Crawl mining run for India-tier ATS tenants.
 
+## Public ATS measurements
+- [Comeet / Spark Hire Recruit](comeet/2026-10-03_public-api-measurement.md) — public hosted JSON, UID identity, canonical labels and consent unknowns.
+- [JobScore](jobscore/2026-10-03_public-html-measurement.md) — public HTML, canonical labels and stale posting routes.
+- [Polymer](polymer/2026-10-03_public-api-measurement.md) — public listing/details, bounded pagination and metadata.
+
 ## Pipeline — how the run actually works
 - [pipeline/walkthrough.md](pipeline/walkthrough.md) — plain-language explainer of the run, written for someone learning it: the job/stage map, facts vs derivations and `DERIVATIONS_VERSION`, and the description store. Question-driven and grows; undated, unlike the dated one-off analyses beside it in that folder.
 
