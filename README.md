@@ -98,6 +98,14 @@ key. That file lists every built provider and `DISABLED_ATS` lists those withhel
 pipeline. Per-provider measurements live under [docs](docs/README.md); the committed
 [liveness ledgers](data/validate/liveness/) hold the discovered Boards.
 
+The newer `recruiterflow`, `pageup`, and `manatal` adapters read anonymous public careers
+surfaces. Recruiterflow reads embedded listing/detail data; PageUp reads its full RSS while
+checking for migrated career sites; Manatal distinguishes legacy JSON Jobs from advanced HTML
+JobPosts. Their identity, alias and field decisions are recorded in
+[ADR-0382](docs/adr/0382-recruiterflow-reads-public-pages-and-reconciles-shared-databases.md),
+[ADR-0383](docs/adr/0383-pageup-reads-full-public-rss-and-checks-career-migrations.md) and
+[ADR-0384](docs/adr/0384-manatal-keeps-legacy-jobs-and-advanced-jobposts-distinct.md).
+
 `join` is disabled because its measured German-SMB listings are almost entirely non-tech;
 the scraper and tests remain available.
 `adp` and `adp_recruiting` are two separate ADP products, ADP Workforce Now and ADP Recruiting

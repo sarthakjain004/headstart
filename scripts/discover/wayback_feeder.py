@@ -53,6 +53,8 @@ Style = Literal[
     "taleo_be",
     "taleo_enterprise",
     "adp",
+    "pageup",
+    "manatal",
 ]
 
 # An ATS that serves the same board from two hostnames. The value is the spelling the scraper
@@ -223,6 +225,10 @@ def _with_style(style: Style, *hosts: str) -> tuple[tuple[str, Style], ...]:
 # An ATS's hosts share one dedupe set, keyed by `dedupe_key` rather than by the slug — see there
 # for why the label alone is the wrong identity outside `path` styles.
 ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
+    "manatal": _with_style(
+        "manatal", "careers-page.com", "api.manatal.com", "core.api.manatal.com"
+    ),
+    "pageup": _with_style("pageup", "careers.pageuppeople.com"),
     # ADP Workforce Now: one fixed host; the Board is two query values on its career-center page
     # (see `extract`).
     "adp": _with_style("adp", ADP_HOST),
@@ -364,6 +370,7 @@ ATS_HOSTS: dict[str, tuple[tuple[str, Style], ...]] = {
     # whose postings are not in it — 77 of 757 on 2026-09-22, 3 of them hiring.
     "pyjamahr": _with_style("path", "jobs.pyjamahr.com"),
     "recruitee": _with_style("sub", "recruitee.com"),
+    "recruiterflow": _with_style("path", "recruiterflow.com"),
     "ripplehire": _with_style("sub", "ripplehire.com"),
     "rippling": _with_style("path", "ats.rippling.com"),
     # `*.sensehq.com` also hosts vendor labels (`auth`, `cdn`, `www`); p_sensehq reads them dead.
@@ -474,6 +481,23 @@ def extract(url: str, host: str, style: Style) -> tuple[str, str] | None:
     path = path.split("#")[0]
     seen_host = seen_host.split(":")[0].lower()
 
+    if style in {"pageup", "manatal"}:
+        if seen_host != host and not seen_host.endswith("." + host):
+            return None
+        from headstart.scrapers.registry import SCRAPERS
+
+        try:
+            slug = SCRAPERS[style].slug_from("", url)
+        except ValueError:
+            return None
+        if slug.lower() in INFRA:
+            return None
+        if style == "pageup":
+            return slug, f"https://careers.pageuppeople.com/{slug}/listing/"
+        return slug, f"https://{slug}/" if slug.endswith(
+            ".careers-page.com"
+        ) else f"https://www.careers-page.com/{urllib.parse.quote(slug, safe='')}"
+
     if style == "taleo_be":
         if not seen_host.endswith("." + host):
             return None
@@ -536,6 +560,16 @@ def extract(url: str, host: str, style: Style) -> tuple[str, str] | None:
             slug = AshbyScraper.slug_from_link(seg)
             if valid(slug.replace(" ", ""), path_slug=True):
                 return slug, f"https://{host}/{urllib.parse.quote(slug, safe='._-')}"
+        if host == "recruiterflow.com":
+            parts = path.split("/")
+            if (
+                len(parts) < 2
+                or parts[1] not in {"jobs", "jobs-page-widget"}
+                or not valid(seg, path_slug=True)
+            ):
+                return None
+            slug = urllib.parse.unquote(seg).lower()
+            return slug, f"https://{host}/{urllib.parse.quote(slug, safe='')}/jobs"
         if seg.lower() == "embed":
             # Greenhouse's board-widget route carries the real slug in `?for=`, so the archived
             # widget URL names a Company as surely as a board URL does. Dropping the whole route

@@ -1,4 +1,5 @@
 import importlib.util
+import re
 from pathlib import Path
 
 import pytest
@@ -11,6 +12,18 @@ def _load_harness():
     harness = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(harness)
     return harness
+
+
+def test_freshteam_shape_rejects_query_links_that_open_the_whole_board():
+    # The Board HTML contains every title, but this is not a selected Job route.
+    pattern = _load_harness().URL_SHAPES["freshteam"]
+    for url in (
+        "https://usiglobal.freshteam.com/jobs?jobId=ewRgBG_J2X1C",
+        "https://usiglobal.freshteam.com/jobs?jobId=j_miAbnIQdps",
+        "https://framemediaexcel.freshteam.com/jobs/XesRBgfuDXMu/accounting-clerk-remote",
+    ):
+        assert bool(re.match(pattern, url)) == ("/jobs/" in url)
+    assert not re.match(pattern, "https://usiglobal.freshteam.com/jobs")
 
 
 def _row(job_id: str) -> dict:

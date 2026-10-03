@@ -66,3 +66,12 @@ def test_a_job_link_off_the_freshteam_host_is_served_as_the_freshteam_page():
     own = "https://framemediaexcel.freshteam.com/jobs/XesRBgfuDXMu/accounting-clerk-remote"
     assert scraper.job_url(own, "XesRBgfuDXMu") == own
     assert scraper.job_url(None, "XesRBgfuDXMu").endswith("/jobs/XesRBgfuDXMu")
+
+
+def test_same_host_query_job_url_is_replaced_by_the_real_detail_route():
+    scraper = FreshteamScraper("usiglobal")
+    for path in ("jobs?jobId=ewRgBG_J2X1C", "jobs/?jobId=ewRgBG_J2X1C"):
+        assert (
+            scraper.job_url(f"https://usiglobal.freshteam.com/{path}", "ewRgBG_J2X1C")
+            == "https://usiglobal.freshteam.com/jobs/ewRgBG_J2X1C"
+        )

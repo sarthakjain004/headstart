@@ -192,12 +192,23 @@ registry, ADR directory and glossary; its searchable-job badge reads the live se
   redirecting. The script confirms equal posting sets before writing `shared-reqs`
   aliases; the generic redirect scan refuses to overwrite them (ADR-0373).
 
+- **Recruiterflow: re-run `scripts/validate/recruiterflow_shared_boards.py --apply` after
+  refreshing its ledger.** Readable labels and `db_...` labels can expose the same database
+  without redirecting. Alias only equal nonempty posting sets with the same database identity
+  (ADR-0382).
+- **PageUp: re-run `scripts/validate/pageup_subset_boards.py --apply` after refreshing its
+  ledger.** Channels and locales can expose subsets within one account. Never infer equality
+  from numeric Job ids across different accounts (ADR-0383).
+- **Manatal: keep legacy labels and advanced hosts separate, and choose an employer-endorsed
+  surface before landing overlapping versions.** They publish different Job/JobPost identities;
+  title similarity is not a safe alias rule (ADR-0384).
+
 ### To build, by evidence
 
-Evidence for the first two is in `docs/discovery/2026-09-23_indeed-sweep-landing.md`.
+Evidence for Hireology is in `docs/discovery/2026-09-23_indeed-sweep-landing.md`.
 
 - **The unsupported ATSes the Indeed sweep resolved most companies to**, most first:
-  Hireology, Recruiterflow. (Breezy led that count; it, ClearCompany, Pinpoint and
+  Hireology. (Recruiterflow is built, ADR-0382. Breezy led that count; it, ClearCompany, Pinpoint and
   Cornerstone are now built, #579, #582, #580 and #584, and the sweep's companies on all four are
   landed. Avature is built too, ADR-0245; the sweep's Avature companies are a landing still to
   do. ADP Workforce Now is built too, #585, ADR-0180; the sweep's ADP companies are a landing

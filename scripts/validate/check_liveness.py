@@ -110,6 +110,15 @@ from headstart.scrapers.lever import (
 from headstart.scrapers.lever import (
     GLOBAL_API_HOST as _LEVER_GLOBAL_API_HOST,
 )
+from headstart.scrapers.manatal import (
+    ManatalScraper,
+)
+from headstart.scrapers.manatal import (
+    departed as manatal_departed,
+)
+from headstart.scrapers.manatal import (
+    legacy_listing as manatal_legacy_listing,
+)
 from headstart.scrapers.mynexthire import (  # the request and the dead rule, single source
     LISTING_BODY as _MYNEXTHIRE_LISTING_BODY,
 )
@@ -119,6 +128,15 @@ from headstart.scrapers.mynexthire import (
 from headstart.scrapers.oracle import (  # the pod-host spelling, single source
     is_pod_host,
 )
+from headstart.scrapers.pageup import (
+    MigratedBoard as PageUpMigratedBoard,
+)
+from headstart.scrapers.pageup import (
+    feed_items as pageup_feed_items,
+)
+from headstart.scrapers.pageup import (
+    read_board as pageup_read_board,
+)
 from headstart.scrapers.personio import (  # which redirect is a departed tenant, single source
     REDIRECT_STATUSES as _PERSONIO_REDIRECTS,
 )
@@ -127,6 +145,18 @@ from headstart.scrapers.personio import (
 )
 from headstart.scrapers.radancy import (  # the job-URL shape, single source
     sitemap_rows as _radancy_sitemap_rows,
+)
+from headstart.scrapers.recruiterflow import (
+    RecruiterflowScraper,
+)
+from headstart.scrapers.recruiterflow import (
+    inactive_board as recruiterflow_inactive_board,
+)
+from headstart.scrapers.recruiterflow import (
+    listed_jobs as recruiterflow_listed_jobs,
+)
+from headstart.scrapers.recruiterflow import (
+    public_listing as recruiterflow_public_listing,
 )
 from headstart.scrapers.registry import (  # the row-to-Board funnel, per ATS
     SCRAPERS,
@@ -1632,6 +1662,7 @@ class _GatedFetcher:
 
     def fetch(self, method, url, **kw):
         kw.pop("timeout", None)
+        kw.pop("attempts", None)  # the probe pass also owns its retry budget
         r = _fetch(method, url, **kw)
         if r is None:
             raise _BreakerOpen
@@ -3512,6 +3543,94 @@ def p_wp_job_openings(t, u):
     return LIVE, int(total)
 
 
+def p_recruiterflow(t, u):
+    """Public HTML: real empty jobsList is live; measured inactive template is gone.
+
+    41 Boards, 2026-10-03: 34 hiring, five valid empty, one real 404 and one
+    inactive 200. A shared-host DNS failure or unreadable/challenged page is unknown.
+    """
+    scraper = _scraper_for_row("recruiterflow", t, u)
+    RecruiterflowScraper.pacer.wait()
+    status, body = _get(scraper.url())
+    if status == 404:
+        return DEAD, None
+    if status != 200:
+        _note(f"http-{status}" if isinstance(status, int) else str(status))
+        return UNKNOWN, None
+    page = body.decode("utf-8", "replace")
+    if recruiterflow_inactive_board(page):
+        return DEAD, None
+    try:
+        count = len(recruiterflow_listed_jobs(recruiterflow_public_listing(page)))
+    except (ValueError, KeyError, TypeError):
+        _note("body-unparseable")
+        return UNKNOWN, None
+    return LIVE, count
+
+
+def p_pageup(t, u):
+    """A retained RSS alone is insufficient: verify its current public Board too."""
+    scraper = _scraper_for_row("pageup", t, u)
+
+    def fetch(method, url, *, headers, timeout):
+        # The liveness pass owns its escalating timeout; the Scraper's request
+        # timeout must not be passed twice through `_fetch` to the HTTP seam.
+        return _fetch(method, url, headers=headers)
+
+    try:
+        _page, feed = pageup_read_board(fetch, scraper.slug)
+        return LIVE, len({item.findtext("link") for item in pageup_feed_items(feed)})
+    except PageUpMigratedBoard:
+        return DEAD, None
+    except http.RequestsError as exc:
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+        if status == 404:
+            return DEAD, None
+        _note(f"http-{status}" if status else _net_reason(exc))
+    except (ValueError, KeyError, TypeError):
+        _note("body-unparseable")
+    return UNKNOWN, None
+
+
+def p_manatal(t, u):
+    """Legacy client settings distinguish dead from empty; advanced pages must finish."""
+    scraper = ManatalScraper(_slug_of("manatal", t, u), fetcher=_GatedFetcher())
+    if scraper.advanced:
+        try:
+            raw = scraper.advanced_jobs()
+        except _BreakerOpen:
+            _note("breaker-open")
+            return UNKNOWN, None
+        except (http.RequestsError, ValueError, KeyError, TypeError) as exc:
+            _note(type(exc).__name__)
+            return UNKNOWN, None
+        if scraper.truncated:
+            _note("listing-incomplete")
+            return UNKNOWN, None
+        return LIVE, len(raw["rows"])
+    ManatalScraper.api_pacer.wait()
+    status, body = _get(f"{scraper.url()}?page=1&page_size=1")
+    try:
+        data = json.loads(body)
+    except (ValueError, TypeError):
+        _note("body-unparseable")
+        return UNKNOWN, None
+    if manatal_departed(status, data):
+        return DEAD, None
+    if status != 200:
+        _note(f"http-{status}")
+        return UNKNOWN, None
+    try:
+        listing = manatal_legacy_listing(data)
+    except ValueError:
+        _note("body-unparseable")
+        return UNKNOWN, None
+    if listing["count"] and not listing["results"]:
+        _note("listing-incomplete")
+        return UNKNOWN, None
+    return LIVE, listing["count"]
+
+
 PROBES = {
     "greenhouse": p_greenhouse,
     "lever": p_lever,
@@ -3524,12 +3643,14 @@ PROBES = {
     "clearcompany": p_clearcompany,
     "cornerstone": p_cornerstone,
     "recruitee": p_recruitee,
+    "recruiterflow": p_recruiterflow,
     "workable": p_workable,
     "zoho": p_zoho,
     "workday": p_workday,
     "wp_job_openings": p_wp_job_openings,
     "keka": p_keka,
     "mynexthire": p_mynexthire,
+    "manatal": p_manatal,
     "ripplehire": p_ripplehire,
     "darwinbox": p_darwinbox,
     "smartrecruiters": p_smartrecruiters,
@@ -3549,6 +3670,7 @@ PROBES = {
     "jibe": p_jibe,
     "jobvite": p_jobvite,
     "oracle": p_oracle,
+    "pageup": p_pageup,
     "phenom": p_phenom,
     "pinpoint": p_pinpoint,
     "pyjamahr": p_pyjamahr,

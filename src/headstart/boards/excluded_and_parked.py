@@ -1033,6 +1033,28 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
 # cannot keep its rows fresh, so serving them would be serving a snapshot that only ages.
 PARKED_BOARDS: frozenset[str] = frozenset(
     {
+        # New Manatal adapter, ADR-0384: the company's own /careers redirects to its
+        # legacy Board (32 Jobs); this alternative advanced Board has 40 JobPosts
+        # with substantial overlap and different ids. Prefer the endorsed surface
+        # until including both collections is explicitly decided. No existing
+        # Manatal support predates this initial publication choice.
+        "manatal:manatal.careers-page.com",
+        # Same-label legacy and advanced surfaces both read live on 2026-10-03.
+        # Keep the initial legacy source while employer endorsement/overlap is
+        # unresolved; these are not asserted to be exact aliases (ADR-0384).
+        "manatal:10folders.careers-page.com",
+        "manatal:aperiohub.careers-page.com",
+        "manatal:bandwidth-global.careers-page.com",
+        "manatal:barthhaas.careers-page.com",
+        "manatal:chefra-solutions.careers-page.com",
+        "manatal:city-care-partnership.careers-page.com",
+        "manatal:cmsistemiinformatici.careers-page.com",
+        "manatal:empire.careers-page.com",
+        "manatal:find-job-latam.careers-page.com",
+        "manatal:gigalabs-private-ltd.careers-page.com",
+        "manatal:global-staff-network.careers-page.com",
+        "manatal:integrated-office-solutions-inc.careers-page.com",
+        "manatal:intelus-agency.careers-page.com",
         # Masimo's retired Oracle Board (#873), rechecked 2026-10-02: both served
         # job 4018 and 2562 redirect to CandidateExperience/errors/404 (HTTP 200).
         # The API still lists them, so absence-based sync cannot remove them.

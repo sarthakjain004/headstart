@@ -301,8 +301,21 @@ PATTERNS: dict[str, tuple[str, list[str]]] = {
     "comeet": ("ats", [r"comeet\.com/jobs/([a-zA-Z0-9_.-]+)", SUB + r"comeet\.co"]),
     "pinpoint": ("ats", [SUB + r"pinpointhq\.com"]),
     "homerun": ("ats", [SUB + r"homerun\.co"]),
-    "manatal": ("ats", [SUB + r"manatal\.com"]),
-    "recruiterflow": ("ats", [SUB + r"recruiterflow\.com"]),
+    "manatal": (
+        "ats",
+        [
+            HOST + r"(?:www\.)?careers-page\.com/([a-z0-9_.%+-]+)(?=[/?#]|$)",
+            HOST + r"((?!www\.)[a-z0-9-]+\.careers-page\.com)(?=[/?#]|$)",
+        ],
+    ),
+    "pageup": (
+        "ats",
+        [r"careers\.pageuppeople\.com/(?:mob/)?(\d+/[a-z0-9_-]+/[a-z-]+)(?=[/?#]|$)"],
+    ),
+    "recruiterflow": (
+        "ats",
+        [r"recruiterflow\.com/([a-z0-9_.%+-]+)/jobs(?:-page-widget)?(?=[/?#]|$)"],
+    ),
     "recruitcrm": ("ats", [SUB + r"recruitcrm\.io"]),
     "loxo": ("ats", [SUB + r"loxo\.co"]),
     "jobscore": ("ats", [r"careers\.jobscore\.com/careers/([a-zA-Z0-9_-]+)"]),
