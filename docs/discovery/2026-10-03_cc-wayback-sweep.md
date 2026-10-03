@@ -87,7 +87,8 @@ Board host. The resumed namespace outputs are checked before reporting counts.
 The first WP Job Openings fingerprint pass completed 323 of 600 parts. The
 remaining 277 returned native DuckDB HTTP 403s. Small direct and spare range/HEAD
 probes of an incomplete object succeeded, and retrying at one worker resumed
-successful reads. This global scan uses DuckDB's native retry policy; its HTTP
+successful reads. The retry finished every remaining part: **600 of 600** manifest
+files are now complete, with no unread files. This global scan uses DuckDB's native retry policy; its HTTP
 proxy setting rejected a SOCKS5 URL in a live metadata probe. It does not inherit
 the Python feeder's spare-egress policy. Completion is checked against the manifest,
 not the miner's process exit code.
@@ -98,3 +99,32 @@ the capture window in requests and checkpoint filenames. An interrupted fallback
 resumes its completed page numbers rather than repeating the failed full query.
 Wayback's paged index can lag its unpaged index; that source limitation is documented
 in the [Archive's CDX server documentation](https://github.com/internetarchive/wayback/blob/master/wayback-cdx-server/README.md#pagination-api).
+
+## Completed Common Crawl results
+
+The namespace miner finished all 42 enumerable providers, and its report contains
+zero incomplete targets. The candidate CSV holds 40,694 normalized rows. These are
+archive candidates, not a count of new or live Boards.
+
+All nine known-host audits finished without an incomplete host:
+
+| Provider | Hosts audited |
+| --- | ---: |
+| Eightfold | 5 |
+| gr8people | 1 |
+| Happydance | 40 |
+| Phenom | 86 |
+| Radancy | 254 |
+| Spire2Grow | 23 |
+| SuccessFactors | 2,582 |
+| WP Job Openings | 5,146 |
+| Zwayam | 1,351 |
+
+The separate WP Job Openings fingerprint scan completed all 600 manifest files.
+The output resolves to 552 captured hosts before live validation.
+
+The focused archive and shared-network regression suite passed 261 tests.
+Wayback is still running; its report records completion independently for every
+namespace and known host. Candidate summaries label Wayback's additive CSV pool
+explicitly: it includes prior discoveries, so those rows cannot all be attributed
+to this run's September 17 onward window.
