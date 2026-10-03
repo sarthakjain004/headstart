@@ -115,6 +115,13 @@ Historical edits keep their own input versions. This supplements pre-filter Job
 facts; it does not invent raw fields absent from the served table. Half precision
 remains approximate near classifier decision boundaries.
 
+Reference checkpoints also retain served `max_years` and `experience_source` where
+available, alongside `min_years`. A missing description does not establish that
+the stored experience was title-derived; its recorded source distinguishes those
+cases. Changes to these provenance fields produce checkpoint edits even when the
+counted band stays unchanged. Earlier checkpoints without these fields remain
+readable, but their missing provenance is unknown, not inferred retroactively.
+
 The checkpoint index commits with live tick state; input fragments name their parent
 and run identity. Orphan fragments from failed state publication cannot advance
 the next checkpoint. Code, model configuration and Board ledgers are preserved by

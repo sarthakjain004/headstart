@@ -92,6 +92,9 @@ def capture(
             raise ValueError("reference tick must advance its stamped parent")
         prior = {r["id"]: r for r in old.to_pylist()}
     columns = ["id", "ats", "first_seen", "description", "min_years", "vector"]
+    columns += [
+        c for c in ("max_years", "experience_source") if c in table.schema.names
+    ]
     columns += [c for c in RAW_FIELDS if c in table.schema.names]
     columns = list(dict.fromkeys(columns))
     absent = set(columns) - set(table.schema.names)
