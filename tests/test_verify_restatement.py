@@ -89,6 +89,100 @@ def source(job_id=BOARD + ":1", **changes):
     }
 
 
+def test_pure_input_memo_reuses_work_without_changing_policy_results(
+    policy, monkeypatch
+):
+    calls = Counter()
+    english = verifier.doc_prep.is_english
+    derive = verifier.derived_meta.derive
+
+    def detect(*args):
+        calls["english"] += 1
+        return english(*args)
+
+    def fields(row):
+        calls["derive"] += 1
+        return derive(row)
+
+    monkeypatch.setattr(verifier.doc_prep, "is_english", detect)
+    monkeypatch.setattr(verifier.derived_meta, "derive", fields)
+    row = source()
+    first = policy.transform({row["id"]: row})
+    second = policy.transform({row["id"]: row.copy()})
+    assert first == second
+    assert calls == {"english": 1, "derive": 1}
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("remote", True),
+        ("location", "London"),
+        ("experience", "8 years"),
+        ("title", "Backend Engineer II"),
+        ("salary", "100000 USD"),
+        ("description", "Eight years of experience are required."),
+        ("company", "Acme"),
+    ],
+)
+def test_derived_memo_invalidates_each_declared_input(
+    policy, monkeypatch, field, value
+):
+    calls = []
+    monkeypatch.setattr(
+        verifier.derived_meta,
+        "derive",
+        lambda row: calls.append(row.copy()) or {"min_years": 3},
+    )
+    row = source()
+    assert policy._derive(row["id"], row)["min_years"] == 3
+    assert policy._derive(row["id"], row)["min_years"] == 3
+    policy._derive(row["id"], row | {field: value})
+    assert len(calls) == 2
+
+
+def test_memo_stores_only_latest_digest_and_detaches_results(policy, monkeypatch):
+    monkeypatch.setattr(verifier.derived_meta, "derive", lambda row: {"min_years": 3})
+    row = source()
+    result = policy._derive(row["id"], row)
+    result["min_years"] = 100
+    assert policy._derive(row["id"], row)["min_years"] == 3
+    for number in range(5):
+        policy._derive(row["id"], row | {"description": str(number)})
+    assert len(policy._derive_memo) == 1
+    digest, value = policy._derive_memo[row["id"]]
+    assert isinstance(digest, bytes) and len(digest) == 32
+    assert value == {"min_years": 3}
+
+
+def test_memo_invalidation_includes_ats_and_language_inputs(policy, monkeypatch):
+    calls = Counter()
+
+    def english(title, text):
+        calls["english"] += 1
+        return False
+
+    def derive(row):
+        calls["derive"] += 1
+        return {"min_years": 3}
+
+    monkeypatch.setattr(verifier.doc_prep, "is_english", english)
+    monkeypatch.setattr(verifier.derived_meta, "derive", derive)
+    row = source()
+    for title, text in [
+        ("QA", "Old"),
+        ("QA", "Old"),
+        ("QA II", "Old"),
+        ("QA II", "Changed"),
+    ]:
+        assert policy._english(row["id"], title, text) is False
+    policy._derive(row["id"], row)
+    monkeypatch.setattr(verifier, "ats_of", lambda _: "different-provider")
+    policy._derive(row["id"], row)
+    assert calls == {"english": 3, "derive": 2}
+    assert len(policy._english_memo) == 1
+
+
 def write(path, rows, metadata, schema=None):
     path.parent.mkdir(parents=True, exist_ok=True)
     table = pa.Table.from_pylist(rows, schema=schema).replace_schema_metadata(metadata)

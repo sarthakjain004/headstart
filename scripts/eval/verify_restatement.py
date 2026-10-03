@@ -202,10 +202,53 @@ class Policy:
             root / "data/validate/eightfold_backing.csv"
         )
         self.winners = set()
+        self._english_memo = {}
+        self._derive_memo = {}
         self.watchlist = role_taxonomy.load_watchlist(
             root / "config/role_watchlist.json",
             set(families),
         )
+
+    @staticmethod
+    def _input_digest(values):
+        return hashlib.sha256(
+            json.dumps(
+                values, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+            ).encode()
+        ).digest()
+
+    def _english(self, job_id, title, text):
+        if not hasattr(self, "_english_memo"):
+            self._english_memo = {}
+        signature = self._input_digest((title, text))
+        previous = self._english_memo.get(job_id)
+        if previous is None or previous[0] != signature:
+            previous = (signature, doc_prep.is_english(title, text))
+            self._english_memo[job_id] = previous
+        return previous[1]
+
+    def _derive(self, job_id, row):
+        if not hasattr(self, "_derive_memo"):
+            self._derive_memo = {}
+        inputs = {
+            name: row.get(name)
+            for name in (
+                "remote",
+                "location",
+                "experience",
+                "title",
+                "salary",
+                "description",
+                "company",
+            )
+        }
+        inputs["ats"] = ats_of(job_id)
+        signature = self._input_digest(inputs)
+        previous = self._derive_memo.get(job_id)
+        if previous is None or previous[0] != signature:
+            previous = (signature, derived_meta.derive(inputs))
+            self._derive_memo[job_id] = previous
+        return previous[1].copy()
 
     def transform(self, rows, captured_fingerprint=None):
         """Sources to placements with production sync/prune and current classification."""
@@ -230,7 +273,7 @@ class Policy:
                 # A served checkpoint proves prior English admission, not its text.
                 english = row.get("observed_english")
                 if english is None and row.get("title_only_recovery"):
-                    english = doc_prep.is_english(row.get("title") or "", "")
+                    english = self._english(job_id, row.get("title") or "", "")
                     quality["title_only_language_judgement"] += 1
                 if english is None and row.get("kind") == "present":
                     english = True
@@ -238,7 +281,7 @@ class Policy:
                     raise ValueError(f"no historical English evidence for {job_id}")
                 quality["observed_english_without_text"] += 1
             else:
-                english = doc_prep.is_english(row.get("title") or "", text)
+                english = self._english(job_id, row.get("title") or "", text)
             if not english:
                 reasons["english_rejected"] += 1
                 continue
@@ -376,7 +419,7 @@ class Policy:
             if family == role_taxonomy.NON_TECH:
                 reasons["classifier_non_tech"] += 1
                 continue
-            derived = derived_meta.derive(row | {"ats": ats_of(job_id)})
+            derived = self._derive(job_id, row)
             years = derived["min_years"]
             if (
                 row.get("description") is None
