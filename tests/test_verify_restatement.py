@@ -880,6 +880,24 @@ def test_candidate_schema_is_checked_before_counting(tmp_path):
         verifier.candidate_ticks(root, FP, REVISION)
 
 
+def test_candidate_placements_are_indexed_without_loading_all_snapshots(
+    tmp_path, monkeypatch
+):
+    root = tmp_path / "candidate"
+    candidate(root, [placement()])
+    read = verifier.pq.read_table
+    loaded = []
+
+    def capture(path, *args, **kwargs):
+        loaded.append(Path(path))
+        return read(path, *args, **kwargs)
+
+    monkeypatch.setattr(verifier.pq, "read_table", capture)
+    _, snapshots, _ = verifier.candidate_ticks(root, FP, REVISION)
+    assert all(path.parent.name != "placements" for path in loaded)
+    assert all(isinstance(path, Path) for path in snapshots.values())
+
+
 def test_legacy_captured_math_reuse_requires_matching_archived_weights_and_normalise(
     tmp_path, policy
 ):

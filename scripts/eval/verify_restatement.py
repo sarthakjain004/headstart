@@ -466,7 +466,7 @@ def rows_by_id(table):
     return rows
 
 
-def candidate_ticks(root, fingerprint, revision, diagnostics=None):
+def candidate_ticks(root, fingerprint, revision):
     """Read narrow deltas/placements only. Duplicate stamps fail rather than overwrite."""
     out, bound = {}, True
     for path in (root / DELTAS).glob("*.parquet"):
@@ -489,32 +489,18 @@ def candidate_ticks(root, fingerprint, revision, diagnostics=None):
     placements = {}
     for path in (root / "placements").glob("*.parquet"):
         columns = ["id", "board", "family", "band"]
-        if diagnostics is not None:
-            columns += [
-                c
-                for c in (
-                    "first_seen",
-                    "input_quality",
-                    "recount_cause",
-                    "recountcause",
-                )
-                if c in pq.read_schema(path).names
-            ]
-        table = pq.read_table(path, columns=columns)
-        stamp = (table.schema.metadata or {})[b"ts"].decode()
-        metadata = table.schema.metadata or {}
+        schema = pq.read_schema(path)
+        if not set(columns) <= set(schema.names):
+            raise ValueError(f"placement schema mismatch: {path.name}")
+        stamp = (schema.metadata or {})[b"ts"].decode()
+        metadata = schema.metadata or {}
         bound &= (
             metadata.get(b"rules_fingerprint") == fingerprint.encode()
             and metadata.get(b"input_revision") == revision.encode()
         )
         if stamp in placements:
             raise ValueError(f"repeated placement tick {stamp}")
-        rows = rows_by_id(table)
-        placements[stamp] = {
-            i: (r["board"], r["family"], r["band"]) for i, r in rows.items()
-        }
-        if diagnostics is not None:
-            diagnostics[stamp] = rows
+        placements[stamp] = path
     return out, placements, bound
 
 
@@ -1126,12 +1112,10 @@ def verify(
         raise ValueError(
             "empty, unordered or repeated tick inventory / missing revision"
         )
-    diagnostics = {}
     candidate, placements, bound = candidate_ticks(
         candidate_root,
         inputs["rules_fingerprint"],
         inputs["input_revision"],
-        diagnostics,
     )
     bound |= inventory_bound
     report["checks"]["policy_binding"] = bound
@@ -1197,8 +1181,9 @@ def verify(
                 previous_physical = context.get("physical_ids", set(source))
                 previous_tick = boundary
                 quality["intermediate_oracle_boundaries"] += 1
-        reference = pq.read_table(evidence(item["reference"], base, candidate_root))
-        metadata = reference.schema.metadata or {}
+        reference = pq.ParquetFile(evidence(item["reference"], base, candidate_root))
+        metadata = reference.schema_arrow.metadata or {}
+        reference_columns = set(reference.schema_arrow.names)
         reference_tick = metadata.get(b"ts", b"").decode()
         if (
             reference_tick != item["reference_tick"]
@@ -1209,20 +1194,22 @@ def verify(
             raise ValueError("reference must begin at complete baseline")
         method = json.loads(metadata.get(b"methodology", b"{}"))
         fingerprint = captured_fingerprint(method, inputs)
-        for job_id, row in rows_by_id(reference).items():
-            if row["kind"] == "removed":
-                if job_id not in current:
-                    raise ValueError("removal of unknown reference id")
-                del current[job_id]
-            elif row["kind"] == "present":
-                current[job_id] = row | {
-                    "classifier_input_fingerprint": fingerprint,
-                    "_source_observed_at": tick,
-                }
-                observed_reference[job_id] = current[job_id]
-                seen_reference.add(job_id)
-            else:
-                raise ValueError("unknown reference kind")
+        for batch in reference.iter_batches(batch_size=4096):
+            for job_id, row in rows_by_id(pa.Table.from_batches([batch])).items():
+                if row["kind"] == "removed":
+                    if job_id not in current:
+                        raise ValueError("removal of unknown reference id")
+                    del current[job_id]
+                elif row["kind"] == "present":
+                    current[job_id] = row | {
+                        "classifier_input_fingerprint": fingerprint,
+                        "_source_observed_at": tick,
+                    }
+                    observed_reference[job_id] = current[job_id]
+                    seen_reference.add(job_id)
+                else:
+                    raise ValueError("unknown reference kind")
+        del reference
         previous = reference_tick
         if baseline is None:
             baseline = dict(current)
@@ -1330,7 +1317,7 @@ def verify(
                 quality["unverified_historical_source_inputs"] += len(
                     unknown_source_ids
                 )
-        if not SOURCE_COLUMNS <= set(reference.column_names) or any(
+        if not SOURCE_COLUMNS <= reference_columns or any(
             not SOURCE_COLUMNS <= r.keys() for r in source.values()
         ):
             raise ValueError(
@@ -1341,10 +1328,28 @@ def verify(
             source, method.get("classifier_input_fingerprint")
         )
         quality.update(tick_quality)
-        actual = placements.get(tick, {})
+        diagnostic_rows = {}
+        if tick in placements:
+            path = placements[tick]
+            columns = ["id", "board", "family", "band"]
+            columns += [
+                name
+                for name in (
+                    "first_seen",
+                    "input_quality",
+                    "recount_cause",
+                    "recountcause",
+                )
+                if name in pq.read_schema(path).names
+            ]
+            diagnostic_rows = rows_by_id(pq.read_table(path, columns=columns))
+        actual = {
+            i: (row["board"], row["family"], row["band"])
+            for i, row in diagnostic_rows.items()
+        }
         age_wrong = [
             i
-            for i, row in diagnostics.get(tick, {}).items()
+            for i, row in diagnostic_rows.items()
             if i in expected
             and "first_seen" in row
             and row["first_seen"] != source[i].get("first_seen")
