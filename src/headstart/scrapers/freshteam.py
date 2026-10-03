@@ -128,7 +128,9 @@ class FreshteamScraper(BaseScraper):
         host = f"https://{self.slug}.freshteam.com/"
         # usiglobal's own ?jobId= links open the whole Board, not its Job.
         # Browser-verified 2026-10-03: the /jobs/{id} route renders the detail.
-        if native_url and native_url.lower().startswith(host + "jobs/"):
+        if native_url and re.match(
+            re.escape(host) + r"jobs/[\w-]+(?:[/?#]|$)", native_url, re.IGNORECASE
+        ):
             return native_url
         return f"{host}jobs/{unique_id}"
 
