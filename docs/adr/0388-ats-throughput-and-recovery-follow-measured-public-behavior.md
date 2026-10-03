@@ -22,7 +22,7 @@ census received 429 after 1,221 requests and about 79 seconds. Stop on the refus
 the demonstrated sustained two-starts/second API budget. Burst success is not a sustained quota.
 Use the public frontend's supported `ordering=-is_pinned_in_career_page,-last_published_at`.
 Unstable offsets can still omit IDs: every measured deficit marks the Board incomplete, even
-below the shared two-percent tolerance, so missing postings cannot be mistaken for closures.
+below the shared one-percent tolerance, so missing postings cannot be mistaken for closures.
 
 The shared Fetcher opt-in retries one exhausted connect/timeout/reset failure on an available
 spare route, for GET/HEAD only. It does not switch on HTTP responses, DNS/certificate errors,
