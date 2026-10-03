@@ -206,3 +206,4 @@ ripplehire,westipru,https://westipru.ripplehire.com,dead,,2026-08-14
 ripplehire,winjit,https://winjit.ripplehire.com,dead,,2026-08-14
 ripplehire,wipro,https://wipro.ripplehire.com,live,8,2026-07-27
 ripplehire,zeta,https://zeta.ripplehire.com,live,0,2026-07-27
+ripplehire,ltim,https://ltim.ripplehire.com/auth/oauth/authorize?response_type=code&client_id=ripplehire&scope=openid%20read%20write%20trust&state=bA7zgqOhZsBpm8Kjx2C1GBT_oNgWADvP86zx9yu9Wso%3D&redirect_uri=https://ltim.ripplehire.com/login/oauth2/code/ltim&nonce=_3aVUgjMLH3z8BjJizno0PbQR3DMjVMrxsR5smqh77Y,unknown,,2026-10-03

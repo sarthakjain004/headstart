@@ -17,6 +17,10 @@ from __future__ import annotations
 # one entry covers a Board that appears under several casings (smartrecruiters Dev2/dev2).
 EXCLUDED_BOARDS: frozenset[str] = frozenset(
     {
+        # Read 2026-10-03: Starbucks' staging front serves 53 postings, including
+        # "barista CAN ext test", "barista US ext test" and "test_testing lead".
+        # Its PCSX group is starbucks-staging.com; these are test requisitions.
+        "eightfold:starbucks-staging.eightfold.ai",
         # Ashby's turn, found late (ADR-0114) by reading board titles rather than slugs:
         # `krakensandbox` titles itself "Kraken Sandbox Jobs" and serves 3 postings,
         # content-confirmed as templates ("Basic Job Template", "Admin Assistant Testing").

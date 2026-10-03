@@ -704,6 +704,7 @@ workday:cdk/cdk,CDK,hiringOrganization,2026-09-24
 workday:cdpq/CDPQ,CDPQ,hiringOrganization,2026-09-24
 workday:cdw/Careers,CDW,hiringOrganization,2026-09-24
 workday:cecentertainment/CEC_Careers,CEC Entertainment,hiringOrganization,2026-09-24
+workday:cedarparktexas/City_of_Cedar_Park_Careers,City of Cedar Park,hiringOrganization,2026-10-03
 workday:celltrionhealthcare/celltrionglobal,Celltrion Healthcare,hiringOrganization,2026-09-24
 workday:cengage/CengageNorthAmericaCareers,Cengage,hiringOrganization,2026-09-24
 workday:cenhud/cenhud,Central Hudson,hiringOrganization,2026-09-24
@@ -802,6 +803,7 @@ workday:cityofgalveston/cityofgalvestontexascareers,City of Galveston,hiringOrga
 workday:cityofirvine/CityofIrvine,City of Irvine,hiringOrganization,2026-09-30
 workday:cityofkent/External,City of Kent,hiringOrganization,2026-09-30
 workday:cityofkent/PST,City of Kent,hiringOrganization,2026-09-30
+workday:cityoflewisville/COL,City of Lewisville,hiringOrganization,2026-10-03
 workday:cityoforlando/CityofOrlandoCareers,City of Orlando,hiringOrganization,2026-09-24
 workday:cityofvancouver/COV,City of Vancouver,hiringOrganization,2026-09-24
 workday:cityutilities/careers,City Utilities,hiringOrganization,2026-09-24
@@ -825,6 +827,7 @@ workday:cliftonlarsonallen/CLA,CliftonLarsonAllen,hiringOrganization,2026-09-24
 workday:clio/ClioCareerSite,Legal,hiringOrganization,2026-09-24
 workday:clorox/BurtsBees,Burt's Bees,hiringOrganization,2026-09-30
 workday:clorox/Clorox,Clorox,hiringOrganization,2026-09-30
+workday:cloudbreak/Equiti,Equiti,og:description,2026-10-03
 workday:cloudera/External_Career,Cloudera,hiringOrganization,2026-09-24
 workday:cloudflight/external_career_site,Cloudflight,hiringOrganization,2026-09-24
 workday:cloudimperiumgames/broadbean_external,Cloud Imperium Games,hiringOrganization,2026-09-24
@@ -1949,6 +1952,7 @@ workday:lcbo/LCBOCareerSite,LCBO,hiringOrganization,2026-09-24
 workday:lcmchealth/LCMCHealth,LCMC Health,hiringOrganization,2026-09-24
 workday:learfield/learfield,Learfield,hiringOrganization,2026-09-24
 workday:ledcor/Ledcor_External,Ledcor,hiringOrganization,2026-09-24
+workday:leduc/EXT,City of Leduc,hiringOrganization,2026-10-03
 workday:leerink/leerinkpartners,Leerink Partners,hiringOrganization,2026-09-30
 workday:leewardenergy/LeewardCareers,Leeward Energy,hiringOrganization,2026-09-24
 workday:legalshieldcorp/lsc,PPLSI,og:description,2026-09-24
@@ -2408,6 +2412,7 @@ workday:novonesis/Novonesis_Careers,Novozymes,hiringOrganization,2026-09-24
 workday:nphosting/FDFCareers,FirstDay Foundation,hiringOrganization,2026-09-24
 workday:nrf/External,Norton Rose Fulbright,hiringOrganization,2026-09-24
 workday:nrfcanada/NRFC,Norton Rose Fulbright,hiringOrganization,2026-09-24
+workday:nrpgroup/INT,NRP,hiringOrganization,2026-10-03
 workday:nrpgroup/nrp,NRP,hiringOrganization,2026-09-24
 workday:nshe/CSN-External,College of Southern Nevada,hiringOrganization,2026-09-24
 workday:nshe/NSHE-external,System Administration,hiringOrganization,2026-09-24
@@ -2727,6 +2732,7 @@ workday:pwc/Global_Campus_Careers,PwC,hiringOrganization,2026-09-24
 workday:pwc/Global_Experienced_Careers,PwC,hiringOrganization,2026-09-24
 workday:pwc/Global_Legal_Careers,PwC,hiringOrganization,2026-09-24
 workday:pwc/US_Entry_Level_Careers,PwC US,hiringOrganization,2026-09-24
+workday:pwp/PWP_Experienced_Opportunities,Perella Weinberg,og:description,2026-10-03
 workday:pyebarkerfire/PB_V2,Pye-Barker Fire,hiringOrganization,2026-09-24
 workday:q8hcm/External_KUPIT,Kuwait Petroleum,hiringOrganization,2026-09-24
 workday:qdusa/quantumdesigncareers,Quantum Design,hiringOrganization,2026-09-24
@@ -3037,6 +3043,8 @@ workday:sibelco/Sibelco-Careers,Sibelco,hiringOrganization,2026-09-24
 workday:sidley/INTL,Sidley,hiringOrganization,2026-09-30
 workday:sidley/US,Sidley,hiringOrganization,2026-09-24
 workday:siegfried/external,Siegfried,hiringOrganization,2026-09-24
+workday:siegfriedgroup/Siegfried_Advisory_Career_Site,Siegfried Advisory,hiringOrganization,2026-10-03
+workday:siegfriedgroup/Siegfried_External_Careers,Siegfried Group,hiringOrganization,2026-10-03
 workday:sierraspace/Sierra_Space_External_Career_Site,Sierra Space,hiringOrganization,2026-09-24
 workday:sifive/sifivecareers,SiFive,hiringOrganization,2026-09-24
 workday:signetjewelers/signetcorporatecareers,Signet Jewelers,og:description,2026-09-24
@@ -3165,6 +3173,7 @@ workday:stewart/External,Stewart,hiringOrganization,2026-09-24
 workday:stibosystems/careers-at-stibo-systems,Stibo Systems,hiringOrganization,2026-09-24
 workday:stjoes/STJOESHAM,St,hiringOrganization,2026-09-30
 workday:stjude/stjude,St. Jude,hiringOrganization,2026-09-24
+workday:stlouiscountymo/OpportunityCentral,St. Louis County,hiringOrganization,2026-10-03
 workday:stoneridge/Careers,Stoneridge,hiringOrganization,2026-09-24
 workday:storaenso/Stora_Enso_site_opportunities,Stora Enso,hiringOrganization,2026-09-24
 workday:stord/stord_external_career,Stord,hiringOrganization,2026-09-24
@@ -3553,6 +3562,7 @@ workday:varetire/VRS_External_Career_Site,Virginia Retirement System,hiringOrgan
 workday:vareximaging/External_Career_Site,Varex Imaging,hiringOrganization,2026-09-24
 workday:varsitybrands/ExternalCareerSite,BSN Sports,hiringOrganization,2026-09-24
 workday:vassar/vassar-external,Vassar,hiringOrganization,2026-09-24
+workday:vbgov/City_Of_Virginia_Beach_Careers,City of Virginia Beach,hiringOrganization,2026-10-03
 workday:vcuhealth/VCUHealth_careers,VCU Health,hiringOrganization,2026-09-24
 workday:veitusa/Veit,Veit,hiringOrganization,2026-09-24
 workday:velco/VELCO,VELCO,hiringOrganization,2026-09-24
@@ -3728,6 +3738,7 @@ workday:whataburger/wab_careers,Whataburger,hiringOrganization,2026-09-24
 workday:wheels/Wheels_Careers,Wheels,hiringOrganization,2026-09-24
 workday:whistleexpresscarwash/Whistle_Express_Car_Wash,Express,hiringOrganization,2026-09-30
 workday:whitecap/Careers,White Cap,hiringOrganization,2026-09-24
+workday:whittleseavic/Whittlesea,City of Whittlesea,hiringOrganization,2026-10-03
 workday:wiley/wiley_careers,Wiley,og:title,2026-09-24
 workday:wilhelmsen/Pelagus,Pelagus,og:description,2026-09-24
 workday:wilhelmsen/Wilhelmsen,Wilhelmsen,hiringOrganization,2026-09-24
