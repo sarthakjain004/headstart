@@ -31,9 +31,10 @@ from headstart.scrapers.base import (
 )
 from headstart.scrapers.pacer import Pacer
 
-# 159 successful requests were measured at <=0.8 starts/s, not a saturation test.
-# One process-wide bound keeps concurrent Boards within that observed envelope.
-_PACER = Pacer(1.25)
+# 2026-10-03: 2,048 listing reads succeeded through concurrency 128 on direct
+# and spare routes; the separate public-detail ramp succeeded through 16.
+# Sixteen starts/s stays below both measured many-Board detail throughputs.
+_PACER = Pacer(1 / 16)
 
 
 def _embedded_object(page: str, assignment: str) -> dict | None:
@@ -139,7 +140,8 @@ class RecruiterflowScraper(BaseScraper):
     ats = "recruiterflow"
     url_shape = r"https://recruiterflow\.com/[^/?#]+/jobs/\d+"
     has_detail_pass = True
-    detail_workers = 1
+    detail_workers = 8
+    spare_on_transport_error = True
     pacer = _PACER
 
     @staticmethod

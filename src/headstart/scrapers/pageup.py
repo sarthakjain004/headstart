@@ -10,8 +10,9 @@ See docs/pageup/2026-10-03_public-api-measurement.md.
 import re
 from collections.abc import Callable
 from email.utils import parsedate_to_datetime
+from html.parser import HTMLParser
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
 from xml.etree import ElementTree
 
 from headstart.boards.company_name import title_of
@@ -27,13 +28,44 @@ from headstart.scrapers.pacer import Pacer
 HOST = "careers.pageuppeople.com"
 _JOB_NS = "{http://pageuppeople.com/}"
 _JOB_PATH = re.compile(r"/job/(\d+)(?:[/?#]|$)")
-# Four simultaneous HTML requests succeeded; the continuing sample used two.
-# Space request starts across all Boards sharing this one provider host.
-_PACER = Pacer(0.5)
+# Direct RSS ramps stayed successful through 128; throughput flattened after 64
+# while p95 rose from 2.9 to 7.4 seconds across Boards. Eight starts/s stays below
+# the measured many-Board throughput. Spare is a one-request transport recovery,
+# not a throughput route: its burst ramp timed out at concurrency eight.
+_PACER = Pacer(1 / 8)
 
 
 class MigratedBoard(BoardUnreadable):
     """A retained RSS feed whose public Job click has become a generic career search."""
+
+
+class _ImmediateRefresh(HTMLParser):
+    target: str | None = None
+
+    def handle_starttag(
+        self, tag: str, attributes: list[tuple[str, str | None]]
+    ) -> None:
+        attrs = dict(attributes)
+        if tag != "meta" or (attrs.get("http-equiv") or "").lower() != "refresh":
+            return
+        match = re.fullmatch(
+            r"\s*0(?:\.0+)?\s*;\s*url\s*=\s*(.+?)\s*",
+            attrs.get("content") or "",
+            re.IGNORECASE,
+        )
+        if match and self.target is None:
+            self.target = match[1].strip("\"'")
+
+
+def _landing_url(response: Any) -> str:
+    """G8 Education and The Star return 200 yet immediately leave the Job page.
+
+    Read their standard zero-delay meta refresh; no JavaScript is executed or
+    guessed. Delayed/session refreshes are not used as migration evidence.
+    """
+    refresh = _ImmediateRefresh()
+    refresh.feed(response.text)
+    return urljoin(response.url, refresh.target) if refresh.target else response.url
 
 
 def read_board(fetch: Callable, slug: str) -> tuple[str, str]:
@@ -55,7 +87,7 @@ def read_board(fetch: Callable, slug: str) -> tuple[str, str]:
     if response.status_code != 200:
         raise BoardUnreadable(f"PageUp RSS answered HTTP {response.status_code}")
     items = feed_items(response.text)
-    if urlsplit(board.url).hostname != HOST:
+    if urlsplit(_landing_url(board)).hostname != HOST:
         if not items:
             raise BoardUnreadable("PageUp Board moved and its retained feed is empty")
         target = items[0].findtext("link") or ""
@@ -65,12 +97,17 @@ def read_board(fetch: Callable, slug: str) -> tuple[str, str]:
         detail = fetch("GET", target, headers=headers, timeout=30)
         if detail is None:
             raise BoardUnreadable("PageUp migrated Job was not reached")
+        if detail.status_code in {404, 410}:
+            raise BoardUnreadable(
+                "one retained PageUp Job is gone; Board migration is unconfirmed"
+            )
         detail.raise_for_status()
-        landing = urlsplit(detail.url)
+        landing = urlsplit(_landing_url(detail))
         if (
             landing.hostname != HOST
             and landing.path.rstrip("/").lower() in {"", "/jobs/search"}
             and not landing.query
+            and not landing.fragment
         ):
             raise MigratedBoard(
                 "PageUp Job links now open a generic external career search"
@@ -139,6 +176,7 @@ def _location(value: str | None) -> str | None:
 
 class PageUpScraper(BaseScraper):
     ats = "pageup"
+    spare_on_transport_error = True
     url_shape = (
         r"https://careers\.pageuppeople\.com/\d+/[^/?#]+/[^/?#]+/job/\d+(?:/[^?#]*)?"
     )

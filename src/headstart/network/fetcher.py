@@ -108,6 +108,7 @@ class BoardFetcher:
             and not direct
             and not kwargs.get("prefer_spare")
             and not kwargs.get("proxies")
+            and not kwargs.get("proxy")
             and getattr(exc, "response", None) is None
             and getattr(exc, "code", None) in _TRANSPORT_ERRORS
         )

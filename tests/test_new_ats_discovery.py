@@ -65,7 +65,8 @@ def test_discovery_rejects_a_pageup_internal_channel():
 
 
 @pytest.mark.parametrize(
-    "path", ["0%2C%200%2C%200", "getjoburl(job)", "catalyst-labs%5D"]
+    "path",
+    ["0%2C%200%2C%200", "getjoburl(job)", "catalyst-labs%5D", "llms.txt", "robots.txt"],
 )
 def test_manatal_archive_captures_do_not_turn_css_or_pasted_text_into_boards(path):
     assert (

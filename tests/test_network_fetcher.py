@@ -589,6 +589,32 @@ def test_a_post_is_not_replayed_after_an_ambiguous_transport_failure(monkeypatch
     assert len(fake.requests) == 1
 
 
+@pytest.mark.parametrize(
+    "route_option",
+    [
+        {"proxy": "socks5h://chosen:40000"},
+        {"proxies": {"https": "socks5h://chosen:40000"}},
+    ],
+)
+def test_an_explicit_proxy_is_not_replaced(monkeypatch, route_option):
+    from headstart.network import spare_egress
+
+    def route(*_args):
+        raise http.RequestsError("chosen proxy failed", code=7)
+
+    monkeypatch.setattr(
+        spare_egress,
+        "proxy_for",
+        lambda *_a, **_k: pytest.fail("must preserve explicit route"),
+    )
+    fake = FakeFetcher(route)
+    scraper = GreenhouseScraper("acme", fetcher=fake)
+    scraper.spare_on_transport_error = True
+    with pytest.raises(http.RequestsError):
+        scraper._fetch("GET", "https://example.invalid", **route_option)
+    assert len(fake.requests) == 1
+
+
 def test_the_stream_width_is_read_through_the_board_fetcher() -> None:
     from headstart.network import spare_egress
 

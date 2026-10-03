@@ -153,7 +153,7 @@ Company naming requires public Board evidence or a reviewed cache for opaque num
 
 - Initial Kinetic HTML serial baseline: **3/3 200**, 1.172 / 0.402 / 0.417 s, identical bodies.
 - Same-Board small HTML requests at concurrency four: **4/4 200**, 1.282 s batch, about 3.12 requests/s.
-- Four different Boards: **4/4 final 200**, 4.564 s batch; two redirected to customer frontends. Later continued probing used only two concurrent requests. No 403/429 refusal occurred; the maximum safe platform rate and quota knee were **not established**. Do not reuse upstream eight detail workers as a measured constant.
+- Four different Boards: **4/4 final 200**, 4.564 s batch; two redirected to customer frontends. Later continued probing used only two concurrent requests. No 403/429 refusal occurred; later direct ramps reached128 and showed throughput flattening between64 and128; the spare route timed out at8. Do not reuse upstream eight detail workers as a measured constant.
 - RSS User-Agent comparison on Knox: headstart, curl-like and python-requests-like UA strings all returned identical 48,619-byte RSS with 200. These requests used the same Python HTTP client with different header strings; they do not claim TLS-client equivalence to real curl.
 - Largest RSS: CSU, **37,182,445 bytes / 2,487 jobs**, 25.107 s. It is one request but should not be assigned an unrealistically short timeout. Virginia: **7,681,965 bytes / 692 jobs**, 7.209 s. Small Knox: **48,619 bytes / 5 jobs**.
 - Initial sample total: **56,414,149 bytes / 4,354 records**, 261 tech matches (5.99%), **0.216 MB per tech Job**. Adding independently validated WWU changes this to about **0.213 MB**. These numbers include entire feeds rather than only tech descriptions, so they account for the selected surface's actual transfer volume.
@@ -161,9 +161,9 @@ Company naming requires public Board evidence or a reviewed cache for opaque num
 
 ## Candidate pool and remaining checks
 
-The local ignored `data/ats-tenants-merged/pageup.csv` has **25 candidates**: 21 upstream plus three real branded empty-listing leads (CPB, Adelaide, DSTA) and one CSU subset channel found in page links. All `url` values are public listing URLs; RSS endpoints are probe/scrape surfaces only. The two synthetic invalid controls are excluded. No archive request was made; parent-owned serialized CC/Wayback discovery can expand this pool.
+The local ignored `data/ats-tenants-merged/pageup.csv` has **25 candidates**: 21 upstream plus three real branded empty-listing leads (CPB, Adelaide, DSTA) and one CSU subset channel found in page links. All `url` values are public listing URLs; RSS endpoints are probe/scrape surfaces only. The two synthetic invalid controls are excluded. This was the initial pool; the final archive expansion is recorded below.
 
-Remaining limits are explicit: no browser was available, no high-concurrency knee was sought, no currently dead real account with the synthetic 404 body was found, not every language or channel was measured, and every migrated frontend needs its own supported URL/link policy. Parsed, nonempty RSS alone is insufficient when user-facing links redirect to a generic career homepage.
+The initial browser, concurrency and archive gaps were addressed in the follow-up. The adapter remains scoped to the measured classic public channels and verifies migrated Job routes rather than assuming every new frontend is compatible. Parsed, nonempty RSS alone is insufficient when user-facing links redirect to a generic career homepage.
 
 ## Implementation and archive follow-up (2026-10-03)
 
@@ -174,3 +174,11 @@ The enabled RSS adapter, liveness probe, archive/fingerprint hooks and subset re
 Mobile `/mob/` routes normalize through every discovery entry point. `Partial Remote` locations and the measured `Work Arrangement|Hybrid` category both become `remote=None`. Browser verification of `/1083/cw/en/job/495865` displayed Senior ServiceNow Developer, Kinetic IT, Full Time, Sydney and full description. Names are resolved from conservative measured title wrappers plus 56 cited overrides (18 initial,38 after archive expansion); the 103 hiring-page audit captured titles/logo alt/body evidence.
 
 Raw expansion captures, failed-page evidence, complete snapshots and verification logs remain local under `experiment/three-ats-build/` and `experiment/ats-gap-pageup/`. Other languages/channels and employer migrations remain a bounded coverage claim.
+
+## Final verification after archive and overlap recovery
+
+Archive coverage is complete for all 33 requested Common Crawl collections and 84/84 Wayback pages. The pool has 885 candidates. The refreshed feeds exposed 93 same-account aliases; content review also excluded 13 demonstration/template Boards. Confirmed G8 Education and The Star HTTP 200 meta-refresh migrations are now dead, while uncertain destinations remain unresolved. One closed sample Job cannot declare a whole externally fronted Board dead.
+
+Direct RSS ramps reached 128 without HTTP refusals. Across Boards, throughput moved from 21.9 requests/s at 64 to 18.3 at 128, while p95 rose 2.9→7.4 seconds. Use 8 shared starts/s. Spare bursts timed out at 8, so spare is limited to one request after exhausted transport failures. Four controlled-primary-failure tests returned and parsed live spare responses across PageUp/Recruiterflow and sync/async.
+
+The full employer/title comparison and source-quality scan are retained in the ignored experiment folders. Demo exclusions are backed by actual test/lorem-ipsum/automation posting content; real employers with leftover template chrome were retained.

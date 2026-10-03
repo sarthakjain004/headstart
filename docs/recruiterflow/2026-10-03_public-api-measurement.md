@@ -2,7 +2,7 @@
 
 **Result:** Recruiterflow is readable without an account through its hosted careers HTML. The listing embeds a complete grouped JSON object; each public job page embeds the detailed record used by its application UI. The vendor's separately documented “public API” requires a workspace-bound secret key and is not the chosen surface. [Official API guidance](https://help.recruiterflow.com/en/articles/3671870-build-a-custom-careers-page-with-the-recruiterflow-api).
 
-This session captured **159 sequential HTTP responses** between 12:23 and 12:37 UTC: **155 HTTP 200 and four expected HTTP 404 controls**, with no 403/429, timeout or parse failure on the measured live surfaces. Requests were spaced at least **1.25 seconds** apart, including across tenants. There was no aggressive concurrency ramp; the precise rate-limit knee is **unmeasured**. The low-load observations support conservative pacing, not a claim of unlimited access.
+This session captured **159 sequential HTTP responses** between 12:23 and 12:37 UTC: **155 HTTP 200 and four expected HTTP 404 controls**, with no 403/429, timeout or parse failure on the measured live surfaces. Requests were spaced at least **1.25 seconds** apart, including across tenants. The later concurrency ramps and sustained tests are recorded in the final verification below and supersede that initial pacing choice.
 
 The search-derived candidate pool contained **41 path slugs**: **34 hiring Boards**, **five live-empty Boards**, **one historical Board now returning 404**, and **one historical Board returning an inactive-careers template with HTTP 200**. The 34 hiring Boards listed **662 distinct Board/job pairs**, **137 tech Jobs (20.69%)** under the current `is_tech(title, department)` rules. Details were fetched for **78 postings across all 34 hiring Boards**: each Board's first and last listed posting, an additional tech example where needed, and minority workplace/employment examples. This is a purposive sample, not a market-share or global completeness estimate.
 
@@ -30,7 +30,7 @@ Important raw files:
 - `measured-aliases.json`: the two experimentally confirmed readable-slug/database-slug aliases.
 - `trimmed-fixtures/`: real stripped listing/detail/empty/inactive responses for implementation tests, with values preserved.
 
-The prescribed upstream repository, `kalil0321/ats-scrapers`, was inspected through its recursive `main` tree. It has **no Recruiterflow scraper or Recruiterflow seed CSV** at this measurement date; the expected two file paths return 404. No existing main-checkout Recruiterflow pool was found. The 41 pool rows therefore come from indexed first-party Recruiterflow Board/job pages, retaining `source=web-search-2026-10-03`. No Common Crawl or Wayback sweep was attempted during this measurement slot.
+The prescribed upstream repository, `kalil0321/ats-scrapers`, was inspected through its recursive `main` tree. It has **no Recruiterflow scraper or Recruiterflow seed CSV** at this measurement date; the expected two file paths return 404. No existing main-checkout Recruiterflow pool was found. The 41 pool rows therefore come from indexed first-party Recruiterflow Board/job pages, retaining `source=web-search-2026-10-03`. This was the initial search-only pool; completed archive recovery is recorded below.
 
 ## Identity and aliases — checklist Q1–Q2
 
@@ -146,7 +146,7 @@ Company naming is available even when the page title is customized: the opaque R
 
 **Tokens/encoding.** No secret token or cookie is needed for the selected HTML surface. Public page data contains application-form configuration, but it is not necessary to submit any form or fetch any applicant record. All 159 captured bodies decoded as UTF-8. A token lifetime is **not applicable** to this surface; the unrelated customer API key is expressly outside scope.
 
-**Rate observation before census.** Six initial sequential reads across three Boards all returned 200 at a planned ceiling of 0.8 requests/second, with response times 0.978–1.205 seconds. That was followed by the paced census, controls and details. The full 159-request set had mean response time **1.121 seconds**, maximum **1.460 seconds**, and no refusal. High-concurrency knee, cross-tenant rate-limit threshold and cumulative quota remain **unmeasured by design**. A single shared origin should be paced globally, rather than multiplying a per-Board delay by concurrent Boards.
+**Rate observation before census.** Six initial sequential reads across three Boards all returned 200 at a planned ceiling of 0.8 requests/second, with response times 0.978–1.205 seconds. That was followed by the paced census, controls and details. The initial159-request set had mean response time **1.121 seconds**, maximum **1.460 seconds**, and no refusal. Subsequent one-Board and many-Board ramps reached concurrency128 on both direct and spare routes; see final verification. A single shared origin should be paced globally, rather than multiplying a per-Board delay by concurrent Boards.
 
 **User-Agent/content negotiation.** `headstart/0.1` succeeded throughout. One additional Board request each with `curl/8.7.1` and `python-requests/2.32` User-Agent strings also returned 200. These isolate User-Agent differences on the same urllib transport; they are not a broad transport benchmark. One detail with a browser-style `Accept` header returned the same usable record; all 78 sampled details used `Accept: text/html` successfully.
 
@@ -166,14 +166,22 @@ This is comfortably below ADR-0158's approximately 2 MB per tech Job reference, 
 
 ## Checklist limits and follow-through
 
-All measurement questions have either observations above or these explicit limits: no high-load rate knee; no independently stated listing total or tested Board above 112 jobs; no separate regional-host census; no complete browser comparison for every Board; only two real historical departed/inactive controls; no temporal estimate of rare false-empty responses beyond five repeats; no authenticated API access; no corpus-level cross-ATS overlap measurement. The candidate pool is search-derived only; archives may add both new customers and alias spellings.
+The initial41-Board protocol cohort was later extended with large-Board, browser, archive, concurrency and corpus-wide comparison checks; final evidence is summarized below.
 
 Recommended implementation: unfiltered hosted HTML listing; strict embedded-JSON parsing; listing department/location groups; detail `convertedToJSON` for description and native experience; Board name from listing `og:title`; exact pre-detail tech gate; explicit live-empty/inactive/404 distinction; conservative shared-origin pacing; and measured alias records before landing any database/readable duplicate. Production source, registry, liveness ledger and final enable/alias decisions are owned by the integrating change, not by this measurement notebook.
 
 ## Implementation validation (2026-10-03)
 
-The enabled adapter, probe, archive/fingerprint hooks and alias reconciler are implemented (ADR-0382). The 836-row candidate pool contains 812 Wayback candidates (8/8 pages),139 in CC-MAIN-2026-39 (complete), and 41 web-search leads. Source-exclusive contributions are 667 Wayback,9 CC and 15 web-search. The older CC range is explicitly incomplete after 502 responses. The ledger contains 700 live,136 dead,0 unknown;96 live Boards are empty. Fresh database-and-complete-set comparison confirmed 21 aliases;23 Boards had no usable database identity and were not aliased.
+The enabled adapter, probe, archive/fingerprint hooks and alias reconciler are implemented (ADR-0382). The 836-row candidate pool contains 812 Wayback candidates (8/8 pages),139 in CC-MAIN-2026-39 (complete), and 41 web-search leads. Source-exclusive contributions are 667 Wayback,9 CC and 15 web-search. The initial older-CC failures were subsequently recovered through stored CDXJ blocks; the final intended archive range is complete. The ledger contains 700 live,136 dead,0 unknown;96 live Boards are empty. Fresh database-and-complete-set comparison confirmed 21 aliases;23 Boards had no usable database identity and were not aliased.
 
 The standard `verify_scraper.py recruiterflow 20` run read all 17 live sample Boards:812 Jobs,737 descriptions. Its three errors matched three known-dead candidates. A six-detail follow-up on Pink Tile found four genuine empty `about_position` fields and two full descriptions; empty content stays absent, not replaced with a title. The largest Board, Desort, returned all 10,809 identities. In pipeline-gated mode its two tech matches both obtained details, with no losses; the other 10,807 detail calls were correctly skipped. Every Job had title,location,department,type,date andURL. This is a gated largest-Board measurement, not an ungated 10,809-detail test.
 
 A rendered browser verified `/rfcareers/jobs/166` opens Backend Engineer with the displayed 2–8 year experience range, full posting and application form. Readable names are adopted from public metadata or the verified detail. Alias refresh now removes obsolete aliases when their canonical Board is confirmed dead or truly empty; unresolved prior endpoints leave the old ledger untouched.
+
+## Final verification after archive and overlap recovery
+
+The pool now has 853 candidates; liveness is 708 live, 145 dead, 0 unknown. Fresh reconciliation retains 21 aliases. Complete archive coverage spans all 33 requested Common Crawl collections and 8/8 Wayback pages. No older-crawl outage remains unprocessed.
+
+The 2,048 listing-request ramp covered concurrency 1/4/8/16/32/64/128, one Board and 24 Boards, direct and spare; all returned 200. The separate detail ramp passed through 16. Production now uses 8 detail workers and 16 shared starts/s, with one transport-only spare recovery. See ADR-0388 for the common retry contract.
+
+The completed cross-provider audit includes Avomind and Smartworks. Verified official sources and posting descriptions establish partial overlap, not whole-Board equivalence; no title-only alias or park was applied. Full corpus denominators and native comparison tables are retained locally in `experiment/cross-provider-ats-overlap-2026-10-03/`.

@@ -47,6 +47,10 @@ def test_legacy_fetch_follows_all_pages_on_the_known_api_host():
 
     def route(_method, url, kwargs):
         if "api.manatal.com" in url:
+            assert (
+                kwargs["params"]["ordering"]
+                == "-is_pinned_in_career_page,-last_published_at"
+            )
             return FakeResponse(text=json.dumps(pages[kwargs["params"]["page"] - 1]))
         return FakeResponse(
             text='<title> - 24-Mag | Career Page</title>const organization_singular_name = "client";'
@@ -59,6 +63,21 @@ def test_legacy_fetch_follows_all_pages_on_the_known_api_host():
     assert raw["organization_is_department"] is False
     assert scraper.company == "24-Mag"
     assert scraper.truncated is None
+
+
+def test_even_a_small_measured_pagination_hole_is_not_treated_as_complete():
+    pages = json.loads((FIXTURES / "manatal_24mag_pages.json").read_text())
+    for page in pages:
+        page["count"] = 345  # controlled one-ID deficit in the real 344-row fixture
+
+    def route(_method, url, kwargs):
+        if "api.manatal.com" in url:
+            return FakeResponse(text=json.dumps(pages[kwargs["params"]["page"] - 1]))
+        return FakeResponse(text="<title> - 24-Mag | Career Page</title>")
+
+    scraper = ManatalScraper("24-mag", fetcher=FakeFetcher(route))
+    assert len(scraper.fetch_raw()["rows"]) == 344
+    assert scraper.truncated
 
 
 def test_advanced_and_legacy_urls_keep_different_board_identities():
