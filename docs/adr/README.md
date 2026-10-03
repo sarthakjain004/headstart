@@ -342,5 +342,7 @@ supersedes it and note the supersession in both.
 
 | [0375](0375-replay-selects-whole-job-lifecycles-and-keeps-all-job-dormancy-evidence.md) | Replay selects whole Job lifecycles and keeps all-Job Dormancy evidence | 2026-10-02 |
 
+| [0380](0380-description-facts-name-immutable-tech-text-and-archive-only-replacements.md) | Description facts name immutable TECH text and archive only replacements | 2026-10-03 |
+
 *ADR-0037 was removed from the repository on 2026-09-24 by the owner's decision; its number is not
 reused.*
