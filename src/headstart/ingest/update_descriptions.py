@@ -56,6 +56,10 @@ fetch path flipping between two renderings rather than an edit. The per-Job coun
 small state ledger, ``data/state/description_changes.tsv.gz``, not on the store's records, whose
 ``{id, description}`` shape every reader of the store relies on.
 
+With ``--facts-dir``, accepted new/changed Tech-subset descriptions also record their
+immutable SHA-256 identity (ADR-0380). Only superseded text is archived, before the
+current-store fragment is published; new/current text remains in this store.
+
 **The skip-list leaves out Jobs due a re-fetch** (ADR-0211). The Scrapers of
 :data:`~headstart.ingest.held_refetch.ATSES` skip a held Job's detail, so an edit there was never
 fetched. :mod:`~headstart.ingest.held_refetch` picks the held Jobs of those ATSes whose last fetch
@@ -75,6 +79,7 @@ import argparse
 import gzip
 import hashlib
 import json
+import tempfile
 import time
 from collections.abc import Iterator
 from collections.abc import Set as AbstractSet
@@ -90,6 +95,7 @@ from headstart.ingest import (
     REFETCH_DUE_PATH,
     REPO_ROOT,
     append_id_list,
+    description_facts,
     held_refetch,
     observability,
     read_id_list,
@@ -196,9 +202,15 @@ def _write_fragment(ats_dir: Path, records: list[dict]) -> Path:
     ats_dir.mkdir(parents=True, exist_ok=True)
     used = [_sequence(p) for p in _numbered(ats_dir)]
     out = ats_dir / f"{max(used, default=0) + 1:04d}.jsonl.gz"
-    with gzip.open(out, "wt", encoding="utf-8") as fh:
-        for record in records:
-            fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+    with tempfile.NamedTemporaryFile(dir=ats_dir, suffix=".tmp", delete=False) as fh:
+        staged = Path(fh.name)
+    try:
+        with gzip.open(staged, "wt", encoding="utf-8") as fh:
+            for record in records:
+                fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+        staged.replace(out)
+    finally:
+        staged.unlink(missing_ok=True)
     return out
 
 
@@ -284,7 +296,12 @@ def _only_non_ascii_lost_to_question_marks(held: str, fresh: str) -> bool:
 
 
 def reconcile(
-    jobs_path: Path, ats_dir: Path, changes: dict[str, ChangeRecord] | None = None
+    jobs_path: Path,
+    ats_dir: Path,
+    changes: dict[str, ChangeRecord] | None = None,
+    *,
+    facts_dir: Path | None = None,
+    observed_at: str | None = None,
 ) -> Reconciled:
     """Fill this ATS's corpus from the store and persist what the run learned.
 
@@ -293,6 +310,9 @@ def reconcile(
     the second.
 
     ``changes`` is the change ledger, updated in place for every replacement (ADR-0207).
+    With ``facts_dir``, accepted descriptions record immutable content identities and
+    archive superseded text before publishing a store fragment. Missing/blank fetches
+    keep the existing ADR-0089 policy and write no description fact.
 
     ``rederive_ids`` is the ADR-0062 marking. A Job whose description arrives *now* still carries
     metadata derived without that text, and nothing else would ever revisit it: ``embed_plan``
@@ -301,9 +321,11 @@ def reconcile(
     """
     held = read_store(ats_dir)
     learned: list[dict] = []
+    superseded: list[dict] = []
     filled = unrecorded = replaced = reverted = kept_over_question_marks = 0
     if changes is None:
         changes = {}
+    next_changes: dict[str, ChangeRecord] = {}
 
     # The rewrite streams through a temp file rather than buffering the corpus a second time —
     # `held` above already holds this ATS's stored text, and doubling that on a CI box is what
@@ -333,10 +355,11 @@ def reconcile(
                 if before != fresh:
                     learned.append({"id": job_id, "description": fresh})
                 if before is not None and before != fresh:
-                    prior = changes.get(job_id)
+                    superseded.append({"id": job_id, "description": before})
+                    prior = next_changes.get(job_id, changes.get(job_id))
                     replaced += 1
                     reverted += prior is not None and prior.previous == _digest(fresh)
-                    changes[job_id] = ChangeRecord(
+                    next_changes[job_id] = ChangeRecord(
                         (prior.count if prior else 0) + 1, _digest(before)
                     )
             else:
@@ -360,9 +383,21 @@ def reconcile(
                     unrecorded += 1
             out.write(json.dumps(job, ensure_ascii=False) + "\n")
 
-    if learned:
-        _write_fragment(ats_dir, learned)
-    tmp.replace(jobs_path)
+    try:
+        if learned:
+            if facts_dir is not None:
+                description_facts.record(
+                    facts_dir,
+                    ats_dir.name,
+                    learned,
+                    superseded,
+                    observed_at or held_refetch.now().isoformat(timespec="seconds"),
+                )
+            _write_fragment(ats_dir, learned)
+        tmp.replace(jobs_path)
+    finally:
+        tmp.unlink(missing_ok=True)
+    changes.update(next_changes)
     return Reconciled(
         filled=filled,
         learned=len(learned),
@@ -499,6 +534,10 @@ def _update_store() -> int:
     ap.add_argument("--jobs", default=str(_JOBS), help="tech corpus dir")
     ap.add_argument("--store", default=str(_STORE), help="description store dir")
     ap.add_argument(
+        "--facts-dir",
+        help="record Tech-subset description identities and superseded text under this facts root",
+    )
+    ap.add_argument(
         "--held-details", default=str(HELD_DETAILS_PATH), help="skip-list to publish"
     )
     ap.add_argument(
@@ -578,7 +617,13 @@ def _update_store() -> int:
         ats = path.stem
         if ats in held_refetch.ATSES:
             held_refetch.record(checked, _corpus_rows(path), asked, at)
-        done = reconcile(path, store / ats, changes)
+        done = reconcile(
+            path,
+            store / ats,
+            changes,
+            facts_dir=Path(args.facts_dir) if args.facts_dir else None,
+            observed_at=at.isoformat(timespec="seconds"),
+        )
         rederive = [i for i in done.rederive_ids if i in embedded]
         # Appended per ATS rather than accumulated and written once: the queue is what stops these
         # Jobs from keeping embed-time numbers forever, so a crash halfway through the corpus must

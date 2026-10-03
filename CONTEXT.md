@@ -370,6 +370,11 @@ One stretch of a **Job**'s listing with the same raw fields, from the run whose 
 
 **Served interval** (ADR-0330):
 When a **Job version** counted under today's rules, in runs: from when it was listed until its Board's next authoritative read after it was unlisted (the grace period, ADR-0083), a change, an off-Board exit, a **Dormant** stretch, or a copy of it that `index prune` would keep taking over.
+**Description fact** (ADR-0380):
+The observed content identity of a newly held or changed **Tech subset** Job description, with its observation time and run identity. It names an exact text version, never evidence that the same text existed before that observation.
+
+**Description archive** (ADR-0380):
+The immutable superseded text of **Tech subset** Job descriptions, identified by Job id and content hash. Current text remains in the **Description store**; an unavailable historical version is unknown.
 
 **Job vector archive** (ADR-0330):
 The description vectors of Jobs the embedding store dropped (`embed_prune`), kept at half precision in `data/facts/job_vectors/`, one file per **Tick**, each naming the embedder that made them. What lets a later classifier head re-sort a closed Job without re-embedding it; the text itself stays in the **Description store**.
