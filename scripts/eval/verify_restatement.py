@@ -1001,6 +1001,55 @@ def differences(expected, actual):
     }
 
 
+def oracle_boundaries(inputs):
+    """Input changes inside committed window, independent of exported snapshots."""
+    proofs, source_proofs, boundaries, runs = [], [], set(), {}
+    for name, item in inputs.get("pinned_inputs", {}).items():
+        path = Path(item["path"])
+        if name.startswith(("data/facts/job_facts/", "data/facts/board_reads/")):
+            metadata = pq.read_schema(path).metadata or {}
+            at = metadata[b"stamp"].decode()
+            proofs.append(path)
+            boundaries.add(at)
+            key = (
+                metadata.get(b"run_id", b"").decode(),
+                metadata.get(b"run_attempt", b"").decode(),
+            )
+            if all(key):
+                if key in runs and runs[key] != at:
+                    raise ValueError("ambiguous oracle boundary run/attempt")
+                runs[key] = at
+        elif path.suffix == ".parquet":
+            schema = pq.read_schema(path)
+            metadata = schema.metadata or {}
+            if metadata.get(b"source_kind") == b"historical-job-inputs":
+                source_proofs.append(path)
+                if "valid_from" in schema.names:
+                    for batch in pq.ParquetFile(path).iter_batches(
+                        columns=["valid_from"]
+                    ):
+                        boundaries.update(
+                            value or metadata[b"stamp"].decode()
+                            for value in batch.column(0).to_pylist()
+                        )
+                else:
+                    boundaries.add(metadata[b"stamp"].decode())
+    facts = inputs.get("facts_root")
+    if facts:
+        atses = {
+            Path(name).parts[3]
+            for name in inputs.get("pinned_inputs", {})
+            if name.startswith("data/facts/description_facts/")
+        }
+        for ats in atses:
+            for row in description_facts.iter_observations(Path(facts), ats):
+                boundaries.add(
+                    runs.get((row["run_id"], row["run_attempt"]), row["observed_at"])
+                )
+    first, last = inputs["ticks"][0]["tick"], inputs["ticks"][-1]["tick"]
+    return proofs, source_proofs, sorted(at for at in boundaries if first < at <= last)
+
+
 def verify(
     inputs, base, candidate_root, policy, *, progress=None, inventory_bound=False
 ):
@@ -1060,9 +1109,51 @@ def verify(
     )
     baseline = None
     quality = Counter()
+    boundary_proofs, boundary_sources, boundaries = oracle_boundaries(inputs)
+    pending_moves = Counter()
     for item in ticks:
         tick = item["tick"]
         print(f"Verifying source tick {tick}", flush=True)
+        # Advance before loading this export's reference: its math/text cannot
+        # influence earlier intermediate input changes or incumbent selection.
+        if baseline is not None:
+            for boundary in boundaries:
+                if not (previous_tick < boundary < tick):
+                    continue
+                context = {}
+                raw = raw_sources(
+                    boundary_proofs,
+                    baseline,
+                    ticks[0]["tick"],
+                    boundary,
+                    policy,
+                    context,
+                )
+                source, unknown = materialize_raw_inputs(
+                    raw, observed_reference, boundary_sources, boundary, inputs
+                )
+                if unknown:
+                    raise ValueError("intermediate oracle input provenance incomplete")
+                expected, boundary_quality, _ = policy.transform(source)
+                quality.update(boundary_quality)
+                _, by_id = oracle_levels(expected, source, policy, boundary)
+                pending_moves.update(
+                    oracle_turnover(
+                        previous_expected,
+                        by_id,
+                        previous_tick,
+                        previous_groups,
+                        policy,
+                        previous_physical,
+                        context,
+                        boundary,
+                    )
+                )
+                previous_expected = by_id
+                previous_groups = {i: policy.groups[i] for i in policy.winners}
+                previous_physical = context.get("physical_ids", set(source))
+                previous_tick = boundary
+                quality["intermediate_oracle_boundaries"] += 1
         reference = pq.read_table(evidence(item["reference"], base, candidate_root))
         metadata = reference.schema.metadata or {}
         reference_tick = metadata.get(b"ts", b"").decode()
@@ -1261,6 +1352,7 @@ def verify(
                 context,
                 tick,
             )
+            expected_moves.update(pending_moves)
             actual_moves = Counter()
             for row in candidate[tick].to_pylist() if tick in candidate else ():
                 if (
@@ -1274,6 +1366,7 @@ def verify(
             report["checks"]["semantic_levels"] &= level_diff["count"] == 0
             report["checks"]["semantic_turnover"] &= turnover_diff["count"] == 0
             previous_expected = by_id
+            pending_moves.clear()
         else:
             report["checks"]["semantic_levels"] = False
             report["checks"]["semantic_turnover"] = False

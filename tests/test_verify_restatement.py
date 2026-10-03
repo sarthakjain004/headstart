@@ -1472,3 +1472,189 @@ def test_dense_reference_updates_do_not_accumulate_source_history(tmp_path, poli
     )
     verifier.verify(request, tmp_path, root, policy)
     assert "reference_observations" not in request
+
+
+def chronology_inputs(facts, first, final, last):
+    request = inputs(first)
+    request["ticks"].append(inputs(final, tick=last, reference_tick=last)["ticks"][0])
+    request.update(pinned_native_inputs(facts, facts.parent / "descriptions"))
+    return request
+
+
+def test_intermediate_duplicate_handover_keeps_new_incumbent_at_export(
+    tmp_path, policy
+):
+    facts = tmp_path / "facts"
+    a, b = "workday:acme/external", "workday:acme/campus"
+    policy.keep = {a, b}
+    policy.live = index_plan.boards_by_canon(policy.keep)
+    policy.site_jobs = {a: 900, b: 40}
+    row_a, row_b = source(a + ":R123"), source(b + ":R123")
+    third, last = "2026-10-03T00:00:00+00:00", "2026-10-04T00:00:00+00:00"
+    first = reference(facts / "trend_reference/first.parquet", [row_a])
+    final = reference(
+        facts / "trend_reference/final.parquet",
+        [row_b, row_a | {"kind": "removed"}],
+        last,
+        FIRST,
+    )
+    write(
+        facts / "job_facts/first.parquet",
+        [r | {"kind": "listed"} for r in (row_a, row_b)],
+        {b"stamp": FIRST.encode()},
+    )
+    write(
+        facts / "job_facts/missing.parquet",
+        [row_a | {"kind": "unlisted"}],
+        {b"stamp": SECOND.encode()},
+    )
+    write(
+        facts / "job_facts/return.parquet",
+        [row_a | {"kind": "listed"}],
+        {b"stamp": last.encode()},
+    )
+    for stamp in (FIRST, SECOND, third, last):
+        write(
+            facts / "board_reads" / (stamp[:10] + ".parquet"),
+            [
+                {"board": board, "in_scope": True, "outcome": "authoritative"}
+                for board in (a, b)
+            ],
+            {b"stamp": stamp.encode()},
+        )
+    write(
+        facts / "historical_job_inputs/b.parquet",
+        [row_b],
+        {
+            b"stamp": FIRST.encode(),
+            b"source_kind": b"historical-job-inputs",
+            b"methodology": b'{"classifier_input_fingerprint":"matching-inputs"}',
+        },
+    )
+    root = tmp_path / "candidate"
+    candidate(
+        root,
+        [placement(row_a["id"], (a, FAMILY, "mid"))],
+        deltas=[
+            {"board": a, "metric": m, "family": FAMILY, "band": "mid", "delta": 1}
+            for m in ("stock", "new", "recounted_in")
+        ],
+    )
+    deltas = [
+        {"board": board, "metric": m, "family": FAMILY, "band": "mid", "delta": n}
+        for board, n in ((a, -1), (b, 1))
+        for m in ("stock", "new")
+    ]
+    deltas += [
+        {"board": board, "metric": m, "family": FAMILY, "band": "mid", "delta": 1}
+        for board, m in ((a, "recounted_out"), (b, "recounted_in"))
+    ]
+    candidate(root, [placement(row_b["id"], (b, FAMILY, "mid"))], last, deltas=deltas)
+    report = verifier.verify(
+        chronology_inputs(facts, first, final, last), tmp_path, root, policy
+    )
+    assert report["pass"] is True
+    assert policy.winners == {row_b["id"]}
+    assert report["ticks"][-1]["turnover_differences"]["count"] == 0
+
+
+def test_transient_family_changes_accumulate_between_committed_exports(
+    tmp_path, policy
+):
+    facts = tmp_path / "facts"
+    policy.head.families = [FAMILY, "qa-test", "non-tech"]
+    policy.head._title_weights = np.array([[1, 0], [0, 1], [-1, -1]], np.float32)
+    policy.head._row_weights = np.zeros((3, 2), np.float32)
+    policy.head._bias = np.zeros(3, np.float32)
+    policy.cache.title_logits = {
+        "backend engineer": np.array([10, 0, -10], np.float32),
+        "qa engineer": np.array([0, 10, -10], np.float32),
+    }
+    row = source(title_logits=[10, 0, -10], row_logits=[0, 0, 0])
+    third, last = "2026-10-03T00:00:00+00:00", "2026-10-04T00:00:00+00:00"
+    first = reference(facts / "trend_reference/first.parquet", [row])
+    final = reference(facts / "trend_reference/final.parquet", [row], last, FIRST)
+    for stamp, title, kind in (
+        (FIRST, "Backend Engineer", "listed"),
+        (SECOND, "QA Engineer", "changed"),
+        (third, "Backend Engineer", "changed"),
+    ):
+        write(
+            facts / "job_facts" / (stamp[:10] + ".parquet"),
+            [row | {"kind": kind, "title": title}],
+            {b"stamp": stamp.encode()},
+        )
+    write(
+        facts / "board_reads/first.parquet",
+        [{"board": BOARD, "in_scope": True, "outcome": "authoritative"}],
+        {b"stamp": FIRST.encode()},
+    )
+    root = tmp_path / "candidate"
+    candidate(root, [placement()])
+    candidate(
+        root,
+        [placement()],
+        last,
+        deltas=[
+            {"board": BOARD, "metric": m, "family": f, "band": "mid", "delta": 1}
+            for f in (FAMILY, "qa-test")
+            for m in ("recounted_in", "recounted_out")
+        ],
+    )
+    report = verifier.verify(
+        chronology_inputs(facts, first, final, last), tmp_path, root, policy
+    )
+    assert report["pass"] is True
+    assert report["ticks"][-1]["turnover_differences"]["count"] == 0
+
+
+def test_transient_native_language_exclusion_retains_recount_totals(
+    tmp_path, monkeypatch, policy
+):
+    facts, store = tmp_path / "facts", tmp_path / "descriptions"
+    third, last = "2026-10-03T00:00:00+00:00", "2026-10-04T00:00:00+00:00"
+    row = source()
+    korean = (
+        "이 직무는 소프트웨어 서비스를 설계하고 개발하는 역할입니다. 팀과 함께 안정적인 웹 서비스를 만들고 운영합니다. "
+        * 12
+    )
+    monkeypatch.delenv("GITHUB_RUN_ID", raising=False)
+    monkeypatch.delenv("GITHUB_RUN_ATTEMPT", raising=False)
+    first = reference(facts / "trend_reference/first.parquet", [row])
+    final = reference(facts / "trend_reference/final.parquet", [row], last, FIRST)
+    write(
+        facts / "job_facts/first.parquet",
+        [row | {"kind": "listed"}],
+        {b"stamp": FIRST.encode()},
+    )
+    write(
+        facts / "board_reads/first.parquet",
+        [{"board": BOARD, "in_scope": True, "outcome": "authoritative"}],
+        {b"stamp": FIRST.encode()},
+    )
+    verifier.description_facts.record(
+        facts, "greenhouse", [{"id": row["id"], "description": korean}], [], SECOND
+    )
+    verifier.description_facts.record(
+        facts,
+        "greenhouse",
+        [{"id": row["id"], "description": row["description"]}],
+        [{"id": row["id"], "description": korean}],
+        third,
+    )
+    write_current(store, [row])
+    root = tmp_path / "candidate"
+    candidate(root, [placement()])
+    candidate(
+        root,
+        [placement()],
+        last,
+        deltas=[
+            {"board": BOARD, "metric": m, "family": FAMILY, "band": "mid", "delta": 1}
+            for m in ("recounted_in", "recounted_out")
+        ],
+    )
+    report = verifier.verify(
+        chronology_inputs(facts, first, final, last), tmp_path, root, policy
+    )
+    assert report["pass"] is True
