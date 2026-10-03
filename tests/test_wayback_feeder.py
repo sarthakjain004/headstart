@@ -21,6 +21,54 @@ sys.path.insert(0, str(ROOT / "scripts" / "discover"))
 import wayback_feeder as wf
 
 
+def test_new_archive_shapes_keep_the_scrapers_board_identity():
+    assert wf.extract(
+        "https://Acme.na.teamtailor.com/jobs/123", "teamtailor.com", "sub"
+    ) == ("acme.na", "https://acme.na.teamtailor.com")
+    assert wf.extract(
+        "https://jobs.ashbyhq.com/Flock%20Safety/123", "jobs.ashbyhq.com", "path"
+    ) == ("Flock Safety", "https://jobs.ashbyhq.com/Flock%20Safety")
+    assert wf.extract("https://join.com/companies/Acme/123", "join.com", "path") == (
+        "Acme",
+        "https://join.com/companies/Acme",
+    )
+    assert wf.extract(
+        "https://acme.wd1.myworkdayjobs.com/hu/job/1", "myworkdayjobs.com", "workday"
+    ) == ("acme/hu", "https://acme.wd1.myworkdayjobs.com/hu")
+
+
+def test_wayback_429_retries_on_spare_and_honors_retry_after(monkeypatch):
+    from types import SimpleNamespace
+
+    from headstart.network import http, spare_egress
+
+    spare_egress.reset()
+    spare_egress.use_daemon(
+        spare_egress.InMemoryEgressDaemon("socks5h://127.0.0.1:40000")
+    )
+    calls, sleeps = [], []
+    outcomes = iter([429, 200])
+
+    def request(*args, **kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(
+            status_code=next(outcomes), text="ok", headers={"Retry-After": "7"}
+        )
+
+    monkeypatch.setattr(http, "session", lambda: SimpleNamespace(request=request))
+    monkeypatch.setattr(http.RoutePacer, "claim_delay", lambda *args: 0)
+    monkeypatch.setattr(http.time, "sleep", sleeps.append)
+    assert (
+        wf.fetch("https://web.archive.org/cdx/search/cdx?url=example.com", attempts=2)
+        == "ok"
+    )
+    assert len(calls) == 2
+    assert not calls[0].get("proxies")
+    assert calls[1]["proxies"]["https"].startswith("socks5h://")
+    assert "wayback" in spare_egress.walled_groups()
+    assert sleeps == [7]
+
+
 @pytest.mark.parametrize(
     "url, host, style, expected",
     [
@@ -251,6 +299,8 @@ def test_every_table_host_yields_the_slug_its_own_scraper_expects():
                 "adp": f"https://{host}/mascsr/default/mdf/recruitment/recruitment.html"
                 f"?cid={_ADP_CID}&ccId=19000101_000001&lang=en_US",
             }[style]
+            if ats == "join":
+                probe = f"https://{host}/companies/acme/jobs/1"
             got = wf.extract(probe, host, style)
             assert got, f"{ats}: {host} ({style}) reads nothing"
             assert got[0] == expected[style](host), (
@@ -789,3 +839,85 @@ def test_refresh_reharvests_pages_already_marked_done(tmp_path, monkeypatch):
     fetched.clear()
     wp.sweep("ashby", "jobs.ashbyhq.com", "path", 1, _NullSink(), refresh=True)
     assert sorted(fetched) == [0, 1, 2], "--refresh must re-read the finished pages"
+
+
+def test_refresh_failure_does_not_restore_old_success_markers(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+
+    import wayback_pages as wp
+
+    monkeypatch.setattr(wp, "WB", tmp_path)
+    state = tmp_path / ".ashby_jobs.ashbyhq.com_pages_done"
+    state.write_text("0\n1\n")
+    fetched = []
+
+    def fake_fetch(url):
+        if "showNumPages" in url:
+            return "2"
+        page = int(url.rsplit("page=", 1)[1])
+        fetched.append(page)
+        if page == 1 and len(fetched) <= 2:
+            raise wf.FetchError("HTTP 429")
+        return ""
+
+    monkeypatch.setattr(wp, "fetch", fake_fetch)
+    sink = SimpleNamespace(flush=lambda: None)
+    assert not wp.sweep("ashby", "jobs.ashbyhq.com", "path", 1, sink, refresh=True)
+    assert state.read_text().split() == ["0"]
+    assert wp.sweep("ashby", "jobs.ashbyhq.com", "path", 1, sink)
+    assert fetched == [0, 1, 1]
+
+
+def test_resume_key_request_keeps_capture_window(monkeypatch):
+    from urllib.parse import parse_qs, urlsplit
+
+    import wayback_paginate as wp
+
+    requests = []
+    monkeypatch.setattr(
+        wp,
+        "fetch",
+        lambda url: requests.append(url) or "https://a.example.com/\n\nnext-key\n",
+    )
+    assert wp.fetch_page("example.com", "old-key", None, "20260917") == (
+        ["https://a.example.com/"],
+        "next-key",
+    )
+    query = parse_qs(urlsplit(requests[0]).query)
+    assert query["from"] == ["20260917"]
+    assert query["resumeKey"] == ["old-key"]
+
+
+def test_html_error_at_200_does_not_advance_resume_cursor(monkeypatch):
+    import wayback_paginate as wp
+
+    monkeypatch.setattr(wp, "fetch", lambda url: "<html>temporary error</html>")
+    assert wp.fetch_page("example.com", "saved-key", None) == (None, "saved-key")
+
+
+def test_page_fallback_keeps_capture_window_and_separate_checkpoint(
+    monkeypatch, tmp_path
+):
+    from types import SimpleNamespace
+
+    import wayback_pages as wp
+
+    monkeypatch.setattr(wp, "WB", tmp_path)
+    requests = []
+    monkeypatch.setattr(
+        wp,
+        "fetch",
+        lambda url: requests.append(url) or ("1" if "showNumPages" in url else ""),
+    )
+    assert wp.sweep(
+        "ashby",
+        "jobs.ashbyhq.com",
+        "path",
+        1,
+        SimpleNamespace(flush=lambda: None),
+        since="20260917",
+    )
+    assert all("from=20260917" in url for url in requests)
+    assert (
+        tmp_path / ".ashby_jobs.ashbyhq.com_20260917_pages_done"
+    ).read_text().split() == ["0"]

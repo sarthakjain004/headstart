@@ -8,25 +8,16 @@ Zoho's .eu/.in/.ca hosts), and extracts the tenant the right way per ATS: a subd
 (Zoho/Personio/Oracle), or a full board URL (Workday) — matching what each scraper's ``slug_from``
 expects downstream.
 
-Scope: **one crawl** (default: the newest = June 2026, ``CC-MAIN-2026-25``). Pass a crawl id to
-pick another (``python -u scripts/discover/cc_miner.py CC-MAIN-2026-21``).
+Scope: **one crawl**, defaulting to the newest published crawl. The namespace
+sweep covers 42 providers. Five providers on company-owned domains receive a
+separate known-host audit; it cannot discover unknown customer domains. Eight
+single-company scrapers are exempt (``archive_targets.py``).
 
-Robust to CC's aggressive rate-limiting, same discipline as before:
-  * ``curl --fail``-style classification: a 200 with empty body / a 404 is a real no-match (ok);
-    a 403/429/5xx/timeout is a block (not data), retried, and on persistent block the run exits
-    cleanly (exit 0) so a wrapper can wait it out and relaunch. An unreachable ``collinfo.json``
-    no longer exits: the run moves to the data host (below).
-  * Resumable + incremental: each ``(crawl, target, page)`` is checkpointed only when it fully
-    succeeds, and the CSV is rewritten after every completed page — a throttled page is retried
-    next run, never silently recorded as empty.
-  * IP rotation via Cloudflare WARP: if CC hard-blocks the egress IP itself (sustained 403/429 or
-    connection-refused across retries — not a transient throttle a wait fixes), rotate to a fresh
-    egress IP with WARP and relaunch. The checkpoint resumes mid-sweep with zero re-fetch of
-    completed pages, so no data is re-pulled:
-        warp-cli connect                 # (or: warp-cli disconnect && warp-cli connect) -> new IP
-        curl -s https://www.cloudflare.com/cdn-cgi/trace | grep -E '^ip=|^warp='   # confirm rotate
-    then re-run (optionally per crawl: ``CC_ONLY_ATS=... python cc_miner.py <crawl-id>``). Verified
-    2026-07-23, when a multi-crawl eightfold sweep tripped CC's per-IP block.
+Requests use the shared retry client: paced attempts, Retry-After's 30 s cap,
+and the rotating spare egress on 403/429/503. A 404 is a real no-match; exhausted
+requests remain incomplete. Every fully read page is checkpointed, and a failed
+API target falls back to the data host without stopping later ATSes. A run with
+remaining failures exits 3 and writes ``cc_sweep_report.json``.
 
 Output: ``data/discover/cc_ats_tenants.csv`` with ``ats,tenant,url`` (the feeder contract in
 CONTEXT.md; ``url`` is a representative capture the resolve/scrape steps can read the slug back from).
@@ -47,14 +38,15 @@ import csv
 import json
 import os
 import re
-import subprocess
 import sys
-import time
 import urllib.parse
 
 import cc_data_host
-from wayback_feeder import ADP_HOST, ADP_PAGE_URL, extract
+from archive_targets import COMPANY_DOMAIN_ATS, KNOWN_HOST_ATS, known_hosts
+from wayback_feeder import ADP_HOST, ADP_PAGE_URL, ATS_HOSTS, extract
 
+from headstart import log
+from headstart.network import http, spare_egress
 from headstart.scrapers.adp_recruiting import SLUG as ADP_RECRUITING_SLUG
 from headstart.scrapers.ashby import AshbyScraper
 
@@ -62,10 +54,10 @@ CRAWL_ARG = sys.argv[1] if len(sys.argv) > 1 else None
 CSV = "data/discover/cc_ats_tenants.csv"
 DONE = "data/discover/cc_miner_checkpoint.txt"
 CC_COLLINFO = "https://index.commoncrawl.org/collinfo.json"
-# Safety backstop on pages per target; the clean throttle-exit + resume is the real bound, so this
-# is only here to stop a pathological crawl. Override with CC_MAX_PAGES.
+# API pages per target; a capped or failed API target falls back to the full data-host range.
+# Override with CC_MAX_PAGES.
 MAX_PAGES = int(os.environ.get("CC_MAX_PAGES") or 400)
-# Seconds to pace between successful CDX requests. Raise it (CC_PACE=2.5) to stay under CC's
+# Seconds between CDX request starts, including retries. Raise it (CC_PACE=2.5) to stay under CC's
 # per-IP rate limit on a long multi-crawl sweep; lower it for a quick single-crawl run.
 PACE = float(os.environ.get("CC_PACE") or 1.0)
 
@@ -179,8 +171,8 @@ ATS_PATTERNS = {
         "targets": ["ats.rippling.com", "api.rippling.com"],
         "kind": "slug",
         "patterns": [
-            r"ats\.rippling\.com/([a-z0-9][a-z0-9-]+)",
-            r"api\.rippling\.com/platform/api/ats/v1/board/([a-z0-9][a-z0-9-]+)",
+            r"ats\.rippling\.com/([a-z0-9][a-z0-9_-]+)(?=[/?#]|$)",
+            r"api\.rippling\.com/platform/api/ats/v1/board/([a-z0-9][a-z0-9_-]+)(?=[/?#]|$)",
         ],
     },
     "gem": {
@@ -240,8 +232,8 @@ ATS_PATTERNS = {
         # URLs embed a second, percent-encoded eightfold host in the query (`...%2f%2fbcg.eightfold.ai`),
         # and a bare pattern would capture `2fbcg` instead of `bcg`.
         "targets": ["eightfold.ai"],
-        "kind": "label",
-        "patterns": [r"(?://|%2f)([a-z0-9][a-z0-9-]*)\.eightfold\.ai"],
+        "kind": "host",
+        "patterns": [r"(?://|%2f)([a-z0-9][a-z0-9-]*\.eightfold\.ai)"],
     },
     "icims": {
         # The scraper's slug IS the board host (`career-celanese.icims.com`), so `host` kind —
@@ -318,7 +310,7 @@ ATS_PATTERNS = {
     "teamtailor": {
         "targets": ["teamtailor.com"],
         "kind": "label",
-        "patterns": [r"([a-z0-9][a-z0-9-]*)\.teamtailor\.com"],
+        "patterns": [r"(?://)([a-z0-9][a-z0-9-]*(?:\.na)?)\.teamtailor\.com"],
     },
     "trakstar": {
         "targets": ["hire.trakstar.com"],
@@ -341,7 +333,9 @@ ATS_PATTERNS = {
             "zohorecruit.ca",
         ],
         "kind": "host",
-        "patterns": [r"([a-z0-9][a-z0-9-]*\.zohorecruit\.(?:com|eu|in|ca))"],
+        "patterns": [
+            r"([a-z0-9][a-z0-9-]*\.zohorecruit\.(?:com|eu|in|ca))(?=[/:?#]|$)"
+        ],
     },
     "peoplestrong": {
         # Every candidate portal is `{label}.peoplestrong.com`, the label `peoplestrong.py` keys
@@ -413,6 +407,18 @@ ATS_PATTERNS = {
         ],
     },
 }
+
+# Reuse the feeder's measured regional/legacy host shapes as well as API URLs.
+# This keeps the two archive sources from silently drifting apart.
+for _ats, _hosts in ATS_HOSTS.items():
+    _spec = ATS_PATTERNS.setdefault(
+        _ats, {"targets": [], "kind": "host", "patterns": []}
+    )
+    _spec["hosts"] = _hosts
+    for _host, _style in _hosts:
+        if _host not in _spec["targets"]:
+            _spec["targets"].append(_host)
+
 
 # Tokens that are never a real tenant/slug: provider infra + marketing subdomains + the path
 # words that sit where a slug would (embed/job_board/api/...). Applied to "label" and "slug" kinds.
@@ -498,50 +504,33 @@ BLOCK = {
 INFRA = BLOCK  # back-compat alias: probe_ats.py filters subdomain labels against cc_miner.INFRA
 
 
-def _run(cmd, timeout=90):
-    try:
-        return subprocess.run(  # noqa: PLW1510
-            cmd,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=timeout,
-        )
-    except Exception:  # noqa: BLE001
-        return None
+_PACER = http.RoutePacer(PACE)
 
 
 def curl(url, attempts=6):
-    """Return (body, ok). ok=False => real block/throttle (429/503/5xx/timeout). CC's CDX API
-    returns 404 for a domain absent from a crawl — a legitimate empty result, so 404 => ("", True)."""
-    for _ in range(attempts):
-        p = _run(
-            [
-                "curl",
-                "-s",
-                "-w",
-                "\n%{http_code}",
-                "--connect-timeout",
-                "10",
-                "-m",
-                "60",
-                url,
-            ]
+    """Return (body, ok); a 404 is no match, an exhausted throttle is incomplete.
+
+    The shared client backs off before retrying, honours Retry-After (its 30 s cap),
+    and moves 403/429/503 retries onto the rotating spare egress. Pacing applies to
+    every attempt, including retries, rather than only successful responses.
+    """
+    try:
+        response = http.fetch(
+            "GET",
+            url,
+            attempts=attempts,
+            timeout=60,
+            headers={"User-Agent": cc_data_host.UA},
+            egress_group="cc-index",
+            egress_on=frozenset({403, 429, 503}),
+            request_pacer=_PACER,
         )
-        if p is not None and p.returncode == 0:
-            out = p.stdout
-            nl = out.rfind("\n")
-            code = out[nl + 1 :].strip() if nl >= 0 else out.strip()
-            body = out[:nl] if nl >= 0 else ""
-            if code == "200":
-                time.sleep(PACE)  # gentle pacing
-                return body, True
-            if code == "404":
-                time.sleep(PACE)
-                return "", True  # legitimate no-match for this target in this crawl
-            # 403/429/5xx => real block; fall through to retry
-        time.sleep(3)
+    except http.RequestsError:
+        return "", False
+    if response.status_code == 200:
+        return response.text, True
+    if response.status_code == 404:
+        return "", True
     return "", False
 
 
@@ -589,8 +578,8 @@ def num_pages(cdx, target):
         return 0
     try:
         return int(json.loads(body).get("pages", 1))
-    except Exception:  # noqa: BLE001
-        return 1
+    except (ValueError, TypeError):
+        return None
 
 
 def tenant_from(kind, match):
@@ -681,11 +670,11 @@ def query_target(cdx, ats, spec, target, done, tenants, crawl):
         for line in body.splitlines():
             try:
                 urls.append(json.loads(line)["url"])
-            except Exception:  # noqa: BLE001, S112
-                continue
+            except (ValueError, KeyError, TypeError):
+                return False
         extract_tenants(spec, pats, urls, tenants[ats])
         _checkpoint(key, done, tenants)
-    return True
+    return pages <= MAX_PAGES
 
 
 def query_target_data_host(crawl, ats, spec, target, done, tenants):
@@ -722,6 +711,15 @@ def extract_tenants(spec, pats, urls, hits):
                 if result:
                     tenant, url_hint = result
                     hits.setdefault(tenant, url_hint or u)
+        for host, style in spec.get("hosts", ()):
+            result = extract(u, host, style)
+            if result:
+                tenant, board = result
+                if style in {"workday", "workdaysite"}:
+                    tenant = board
+                elif host.startswith(("zohorecruit.", "jobs.personio.")):
+                    tenant = urllib.parse.urlsplit(board).hostname
+                hits.setdefault(tenant, board)
 
 
 def _checkpoint(key, done, tenants):
@@ -749,7 +747,17 @@ def load_existing():
     if os.path.exists(CSV):
         with open(CSV, encoding="utf-8") as f:
             for row in csv.DictReader(f):
-                tenants[row["ats"]][row["tenant"]] = row.get("url", "")
+                tenant, url = row["tenant"], row.get("url", "")
+                if row["ats"] == "eightfold" and "." not in tenant:
+                    tenant = f"{tenant}.eightfold.ai"
+                    url = f"https://{tenant}"
+                if row["ats"] == "rippling":
+                    for host, style in ATS_HOSTS["rippling"]:
+                        board = extract(url, host, style)
+                        if board:
+                            tenant, url = board
+                            break
+                tenants[row["ats"]][tenant] = url
     done = set()
     if os.path.exists(DONE):
         with open(DONE, encoding="utf-8") as f:
@@ -758,10 +766,11 @@ def load_existing():
 
 
 def main():
+    log.setup()
     os.makedirs("data/discover", exist_ok=True)
     only = os.environ.get("CC_ONLY_ATS")
     specs = {a: s for a, s in ATS_PATTERNS.items() if not only or a == only}
-    if only and not specs:
+    if only and not specs and only not in COMPANY_DOMAIN_ATS:
         sys.exit(f"[miner] CC_ONLY_ATS={only!r} not in ATS_PATTERNS")
     crawl, cdx = resolve_crawl(CRAWL_ARG)
     tenants, done = load_existing()
@@ -772,26 +781,83 @@ def main():
         flush=True,
     )
 
+    incomplete = []
     for ats, spec in specs.items():
         for target in spec["targets"]:
             if cdx:
                 ok = query_target(cdx, ats, spec, target, done, tenants, crawl)
             else:
                 ok = query_target_data_host(crawl, ats, spec, target, done, tenants)
+            if not ok and cdx:
+                print(f"[{ats}] {target}: API incomplete -> data host", flush=True)
+                ok = query_target_data_host(crawl, ats, spec, target, done, tenants)
             if not ok:
-                print(
-                    f"[{ats}] {target} INCOMPLETE (throttled) -> exiting to wait",
-                    flush=True,
-                )
-                return  # clean exit; wrapper waits out the block then relaunches
+                incomplete.append((ats, target))
+                print(f"[{ats}] {target} INCOMPLETE; left uncheckpointed", flush=True)
         print(f"[{ats}] done | {len(tenants[ats])} tenants", flush=True)
 
+    # Company-domain providers have no global namespace. Audit all known hosts,
+    # reading shared sparse blocks once instead of issuing 25 seeks per host.
+    company_hosts = {
+        ats: known_hosts(ats)
+        for ats in sorted(KNOWN_HOST_ATS)
+        if not only or ats == only
+    }
+    pending = {
+        host
+        for hosts in company_hosts.values()
+        for host in hosts
+        if f"{crawl}|{host}|data" not in done
+    }
+    if pending:
+        completed = []
+
+        def save_host(host, urls):
+            for ats, hosts in company_hosts.items():
+                if host not in hosts:
+                    continue
+                if urls is None:
+                    incomplete.append((ats, host))
+                elif urls:
+                    tenants[ats].setdefault(host, f"https://{host}")
+            if urls is not None:
+                completed.append(f"{crawl}|{host}|data")
+                if len(completed) >= 50:
+                    done.update(completed)
+                    _checkpoint(completed[-1], done, tenants)
+                    completed.clear()
+
+        cc_data_host.capture_known_hosts(crawl, pending, on_host=save_host)
+        if completed:
+            done.update(completed)
+            _checkpoint(completed[-1], done, tenants)
+        for ats, hosts in company_hosts.items():
+            print(f"[{ats}] known-host audit: {len(hosts)} targets", flush=True)
+    with open("data/discover/cc_sweep_report.json", "w", encoding="utf-8") as report:
+        json.dump(
+            {
+                "crawl": crawl,
+                "namespace_ats": sorted(specs),
+                "known_host_counts": {a: len(h) for a, h in company_hosts.items()},
+                "incomplete": incomplete,
+                "retry_stats": dict(http.retry_stats()),
+                "egress_traffic": spare_egress.traffic(),
+            },
+            report,
+            indent=2,
+        )
     total = write_csv(tenants)
-    print(f"DONE. {total} (ats,tenant) rows across {crawl} -> {CSV}", flush=True)
+    print(
+        f"{'INCOMPLETE' if incomplete else 'DONE'}. {total} (ats,tenant) rows across {crawl} -> {CSV}",
+        flush=True,
+    )
     for ats in specs:
         if tenants[ats]:
             print(f"  {ats}: {len(tenants[ats])}", flush=True)
 
+    spare_egress.report()
+    return 3 if incomplete else 0
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
