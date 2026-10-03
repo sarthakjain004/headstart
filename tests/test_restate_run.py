@@ -162,6 +162,92 @@ def test_no_facts_is_nothing_to_restate(tmp_path, monkeypatch):
     assert not (tmp_path / "out").exists()
 
 
+@pytest.mark.parametrize("tag", [None, "matching", "different"])
+def test_replay_adopts_and_fills_cache_without_writing_inventory_input(
+    tmp_path, monkeypatch, caplog, tag
+):
+    import pyarrow.parquet as pq
+
+    facts = tmp_path / "facts"
+    titles = ["Backend Engineer", "QA Lead", "Platform Engineer"]
+    _record(facts, RUNS[0], [(f"{BOARD}:{i}", title) for i, title in enumerate(titles)])
+    _describe(
+        tmp_path / "descriptions",
+        {f"{BOARD}:{i}": "Build and maintain software services." for i in range(3)},
+    )
+    families, head_dir, original_cache = _config(tmp_path)
+    fingerprint = rfc.Head(head_dir).inputs_fingerprint
+    if tag is not None:
+        loaded = rfc.load_cache(original_cache, 7)
+        rfc.save_cache(
+            original_cache,
+            loaded,
+            inputs_fingerprint=fingerprint if tag == "matching" else tag,
+        )
+    state = tmp_path / "data/state"
+    state.mkdir(parents=True)
+    cache = original_cache.replace(state / "role_title_families.parquet")
+    before = cache.read_bytes()
+    encoded = []
+
+    def encode(missing, model, revision):
+        encoded.extend(missing)
+        return np.tile(np.array([10.0, 0, 0], np.float32), (len(missing), 1))
+
+    monkeypatch.setattr(rfc, "encode", encode)
+    monkeypatch.setattr(restate_run, "is_english", lambda title, text: True)
+    out = tmp_path / "runner/replay"
+    out.mkdir(parents=True)
+    (out / "stale-marker").write_text("old output")
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "restate",
+            "--facts",
+            str(facts),
+            "--ledger",
+            str(tmp_path / "absent-ledger"),
+            "--board-failures",
+            str(tmp_path / "absent-failures"),
+            "--classifier",
+            str(head_dir),
+            "--families",
+            str(families),
+            "--title-cache",
+            str(cache),
+            "--descriptions",
+            str(tmp_path / "descriptions"),
+            "--db",
+            str(tmp_path / "absent-db"),
+            "--out",
+            str(out),
+            "--encode-budget-seconds",
+            "30",
+        ],
+    )
+    with caplog.at_level("INFO"):
+        assert restate_run.main() == 0
+    assert encoded == (
+        sorted(rfc.normalise(t) for t in titles)
+        if tag == "different"
+        else ["platform engineer"]
+    )
+    assert cache.read_bytes() == before
+    scratch = out.with_name(out.name + "-title-cache.parquet")
+    assert scratch.is_file() and scratch.parent != state
+    assert not (out / "stale-marker").exists()
+    metadata = pq.read_schema(scratch).metadata
+    assert metadata[b"inputs_fingerprint"].decode() == fingerprint
+    assert set(rfc.load_cache(scratch, 7).title_logits) == {
+        rfc.normalise(t) for t in titles
+    }
+    if tag is None:
+        assert "legacy" in caplog.text and "in-memory" in caplog.text
+    if tag == "different":
+        assert "different mathematical inputs" in caplog.text
+
+
 def test_a_future_requisition_does_not_deduplicate_baseline_jobs(tmp_path, monkeypatch):
     import pyarrow as pa
     import pyarrow.parquet as pq

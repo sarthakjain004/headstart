@@ -298,17 +298,37 @@ def _run(args, resources) -> int:
         args.watchlist or args.families.with_name("role_watchlist.json"), set(families)
     )
     head.check_families(families)
-    cache = role_family_classifier.load_cache(
-        args.title_cache, head.version, head.inputs_fingerprint
-    )
+    # The publisher inventories this input's bytes: loading must not migrate its metadata.
+    loaded_cache = role_family_classifier.load_cache(args.title_cache, head.version)
+    fingerprint = head.inputs_fingerprint
+    logits = loaded_cache.title_logits
+    if (
+        loaded_cache.inputs_fingerprint is not None
+        and loaded_cache.inputs_fingerprint != fingerprint
+    ):
+        _log.info(
+            f"title cache {args.title_cache} has different mathematical inputs: starting empty"
+        )
+        logits = {}
+    elif loaded_cache.inputs_fingerprint is None and logits:
+        _log.info(
+            f"adopting legacy title cache {args.title_cache} in-memory at head version "
+            f"{head.version}; assuming weights and encoder unchanged under the matching "
+            "version contract; inventoried input remains read-only"
+        )
+    cache = role_family_classifier.Cache(head.version, dict(logits), fingerprint)
     titles = served["title"].to_pylist()
     if args.encode_budget_seconds > 0:
+        # A sibling survives output replacement and stays outside inventoried state.
+        runner_cache = args.out.with_name(args.out.name + "-title-cache.parquet")
+        if runner_cache.resolve() == args.title_cache.resolve():
+            raise ValueError("runner title cache would overwrite the inventoried input")
         added = role_family_classifier.fill(
             cache,
             head,
             titles,
             args.encode_budget_seconds,
-            lambda c: role_family_classifier.save_cache(args.title_cache, c),
+            lambda c: role_family_classifier.save_cache(runner_cache, c),
         )
         _log.info(f"encoded {added} title(s) the classifier cache lacked")
     wanted = set(ids) & latest_ids
