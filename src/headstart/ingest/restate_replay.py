@@ -23,7 +23,7 @@ from headstart.boards.board_identity import lower_key
 from headstart.ingest import job_facts
 
 #: The columns a version carries beyond the fact's own: when it began and ended, and how.
-VERSION_COLUMNS = ("valid_from", "valid_to", "ended_as")
+VERSION_COLUMNS = ("valid_from", "valid_to", "ended_as", "first_seen", "starts_as")
 
 
 def _stamped(directory: Path, *, wanted=None, columns=None):
@@ -123,7 +123,17 @@ def job_versions(facts_dir: Path, *, wanted=None, columns=None):
     versions = versions.filter(opens).rename_columns(
         ["valid_from" if name == "run" else name for name in versions.column_names]
     )
-    return versions.drop_columns(["kind"])
+    first = versions.group_by("id").aggregate([("valid_from", "min")])
+    first_seen = dict(
+        zip(first["id"].to_pylist(), first["valid_from_min"].to_pylist(), strict=True)
+    )
+    versions = versions.append_column(
+        "first_seen",
+        pa.array(
+            [first_seen[job_id] for job_id in versions["id"].to_pylist()], pa.string()
+        ),
+    )
+    return versions.drop_columns(["kind"]).append_column("starts_as", versions["kind"])
 
 
 def open_at(versions, run: str):

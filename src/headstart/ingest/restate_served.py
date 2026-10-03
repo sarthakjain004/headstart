@@ -213,7 +213,11 @@ def clip_dormant(served, periods: Mapping[str, list[DormantPeriod]]):
         for batch in served.to_batches(max_chunksize=8192)
     ]
     if not batches:
-        return served.append_column("starts_as", pa.nulls(0, pa.string()))
+        return (
+            served
+            if "starts_as" in served.schema.names
+            else served.append_column("starts_as", pa.nulls(0, pa.string()))
+        )
     return pa.concat_tables(batches)
 
 
@@ -246,11 +250,10 @@ def _clip_dormant_batch(served, periods):
                     )
             pieces = kept
         out.extend(pieces)
-    if not out:
-        return served.slice(0, 0).append_column("starts_as", pa.nulls(0, pa.string()))
-    return pa.Table.from_pylist(
-        out, schema=served.schema.append(pa.field("starts_as", pa.string()))
-    )
+    schema = served.schema
+    if "starts_as" not in schema.names:
+        schema = schema.append(pa.field("starts_as", pa.string()))
+    return pa.Table.from_pylist(out, schema=schema)
 
 
 def english_only(
@@ -313,10 +316,12 @@ def fold_duplicates(served, keep: Collection[str], *, site_jobs=None, backing=No
             ends.setdefault(row["served_to"], []).append(row)
     bounds = sorted(starts.keys() | ends.keys())
     active, holders, last = {}, {}, {}
-    pieces = []  # [row, start, end, group]
+    pieces = []  # [row, start, end, group, starts_as]
     keep = set(keep)
     for k, start in enumerate(bounds):
         end = bounds[k + 1] if k + 1 < len(bounds) else None
+        replaced = {row["id"] for row in starts.get(start, ()) if row["id"] in active}
+        previously_counted = {row["id"] for row in holders.values()}
         for row in ends.get(start, ()):
             del active[row["id"]]
         for row in starts.get(start, ()):
@@ -352,14 +357,21 @@ def fold_duplicates(served, keep: Collection[str], *, site_jobs=None, backing=No
                 pieces[prior][2] = end
             else:
                 last[group] = len(pieces)
-                pieces.append([best, start, end, group])
+                starts_as = (
+                    best.get("starts_as")
+                    if start == best["served_from"]
+                    else "superseding"
+                )
+                if best["id"] in replaced and best["id"] not in previously_counted:
+                    starts_as = "superseding"
+                pieces.append([best, start, end, group, starts_as])
         holders = selected
 
     pieces.sort(key=lambda piece: (piece[0]["_ordinal"], piece[1]))
     for row in rows:
         del row["_ordinal"]
     folded = []
-    for row, start, end, group in pieces:
+    for row, start, end, group, starts_as in pieces:
         folded.append(
             row
             | {
@@ -369,9 +381,7 @@ def fold_duplicates(served, keep: Collection[str], *, site_jobs=None, backing=No
                 "ended_as": row["ended_as"]
                 if end == row["served_to"]
                 else "superseded",
-                "starts_as": row.get("starts_as")
-                if start == row["served_from"]
-                else "superseding",
+                "starts_as": starts_as,
             }
         )
     return pa.Table.from_pylist(folded, schema=schema)

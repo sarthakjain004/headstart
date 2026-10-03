@@ -10,6 +10,8 @@ from __future__ import annotations
 from collections import Counter
 from pathlib import Path
 
+import pytest
+
 from headstart.boards.board_identity import lower_key
 from headstart.ingest import job_facts as jf
 from headstart.ingest import restate_count as rc
@@ -198,15 +200,23 @@ def test_two_copies_of_one_requisition_count_once_on_the_site_prune_keeps(tmp_pa
     assert _stock(ticks, 0) == {(MAIN, "stock", *SE): 1}
 
 
-def test_a_copy_released_by_requisition_changes_is_recounted_not_opened(tmp_path):
+@pytest.mark.parametrize("changed_copy", [False, True])
+def test_a_copy_released_by_requisition_changes_is_recounted_not_opened(
+    tmp_path, changed_copy
+):
     front = "eightfold:jobs.acme.com"
     backing = "taleo_enterprise:https://acme.taleo.net/careersection/external"
     front_id, backing_id = front + ":123", backing + ":42"
     facts = tmp_path / "facts"
-    for stamp, req in zip(RUNS, (None, "R123", None), strict=False):
+    pairs = [
+        ("R123", None),
+        ("R123", "R123"),
+        (None, "R123") if changed_copy else ("R123", None),
+    ]
+    for stamp, (front_req, backing_req) in zip(RUNS, pairs, strict=False):
         jobs = [
-            (front, _job(front_id) | {"requisition": "R123"}),
-            (backing, _job(backing_id) | {"requisition": req}),
+            (front, _job(front_id) | {"requisition": front_req}),
+            (backing, _job(backing_id) | {"requisition": backing_req}),
         ]
         _record(facts, stamp, jobs, {front, backing})
     reads = rr.board_reads(facts)

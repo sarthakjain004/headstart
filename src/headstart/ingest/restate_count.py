@@ -69,7 +69,9 @@ def tick_counts(
     groups = [place(row) for row in rows]
     first_listed: dict[str, str] = {}
     for row in rows:
-        first_listed.setdefault(_job(row), row["served_from"])
+        seen = row.get("first_seen") if "first_seen" in row else row["served_from"]
+        if seen:
+            first_listed[_job(row)] = min(first_listed.get(_job(row), seen), seen)
 
     # Level changes as (when, key, delta), applied at the first run at or after `when`: a Job
     # stops being `new` at a moment that is rarely a run's own stamp.
@@ -86,8 +88,11 @@ def tick_counts(
         changes.append((start, stock, +1))
         if end is not None:
             changes.append((end, stock, -1))
-        if group is not None:
-            new_until = _plus(first_listed[_job(row)], NEW_WINDOW)
+        if group is not None and _job(row) in first_listed:
+            # Production includes the exact seven-day boundary (first_seen >= now - 7d).
+            new_until = _plus(
+                first_listed[_job(row)], NEW_WINDOW + timedelta(microseconds=1)
+            )
             if start < new_until:
                 changes.append((start, (board, "new", *group), +1))
                 changes.append(
@@ -113,7 +118,12 @@ def tick_counts(
                     event(start, board, RECOUNTED_IN, group)
         elif group is not None:
             found = first_reads.get(lower_key(board), start) >= start
-            returned = row.get("starts_as") in {"revived", "superseding"}
+            returned = row.get("starts_as") in {
+                "revived",
+                "superseding",
+                "changed",
+                "baseline",
+            }
             event(start, board, RECOUNTED_IN if found or returned else OPENED, group)
         ends_alone = end is not None and not (after and after["served_from"] == end)
         if ends_alone and group is not None:

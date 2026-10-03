@@ -290,6 +290,9 @@ def test_complete_baseline_keeps_a_served_job_absent_from_all_scrapes(
             "description": text,
             "vector": [n / 4, 0.0],
             "reference_board": BOARD,
+            "first_seen": "2026-08-01T00:00:00+00:00"
+            if n == 1
+            else "2026-08-31T00:00:00+00:00",
         }
         for n in (1, 2)
     ]
@@ -352,6 +355,16 @@ def test_complete_baseline_keeps_a_served_job_absent_from_all_scrapes(
     assert observed_vectors == expected_vectors
     _, levels = trend_history.board_levels(tmp_path / "restated")
     assert sum(n for k, n in levels.items() if k[1] == "stock") == 2
+    assert sum(n for k, n in levels.items() if k[1] == "new") == 1
+    import pyarrow.parquet as pq
+
+    first_tick = pq.read_table(
+        sorted((tmp_path / "restated" / trend_history.DELTAS).glob("*.parquet"))[0]
+    ).to_pylist()
+    assert sum(row["delta"] for row in first_tick if row["metric"] == "opened") == 0
+    assert (
+        sum(row["delta"] for row in first_tick if row["metric"] == "recounted_in") == 2
+    )
     if future_changed:
         assert levels[(BOARD, "stock", "qa-test", "staff")] == 1
         assert levels[(BOARD, "stock", "software-engineering", "mid")] == 1

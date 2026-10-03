@@ -115,7 +115,12 @@ def seed_versions(versions, baseline: dict, stamp: str, future_facts):
     """
     import pyarrow as pa
 
-    schema = versions.schema.append(pa.field("baseline_incumbent", pa.bool_()))
+    schema = versions.schema
+    if "first_seen" not in schema.names:
+        schema = schema.append(pa.field("first_seen", pa.string()))
+    if "starts_as" not in schema.names:
+        schema = schema.append(pa.field("starts_as", pa.string()))
+    schema = schema.append(pa.field("baseline_incumbent", pa.bool_()))
     out = []
     batches = []
 
@@ -138,13 +143,20 @@ def seed_versions(versions, baseline: dict, stamp: str, future_facts):
                 if row["id"] in baseline:
                     inherited_end.setdefault(row["id"], (end, row["ended_as"]))
                     continue
-                row = row | {"valid_from": stamp}
+                row = row | {"valid_from": stamp, "starts_as": "baseline"}
             elif row["id"] in baseline and row["id"] not in inherited_end:
                 inherited_end[row["id"]] = (start, "changed")
+            if row["id"] in baseline:
+                observed_first = baseline[row["id"]].get("first_seen")
+                row["first_seen"] = (
+                    min(observed_first, row.get("first_seen") or observed_first)
+                    if observed_first
+                    else None
+                )
             append(row | {"baseline_incumbent": False})
     for job_id, source in baseline.items():
         end, ended_as = inherited_end.get(job_id, (None, None))
-        row = {name: source.get(name) for name in versions.schema.names}
+        row = {name: source.get(name) for name in schema.names}
         row.update(
             id=job_id,
             board=source["reference_board"] or source.get("board"),
@@ -152,6 +164,7 @@ def seed_versions(versions, baseline: dict, stamp: str, future_facts):
             valid_to=end,
             ended_as=ended_as,
             baseline_incumbent=True,
+            starts_as="baseline",
         )
         append(row)
     batches.append(pa.Table.from_pylist(out, schema=schema))

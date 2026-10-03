@@ -178,7 +178,7 @@ def test_a_board_turning_dormant_loses_its_jobs_at_its_next_read(tmp_path):
         tmp_path, [([(BOARD_A, _dated(A1, "2024-09-04"))], {BOARD_A})] * 5
     )
 
-    assert served == {A1: [(DAYS[0], DAYS[3], "dormant", None)]}
+    assert served == {A1: [(DAYS[0], DAYS[3], "dormant", "listed")]}
 
 
 def test_only_an_authoritative_read_judges_a_board_dormant(tmp_path):
@@ -189,7 +189,7 @@ def test_only_an_authoritative_read_judges_a_board_dormant(tmp_path):
         + [([(BOARD_A, _dated(A1, "2024-09-04"))], set())] * 4,
     )
 
-    assert served == {A1: [(DAYS[0], None, None, None)]}
+    assert served == {A1: [(DAYS[0], None, None, "listed")]}
 
 
 def test_an_undated_job_keeps_its_board_from_being_dormant(tmp_path):
@@ -221,7 +221,7 @@ def test_a_non_tech_posting_is_evidence_the_board_still_posts(tmp_path):
         ],
     )
 
-    assert served == {A1: [(DAYS[0], None, None, None)]}
+    assert served == {A1: [(DAYS[0], None, None, "listed")]}
 
 
 def test_a_dormant_board_that_posts_again_revives_its_old_jobs(tmp_path):
@@ -241,7 +241,7 @@ def test_a_dormant_board_that_posts_again_revives_its_old_jobs(tmp_path):
     )
 
     assert served[A1] == [(DAYS[2], None, None, "revived")]
-    assert served[A2] == [(DAYS[2], None, None, None)]
+    assert served[A2] == [(DAYS[2], None, None, "listed")]
 
 
 def _english(tmp_path: Path, steps, descriptions) -> dict[str, list[tuple]]:

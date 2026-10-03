@@ -341,6 +341,7 @@ def _run(args, resources) -> int:
                 "board",
                 "dedup_group",
                 "served_from",
+                "first_seen",
                 "served_to",
                 "starts_as",
                 "ended_as",
