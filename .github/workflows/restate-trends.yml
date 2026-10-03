@@ -10,6 +10,11 @@ name: restate-trends
 on:
   workflow_dispatch:
     inputs:
+      mode:
+        description: "Frozen reproduction or independently verified current-rules dry run."
+        type: choice
+        options: [frozen, current]
+        default: frozen
       dataset_revision:
         description: "Immutable dataset revision for a measured replay (empty pins current head)."
         required: false
@@ -50,15 +55,35 @@ jobs:
           path: ~/.cache/huggingface/hub
           key: hf-model-jobbert-v2-a480476925ab
       - name: Fetch the facts, the live history and the stores the rules read
+        if: ${{ inputs.mode != 'current' }}
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           DATASET_REVISION: ${{ inputs.dataset_revision }}
         run: python -u scripts/eval/fetch_restatement_inputs.py
+      - name: Pin current-rules code and immutable inputs
+        if: ${{ inputs.mode == 'current' }}
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          DATASET_REVISION: ${{ inputs.dataset_revision }}
+        run: |
+          echo "HEADSTART_RESTATE_CODE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          python -u -m headstart.ingest.restate_publish fetch --revision "$DATASET_REVISION"
       - name: Restate
+        if: ${{ inputs.mode != 'current' }}
         id: replay
         env:
           ENCODE_BUDGET_SECONDS: ${{ inputs.encode_budget_seconds }}
         run: python -u scripts/eval/run_frozen_restatement.py
+      - name: Replay current rules without publication
+        if: ${{ inputs.mode == 'current' }}
+        env:
+          ENCODE_BUDGET_SECONDS: ${{ inputs.encode_budget_seconds }}
+        run: |
+          mkdir -p data/restate-diagnostics
+          /usr/bin/time -v -o data/restate-diagnostics/current-runtime.txt python -u -m headstart.ingest.restate_run --out data/restated --encode-budget-seconds "$ENCODE_BUDGET_SECONDS"
+          python -u -m headstart.ingest.restate_publish prepare
+          python -u scripts/eval/verify_restatement.py --facts data/facts --state data/state --candidate data/restated --metadata data/restated/replay.json --report data/restated/validation.json
+          python -u -m headstart.ingest.restate_publish package
       - name: Compare with the live history
         if: ${{ always() && steps.replay.outputs.completed == 'true' }}
         run: python scripts/eval/compare_restated_trends.py --live data/state --restated data/restated
@@ -70,4 +95,5 @@ jobs:
           path: |
             data/restated
             data/restate-diagnostics
+            data/restated-publication
           retention-days: 7

@@ -28,3 +28,15 @@ def test_the_title_model_cache_key_names_the_heads_model_revision():
     )
     text = (_WORKFLOWS / "restate-trends.yml").read_text("utf-8")
     assert f"key: hf-model-jobbert-v2-{manifest['model_revision'][:12]}" in text
+
+
+def test_current_rules_dispatch_is_pinned_verified_and_never_publishes():
+    text = (_WORKFLOWS / "restate-trends.yml").read_text("utf-8")
+    assert "options: [frozen, current]" in text
+    assert "default: frozen" in text
+    assert "HEADSTART_RESTATE_CODE_SHA=$(git rev-parse HEAD)" in text
+    assert 'fetch --revision "$DATASET_REVISION"' in text
+    assert text.index("restate_publish prepare") < text.index("verify_restatement.py")
+    assert text.index("verify_restatement.py") < text.index("restate_publish package")
+    assert "--publish" not in text
+    assert "/usr/bin/time -v" in text
