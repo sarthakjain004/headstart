@@ -382,3 +382,18 @@ def test_resumed_eightfold_labels_are_reconciled_to_full_hosts(
     assert tenants["eightfold"] == {
         "paypal.eightfold.ai": "https://paypal.eightfold.ai"
     }
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://ats.rippling.com/rpc_downtown/jobs/123",
+        "https://api.rippling.com/platform/api/ats/v1/board/rpc_downtown",
+    ],
+)
+def test_rippling_preserves_the_whole_underscored_slug(miner, url):
+    spec = miner.ATS_PATTERNS["rippling"]
+    pats = [re.compile(pattern, re.IGNORECASE) for pattern in spec["patterns"]]
+    hits = {}
+    miner.extract_tenants(spec, pats, [url], hits)
+    assert set(hits) == {"rpc_downtown"}

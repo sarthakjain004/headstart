@@ -171,8 +171,8 @@ ATS_PATTERNS = {
         "targets": ["ats.rippling.com", "api.rippling.com"],
         "kind": "slug",
         "patterns": [
-            r"ats\.rippling\.com/([a-z0-9][a-z0-9-]+)",
-            r"api\.rippling\.com/platform/api/ats/v1/board/([a-z0-9][a-z0-9-]+)",
+            r"ats\.rippling\.com/([a-z0-9][a-z0-9_-]+)(?=[/?#]|$)",
+            r"api\.rippling\.com/platform/api/ats/v1/board/([a-z0-9][a-z0-9_-]+)(?=[/?#]|$)",
         ],
     },
     "gem": {
@@ -751,6 +751,12 @@ def load_existing():
                 if row["ats"] == "eightfold" and "." not in tenant:
                     tenant = f"{tenant}.eightfold.ai"
                     url = f"https://{tenant}"
+                if row["ats"] == "rippling":
+                    for host, style in ATS_HOSTS["rippling"]:
+                        board = extract(url, host, style)
+                        if board:
+                            tenant, url = board
+                            break
                 tenants[row["ats"]][tenant] = url
     done = set()
     if os.path.exists(DONE):
