@@ -14,6 +14,7 @@ import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
+from headstart import log
 from headstart.trends import restated_history as artifact
 
 IMMUTABLE = tuple(
@@ -309,6 +310,8 @@ def fetch(repo: str, root: Path) -> dict:
 
 
 def main() -> int:
+    log.setup()
+    log.context("restate_publish")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command", choices=("fetch", "prepare", "package"))
     parser.add_argument("--repo", default="imPoseidon/headstart-index")
