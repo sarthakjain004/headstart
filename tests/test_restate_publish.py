@@ -1,0 +1,165 @@
+"""CAS and content checks with a local fake HF writer; these tests perform no remote writes."""
+
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+import requests
+from huggingface_hub.errors import EntryNotFoundError, HfHubHTTPError
+from test_trends_restated_history import candidate as _candidate
+from test_trends_restated_history import packaged as _packaged
+
+from headstart.ingest import restate_publish
+from headstart.trends import restated_history as artifact
+
+candidate = _candidate
+packaged = _packaged
+
+
+def remote(entry):
+    return SimpleNamespace(
+        rfilename=entry["path"], size=entry["size"], lfs={"sha256": entry["sha256"]}
+    )
+
+
+def test_immutable_inputs_allow_new_pipeline_content(packaged):
+    _, directory, _ = packaged
+    inputs = artifact.read_json(directory / "manifest.json")["inputs"]
+    changed_state = {
+        "path": "data/state/reference_state.parquet",
+        "size": 99,
+        "sha256": "0" * 64,
+    }
+    restate_publish.check_inputs(
+        [*inputs, changed_state],
+        [
+            remote(inputs[0]),
+            remote({**inputs[0], "path": "data/facts/job_facts/new.parquet"}),
+        ],
+    )
+    for siblings in ([], [remote({**inputs[0], "sha256": "0" * 64})]):
+        with pytest.raises(ValueError, match="input"):
+            restate_publish.check_inputs(inputs, siblings)
+
+
+def test_git_blob_inputs():
+    entry = {
+        "path": "data/facts/reference_rules/small.zip",
+        "size": 2,
+        "sha256": "a" * 64,
+        "git_blob": "git",
+    }
+    restate_publish.check_inputs(
+        [entry],
+        [SimpleNamespace(rfilename=entry["path"], size=2, lfs=None, blob_id="git")],
+    )
+    with pytest.raises(ValueError, match="hash"):
+        restate_publish.check_inputs(
+            [entry],
+            [
+                SimpleNamespace(
+                    rfilename=entry["path"], size=2, lfs=None, blob_id="changed"
+                )
+            ],
+        )
+
+
+def test_newer_manifest_never_replaced(packaged):
+    _, _, pointer = packaged
+    with pytest.raises(ValueError, match="newer covered"):
+        restate_publish.check_newer(
+            {**pointer, "generation": "other", "last_covered_tick": "2027"}, pointer
+        )
+    with pytest.raises(ValueError, match="rules revision"):
+        restate_publish.check_newer(
+            {**pointer, "generation": "other", "rules_code_sha": "new"},
+            pointer,
+            ancestor=lambda *a: False,
+        )
+
+
+def test_atomic_cas_retries_unrelated_pipeline_commit(packaged):
+    root, directory, pointer = packaged
+    inputs = artifact.read_json(directory / "manifest.json")["inputs"]
+    heads, writes = [], []
+
+    def info(*a, **k):
+        head = f"head-{len(heads)}"
+        heads.append(head)
+        return SimpleNamespace(sha=head, siblings=[remote(inputs[0])])
+
+    def download(*a, **k):
+        raise EntryNotFoundError("absent")
+
+    def commit(**kwargs):
+        writes.append(kwargs)
+        if len(writes) == 1:
+            response = requests.Response()
+            response.status_code = 409
+            raise HfHubHTTPError("CAS conflict", response=response)
+        return SimpleNamespace(oid="committed")
+
+    api = SimpleNamespace(repo_info=info, create_commit=commit)
+    assert (
+        restate_publish.publish("repo", root, pointer, api=api, download=download)
+        == "committed"
+    )
+    assert [w["parent_commit"] for w in writes] == ["head-0", "head-1"]
+    paths = [op.path_in_repo for op in writes[-1]["operations"]]
+    assert artifact.CURRENT in paths
+    assert any(p.endswith("/manifest.json") for p in paths)
+    assert any(p.endswith("/validation.json") for p in paths)
+    assert all(
+        type(op).__name__ == "CommitOperationAdd" for op in writes[-1]["operations"]
+    )
+
+
+def test_race_new_generation_blocks_retry(packaged, tmp_path):
+    root, directory, pointer = packaged
+    inputs = artifact.read_json(directory / "manifest.json")["inputs"]
+    newer = tmp_path / "newer.json"
+    newer.write_bytes(
+        artifact.encoded(
+            {**pointer, "generation": "other", "last_covered_tick": "2027"}
+        )
+    )
+    writes = []
+
+    def download(*a, **k):
+        if not writes:
+            raise EntryNotFoundError("absent")
+        return str(newer)
+
+    def commit(**kwargs):
+        writes.append(kwargs)
+        response = requests.Response()
+        response.status_code = 409
+        raise HfHubHTTPError("conflict", response=response)
+
+    api = SimpleNamespace(
+        repo_info=lambda *a, **k: SimpleNamespace(
+            sha="head", siblings=[remote(inputs[0])]
+        ),
+        create_commit=commit,
+    )
+    with pytest.raises(ValueError, match="newer covered"):
+        restate_publish.publish("repo", root, pointer, api=api, download=download)
+    assert len(writes) == 1
+
+
+def test_workflow_is_current_rules_serialized_release_gated():
+    path = (
+        Path(__file__).resolve().parents[1]
+        / ".github/workflows/publish-restated-trends.yml"
+    )
+    source = path.read_text()
+    assert "cancel-in-progress: false" in source
+    assert "ref: main" in source
+    assert "headstart.ingest.restate_run --out data/restated" in source
+    assert "verify_restatement.py" in source
+    assert "RESTATED_TRENDS_PUBLICATION_ENABLED == 'true'" in source
+    assert "compare_restated_trends.py" not in source
+    assert "restart_space" not in source
+    assert (
+        "schedule:" in source and "workflow_dispatch:" in source and "push:" in source
+    )

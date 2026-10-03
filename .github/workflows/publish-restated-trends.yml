@@ -1,0 +1,90 @@
+name: publish-restated-trends
+
+on:
+  schedule:
+    - cron: "17 */3 * * *"
+  push:
+    branches: [main]
+    paths:
+      - "src/headstart/ingest/**"
+      - "src/headstart/jobs/**"
+      - "src/headstart/boards/**"
+      - "src/headstart/scrapers/**"
+      - "src/headstart/trends/**"
+      - "config/**"
+      - "data/validate/**"
+      - "scripts/eval/verify_restatement.py"
+      - ".github/workflows/publish-restated-trends.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+# Independent of ingest: a two-hour replay must survive hourly pipeline publications.
+concurrency:
+  group: publish-restated-trends
+  cancel-in-progress: false
+
+env:
+  HF_DATASET: imPoseidon/headstart-index
+  HF_HUB_DISABLE_XET: "1"
+  UV_VERSION: "0.12.11"
+
+jobs:
+  replay:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      # Read current main when this serialized job starts, including queued rule updates.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Require integrated current-rules engine and independent verifier
+        run: |
+          test -f src/headstart/ingest/restate_run.py
+          test -f scripts/eval/verify_restatement.py
+          echo "HEADSTART_RESTATE_CODE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - run: |
+          pip install "uv==$UV_VERSION"
+          uv pip install --system --torch-backend cpu -e ".[embed]" "huggingface_hub<2"
+      - name: Fetch pinned runner-only inputs
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: python -u -m headstart.ingest.restate_publish fetch --repo "$HF_DATASET"
+      # Current rules only. Frozen-reference comparisons belong to the independent verifier.
+      # The engine consumes HEADSTART_RESTATE_INPUT_REVISION/INPUT_INVENTORY/CODE_SHA and
+      # writes replay.json; absence of that metadata fails packaging, never fabricates a pass.
+      - name: Replay under current rules
+        run: python -u -m headstart.ingest.restate_run --out data/restated
+      - name: Prepare the small serving inventory
+        run: python -u -m headstart.ingest.restate_publish prepare
+      - name: Independently verify the exact candidate
+        run: >-
+          python -u scripts/eval/verify_restatement.py
+          --facts data/facts --state data/state --candidate data/restated
+          --metadata data/restated/replay.json --report data/restated/validation.json
+      - name: Package; publish only after parent release approval
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          RELEASE_APPROVED: ${{ vars.RESTATED_TRENDS_PUBLICATION_ENABLED == 'true' }}
+        run: |
+          if [ "$RELEASE_APPROVED" = true ]; then
+            python -u -m headstart.ingest.restate_publish package --repo "$HF_DATASET" --publish
+          else
+            python -u -m headstart.ingest.restate_publish package
+          fi
+      # No Space upload or restart: the next ordinary authorized pipeline boot reads current.
+      - name: Retain metadata and small publication package
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: restated-trends-publication
+          path: |
+            data/restated/replay.json
+            data/restated/validation.json
+            data/restated-publication
+          retention-days: 7

@@ -1,6 +1,7 @@
-# Restated Trends publication contract proposal
+# Restated Trends serving and publication contract
 
-Status: proposed for coordination with the independent verifier and replay workers.
+Status: implementation direction approved by the parent; serving/publication code built.
+Production validation and release remain pending the parent's independent verifier.
 No publication, workflow dispatch, deployment or release is authorized by this document.
 Implements ADR-0330 step 4 with the owner's newer instruction: retain older history explicitly
 as unrecomputed legacy history; never splice it into a restated generation.
@@ -40,7 +41,11 @@ the separately loaded legacy history. Default requests use the verified generati
 with a recorded reason. Search's live taxonomy hand-off remains separate from the generation's
 pinned chart taxonomy.
 
-The app must disclose history selection and coverage in the response, including when it falls
+Hiring now, Search, default company lookup/suggestions and live posting-date splits retain the
+fresh pipeline History. Only Trends and its explicitly scoped picker prefer a verified replay.
+New companies remain visible while the replay runs.
+
+The app discloses history selection and coverage in the response, including when it falls
 back. Cache keys must include the selected History object. No response may claim older legacy
 ticks were recomputed. The legacy archive is never inside a generation.
 
@@ -52,13 +57,14 @@ Paths in the private index dataset:
 data/trends/restated/current.json
 data/trends/restated/generations/{generation}/manifest.json
 data/trends/restated/generations/{generation}/validation.json
-data/trends/restated/generations/{generation}/history/role_trend_board_deltas/*.parquet
-data/trends/restated/generations/{generation}/history/company_directory.json
+data/trends/restated/generations/{generation}/role_trend_board_deltas/*.parquet
+data/trends/restated/generations/{generation}/company_directory.json
 data/trends/restated/generations/{generation}/config/role_families.json
 data/trends/restated/generations/{generation}/config/role_watchlist.json
 ```
 
-Optional `history/dedup_evictions.csv` is included only if the replay/verifier establishes
+Paths preserve candidate-relative names so the report's file inventory is identical after
+packaging. Optional `dedup_evictions.csv` is included only if the replay/verifier establishes
 its meaning for this generation. Never copy the live eviction ledger blindly into a restatement.
 The Company directory must be built from the generation's Boards or explicitly checked against
 them; it must not silently remove historical companies or invent counts.
@@ -87,10 +93,11 @@ The manifest's inventory excludes itself and the verifier report to avoid recurs
 The pointer hashes the manifest; the manifest hashes the independent report. The report binds
 exactly the same artifact inventory. Paths must be relative, traversal-free and allowlisted;
 duplicate paths, extra files, wrong size/hash, absent ticks and unordered/duplicate stamps fail.
-All tick schemas and tick bounds must be validated before selecting a generation. Enforce a
-documented small-artifact size cap during packaging and before downloading payloads.
+All tick schemas and tick bounds are validated before selecting a generation. The complete
+package is capped at 128 MiB and individual JSON documents at 16 MiB. Advertised total size
+is checked before payload downloads; actual hashes and sizes are checked after download.
 
-Independent report fields, to agree with the parent verifier before implementing:
+Independent report fields agreed with the parent verifier:
 
 ```
 schema_version: 1
@@ -131,12 +138,12 @@ generation with older rules merely because the older replay completed later. Wri
 generation file, manifest, report and pointer in one additive commit. Do not delete generations.
 Keep this root outside `data/state` so a pipeline state-folder upload cannot restore a pointer.
 
-Repository rule changes during replay require checking the executable rule/config/model
-fingerprint before promotion. Preserve the candidate's full rules/input fingerprint, including
-its frozen Board inputs, for validation. Company-ledger growth alone is a coverage difference
-and permits publication; the next scheduled run catches it. A substantive rule change requires
-replay under the new rules. The fingerprint worker must expose these two distinctions without
-weakening the full fingerprint bound by the independent report.
+Preserve the candidate's full rules/input fingerprint and code SHA, including its frozen Board
+inputs, for validation. Company-ledger growth alone is a coverage difference and permits
+publication; the next scheduled run catches it. Serving explicitly identifies the verified
+code SHA rather than claiming current-rule equality. Source ancestry and covered ticks prevent
+an older replay replacing a newer verified generation. A subsequent rule change queues another
+current-main replay; the already verified prefix remains explicitly versioned until it lands.
 
 ## Workflow and integration dependencies
 
@@ -152,13 +159,50 @@ the current-rules engine and independent verifier are integrated on main. A Spac
 restart also requires that approval. Missing engine/verifier must fail before expensive fetch.
 Replay inputs are runner-only; only the allowlisted small package reaches Space.
 
-Parent coordination required: agree the verifier schema, current-rules fingerprint entry point,
-pinned fetch/replay metadata, Company-directory construction, certified scope, and verifier CLI.
+## Parent integration instructions
+
+The pinned runner-only fetch is `python -m headstart.ingest.restate_publish fetch`. It writes
+`data/restated-inputs.json` with `input_revision` and path/size/SHA-256 entries (`git_blob` also
+included for non-LFS content). In Actions it exports `HEADSTART_RESTATE_INPUT_REVISION` and
+`HEADSTART_RESTATE_INPUT_INVENTORY`; checkout exports `HEADSTART_RESTATE_CODE_SHA`. The parent
+engine must consume these and write `data/restated/replay.json` with the identity fields,
+`rules_code_sha` and selected `inputs`. Mutable inputs remain pinned to that revision; only
+chosen immutable facts/reference files must retain their content at publication.
+
+After `restate_run --out data/restated`, run `restate_publish prepare`. It adds the pinned
+Company labels and config to the candidate and checks coverage of every generation Board.
+Missing labels fail without inventing an employer. Then run the independent verifier:
+
+```
+python scripts/eval/verify_restatement.py --facts data/facts --state data/state \
+  --candidate data/restated --metadata data/restated/replay.json \
+  --report data/restated/validation.json
+```
+
+Its `files` inventory must include exactly the candidate's serving files: tick files,
+`company_directory.json`, both `config/` JSON files and, only when independently checked,
+`dedup_evictions.csv`. `restated_history.allowed` selects those paths if useful; per-id
+placements, replay metadata and the report itself are not serving files. Report `inputs`
+must agree with replay metadata, including non-LFS `git_blob` used for content verification.
+
+`quality.supported_metrics` declares `stock`, `new`, `watched_roles`, `turnover`; only `stock`
+is mandatory for selection. Unsupported new/watched-role requests return 503; unsupported
+turnover is withheld from the reading inputs. No live posting-date split is attached to replay.
+Serving reports `rules_status=verified_at_code_sha`, never that a generation uses today's rules.
+Company-ledger growth permits the verified prefix; scheduled current-main replay catches up.
+
+`restate_publish package` creates `data/restated-publication/data/trends/restated/` locally.
+Only explicit `--publish` writes HF. The workflow adds it only when the repository variable
+`RESTATED_TRENDS_PUBLICATION_ENABLED` is exactly `true`; default publication is disabled.
+Engine/verifier presence is checked before expensive fetch; no Space upload/restart is run.
+
 The serving worker does not edit replay, baseline, placement, reference or classifier modules.
 
-Validation to implement after contract agreement: valid generation selection; corrupt/missing
+Implemented fixture coverage: valid generation selection; corrupt/missing
 and partial-gate fallback; explicit legacy selection; stale-pointer refusal; CAS retries with
 new unrelated dataset commits; mutated chosen-input refusal; artifact allowlist and size limits;
 Space download inventory excluding facts/vectors/descriptions; app History-aware cache keys;
 workflow current-rules, serialization and release-gate wiring. These tests establish contract
-enforcement, not the semantic truth of a replay.
+enforcement, not the semantic truth of a replay. Browser checks use synthetic fixtures at
+1440px light and 375px dark, with reduced motion and toggle round trips. Captures are local
+under `experiment/trends-restated-serving/artifacts/`, never committed.
