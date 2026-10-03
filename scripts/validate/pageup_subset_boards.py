@@ -48,10 +48,7 @@ def subset_aliases(
         for target in ordered:
             if target == duplicate:
                 break
-            if (
-                target in aliases
-                or target.split("/")[0] != duplicate.split("/")[0]
-            ):
+            if target in aliases or target.split("/")[0] != duplicate.split("/")[0]:
                 continue
             if ids <= postings[target]:
                 aliases[duplicate] = target
