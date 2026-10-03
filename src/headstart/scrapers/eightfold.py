@@ -83,6 +83,20 @@ _MAX_PAGES = 10_000
 #: (accenture.eightfold.ai, 2026-09-28: 59 postings, "Test Architect"). Public: the liveness probe
 #: reads the same set.
 VENDOR_GROUP_IDS = frozenset({"volkscience.com", "eightfold.ai"})
+
+
+def is_vendor_fallthrough(group_id: str, board_host: str) -> bool:
+    """A vendor group on a customer host is gone; Eightfold's own public Board is real.
+
+    Its official careers page links app.eightfold.ai, which serves 60 postings under
+    volkscience.com (verified 2026-10-02). No other host gets this exception.
+    """
+    return (
+        group_id.lower() in VENDOR_GROUP_IDS
+        and board_host.lower() != "app.eightfold.ai"
+    )
+
+
 # Full re-crawls to reassemble a complete list when replica orderings disagree (#142). Two extra
 # sweeps close a ~6% per-sweep miss almost surely; a board still short after three is reported.
 _MAX_SWEEPS = 3
@@ -255,7 +269,7 @@ class EightfoldScraper(BaseScraper):
         if not m:
             self._fallback_reason = "no group id on the careers page"
             return None
-        if m.group(1).lower() in VENDOR_GROUP_IDS:
+        if is_vendor_fallthrough(m.group(1), self.slug):
             # The tenant has left Eightfold; reading on would serve the vendor's own postings.
             raise gone_board_error(
                 f"{self.board_key()}: the careers page names Eightfold's own group "

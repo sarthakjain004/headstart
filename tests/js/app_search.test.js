@@ -25,7 +25,7 @@ function fakeEl() {
     // useful location while the real cause (a custom property set for the two-column
     // results grid) sat in another file entirely.
     style: { setProperty(k, v) { this[k] = String(v); }, getPropertyValue(k) { return this[k] ?? ''; }, removeProperty(k) { delete this[k]; } },
-    querySelectorAll: () => [],
+    querySelector: () => null, querySelectorAll: () => [],
     setAttribute(k, v) { this[k] = v; }, getAttribute: k => null,
     // Listeners are RECORDED rather than dropped, and `fire` replays one — the only way to
     // test that a control is wired to the right thing. A no-op addEventListener made every
@@ -78,6 +78,7 @@ function loadApp(respond, cfg = {}, doc = {}) {
     // Recorded, not printed: app.js reports every failed request, and the stub fetches fail most
     // of the page-load ones on purpose.
     console: { log: console.log, warn: (...a) => logged.push(a), error: (...a) => logged.push(a) },
+    matchMedia: () => ({ matches: false }),
     CFG: cfg, URLSearchParams, Date, Math, isNaN, Number, Array,
     Event: class { constructor(type) { this.type = type; } },
     getComputedStyle: () => ({ getPropertyValue: () => '' }),   // setResultRows reads --cols
@@ -90,11 +91,11 @@ function loadApp(respond, cfg = {}, doc = {}) {
     },
   };
   ctx.globalThis = ctx;
-  const src = fs.readFileSync(APP_JS, 'utf8')
+  const src = fs.readFileSync(path.join(path.dirname(APP_JS), 'navigation.js'), 'utf8') + '\n' + fs.readFileSync(APP_JS, 'utf8')
     + '\n;globalThis.__t = { go, goToPage, loadSets, runSet, page: () => page, jobCard, savedRow,'
     + ' salStop, SALARY_STOPS, stops: () => SALARY_STOPS, sync: syncSalarySlider, slide: salSlide,'
     + ' handleSetAction, searchCompany, dropFilter, readSearchHash, setCompany, applySetToControls,'
-    + ' saveSearch, searchHash, queryMode };';
+    + ' saveSearch, searchHash, queryMode, restoreSigninSearch };';
   vm.runInNewContext(src, ctx);
   return { nodes, fetches, posted, t: ctx.__t, ctx, docHandlers, logged };
 }
@@ -182,7 +183,7 @@ test('a refused set delete says so, keeps the set, and names the request in the 
   // came back with nothing said.
   const { nodes, t, ctx, logged } = loadApp(url => (url === '/sets'
     ? [{ id: 's1', name: 'Backend', query: 'backend' }] : []));
-  ctx.window.confirm = () => true;
+  ctx.HeadStartDecision = { request: async () => ({ confirmed: true, value: '' }) };
   refuse(ctx, (url, opts) => opts && opts.method === 'DELETE', 503, { error: 'store down' });
   await t.loadSets();
   await new Promise(r => setTimeout(r, 0));
@@ -207,7 +208,7 @@ test('a refused follow/hide says why on the status line, not just by re-enabling
 test('a refused rename says why, like the email toggle', async () => {
   const { nodes, t, ctx } = loadApp(url => (url === '/sets'
     ? [{ id: 's1', name: 'Backend', query: 'backend' }] : []));
-  ctx.window.prompt = () => 'Frontend';
+  ctx.HeadStartDecision = { request: async () => ({ confirmed: true, value: 'Frontend' }) };
   refuse(ctx, (url, opts) => url === '/sets' && opts && opts.method === 'POST', 409, { error: 'name taken' });
   await t.loadSets();
   await new Promise(r => setTimeout(r, 0));
@@ -283,7 +284,7 @@ test('deleting a Saved set invalidates its in-flight matches', async () => {
   await t.loadSets();
   resolveOld([job('old', { title: 'DELETED_SET_RESULT' })]);
   await new Promise(resolve => setTimeout(resolve, 0));
-  assert.ok(nodes['matches-results'].innerHTML.includes('No saved sets yet'));
+  assert.ok(nodes['matches-results'].innerHTML.includes('No saved searches yet'));
   assert.ok(!nodes['matches-results'].innerHTML.includes('DELETED_SET_RESULT'));
 });
 
@@ -976,4 +977,38 @@ test('the rail says how many non-tech roles this search leaves out, and nothing 
   included.nodes.includenontech.checked = true;
   await included.t.go();
   assert.equal(included.nodes['nontech-hidden'].textContent, '');
+});
+
+
+test('optional sign-in preserves the current semantic search and filters in this tab', () => {
+  const { nodes, ctx, t } = loadApp(() => [], SCOPES);
+  const stored = new Map();
+  ctx.sessionStorage = {
+    setItem: (key, value) => stored.set(key, value),
+    getItem: key => stored.get(key),
+    removeItem: key => stored.delete(key),
+  };
+  set(nodes, 'q', 'backend engineer at a climate startup');
+  set(nodes, 'maxyears', '3');
+  nodes.remote.type = 'checkbox'; nodes.remote.checked = true;
+  ctx.location.hash = '#search';
+  nodes.signin.fire('click');
+  assert.strictEqual(nodes.signin.href, '/signin#search');
+  set(nodes, 'q', ''); set(nodes, 'maxyears', ''); nodes.remote.checked = false;
+  t.restoreSigninSearch();
+  assert.strictEqual(nodes.q.value, 'backend engineer at a climate startup');
+  assert.strictEqual(nodes.maxyears.value, '3');
+  assert.strictEqual(nodes.remote.checked, true);
+  assert.strictEqual(t.queryMode(), 'meaning');
+  assert.strictEqual(stored.size, 0);
+});
+
+
+test('anonymous pages do not request protected company preferences', async () => {
+  const publicNodes = {};
+  const { fetches } = loadApp(() => [], SCOPES, {
+    getElementById: id => id === 'my-companies' ? null : (publicNodes[id] ||= fakeEl()),
+  });
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.ok(!fetches.includes('/companies'));
 });

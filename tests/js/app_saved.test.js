@@ -69,6 +69,7 @@ function loadApp(saved, stars) {
     // Recorded, not printed: app.js reports every failed request, and the stub fetches fail most
     // of the page-load ones on purpose.
     console: { log: console.log, warn: (...a) => logged.push(a), error: (...a) => logged.push(a) },
+    matchMedia: () => ({ matches: false }),
     CFG: {}, URLSearchParams, Date, Math, isNaN, Number, Array,
     Event: class { constructor(type) { this.type = type; } },
     getComputedStyle: () => ({ getPropertyValue: () => '' }),   // setResultRows reads --cols
@@ -82,7 +83,7 @@ function loadApp(saved, stars) {
     },
   };
   ctx.globalThis = ctx;
-  vm.runInNewContext(fs.readFileSync(APP_JS, 'utf8')
+  vm.runInNewContext(fs.readFileSync(path.join(path.dirname(APP_JS), 'navigation.js'), 'utf8') + '\n' + fs.readFileSync(APP_JS, 'utf8')
     + '\n;globalThis.__t = { draw, expandCompany, toggleStar };', ctx);
   return ctx;
 }
@@ -160,7 +161,7 @@ test('a card held back by the company cap shows its star as it is when expanded'
   ctx.__t.expandCompany(holder);
   const shown = stars.find(b => b.dataset.star === id(3));
   assert.ok(shown, 'the held-back card was not inserted');
-  assert.equal(shown.textContent, '☆', 'the expanded card still shows the job as saved');
+  assert.equal(shown.textContent, 'Save', 'the expanded card still shows the job as saved');
 });
 
 test('a repainted star says what clicking it will do, not what it did when drawn', async () => {
@@ -171,7 +172,7 @@ test('a repainted star says what clicking it will do, not what it did when drawn
     setAttribute(k, v) { attrs[k] = String(v); }, classList: { toggle() {} } };
   loadApp([star('greenhouse:acme:1', { id: 'sv1' })], [button]);
   await settled();
-  assert.equal(button.textContent, '★');
+  assert.equal(button.textContent, 'Saved');
   assert.equal(attrs.title, 'Remove from saved');
   assert.equal(attrs['aria-label'], 'Remove this job from saved');
 });

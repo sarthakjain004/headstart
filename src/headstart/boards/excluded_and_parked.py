@@ -1033,6 +1033,11 @@ EXCLUDED_BOARDS: frozenset[str] = frozenset(
 # cannot keep its rows fresh, so serving them would be serving a snapshot that only ages.
 PARKED_BOARDS: frozenset[str] = frozenset(
     {
+        # Masimo's retired Oracle Board (#873), rechecked 2026-10-02: both served
+        # job 4018 and 2562 redirect to CandidateExperience/errors/404 (HTTP 200).
+        # The API still lists them, so absence-based sync cannot remove them.
+        # Prune removes this Board's held rows; unpark only when public applications work.
+        "oracle:egcu.fa.us6.oraclecloud.com",
         # 48,369 jobs. Workday reports a query's total as at most 2,000, so the scraper
         # subdivides by facet (depth 3 here) and pages each leaf 20 at a time — thousands of
         # sequential requests against a Board no per-board budget bounds. It finished in none of

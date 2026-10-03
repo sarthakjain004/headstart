@@ -1,0 +1,36 @@
+{# One destination registry renders both navigation surfaces. IDs/hashes stay stable. #}
+{% set destinations = [
+  {'id': 'home', 'label': 'Home', 'group': 'Explore', 'primary': true, 'on': true, 'icon': '<svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3.5 10.5 12 3.5l8.5 7"/><path d="M5.5 9v11h13V9"/></svg>'},
+  {'id': 'search', 'label': 'Search', 'group': 'Find jobs', 'primary': true, 'on': true, 'icon': '<svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.4-4.4"/></svg>'},
+  {'id': 'hot', 'label': 'Hiring now', 'group': 'Find jobs', 'primary': false, 'on': hot_on, 'icon': '<svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3.5c.8 3.6 5 5.4 5 10.2a5 5 0 0 1-10 0c0-2.4 1.2-3.9 2.3-4.9.3 1.9 1.3 2.9 2.4 3.1-.4-3.1-.6-5.6.3-8.4z"/></svg>'},
+  {'id': 'trends', 'label': 'Trends', 'group': 'Find jobs', 'primary': false, 'on': trends_on, 'icon': '<svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M3.5 3.5v17h17"/><path d="m7.5 14.5 3.5-4 3 2.5 5-6"/></svg>'},
+  {'id': 'saved', 'label': 'Saved jobs', 'group': 'Your workspace', 'primary': true, 'on': saved_on, 'icon': '<svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6.5 3.5h11v17l-5.5-4-5.5 4z"/></svg>'},
+  {'id': 'matches', 'label': 'Saved searches', 'group': 'Your workspace', 'primary': false, 'on': sets_on, 'icon': '<svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.5"/></svg>'},
+  {'id': 'resume', 'label': 'Résumé', 'group': 'Your workspace', 'primary': true, 'on': true, 'icon': '<svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 3.5h8l4.5 4.5v12.5H6z"/><path d="M13.5 3.5V8.5h5M9 13h6M9 16.5h6"/></svg>'},
+  {'id': 'profile', 'label': 'Profile', 'group': 'Your workspace', 'primary': false, 'on': profile_on, 'icon': '<svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><circle cx="12" cy="8.5" r="4"/><path d="M4.5 20.5c1.4-3.6 4.2-5.5 7.5-5.5s6.1 1.9 7.5 5.5"/></svg>'},
+] %}
+{% macro link(d, compact=false) -%}
+<a class="nav-item" href="#{{ d.id }}" data-tab="{{ d.id }}" aria-current="{{ 'page' if d.id == 'home' else 'false' }}" aria-label="{{ d.label }}">
+  {{ d.icon|safe }}<span class="nav-label">{{ 'Saved' if compact and d.id == 'saved' else d.label }}</span>
+</a>
+{%- endmacro %}
+<nav class="tabs desktop-nav" id="site-nav" aria-label="Sections">
+  <button type="button" class="nav-toggle" id="nav-toggle" aria-label="Navigation labels" aria-expanded="true" data-tip="Collapse navigation"><svg class="nav-toggle-ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M9 4.5v15M15.5 9.5 13 12l2.5 2.5"/></svg></button>
+  {% for group in ['Explore', 'Find jobs', 'Your workspace'] %}
+  <span class="nav-heading">{{ group }}</span>
+  {% for d in destinations if d.on and d.group == group %}{{ link(d) }}{% endfor %}
+  {% endfor %}
+  <button type="button" class="nav-help" data-tour-start>How to use HeadStart</button>
+</nav>
+<nav class="tabs mobile-nav" aria-label="Sections on small screens">
+  {% for d in destinations if d.on and d.primary %}{{ link(d, true) }}{% endfor %}
+  <button type="button" class="nav-more" id="nav-more" aria-expanded="false" aria-controls="mobile-menu">
+    <svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
+    <span id="nav-more-label">More</span>
+  </button>
+  <div class="mobile-menu" id="mobile-menu" hidden>
+    <p class="nav-heading">Explore more</p>
+    {% for d in destinations if d.on and not d.primary %}{{ link(d) }}{% endfor %}
+    <button type="button" class="nav-help" data-tour-start>How to use HeadStart</button>
+  </div>
+</nav>

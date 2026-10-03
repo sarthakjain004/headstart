@@ -55,117 +55,59 @@ document.querySelectorAll('input[name="qmode"]').forEach(r => r.addEventListener
   if (el('q').value.trim()) go(); else writeSearchHash();
 }));
 
-/* ---- tabs. The hash names the panel (#search, #trends); the bare URL and any hash naming
-   neither a panel nor something inside one land on Home (ADR-0249), so a stale link — the
-   retired `#data` included — never strands anyone on a blank page. Trends data loads the
-   first time its tab opens, not on page load. ---- */
-const DEFAULT_TAB = 'home';
-// A tab can carry its own state after a `?` (`#trends?company=…`, ADR-0185), so the hash is
-// named by what comes before it.
-const hashName = () => location.hash.replace('#','').split('?')[0];
-function currentTab(){
-  const name = hashName();
-  if (document.getElementById('panel-' + name)) return name;
-  // An in-page anchor (the skip link's `#results`, Home's `#how-matching`) names an element
-  // rather than a panel: the tab is whichever panel holds it. Without this the skip link
-  // switched the page to Home the moment the default stopped being Search.
-  const panel = hashAnchor()?.closest('.panel');
-  return panel ? panel.id.slice('panel-'.length) : DEFAULT_TAB;
-}
-// The element a hash names when it names no panel, or null.
-function hashAnchor(){
-  const name = hashName();
-  return name && !document.getElementById('panel-' + name) ? document.getElementById(name) : null;
-}
-function showTab(name){
-  document.querySelectorAll('.panel').forEach(p => { p.hidden = p.id !== 'panel-' + name; });
-  document.querySelectorAll('.tabs [data-tab]').forEach(a => {
-    a.setAttribute('aria-current', a.dataset.tab === name ? 'page' : 'false');
-    // On a 390px phone the strip scrolls, and the tab you are on sat off its edge.
-    if (a.dataset.tab === name && a.scrollIntoView) a.scrollIntoView({ block: 'nearest', inline: 'nearest' });
-  });
-  if (name === 'search' && readSearchHash()) go();
-  if (name === 'hot' && el('hot-results') && !hotData) loadHot();
-  if (name === 'trends' && el('trends')){
+/* Navigation is a deep module: one transition path for links, history and hand-offs.
+   Page entry keeps each screen's actual data freshness policy here. */
+const navigation = HeadStartNavigation.create({ document, window, location, storage: { setItem: (key, value) => localStorage.setItem(key, value) }, onEnter: enterScreen });
+function currentTab(){ return navigation.current(); }
+function enterScreen({ screen, source }){
+  if (screen === 'search' && readSearchHash()) go();
+  if (screen === 'hot' && el('hot-results') && !hotData) loadHot();
+  if (screen === 'trends' && el('trends')){
     // Back onto a bare `#trends` is a view with no picks; the tab strip's own bare link keeps
     // them. One Back after picking Google landed on `#trends` and the kept pick wrote itself
     // straight back, so the press did nothing.
     const bare = location.hash.indexOf('?') < 0;
-    if (bare && !viaTabStrip && trendPicks.length){ replacePicks([]); loadTrends(null); return; }
+    if (bare && source !== 'navigation' && trendPicks.length){ replacePicks([]); loadTrends(null); return; }
     const linked = readTrendHash();
     if (linked || !trendData) loadTrends(linked ? linked.family : null);
     else writeTrendHash();   // the tab strip's bare `#trends` gets the view back, for sharing
   }
-  if (name === 'matches' && el('sets-strip')){
+  if (screen === 'matches' && el('sets-strip')){
     if (!mySets) loadSets();
     else if (activeSetId) runSet(activeSetId);   // re-run on every visit — never stale
   }
-  if (name === 'saved' && el('saved-results')) loadSaved();   // re-check "closed" on every visit
-  if (name === 'profile' && el('pquery')) loadProfile();      // server truth on every visit
+  if (screen === 'saved' && el('saved-results')) loadSaved();   // re-check "closed" on every visit
+  if (screen === 'profile' && el('pquery')) loadProfile();      // server truth on every visit
   // The résumé builder converts pixels to inches from the page's measured width, and a hidden
   // panel measures zero — so it re-paints on the way in rather than on page load.
-  if (name === 'resume' && window.ResumeEditor) ResumeEditor.shown();
+  if (screen === 'resume' && window.ResumeEditor) ResumeEditor.shown();
 }
-// Home's search box (ADR-0249) hands its words to the Search tab and runs them there. Focus
-// follows to the results once the tab is open — the button it left is hidden with Home — and
-// to the list rather than the box, so a phone's keyboard does not come back over the jobs.
 if (el('home-search')) el('home-search').addEventListener('submit', e => {
   e.preventDefault();
   el('q').value = el('home-q').value;
-  setQueryMode('meaning');   // Home asks for a role described in words
-  window.addEventListener('hashchange', () => el('results').focus(), { once: true });
-  location.hash = '#search';
+  setQueryMode('meaning');
+  navigation.navigate('#search', { focus: 'results' });
   go();
 });
-let shownTab = null;
-window.addEventListener('hashchange', () => {
-  const tab = currentTab();
-  showTab(tab);
-  viaTabStrip = false;
-  // The browser scrolls to an anchor before this runs, while its panel is still hidden — so it
-  // scrolls nowhere, and the section is found here instead. A switch to another tab starts at
-  // its top: the sidebar stays in view down a long page, and a click there used to open the
-  // next tab at the scroll depth of the last one.
-  const anchor = hashAnchor();
-  if (anchor) anchor.scrollIntoView({ block: 'start' });
-  else if (shownTab !== tab) window.scrollTo(0, 0);
-  shownTab = tab;
-});
-// Whether the hash change about to land came from the tab strip's own link (showTab). Reset on
-// every hash change, so a click that changed nothing (a cmd-click, a tab already open) cannot
-// leave it set for a later Back.
-let viaTabStrip = false;
-document.addEventListener('click', e => { if (e.target.closest && e.target.closest('.tabs [data-tab]')) viaTabStrip = true; }, true);
-
-// The sidebar folds to its icons and back (ADR-0249). base.html applies the stored state before
-// the first paint; this keeps the button's own state in step with it and remembers each flip.
-const NAV_KEY = 'hs.navCollapsed';
-function drawNavToggle(){
-  const btn = el('nav-toggle');
-  const folded = document.documentElement.dataset.nav === 'collapsed';
-  // Only the state flips; the name stays "Navigation labels" (base.html). Changing both read as
-  // "Expand navigation, collapsed". The visible tooltip still says what a click will do, drawn
-  // by CSS from data-tip — a `title` would be read out as a description that flips too.
-  btn.setAttribute('aria-expanded', String(!folded));
-  btn.setAttribute('data-tip', folded ? 'Expand navigation' : 'Collapse navigation');
-}
-function flipNav(){
-  const fold = document.documentElement.dataset.nav !== 'collapsed';
-  if (fold) document.documentElement.dataset.nav = 'collapsed';
-  else delete document.documentElement.dataset.nav;
-  try { localStorage.setItem(NAV_KEY, fold ? '1' : ''); } catch(e){}
-  drawNavToggle();
-}
-el('nav-toggle').addEventListener('click', flipNav);
-drawNavToggle();
-function flipTheme(){
-  const now = document.documentElement.getAttribute('data-theme')
+function currentTheme(){
+  return document.documentElement.dataset.theme
     || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
-  document.documentElement.setAttribute('data-theme', now === 'dark' ? 'light' : 'dark');
+}
+function drawTheme(){
+  const label = currentTheme() === 'dark' ? 'Use light theme' : 'Use dark theme';
+  el('theme').setAttribute('aria-label', label);
+  el('theme').setAttribute('title', label);
+}
+function flipTheme(){
+  const theme = currentTheme() === 'dark' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = theme;
+  try { localStorage.setItem('hs.theme', theme); } catch (e) {}
+  drawTheme();
 }
 // Every control is wired here rather than by an inline onclick, which the page's
 // Content-Security-Policy refuses to run (#595).
 el('theme').addEventListener('click', flipTheme);
+drawTheme();
 // The examples describe roles, so they run by meaning whichever mode was on.
 function tryIt(btn){ el('q').value = btn.textContent.trim(); setQueryMode('meaning'); go(); }
 document.querySelectorAll('.hint .chip').forEach(b => b.addEventListener('click', () => tryIt(b)));
@@ -190,6 +132,24 @@ async function signOut(){
   window.alert('Sign-out didn\'t go through — you are still signed in. Try again.');
 }
 el('signout').addEventListener('click', signOut);
+if (el('signin')) el('signin').addEventListener('click', () => {
+  // Keep the current search in this tab only; a plain semantic search has no URL parameters.
+  try { sessionStorage.setItem('hs.signinSearch', JSON.stringify({
+    query: el('q').value, search_filters: currentFilters(), mode: queryMode(), scope: searchScope
+  })); } catch (e) { /* storage may be blocked; sign-in still works */ }
+  el('signin').href = '/signin' + location.hash;
+});
+function restoreSigninSearch(){
+  try {
+    const saved = sessionStorage.getItem('hs.signinSearch');
+    sessionStorage.removeItem('hs.signinSearch');
+    if (!saved) return;
+    const state = JSON.parse(saved);
+    applySetToControls(state);
+    setQueryMode(state.mode);
+    searchScope = state.scope;
+  } catch (e) { /* no stored search, or browser storage is unavailable */ }
+}
 const age = d => {
   const t = Date.parse(d || ''); if (isNaN(t)) return '';
   const days = Math.floor((Date.now() - t) / 86400000);
@@ -402,8 +362,10 @@ for (const id of SEGMENTED_SELECTS){
 // Every other rail control searches on `change` too, so no filter waits for the Search button
 // (issue #755): a switch or a <select> on the pick, a typed field on Enter or on leaving it. The
 // radio rows and the salary slider have their own listeners, so they are left out here.
-if (el('rail')) el('rail').addEventListener('change', e => {
-  if (e.target.matches('select, input:not([type="radio"]):not([type="range"])')) go();
+['rail', 'quick-filters'].forEach(id => {
+  if (el(id)) el(id).addEventListener('change', e => {
+    if (e.target.matches('select, input:not([type="radio"]):not([type="range"])')) go();
+  });
 });
 /* ---- the salary bracket's slider. Two native ranges over one track; `#salmin`/`#salmax`
    stay the values every other part of this file reads (currentFilters, clearAll, dropFilter,
@@ -578,7 +540,7 @@ function searchCompany(boards, label, q, category, aside, counted){
   searchScope = { boards, label, category: category || null, aside: aside || 0, counted: counted || null };
   el('company').value = '';   // the text filter would narrow the Boards again, by name
   if (q != null) el('q').value = q;
-  location.hash = searchHash();
+  navigation.navigate(searchHash(), { focus: 'results' });
   go();
 }
 function searchHash(){
@@ -679,7 +641,7 @@ async function fetchPage(){
   let rows, r;
   try { r = await fetch('/search?'+p); rows = await r.json(); }
   catch(e){ logFail('GET', '/search', r ? r.status : 0, e); if (request !== searchRequest) return;
-            busy(false); el('results').innerHTML = '<div class="empty">That search didn\'t go through. Try again.</div>';
+            busy(false); el('results').innerHTML = '<div class="empty">That search didn\'t go through. Your search is still here.<button class="ghost" data-retry-search>Try again</button></div>';
             setResultRows(1);
             el('n').textContent = ''; el('kind').textContent = ''; return; }
   if (request !== searchRequest) return;
@@ -690,7 +652,7 @@ async function fetchPage(){
     // clearing filters that were never the problem.
     el('results').innerHTML = '<div class="empty">' + (r.status >= 500
       ? esc((rows && rows.error) || ('The search failed (status ' + r.status + ').')) + ' Try again.'
-      : 'One of the filters isn\'t valid — clear it and try again.') + '</div>';
+      : 'One of the filters isn\'t valid — clear it and try again.') + '<button class="ghost" data-retry-search>Try again</button></div>';
     setResultRows(1);
     el('n').textContent = ''; el('kind').textContent = ''; return; }
   // Paint the ranked rows as soon as /search returns. Facets are independent counts and can be
@@ -985,7 +947,7 @@ function jobCard(r, i, canHideCompany){
   const s = Number(r.score) || 0, pct = matchPct(s);
   const cls = ['card', r.closed && 'gone'].filter(Boolean).join(' ');
   return `
-    <div class="${cls}" style="${ranked?`--tone:${tone(s)}; `:''}animation-delay:${Math.min(i,12)*35}ms">
+    <div class="${cls}" style="${ranked?`--tone:${tone(s)}; `:''}">
       <div class="who">
         <a class="title" href="${esc(safeUrl(r.url))}" target="_blank" rel="noopener">${esc(r.title)}<svg class="ext" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M6.5 3.5H3.5v9h9v-3M9.5 3.5h3v3M12.5 3.5 7 9" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="sr">, opens on the employer's own site</span></a>
         <div class="org">${esc(r.company)}${r.location? ' <span>·</span> '+esc(r.location) : ''}${
@@ -1026,7 +988,7 @@ function jobCard(r, i, canHideCompany){
             <circle class="ring-track" cx="20" cy="20" r="16" pathLength="100"/>
             <circle class="ring-fill" cx="20" cy="20" r="16" pathLength="100" style="--p:${pct}"/>
           </svg>
-          <div class="v" aria-hidden="true">${pct}%</div>
+          <div class="v" aria-hidden="true">${pct}%</div><span class="match-label">Search match</span>
         </div>`
       // The column stays reserved on an unranked row rather than collapsing. Dropping it moved
       // the star 76px between a browse and a search and left a 107px ragged right edge against
@@ -1072,6 +1034,7 @@ const capOverflow = new Map();   // listId -> Map(board -> [card html])
 // is the controls simply not rendering, but any other failure leaves the server excluding
 // hidden companies while the page shows no "N hidden" to undo it with.
 async function loadCompanies(){
+  if (!CAN_COMPANIES) return true;
   try{
     const r = await fetch('/companies');
     if (r.ok){ myCompanies = await r.json(); return true; }
@@ -1165,6 +1128,7 @@ function draw(rows, target){
    one from the controls the user is looking at. All strip actions ride ONE delegated
    listener + data attributes — never inline handlers with interpolated names. ---- */
 let mySets = null, activeSetId = null;
+const renameDrafts = new Map();
 let matchesRequest = 0;
 
 async function loadSets(){
@@ -1185,27 +1149,32 @@ async function loadSets(){
 
 function renderSets(){
   const strip = el('sets-strip');
+  for (const id of renameDrafts.keys()) if (!mySets.some(set => set.id === id)) renameDrafts.delete(id);
+  drawRenameRetry();
   if (!mySets.length){
     strip.innerHTML = '';
+    if (el('matches-actions')) el('matches-actions').innerHTML = '';
     el('matches-msg').textContent = '';
     setResultRows(1, 'matches-results');
     el('matches-results').innerHTML =
-      '<div class="empty"><div class="big">No saved sets yet</div>' +
+      '<div class="empty"><div class="big">No saved searches yet</div>' +
       'Search for a role, tune the filters, then hit "Save this search" — it lands here ' +
-      'and runs live every time you open this tab.</div>';
+      'and runs live every time you open this tab. <a class="btn-primary" href="#search">Find jobs</a></div>';
     return;
   }
   strip.innerHTML = mySets.map(s => `
     <div class="set-chip${s.id === activeSetId ? ' active' : ''}" data-id="${esc(s.id)}">
-      <button class="set-name" data-act="run" data-id="${esc(s.id)}"
+      <button class="set-name" aria-pressed="${s.id === activeSetId}" data-act="run" data-id="${esc(s.id)}"
         title="${esc(s.query)}">${esc(s.name)}${s.emails ? ' <span class="mail-on" title="Emails you new matches">✉</span>' : ''}</button>
-      <span class="set-tools">
-        <button data-act="email" data-id="${esc(s.id)}" title="${s.emails ? 'Stop emailing this set' : 'Email me this set\'s new matches'}">${s.emails ? '✉ on' : '✉'}</button>
-        <button data-act="refine" data-id="${esc(s.id)}" title="Open in Search to adjust">Refine</button>
-        <button data-act="rename" data-id="${esc(s.id)}" title="Rename">✎</button>
-        <button data-act="del" data-id="${esc(s.id)}" title="Delete" aria-label="Delete ${esc(s.name)}">×</button>
-      </span>
-    </div>`).join('');
+</div>`).join('');
+  const active = mySets.find(set => set.id === activeSetId);
+  if (el('matches-actions')) el('matches-actions').innerHTML = active ? `
+    <span class="note">Manage “${esc(active.name)}”</span>
+    <button class="ghost" data-act="refine" data-id="${esc(active.id)}">Refine search</button>
+    <button class="ghost" data-act="email" data-id="${esc(active.id)}" aria-pressed="${!!active.emails}">${active.emails ? 'Email alerts on' : 'Email alerts off'}</button>
+    <button class="ghost" data-act="rename" data-id="${esc(active.id)}">Rename</button>
+    <button class="linkish danger" data-act="del" data-id="${esc(active.id)}">Delete search</button>` : '';
+
 }
 
 // The view controls: refine what the active set SHOWS — never written into the set.
@@ -1270,15 +1239,17 @@ function applySetToControls(s){
 async function handleSetAction(act, id){
   const s = (mySets || []).find(x => x.id === id); if (!s) return;
   if (act === 'run') return runSet(id);
-  if (act === 'refine'){ applySetToControls(s); location.hash = '#search'; go(); return; }
+  if (act === 'refine'){ applySetToControls(s); navigation.navigate('#search', { focus: 'results' }); go(); return; }
   if (act === 'rename'){
-    const name = (window.prompt('Rename this set', s.name) || '').trim();
+    const choice = await HeadStartDecision.request({ title: 'Rename saved search', label: 'Search name', value: renameDrafts.get(id)?.name ?? s.name, confirm: 'Rename' });
+    const name = choice.confirmed ? choice.value : '';
     if (!name || name === s.name) return;
-    await setRefusal(await postAndReloadSets('/sets', { id, name, query: s.query, filters: s.search_filters }));
+    await renameSet(id, name);
     return;
   }
   if (act === 'del'){
-    if (!window.confirm(`Delete “${s.name}”?${s.emails ? ' Its email digest stops too.' : ''}`)) return;
+    const choice = await HeadStartDecision.request({ title: `Delete “${s.name}”?`, body: s.emails ? 'Its email digest stops too.' : 'This removes the saved search. Your saved jobs stay.', confirm: 'Delete search', danger: true });
+    if (!choice.confirmed) return;
     const url = '/sets/' + encodeURIComponent(id);
     let r = null;
     try{ r = await fetch(url, { method: 'DELETE' }); }catch(e){ logFail('DELETE', url, 0, e); }
@@ -1294,6 +1265,36 @@ async function handleSetAction(act, id){
     await setRefusal(await postAndReloadSets('/sets/' + encodeURIComponent(id) + '/email', { on: !s.emails }));
   }
 }
+
+async function renameSet(id, name){
+  if (!mySets){
+    await loadSets();
+    if (!mySets){
+      if (el('set-action-error')) el('set-action-error').textContent = 'Couldn’t reload your searches. Try again.';
+      return;
+    }
+  }
+  const s = (mySets || []).find(set => set.id === id);
+  if (!s) return;
+  const button = el('rename-retry');
+  if (button) button.disabled = true;
+  const response = await postAndReloadSets('/sets', { id, name, query: s.query, filters: s.search_filters });
+  await setRefusal(response);
+  const failed = !response || !response.ok;
+  if (failed) renameDrafts.set(id, { name, error: el('matches-msg').textContent });
+  else renameDrafts.delete(id);
+  drawRenameRetry();
+  if (button) button.disabled = false;
+}
+function drawRenameRetry(){
+  const draft = renameDrafts.get(activeSetId);
+  if (el('set-action-error')) el('set-action-error').textContent = draft?.error || '';
+  if (el('rename-retry')) el('rename-retry').hidden = !draft;
+}
+if (el('rename-retry')) el('rename-retry').addEventListener('click', () => {
+  const draft = renameDrafts.get(activeSetId);
+  if (draft) renameSet(activeSetId, draft.name);
+});
 
 // A set action the server refused says why in #matches-msg; a dropped one says so too.
 async function setRefusal(r){
@@ -1320,7 +1321,9 @@ async function postAndReloadSets(url, body){
 
 function saveSearchToggle(){
   const row = el('saverow');
+  if (el('save-success')) el('save-success').hidden = true;
   row.style.display = row.style.display === 'none' ? '' : 'none';
+  el('savebtn').setAttribute('aria-expanded', String(row.style.display === ''));
   if (row.style.display === '') el('savename').focus();
 }
 
@@ -1330,6 +1333,10 @@ async function saveSearch(){
   const msg = el('savemsg');
   if (!q){ msg.textContent = 'Type the role you want first.'; return; }
   if (!name){ msg.textContent = 'Give it a name.'; return; }
+  const button = el('savego');
+  if (button.disabled) return;
+  button.disabled = true;
+  button.textContent = 'Saving…';
   try{
     const r = await fetch('/sets', { method: 'POST', headers: {'Content-Type': 'application/json'},
       // A Title words set keeps its mode as the filter it is (ADR-0263).
@@ -1341,12 +1348,19 @@ async function saveSearch(){
     el('savename').value = '';
     el('saverow').style.display = 'none';
     msg.textContent = '';
-    el('n').textContent = `Saved — see Matches`;
+    el('savebtn').setAttribute('aria-expanded', 'false');
+    if (el('save-success')) el('save-success').hidden = false;
+    el('n').textContent = 'Search saved.';
+    el('savebtn').focus();
   }catch(e){ logFail('POST', '/sets', 0, e); msg.textContent = 'That request didn\'t go through. Try again.'; }
+  finally { button.disabled = false; button.textContent = 'Save search'; }
 }
 if (el('savebtn')){   // the save controls render only where Saved sets are configured
   el('savebtn').addEventListener('click', saveSearchToggle);
   el('savego').addEventListener('click', saveSearch);
+  if (el('savecancel')) el('savecancel').addEventListener('click', () => {
+    el('saverow').style.display = 'none'; el('savebtn').setAttribute('aria-expanded', 'false'); el('savebtn').focus();
+  });
 }
 
 /* ---- Saved jobs (ADR-0042, ADR-0044): starring keeps a copy of the card's display
@@ -1365,7 +1379,7 @@ function starBtn(jobId, on){
   if (!CAN_STAR || !jobId) return '';
   const has = on != null ? on : savedByJob.has(jobId);
   return `<button class="star${has?' on':''}" data-star="${esc(jobId)}" aria-pressed="${has}"
-    title="${has?'Remove from saved':'Save this job'}" aria-label="${has?'Remove this job from saved':'Save this job'}">${has?'★':'☆'}</button>`;
+    title="${has?'Remove from saved':'Save this job'}" aria-label="${has?'Remove this job from saved':'Save this job'}">${has?'Saved':'Save'}</button>`;
 }
 
 // The visible tab's status line — where star errors land, wherever the click happened.
@@ -1408,7 +1422,7 @@ function paintStars(){
     // The same two strings starBtn draws, or a starred job still announces "Save this job".
     b.setAttribute('title', on ? 'Remove from saved' : 'Save this job');
     b.setAttribute('aria-label', on ? 'Remove this job from saved' : 'Save this job');
-    b.textContent = on ? '★' : '☆';
+    b.textContent = on ? 'Saved' : 'Save';
   });
 }
 
@@ -1419,7 +1433,7 @@ function renderSaved(){
     el('saved-msg').textContent = '';
     setResultRows(1, 'saved-results');
     box.innerHTML = '<div class="empty"><div class="big">Nothing saved yet</div>' +
-      'Hit the ☆ on any result to keep it here — the copy stays even after the posting closes.</div>';
+      'Save a job from your results to keep it here, even after it closes. <a class="btn-primary" href="#search">Find jobs</a></div>';
     return;
   }
   const jobs = mySaved.slice().sort((a,b) => (b.starred_at||'').localeCompare(a.starred_at||''));
@@ -1552,7 +1566,7 @@ async function saveProfile(){
 
 async function parseResume(){
   const text = el('presume').value.trim();
-  const msg = el('profile-msg'), btn = el('pparse');
+  const msg = el('pparse-feedback'), btn = el('pparse');
   if (!text){ msg.textContent = 'Paste your résumé first.'; return; }
   btn.disabled = true; msg.textContent = 'Reading…';
   let ok = false, spent = false;
@@ -1564,7 +1578,10 @@ async function parseResume(){
       ok = true;
       fillProfileForm(d);   // also sets the button from the fresh parses_left
       el('presume').value = '';   // the document was never stored; don't keep it on screen either
-      msg.textContent = 'Read — check the fields below, edit anything, then Save.';
+      msg.textContent = 'Read — review your editable profile, then save it.';
+      el('profile-msg').textContent = msg.textContent;
+      el('profile-fields-heading').scrollIntoView({ block: 'start' });
+      el('profile-fields-heading').focus({ preventScroll: true });
     } else {
       spent = r.status === 502;   // the router answered nothing usable — a read was still spent
       logFail('POST', '/profile/parse', r.status);
@@ -1583,16 +1600,19 @@ function applyProfile(){
   const p = readProfileForm();
   if (!p.query){ el('profile-msg').textContent = 'Fill in what to search for first.'; return; }
   el('q').value = p.query;
+  setQueryMode('meaning');
+  searchScope = null;
   Object.values(CONTROL).forEach(id => { const c = el(id); if (!c) return;
     if (c.type === 'checkbox') c.checked = false; else c.value = ''; });
   if (p.years) el('maxyears').value = p.years;
   if (p.location) el('location').value = p.location;
-  location.hash = '#search';
+  navigation.navigate('#search', { focus: 'results' });
   go();
 }
 
 async function deleteProfile(){
-  if (!window.confirm('Clear your stored profile? Your saved sets and starred jobs stay.')) return;
+  const choice = await HeadStartDecision.request({ title: 'Delete your profile?', body: 'Your saved searches and saved jobs stay.', confirm: 'Delete profile', danger: true });
+  if (!choice.confirmed) return;
   const msg = el('profile-msg');
   try{
     const r = await fetch('/profile', { method: 'DELETE' });
@@ -1650,7 +1670,7 @@ let trendData = null, trendDrill = null;
 // The unit token is 'change', not 'index': CONTEXT.md's "index" is the served corpus, and this
 // same file labels the reference line "whole index" in that sense. One word, two meanings, in
 // one function was a grep hazard. The UI has always called this unit Change.
-let trendMetric = 'stock', trendUnit = 'change', trendSplit = 'bands', trendCoverage = 'all';
+let trendMetric = 'stock', trendUnit = 'change', trendSplit = 'bands', trendCoverage = 'comparable';
 let trendDays = 'all';      // the date-range preset: 7 | 30 | 90 | 'all'; a custom bound beats it
 let hoveredSeries = null;   // legend/chart hover-focus name — dims every other line (§ emphasis)
 let hoverIndex = null;      // the stamp the crosshair is parked on — the keyboard walks this
@@ -1830,7 +1850,7 @@ function readTrendHash(){
   unitWanted = null;
   trendUnit = ['share', 'count', 'change'].includes(lower('unit')) ? lower('unit') : 'change';
   trendMetric = lower('metric') === 'new' ? 'new' : 'stock';
-  trendCoverage = lower('coverage') === 'comparable' ? 'comparable' : 'all';
+  trendCoverage = lower('coverage') === 'all' ? 'all' : 'comparable';
   // A custom range rides in the link as UTC minutes; the fields show them in local time.
   const since = q.get('since'), until = q.get('until');
   if (since || until){
@@ -1882,7 +1902,7 @@ function trendHash(){
     if (r.since) q.set('since', r.since.slice(0, 16));
     if (r.until) q.set('until', r.until.slice(0, 16));
   } else if (trendDays !== 'all') q.set('days', trendDays);
-  if (trendCoverage !== 'all') q.set('coverage', trendCoverage);
+  q.set('coverage', trendCoverage);
   return '#trends' + (q.size ? '?' + q : '');
 }
 function writeTrendHash(push){
@@ -1917,9 +1937,13 @@ function viewKind(d){
 
 // The whole the picks are measured against: the dashed line's label, its name in prose, and
 // what a share is a share of. The index with no pick; the company, or all picks, with some.
+const companySitesOnly = () => (trendData?.coverage || trendCoverage) === 'comparable' || !!trendAtsSelected();
 function pickScope(){
   const n = trendPicks.length;
-  return !n ? { ref: 'whole market', whole: 'the whole market', share: 'a share of all jobs' }
+  if (n && companySitesOnly()) return n === 1
+    ? { ref: 'tracked company sites', whole: 'the company’s tracked sites', share: 'a share of openings on the company’s tracked sites' }
+    : { ref: 'picked tracked sites', whole: 'the picked companies’ tracked sites', share: 'a share of openings on the picked companies’ tracked sites' };
+  return !n ? { ref: 'tracked stock', whole: 'HeadStart’s tracked stock', share: 'a share of tracked jobs' }
     : n === 1 ? { ref: 'whole company', whole: 'the whole company', share: 'a share of the company’s openings' }
     : { ref: 'all picked', whole: 'all picked companies together', share: 'a share of the picked companies’ openings' };
 }
@@ -1957,7 +1981,7 @@ function stepNote(d, marked){
   if (!d.series.length) return '';
   const parts = [];
   if (marked.found)
-    parts.push(`Solid grey lines mark jumps that aren’t hiring: ${
+    parts.push(`Solid grey lines mark known counting changes: ${
       marked.removal ? 'duplicates removed, ' : ''}job sites found later, or a company added later.`);
   // Said only where a line carries a step and has a figure read off it: Zomato, with no
   // percentage, and a Count view, whose lines are real levels, both got the Change sentence.
@@ -2034,6 +2058,79 @@ function comparableNote(d){
 }
 function viewNotes(d){ return [comparableNote(d), companyNote(d)].filter(Boolean).join(' '); }
 
+// Stock and exposure come from the Board history, independent of the chart's measure/split.
+let coverageBaseline = null;
+function renderCoverageSummary(d){
+  const host = el('trends-coverage-summary');
+  const status = el('trends-cohort-status');
+  const brief = el('trends-coverage-brief');
+  const s = d.coverage_summary;
+  if (!host) return;
+  host.hidden = !s;
+  if (brief){
+    brief.hidden = !s;
+    brief.textContent = s ? `${s.cohort.boards.toLocaleString()} ${s.cohort.boards === 1 ? 'site' : 'sites'} tracked at start · Freshness unknown` : '';
+  }
+  if (!s){
+    host.innerHTML = '';
+    if (status) status.textContent = '';
+    return;
+  }
+  const date = ts => new Date(ts).toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
+  if (status && coverageBaseline !== s.baseline){
+    status.textContent = coverageBaseline == null ? ''
+      : `Cohort population changed: Sites tracked at start now uses ${date(s.baseline)} as its baseline.`;
+  }
+  coverageBaseline = s.baseline;
+  const count = n => n == null ? 'unknown' : n.toLocaleString();
+  const exposure = (group, added = false) => group.observed_since
+    ? `${added ? 'Earliest activity' : 'Activity'} since ${date(group.observed_since)}${
+      group.observed_since > s.from ? ' · shorter than selected window' : ''}` : 'Activity period unknown';
+  const turnover = group => `${count(group.recorded_index_additions)} subsequent recorded index additions · `
+    + `${count(group.recorded_closed)} recorded closures/removals${group.activity_excluded_updates
+      ? ` · ${count(group.activity_excluded_updates)} updates left out for counting changes` : ''}`;
+  const c = s.cohort, e = s.entrants;
+  const scope = s.scope === 'family' ? `Category: ${s.family_label || d.family_label || s.family}` : 'All tech categories';
+  const open = host.querySelector('details')?.open;
+  host.innerHTML = `<h3>Job-site coverage · ${esc(scope)}</h3>
+    <p class="kind">${esc(date(s.from))} to ${esc(date(s.to))} · Freshness unknown</p>
+    <div class="coverage-grid">
+      <div><h4>Sites tracked at start</h4><p>${esc(count(c.boards))} ${c.boards === 1 ? 'site' : 'sites'} · start ${esc(date(s.baseline))}</p>
+        <p>Known jobs: ${esc(count(c.stock_start))} at start → ${esc(count(c.stock_latest))} latest</p>
+        <p>${esc(turnover(c))}</p><p>${esc(exposure(c))}</p></div>
+      <div><h4>Sites added since start</h4><p>${esc(count(e.boards))} ${e.boards === 1 ? 'site' : 'sites'} · ${esc(count(e.first_counted_backlog))} first-counted backlog</p>
+        <p>Known jobs: ${esc(count(e.stock_latest))} latest</p><p>${esc(turnover(e))}</p><p>${esc(exposure(e, true))}</p></div>
+      <div><h4>All known jobs</h4><p>${esc(count(s.all_known.boards))} sites · same dates</p>
+        <p>Known jobs: ${esc(count(s.all_known.stock_start))} at start → ${esc(count(s.all_known.stock_latest))} latest</p>
+        <p>Includes sites added since start.</p></div>
+    </div>
+    <p class="kind">Tracked sites may have missing measurements; initial backlog is coverage, not new hiring.</p>
+    <details${open ? ' open' : ''}><summary>What these numbers mean</summary>
+      <p>Known jobs means the jobs counted at each date, regardless of the chart’s measure or watched-role breakdown.
+        First counted means first present in HeadStart’s count history, not a posting date or first successful read.
+        Sites read with zero jobs can be missing from this history. Departed sites remain in the starting group.</p>
+      <p>Category summaries include linked earlier category names, even when only added sites used those names.</p>
+      <p>Activity starts after each site’s first count. The added-sites date is the earliest start in that group;
+        other sites have shorter histories. Their observation periods differ, so these totals are not normalized comparisons.
+        Zero recorded events do not prove no hiring. These counts do not describe the whole job market.</p>
+      <p>Known counting-change updates and their settling updates are left out of activity using the existing
+        Trends rule, site by site. Known-job counts and net counting adjustments still include those updates.
+        Activity can differ from the headline: it includes added sites, keeps unaffected sites, and excludes
+        settling updates even when the rule change fell at the window’s start. The headline can also withhold
+        other partial reads. An index addition may be an older posting found later; neither figure proves
+        newly posted jobs or employer intent.</p>
+      <p>Known closure gaps: ${esc(count(c.closures_unseen))} sites in the starting group;
+        ${esc(count(e.closures_unseen))} sites added later. Gaps, including zero, do not establish complete freshness.
+        Recorded closures/removals are partial observations. Dormant policy evictions and rule changes can affect them;
+        they do not establish employer intent or causal hiring activity.</p>
+      <p>Net counting adjustments: ${esc(count(c.net_recounted))} in the starting group;
+        ${esc(count(e.net_recounted))} at sites added later. This is additions minus removals caused by counting adjustments,
+        so it can be negative; it is not a count of events.</p>
+      <p>Start eligibility: ${esc(s.quality.start_eligibility)} · endpoint freshness: ${esc(s.quality.endpoint_freshness)} ·
+        successful zero-job sites: ${esc(s.quality.successful_zero_boards)} · event causes: ${esc(s.quality.event_causes)}.</p>
+    </details>`;
+}
+
 // One sentence per company above the tiles — the answer a reader came for, in words: how many
 // tech openings it has and which way they moved, in openings as well as percent. An indexed
 // chart asks the reader to work that out; this says it. Net of the marked steps like every
@@ -2055,8 +2152,8 @@ function verdictLines(d){
     // opened against closed, never as "more openings": the lines keep recounts nothing sizes
     // (Boards dropped, duplicates removed), and a line up 400 read "about 10 more openings". That the runs of such a change
     // are left out (`turnover_left_out`) is said under "How to read this", not here (ADR-0248).
-    const net = t.net == null ? '' : t.net < 0 ? `about ${aboutCount(-t.net)} more closed than opened — `
-      : t.net > 0 ? `about ${aboutCount(t.net)} more opened than closed — ` : 'as many opened as closed — ';
+    const net = t.net == null ? '' : t.net < 0 ? `about ${aboutCount(-t.net)} more recorded closures/removals than recorded index additions — `
+      : t.net > 0 ? `about ${aboutCount(t.net)} more recorded index additions than recorded closures/removals — ` : 'as many recorded index additions as recorded closures/removals — ';
     return [{ name: viewKind(d) === 'bands' ? drillLabel() : 'All tech roles', days: 0,
       text: `${net}${turnoverPhrase(whole, d)}.` }];
   }
@@ -2113,8 +2210,8 @@ function turnoverPhrase(line, d){
   const since = d.turnover_since && d.turnover_since > d.stamps[0] ? ` since ${stampLabel(d.turnover_since, true)}` : '';
   // Where every Board's closures went uncounted the reading gives no closed count, and the
   // sentence none: Google, one Board, read "18 closed … closures not counted on 1 board".
-  if (t.closed == null) return `about ${aboutCount(t.opened)} opened${since}; closures not counted`;
-  return `about ${aboutCount(t.opened)} opened, ${aboutCount(t.closed)} closed${since}`;
+  if (t.closed == null) return `about ${aboutCount(t.opened)} recorded index additions${since}; closures not counted`;
+  return `about ${aboutCount(t.opened)} recorded index additions, ${aboutCount(t.closed)} recorded closures/removals${since}`;
 }
 // One company sentence from a line reading (ADR-0233): its openings, its hiring move, its
 // percentage and weekly rate, and its "Not hiring" by cause, each as the reading gives it.
@@ -2220,7 +2317,7 @@ function drawVerdict(d){
   // The not-hiring part folded under its total, as a disclosure: the answer first, the counting
   // for whoever wants it.
   const item = l => `<li><b>${esc(l.name)}</b>: ${esc(l.text)}${l.detail
-    ? `<details class="verdict-why"><summary>Not hiring: ${esc(l.detail.total)}</summary><ul>${
+    ? `<details class="verdict-why"><summary>Known counting changes: ${esc(l.detail.total)}</summary><ul>${
       l.detail.causes.map(c => `<li>${esc(causeText(c, d))}</li>`).join('')}</ul></details>` : ''}</li>`;
   const { riser, faller } = tileMovers(d, chartedAndOther(d).charted);
   const unfolded = new Set(lines.slice(0, VERDICTS_SHOWN));
@@ -2277,11 +2374,11 @@ function drawTitle(){
   const kind = trendData ? viewKind(trendData) : null;
   el('trends-title').textContent =
     trendDrill && trendRaw && trendRaw.family_known === false ? `No category called “${trendDrill}”`
-    : kind === 'drillCompany' && several ? `How ${drillLabel()} hiring compares ${where}`
+    : kind === 'drillCompany' && several ? `How ${drillLabel()} openings compare ${where}`
     : kind === 'roles' ? `Tracked roles in ${drillLabel()}${where ? ' ' + where : ''}`
-    : trendDrill && where ? `How ${drillLabel()} hiring is moving ${where}`
-    : !trendDrill && several && topSplitNow() === 'company' ? `How tech hiring compares ${where}`
-    : !trendDrill && where && topSplitNow() === 'total' ? `How tech hiring is moving ${where}`
+    : trendDrill && where ? `How ${drillLabel()} openings are moving ${where}`
+    : !trendDrill && several && topSplitNow() === 'company' ? `How tech openings compare ${where}`
+    : !trendDrill && where && topSplitNow() === 'total' ? `How tech openings are moving ${where}`
     : 'Which tech roles are growing' + (where ? ' ' + where : '');
 }
 
@@ -2648,7 +2745,7 @@ function showTrendsError(msg){
   // read this" block used to survive a failed fetch, so a panel with no chart still carried
   // 190 words about how to read one. The scope line goes with them: "24 categories · 471
   // measurements" under a "didn't load" banner describes the payload that is NOT on screen.
-  ['trends-kpi', 'trends-table-wrap', 'trends-chart-note'].forEach(id => {
+  ['trends-kpi', 'trends-coverage-summary', 'trends-table-wrap', 'trends-chart-note'].forEach(id => {
     if (el(id)) el(id).hidden = true;
   });
   if (el('trends-scope')) el('trends-scope').textContent = '';
@@ -2660,7 +2757,7 @@ function showTrendsError(msg){
   if (el('trends-error')){ el('trends-error').hidden = false; el('trends-error-msg').textContent = msg; }
 }
 // Everything that states the answer in words, dimmed together while a new one is fetched.
-const ANSWER_TEXT = ['trends-verdict', 'trends-kpi', 'trends-empty', 'trends-chart-note'];
+const ANSWER_TEXT = ['trends-verdict', 'trends-kpi', 'trends-coverage-summary', 'trends-empty', 'trends-chart-note'];
 function dimAnswer(on){ ANSWER_TEXT.forEach(id => { if (el(id)) el(id).classList.toggle('loading', on); }); }
 function hideTrendsError(){
   setTrendsBusy(false);
@@ -2987,6 +3084,7 @@ function trendPlotWidth(host = el('trends-chart') && el('trends-chart').parentEl
 
 function drawTrends(){
   const d = trendData; if (!d) return;
+  renderCoverageSummary(d);
   const host = el('trends-chart') && el('trends-chart').parentElement;
   const W = trendPlotWidth(host);
   const { charted, other, shown } = chartedAndOther(d);
@@ -3326,7 +3424,9 @@ function drawTrends(){
   el('trends-chart').setAttribute('aria-label',
     `Line chart. ${trendMetric === 'new' ? `Openings ${newCounts(d)}` : 'All live openings'}${where}`
     + `${view.grouping ? ` by ${view.grouping(trendDrill)}` : ', every category summed into one line'}, as ${
-        trendUnit === 'share' ? (view.split === 'company' ? 'a share of each company’s own openings' : pickScope().share)
+        trendUnit === 'share' ? (view.split === 'company'
+          ? (companySitesOnly() ? 'a share of openings on each company’s tracked sites' : 'a share of each company’s own openings')
+          : pickScope().share)
         : trendUnit === 'change' ? 'change from each line’s own count at the window’s start, which is 100'
         : 'a count'}`
     + `${atsPick ? `, ${atsPick.length} of the sources` : ''}, over ${measured}.`
@@ -3336,15 +3436,15 @@ function drawTrends(){
   // only exist from the run this shipped in forward, not because the pipeline itself is new —
   // conflating the two would read as "the pipeline is broken" rather than "you narrowed it."
   el('trends-empty').textContent = runs === 0
-    ? (trendCoverage === 'comparable' && d.ledger_start
+    ? (trendPicks.length && d.ledger_start && trendRange().until && trendRange().until < d.ledger_start
+      ? `These dates end before HeadStart began tracking companies on ${stampLabel(d.ledger_start, true)} — choose later dates.`
+      : trendCoverage === 'comparable' && d.ledger_start
         && (!trendRange().since || trendRange().since < d.ledger_start)
       // Comparable keeps the Boards counted at the window's start, and per-Board counting has
       // a start of its own: a window opening before it has no cohort at all, so "widen" is the
       // wrong advice there.
-      ? `“Tracked from start” works only from ${stampLabel(d.ledger_start, true)} — choose a later start date.`
+      ? `“Sites tracked at start” works only from ${stampLabel(d.ledger_start, true)} — choose a later start date.`
       // A window ending before counting began: the date it could not reach, not just "widen".
-      : trendPicks.length && d.ledger_start && trendRange().until && trendRange().until < d.ledger_start
-      ? `These dates end before HeadStart began tracking companies on ${stampLabel(d.ledger_start, true)} — choose later dates.`
       : 'No data for these dates — widen them, or clear them to see everything.')
     : runs < 2 && trendPicks.length
     ? `${viewNotes(d)} A trend line appears after a few more updates.`.trim()
@@ -3387,7 +3487,8 @@ function drawTrends(){
   parts.push(trendMetric === 'new'
     ? `Jobs ${newCounts(d)}.`
     : (trendUnit === 'share'
-      ? `Each line is a share of ${view.split === 'company' ? 'its company’s own openings'
+      ? `Each line is a share of ${view.split === 'company'
+        ? (companySitesOnly() ? 'openings on its company’s tracked sites' : 'its company’s own openings')
         : trendPicks.length ? `all openings ${at}` : 'all open jobs'}.`
       : trendUnit === 'change'
       // A line with no count at the window's start is based on its own first one.
@@ -3663,11 +3764,11 @@ function buildTrendsTable(){
     // "Share, change +6.2%" did not say whether that was points or a relative change.
     + (trendUnit === 'share'
       ? th('Share change', 'How much the share grew or shrank, relative to where it started — not percentage points')
-      : th('Hiring %', 'Change from hiring since the start, as a percentage'))
-    + th('Hiring', 'Openings gained or lost through hiring')
-    + th('Not hiring', 'Jumps that aren’t hiring, like duplicates removed or job sites found later')
+      : th('Adjusted change %', 'Change after recorded counting adjustments, as a percentage; not causal hiring activity'))
+    + th('Adjusted change', 'Openings gained or lost after recorded counting adjustments')
+    + th('Counting changes', 'Known counting changes, like duplicates removed or job sites found later')
     // What the hiring move is made of (ADR-0227), on the runs that move counts.
-    + (withTurnover ? th('Opened', 'Jobs opened in this window') + th('Closed', 'Jobs closed in this window') : '')
+    + (withTurnover ? th('Recorded index additions', 'Recorded additions in this window, not proof of newly posted jobs') + th('Recorded closures/removals', 'Partial recorded removals; Dormant policy evictions and rule changes can affect these counts') : '')
     + th('At start', 'Openings at the start of the window')
     + th('Low', 'The lowest figure in the window') + th('High', 'The highest figure in the window') + '</tr>';
   const dash = '<td class="flat">—</td>';
@@ -3710,7 +3811,10 @@ function buildTrendsTable(){
     + dash + dash + openings(closing.hiring) + dash
     + (withTurnover ? dash + dash : '') + dash + dash + dash + '</tr>' : '';
   const many = kind === 'bands' ? 'levels' : 'categories';
-  const whole = kind === 'bands' ? 'the whole category' : trendPicks.length > 1 ? 'all the companies' : 'the whole company';
+  const whole = kind === 'bands'
+    ? (trendPicks.length && companySitesOnly() ? 'the category on the picked companies’ tracked sites' : 'the whole category')
+    : trendPicks.length && companySitesOnly() ? pickScope().whole
+    : trendPicks.length > 1 ? 'all the companies' : 'the whole company';
   // The rows are said to add up only where the reading's checks say they do. Opened and closed
   // are counted line by line (a category leaves out a Found Board's run the company counts), so
   // they are never said to.
@@ -3718,9 +3822,9 @@ function buildTrendsTable(){
   // hiring cell is blank), so the other columns of the rows do not reach the first row's.
   // Named by its label, not as "the first row" (ADR-0255).
   const addsUp = !problemsOf(reading).length
-    ? `; the ${many} below${closing ? ' and “Moved between categories” add up to its hiring' : ' add up to it'}` : '';
+    ? `; the ${many} below${closing ? ' and “Moved between categories” add up to its adjusted change' : ' add up to it'}` : '';
   const note = withTotal ? `<caption>“${esc(totalLabel)}” covers ${whole}${addsUp}.${
-    withTurnover ? ' Opened and closed are counted for each line, so they may not add up.' : ''}</caption>` : '';
+    withTurnover ? ' Recorded index additions and recorded closures/removals are counted for each line, so they may not add up.' : ''}</caption>` : '';
   return `${note}<thead>${head}</thead><tbody>${body}${closingRow}</tbody>`;
 }
 
@@ -4028,7 +4132,9 @@ function setUnit(value, shareLocked, changeLocked){
 function shareLock(){
   if (trendMetric === 'new') return 'Share is off here — a share of “new” openings over all live ones has no reading.';
   if (!trendDrill && topSplitNow() === 'company' && trendPicks.length > 1)
-    return 'Share is off here — each line is a whole company, so as a share of itself it is always 100%.';
+    return companySitesOnly()
+      ? 'Share is off here — each line covers its company’s tracked sites, so as a share of itself it is always 100%.'
+      : 'Share is off here — each line is a whole company, so as a share of itself it is always 100%.';
   // All of a company's tech roles as a share of all its openings read "96%": a tech filter's
   // measure, not a hiring one.
   if (!trendDrill && trendPicks.length && topSplitNow() === 'total')
@@ -4384,8 +4490,8 @@ if (el('trends-co-roles')) el('trends-co-roles').addEventListener('click', () =>
 // by exactly the row's net and needs no note reconciling the two.
 function openCompanyTrend(board, name, since){
   if (name) pickLabels.set(board, name);
-  location.hash = '#trends?company=' + encodeURIComponent(board)
-    + (since ? '&since=' + encodeURIComponent(since.slice(0, 16)) : '');
+  navigation.navigate('#trends?company=' + encodeURIComponent(board)
+    + (since ? '&since=' + encodeURIComponent(since.slice(0, 16)) : ''));
 }
 
 // The plot's box changes width after it was drawn when the sidebar folds or the window is
@@ -4599,6 +4705,11 @@ if (el('sets-strip')) el('sets-strip').addEventListener('click', e => {
   const btn = e.target.closest('[data-act]');
   if (btn) handleSetAction(btn.dataset.act, btn.dataset.id);
 });
+if (el('matches-actions')) el('matches-actions').addEventListener('click', e => {
+  const btn = e.target.closest('[data-act]');
+  if (btn) handleSetAction(btn.dataset.act, btn.dataset.id);
+});
+document.addEventListener('click', e => { if (e.target.closest('[data-retry-search]')) go(); });
 // The buttons the Search tab draws as HTML (the filter pills, the pager, the empty result's
 // advice) say what they do in data attributes, read by this one listener: an inline onclick
 // is refused by the Content-Security-Policy (#595).
@@ -4794,7 +4905,7 @@ function hotRow(r, i, lens){
   // The rank is decorative — the list is already ordered and screen readers announce <ol>
   // position — so it is hidden from the accessibility tree rather than read out twice.
   return `
-    <li class="hot-row${op ? ' flagged' : ''}" style="animation-delay:${Math.min(i,12)*30}ms">
+    <li class="hot-row${op ? ' flagged' : ''}">
       <span class="hot-rank" aria-hidden="true">${i + 1}</span>
       <div class="hot-who">
         <div class="hot-name">${esc(r.company)}</div>
@@ -4808,9 +4919,10 @@ function hotRow(r, i, lens){
         <span class="hot-sub">${esc(m.sub)}</span>
       </div>
       <div class="hot-actions">
+        <button class="ghost hot-see" data-hot-key="${esc(r.key)}">See roles</button>
         ${CAN_COMPANIES ? `<button class="ghost hot-track" data-track="${esc(r.key)}"
           aria-pressed="${followed}">${followed ? 'Following' : 'Follow'}</button>` : ''}
-        <button class="ghost hot-see" data-hot-key="${esc(r.key)}">See roles</button>
+
         ${el('trends') ? `<button class="ghost hot-trend" data-trend="${esc(r.key)}"
           data-trend-name="${esc(r.company)}" data-trend-since="${esc((hotData.window || {}).base || '')}">See trend</button>` : ''}
       </div>
@@ -4908,18 +5020,18 @@ function drawMyCompanies(){
   });
 }
 
+restoreSigninSearch();
 readSearchHash();   // a reloaded or shared hand-off (`#search?board=…`) scopes the first search
 go();   // an empty query browses the newest jobs (ADR-0074) — the Search tab is never empty
 whoAmI();
-showTab(currentTab());
-shownTab = currentTab();
+navigation.start();
 // The Trends tab's opening view, so opening the tab is answered from the browser's cache.
 if (el('trends') && currentTab() !== 'trends') prefetchTrends(null, trendMetric);
 // And the Hiring now ranking, 11 KB, the same way.
 if (el('hot-results') && currentTab() !== 'hot' && CFG.answers_version)
   setTimeout(() => fetch(versioned('/hot'), { priority: 'low' }).catch(() => {}), PREFETCH_AFTER);
 // Result cards need star states before the Saved tab is ever opened; landing ON the tab
-// already loads via showTab above.
+// already loads on entry above.
 if (CAN_STAR && currentTab() !== 'saved') loadSaved();
 loadCompanies().then(read => {
   drawMyCompanies();

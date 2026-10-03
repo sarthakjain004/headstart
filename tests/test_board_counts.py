@@ -1,4 +1,4 @@
-"""The Board counts in README.md and CONTEXT.md must match the committed ledger.
+"""The Board counts in CONTEXT.md must match the committed ledger.
 
 Five defensible answers exist to "how many Boards do we have" and they differ by tens of
 thousands; CONTEXT.md §Counting Boards names each one. This file keeps those names bound to real
@@ -91,13 +91,13 @@ def _counts() -> dict[str, int]:
     def is_alias(c: ScrapableBoard) -> bool:
         return c.slug.lower() in alias.get(c.ats, {})  # `load` lowercases its keys
 
-    # Dedupe-first order, which is what the glossary states. The README's funnel excludes first and
+    # Dedupe-first order, which is what the glossary states. Excluding first
     # so reads different intermediate deltas for the same endpoints — two of the excluded Boards
     # are themselves duplicate spellings, so `EXCLUDED_BOARDS` removes 45 there and 43 here.
     enabled = [c for c in unique if c.ats not in DISABLED_ATS]
     kept = [c for c in enabled if not is_excluded(c.ats, c.slug)]
     unaliased = [c for c in kept if not is_alias(c)]
-    # the other order, for the README's funnel: exclude on the raw live set, then dedupe
+    # the other order: exclude on the raw live set, then dedupe
     enabled_rows = [(c, v) for c, v in rows if c.ats not in DISABLED_ATS]
     exclude_first_excluded = [
         c
@@ -123,12 +123,10 @@ def _counts() -> dict[str, int]:
         "disabled": len(unique) - len(enabled),
         "excluded_after_dedupe": len(enabled) - len(kept),
         "aliased": len(kept) - len(unaliased),
-        # The README excludes first, so its two middle deltas differ from the dedupe-first ones
+        # Excluding first gives two intermediate deltas different from the dedupe-first ones
         # above. Both are real; each doc must be checked in the order it actually states.
         "excluded_before_dedupe": len(exclude_first_excluded),
         "dedupe_after_exclude": len(kept_live) - len(kept_groups),
-        "newer_dead_after_exclude": len(kept_groups)
-        - len(_elected_boards(exclude_first_kept)),
         "parked": sum(1 for c in unaliased if c.lowercase_identity in PARKED_BOARDS),
         "Scrapable Board": len(load(LEDGER, min_jobs=0)),
         "Hiring Board": len(load(LEDGER, min_jobs=1)),
@@ -198,7 +196,7 @@ def test_the_glossary_agrees_with_the_ledger() -> None:
     assert not wrong, (
         "CONTEXT.md §Counting Boards is stale — {said, actual}: "
         f"{wrong}. Re-measure with `python -m pytest tests/test_board_counts.py -q` "
-        "and update the glossary, the README funnel, and the measured-on date together."
+        "and update the glossary and measured-on date together."
     )
 
 
@@ -218,41 +216,6 @@ def test_the_two_unguarded_counts_say_so_where_a_reader_will_see_it() -> None:
         )
 
 
-def test_the_readme_funnel_agrees_with_the_ledger() -> None:
-    """The README excludes before deduping, so its deltas differ from the glossary's — the same
-    endpoints reached the other way round. Both must land on Scrapable Board."""
-    truth = counts()
-    table = (ROOT / "README.md").read_text(encoding="utf-8")
-    section = table.split("### Which boards a run picks", 1)[1].split("\n## ", 1)[0]
-    figures = [
-        _abs_int(m) for m in re.findall(r"\|\s*\*{0,2}(−?[\d,]+)\*{0,2}\s*\|", section)
-    ]
-    assert figures, "could not parse the README funnel table"
-    start, *deltas, end = figures
-    assert start == truth["Live row"], (
-        f"README funnel starts at {start:,}, ledger has {truth['Live row']:,}"
-    )
-    assert end == truth["Scrapable Board"], (
-        f"README funnel ends at {end:,}, ledger has {truth['Scrapable Board']:,}"
-    )
-    assert start - sum(deltas) == end, (
-        f"README funnel does not sum: {start:,} - {sum(deltas):,} = {start - sum(deltas):,}, not {end:,}"
-    )
-    # Summing is not enough: two offsetting wrong deltas pass it. Check each against config, in
-    # the README's own exclude-then-dedupe order.
-    expected = [
-        truth["disabled"],
-        truth["excluded_before_dedupe"],
-        truth["aliased"],
-        truth["dedupe_after_exclude"],
-        truth["newer_dead_after_exclude"],
-        truth["parked"],
-    ]
-    assert deltas == expected, (
-        f"README funnel deltas are {deltas}, ledger says {expected}"
-    )
-
-
 def test_every_derived_figure_is_current_at_every_site_that_quotes_it() -> None:
     """The headline counts are parsed and asserted; the figures *derived* from them are not, and a
     wrong ratio shipped that way once already.
@@ -263,33 +226,10 @@ def test_every_derived_figure_is_current_at_every_site_that_quotes_it() -> None:
     """
     truth = counts()
     dupes = truth["duplicate_spellings"]
-    empty = truth["Scrapable Board"] - truth["Hiring Board"]
     skipped = truth["Unique Board"] - truth["Scrapable Board"]
     scraped_not_unique = truth["scraped_not_unique"]
 
     sites = [
-        (
-            "README.md",
-            r"([\d,]+) live rows of ([\d,]+)",
-            (truth["Live row"], truth["Ledger row"]),
-        ),
-        (
-            "README.md",
-            r"a row, not a board — ([\d,]+) of them are duplicate spellings",
-            (dupes,),
-        ),
-        ("README.md", r"the ([\d,]+) live-but-empty boards", (empty,)),
-        (
-            "README.md",
-            r"\*\*([\d,]+) ledger rows\*\*: ([\d,]+) live, ([\d,]+) dead, ([\d,]+) unknown",
-            (truth["Ledger row"], truth["Live row"], truth["dead"], truth["unknown"]),
-        ),
-        ("README.md", r"collapse to ([\d,]+) Unique Boards", (truth["Unique Board"],)),
-        (
-            "README.md",
-            r"and the ([\d,]+) with a `dead` row newer than their newest `live` row are dropped",
-            (truth["newer_dead"],),
-        ),
         (
             "CONTEXT.md",
             r"less the ([\d,]+) Boards with a `dead` row newer than their newest `live` row",
@@ -318,14 +258,6 @@ def test_every_derived_figure_is_current_at_every_site_that_quotes_it() -> None:
                 truth["parked"],
             ),
         ),
-        # The README states the same two-orders rule in its own words. It had no entry here, and
-        # drifted to 43/41 while the table two lines above it already said 44 — the exact
-        # single-site staleness this test exists to catch.
-        (
-            "README.md",
-            r"excluding before deduping reads −([\d,]+) and −[\d,]+, deduping first reads −([\d,]+)",
-            (truth["excluded_before_dedupe"], truth["excluded_after_dedupe"]),
-        ),
         # and the two-orders rule quotes all four of the numbers that make it true
         (
             "CONTEXT.md",
@@ -334,7 +266,7 @@ def test_every_derived_figure_is_current_at_every_site_that_quotes_it() -> None:
         ),
         (
             "CONTEXT.md",
-            r"the README's funnel excludes first and so reads −([\d,]+) / −([\d,]+)",
+            r"excluding first and so reads −([\d,]+) / −([\d,]+)",
             (truth["excluded_before_dedupe"], truth["dedupe_after_exclude"]),
         ),
         # CLAUDE.md carries the same vocabulary and was read by nothing until round 4

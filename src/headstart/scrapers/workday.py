@@ -8,6 +8,11 @@ with an undocumented but stable listing API:
 A company's `slug` here is the full careers URL (the data center / instance and
 site vary per tenant, so the URL carries everything we need).
 
+The API tenant can differ from the public hostname. Chegg's page declares ``osv_chegg``
+under ``osv-chegg.wd5.myworkdayjobs.com``; its hostname-derived CXS path returns 422
+(measured 2026-10-02). Only CXS paths use that spelling; public links and Board IDs keep
+the hostname, so recovering the Board does not change its identity.
+
 Beating the 2,000 cap (the reason this scraper is more than a paginator):
 
 The API caps ``limit`` at 20 per page and caps the *reported total* at 2,000.
@@ -62,6 +67,10 @@ from headstart.scrapers.base import (
 from headstart.scrapers.job_posting_jsonld import jsonld_nodes
 
 _log = log.get(__name__)
+
+# Explicit public-page declaration, verified against both listing and detail APIs.
+# Do not replace hyphens in every tenant: they normally are part of its API name.
+_API_TENANT_BY_HOST = {"osv-chegg": "osv_chegg"}
 
 
 class UnexpectedListingResponse(BoardUnreadable):
@@ -526,9 +535,10 @@ class WorkdayScraper(BaseScraper):
         :meth:`url` asks the one this scrape resolved; :meth:`_resolve_instance` and the liveness
         probe ask each of :data:`INSTANCES` in turn to find a tenant that migrated (ADR-0203)."""
         company, _instance, site = self._parts()
+        api_tenant = _API_TENANT_BY_HOST.get(company, company)
         return (
             f"https://{company}.{instance}.myworkdayjobs.com"
-            f"/wday/cxs/{company}/{site}/jobs"
+            f"/wday/cxs/{api_tenant}/{site}/jobs"
         )
 
     #: Workday's own generic outage page, landed on by a tenant whose data centre migration left
@@ -997,9 +1007,10 @@ class WorkdayScraper(BaseScraper):
 
     def _detail_url(self, external_path: str) -> str:
         company, instance, site = self._parts()
+        api_tenant = _API_TENANT_BY_HOST.get(company, company)
         return (
             f"https://{company}.{instance}.myworkdayjobs.com"
-            f"/wday/cxs/{company}/{site}{external_path}"
+            f"/wday/cxs/{api_tenant}/{site}{external_path}"
         )
 
     def job_url(self, external_path: str) -> str:

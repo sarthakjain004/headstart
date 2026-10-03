@@ -85,6 +85,8 @@ Each of these runs under its own privacy policy.
   days and is marked `Secure`, `HttpOnly` and `SameSite=Lax`.
 - **Browser local storage** holds display preferences, the jobs you dismissed, and your Résumé
   builder drafts. This never leaves your browser unless you turn on résumé sync.
+- **Tab session storage** temporarily keeps your current search and filters while you sign in,
+  so they can be restored when you return. It is cleared on return and never synced to your Account.
 
 ## Deleting your data
 

@@ -76,6 +76,7 @@ only when :data:`_EMPLOYMENT_VALUE` says it is an employment type).
 from __future__ import annotations
 
 import html
+import os
 import re
 from collections import Counter
 from typing import Any
@@ -85,6 +86,7 @@ from headstart.boards import company_name
 from headstart.jobs.job import Job, html_to_text, is_remote, requisition_of
 from headstart.jobs.location import is_place
 from headstart.network import http
+from headstart.network.fetcher import Fetcher
 from headstart.scrapers.base import (
     USER_AGENT,
     BaseScraper,
@@ -100,6 +102,7 @@ from headstart.scrapers.pacer import Pacer
 
 #: 1 request/s process-wide: under the ~1.2/s refill measured, so a shard never spends its burst.
 _PACER = Pacer(1.0)
+_ROUTE_PACER = http.RoutePacer(1.0)
 
 #: Keeps the pace fed at ~1.7 s per job page; more only queues on the pacer.
 _DETAIL_WORKERS = 4
@@ -108,14 +111,16 @@ _SITEMAP_LINE = re.compile(r"(?im)^Sitemap:\s*(\S+)")
 _LOC = re.compile(r"<loc>\s*([^<\s]+)\s*</loc>")
 #: A posting's URL, `…/JobDetail/{Title-Slug}/{id}`. A title with no Latin letter mints no slug:
 #: 28 of tsmc's 801 sitemap URLs are `…/JobDetail/389` ("製程整合工程師 (台南)", 2026-09-29).
-_JOB_URL = re.compile(r"/JobDetail/(?:([^/?#]+)/)?(\d+)/?$")
+# Bain uses FolderDetail for the same public posting layout; its sitemap lists the
+# template only and SearchJobs supplies the IDs (249 jobs, verified 2026-10-02).
+_JOB_URL = re.compile(r"/(?:JobDetail|FolderDetail)/(?:([^/?#]+)/)?(\d+)/?$")
 #: A URL's locale segment, right after the host: `https://jobs.ea.com/es_ES/careers/…`.
 _LOCALE = re.compile(r"https?://[^/]+/([a-z]{2})_[A-Z]{2}/")
 _ALTERNATE_HREF = re.compile(r'<xhtml:link\b[^>]*\bhref="([^"]+)"')
 #: A job portal's sitemap names the job templates as pages: Siemens's and Two Sigma's list a bare
 #: `…/JobDetail` beside 58 and 30 page URLs and no posting. A utility portal (Epic's onboarding)
 #: lists neither it nor `SearchJobs`.
-_JOB_PAGE_NAME = re.compile(r"/JobDetail/?$")
+_JOB_PAGE_NAME = re.compile(r"/(?:JobDetail|FolderDetail)/?$")
 #: One result on a search page: `<h3 class="article__header__text__title …"><a href="…">Title</a>`
 #: on Siemens, Two Sigma and a2milkkf, `<div class="list__item__text__title"><a …>` on mt, the two
 #: templates measured (2026-09-29).
@@ -292,9 +297,7 @@ class AvatureScraper(BaseScraper):
     # (:func:`listing_rows`): `{host}/[{locale}/]{portal}/JobDetail/[{Title-Slug}/]{id}`. The slug
     # is absent for a title with no Latin letter (tsmc). Host-agnostic because vanity hosts
     # serve it (jobs.bmc.com).
-    url_shape = (
-        r"https://[^/]+/(?:[a-z]{2}_[A-Z]{2}/)?[^/]+/JobDetail/(?:[^/?#]+/)?\d+$"
-    )
+    url_shape = r"https://[^/]+/(?:[a-z]{2}_[A-Z]{2}/)?[^/]+/(?:JobDetail|FolderDetail)/(?:[^/?#]+/)?\d+$"
     has_detail_pass = True
     detail_workers = _DETAIL_WORKERS
     detail_streams = _DETAIL_WORKERS
@@ -305,6 +308,16 @@ class AvatureScraper(BaseScraper):
     #: robots.txt by host: the tenant's, read first (:meth:`fetch_raw`), then a vanity host's on demand.
     _robots_txt: dict[str, str]
 
+    def __init__(
+        self, slug: str, company: str | None = None, fetcher: Fetcher | None = None
+    ) -> None:
+        super().__init__(slug, company, fetcher)
+        # Local matched pooled controls preserved 410/410 pages at twice the throughput.
+        # Runner proof is still required, so the default keeps its measured single-route pace.
+        self._dual_egress = os.getenv("HEADSTART_AVATURE_DUAL_EGRESS") == "1"
+        if self._dual_egress:
+            self.detail_workers = self.detail_streams = 8
+
     @staticmethod
     def slug_from(tenant: str, url: str) -> str:
         return tenant.strip().lower()
@@ -313,23 +326,33 @@ class AvatureScraper(BaseScraper):
         return f"https://{self.slug}.avature.net/robots.txt"
 
     def _fetch(self, method: str, url: str, **kwargs: Any) -> Any:
-        self.pacer.wait()
+        if self._dual_egress:
+            kwargs["request_pacer"] = _ROUTE_PACER
+            kwargs["retry_on"] = http.TRANSIENT | {406}
+        else:
+            self.pacer.wait()
         response = super()._fetch(method, url, **kwargs)
         moved = _moved_job_page(url, response)
         if moved is None:
             return response
-        self.pacer.wait()
+        if not self._dual_egress:
+            self.pacer.wait()
         return super()._fetch(method, moved, **kwargs)
 
     async def _fetch_async(
         self, session: Any, method: str, url: str, **kwargs: Any
     ) -> Any:
-        await self.pacer.wait_async()
+        if self._dual_egress:
+            kwargs["request_pacer"] = _ROUTE_PACER
+            kwargs["retry_on"] = http.TRANSIENT | {406}
+        else:
+            await self.pacer.wait_async()
         response = await super()._fetch_async(session, method, url, **kwargs)
         moved = _moved_job_page(url, response)
         if moved is None:
             return response
-        await self.pacer.wait_async()
+        if not self._dual_egress:
+            await self.pacer.wait_async()
         return await super()._fetch_async(session, method, moved, **kwargs)
 
     def _get_text(self, url: str) -> str:
@@ -363,7 +386,10 @@ class AvatureScraper(BaseScraper):
                 continue
             if status != 200:
                 return f"{search} answered HTTP {status}"
-            if "/JobDetail/" in (response.text or ""):
+            if any(
+                path in (response.text or "")
+                for path in ("/JobDetail/", "/FolderDetail/")
+            ):
                 return f"{search} links postings"
             return f"{search} answered at {landed}, which is no login"
         return None
@@ -599,11 +625,15 @@ class AvatureScraper(BaseScraper):
             self.company = self._pages_company
 
     def detail_request(self, row: dict[str, str]) -> DetailRequest:
+        options: dict[str, Any] = {"discard_cookies": True, "allow_redirects": False}
+        if self._dual_egress:
+            # Stable lanes without keeping state per Board; both share the actual-route cap.
+            options["prefer_spare"] = bool(int(row["id"]) % 2)
         return DetailRequest(
             row["url"],
             headers={"User-Agent": USER_AGENT},
             timeout=60,
-            options={"discard_cookies": True, "allow_redirects": False},
+            options=options,
         )
 
     def detail_status_loss(self, response: Any) -> str:

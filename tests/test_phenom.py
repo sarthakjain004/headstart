@@ -98,6 +98,33 @@ def test_the_listing_url_carries_the_boards_own_prefix():
     assert scraper.url() == "https://jobs.bell.ca/ca/en/search-results"
 
 
+def test_a_nested_careers_front_uses_its_widgets_path_and_public_job_links():
+    """Virtusa's corporate domain hosts Phenom under /careers/job-search, not /widgets."""
+    base = "https://www.virtusa.com/careers/job-search"
+    listing = json.loads((FIXTURES / "phenom_listing.json").read_text())
+
+    def route(method, url, kwargs):
+        if method == "GET":
+            assert url == f"{base}/us/en/search-results"
+            return FakeResponse(200, "", url=f"{base}/global/en")
+        assert url == f"{base}/widgets"
+        payload = kwargs["json"]
+        if payload["ddoKey"] == "refineSearch":
+            return FakeResponse(200, json.dumps(listing))
+        return FakeResponse(
+            200,
+            json.dumps({"jobDetail": {"data": {"job": _details()[payload["jobId"]]}}}),
+        )
+
+    scraper = get_scraper("phenom", "www.virtusa.com", fetcher=FakeFetcher(route))
+    jobs = scraper.parse(scraper.fetch_raw(), SCRAPED_AT)
+    assert len(jobs) == 2
+    assert scraper.board_key() == "phenom:www.virtusa.com"
+    assert scraper.board_page() == f"{base}/global/en"
+    assert all(job.url.startswith(f"{base}/global/en/job/") for job in jobs)
+    assert all(job.description for job in jobs)
+
+
 def test_description_comes_from_the_detail_body_never_the_listing_teaser():
     job = _jobs()[HYBRID_ID]
     teaser = next(j for j in _listing() if j["jobId"] == HYBRID_ID)["descriptionTeaser"]

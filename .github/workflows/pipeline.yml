@@ -306,6 +306,10 @@ jobs:
       max-parallel: 15
       matrix:
         shard: ${{ fromJson(needs.scrape-plan.outputs.shards) }}
+    env:
+      # Opt-in until a matched Actions control verifies the two-route Avature detail path.
+      # An unset repository variable preserves four streams and the shared 1 request/s pace.
+      HEADSTART_AVATURE_DUAL_EGRESS: ${{ vars.HEADSTART_AVATURE_DUAL_EGRESS }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -916,9 +920,9 @@ jobs:
             --board-failures data/state/board_failures.csv "${ledger[@]}"
       - name: Drop the store's vectors of unserved Jobs (ADR-0190)
         # After prune, so the table it keeps is final. Needs the corpus, whose ids it also keeps.
-        # Never fatal: it rewrites through tmp files (which the upload excludes), so a failure
-        # before the swap leaves the store as it was, and publication must not be skipped over a
-        # store that is merely larger. Skipped without the corpus, whose ids it must keep.
+        # An archive failure can keep the larger store. Interrupted paired rewrites are journaled;
+        # publication must recover and validate them before uploading, even after a step timeout.
+        # Skipped without the corpus, whose ids it must keep.
         if: needs.scrape-plan.outputs.run == 'true' && steps.corpus.outcome == 'success'
         continue-on-error: true
         run: python -m headstart.ingest.embed_prune --apply
@@ -1037,6 +1041,10 @@ jobs:
           # all five uploads instead.
           python -m headstart.ingest.state_witness publish \
             || echo "::warning::could not publish the state witness; the prior one stands"
+          if ! python -m headstart.ingest.embed_merge --check-store; then
+            publication_state embedding_store invalid
+            exit 1
+          fi
           publish embedding_store hf upload "$HF_DATASET" data/embeddings/jobs data/embeddings/jobs \
             --repo-type dataset --exclude "*.tmp" --commit-message "nightly: embedding store"
           # Bank the embedding store first: if index construction fails, the next pipeline can
